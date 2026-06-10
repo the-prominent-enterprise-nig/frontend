@@ -1,0 +1,25 @@
+export const CRM_PERMISSIONS = {
+  LEADS_READ: 'crm:leads:read',
+  LEADS_CREATE: 'crm:leads:create',
+  LEADS_UPDATE: 'crm:leads:update',
+  LEADS_DELETE: 'crm:leads:delete',
+  LEADS_CONVERT: 'crm:leads:convert',
+  LEADS_ASSIGN: 'crm:leads:assign',
+  CUSTOMERS_READ: 'crm:customers:read',
+  CUSTOMERS_CREATE: 'crm:customers:create',
+  CUSTOMERS_UPDATE: 'crm:customers:update',
+  CUSTOMERS_DELETE: 'crm:customers:delete',
+  INTERACTIONS_READ: 'crm:interactions:read',
+  INTERACTIONS_CREATE: 'crm:interactions:create',
+  REMINDERS_READ: 'crm:reminders:read',
+  REMINDERS_CREATE: 'crm:reminders:create',
+  REMINDERS_UPDATE: 'crm:reminders:update',
+  SEGMENTS_READ: 'crm:segments:read',
+  SEGMENTS_MANAGE: 'crm:segments:manage',
+  PIPELINE_READ: 'crm:pipeline:read',
+  PIPELINE_MANAGE: 'crm:pipeline:manage',
+  SETTINGS_CONFIGURE: 'crm:settings:configure',
+  WILDCARD: 'crm:*',
+} as const
+
+export type CrmPermission = (typeof CRM_PERMISSIONS)[keyof typeof CRM_PERMISSIONS]

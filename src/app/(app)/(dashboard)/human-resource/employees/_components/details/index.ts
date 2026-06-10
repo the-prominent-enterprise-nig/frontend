@@ -1,0 +1,6 @@
+export { EmployeeDetailShell } from './EmployeeDetailShell'
+export { PersonalInfoSection } from './sections/PersonalInfoSection'
+export { GovernmentIDsSection } from './sections/GovernmentIDsSection'
+export { BankAccountsSection } from './sections/BankAccountsSection'
+export { EmergencyContactsSection } from './sections/EmergencyContactsSection'
+export { PayrollSetupSection } from './sections/PayrollSetupSection'

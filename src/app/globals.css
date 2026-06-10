@@ -1,0 +1,172 @@
+@import 'tailwindcss';
+/* @import 'tw-animate-css'; */
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Prominent Brand Colors */
+  --color-prominent-purple-50: #f5f3f8;
+  --color-prominent-purple-100: #ebe6f1;
+  --color-prominent-purple-200: #d7cde3;
+  --color-prominent-purple-300: #c3b4d5;
+  --color-prominent-purple-400: #a58bc0;
+  --color-prominent-purple-500: #7d62a3;
+  --color-prominent-purple-600: #5d4681;
+  --color-prominent-purple-700: #3d2563;
+  --color-prominent-purple-800: #2d1b4e;
+  --color-prominent-purple-900: #1d0f38;
+
+  --color-prominent-orange-50: #fff8f3;
+  --color-prominent-orange-100: #fff0e6;
+  --color-prominent-orange-200: #ffe0cc;
+  --color-prominent-orange-300: #ffd5b3;
+  --color-prominent-orange-400: #ffb880;
+  --color-prominent-orange-500: #ff9933;
+  --color-prominent-orange-600: #ff8800;
+  --color-prominent-orange-700: #e67e00;
+  --color-prominent-orange-800: #cc6b00;
+  --color-prominent-orange-900: #b35900;
+
+  /* Semantic Colors */
+  --color-background: #f5f5f5;
+  --color-foreground: #1a1a1a;
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1a1a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1a1a1a;
+  --color-primary: #3d2563;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #ff9933;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #e8e8e8;
+  --color-muted-foreground: #666666;
+  --color-accent: #ff9933;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --color-border: #e5e7eb;
+  --color-input: #f0f0f0;
+  --color-ring: #3d2563;
+
+  /* Chart Colors */
+  --color-chart-1: #3d2563;
+  --color-chart-2: #5d4681;
+  --color-chart-3: #ff9933;
+  --color-chart-4: #ffb880;
+  --color-chart-5: #e67e00;
+
+  /* Sidebar Colors */
+  --color-sidebar: #ffffff;
+  --color-sidebar-foreground: #1a1a1a;
+  --color-sidebar-primary: #3d2563;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #ff9933;
+  --color-sidebar-accent-foreground: #ffffff;
+  --color-sidebar-border: #e5e7eb;
+  --color-sidebar-ring: #3d2563;
+
+  /* Radius */
+  --radius: 0.625rem;
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --font-geist-sans: 'Geist';
+  --font-geist-mono: 'Geist Mono';
+}
+
+.dark {
+  /* Dark Mode Semantic Colors Override */
+  --color-background: #1a1a1a;
+  --color-foreground: #f5f5f5;
+  --color-card: #2d1b4e;
+  --color-card-foreground: #f5f5f5;
+  --color-popover: #2d1b4e;
+  --color-popover-foreground: #f5f5f5;
+  --color-primary: #ff9933;
+  --color-primary-foreground: #1a1a1a;
+  --color-secondary: #5d4681;
+  --color-secondary-foreground: #f5f5f5;
+  --color-muted: #3d2563;
+  --color-muted-foreground: #aaaaaa;
+  --color-accent: #ff9933;
+  --color-accent-foreground: #1a1a1a;
+  --color-destructive: #f87171;
+  --color-border: #3d2563;
+  --color-input: #3d2563;
+  --color-ring: #ff9933;
+  --color-chart-1: #ff9933;
+  --color-chart-2: #ffb880;
+  --color-chart-3: #5d4681;
+  --color-chart-4: #7d62a3;
+  --color-chart-5: #3d2563;
+  --color-sidebar: #2d1b4e;
+  --color-sidebar-foreground: #f5f5f5;
+  --color-sidebar-primary: #ff9933;
+  --color-sidebar-primary-foreground: #1a1a1a;
+  --color-sidebar-accent: #5d4681;
+  --color-sidebar-accent-foreground: #f5f5f5;
+  --color-sidebar-border: #3d2563;
+  --color-sidebar-ring: #ff9933;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .prominent-gradient {
+    background: linear-gradient(135deg, #581c87 0%, #6b21a8 50%, #581c87 100%);
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100 placeholder:text-gray-400;
+  }
+
+  .select {
+    @apply w-full appearance-none cursor-pointer rounded-lg border border-gray-200 bg-white px-3 py-2 pr-8 text-sm text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100;
+  }
+
+  .btn-primary {
+    @apply rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-800 disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50;
+  }
+}
+
+/* ── React Grid Layout overrides ──────────────────────────────────────────── */
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: #a855f7;
+  border-bottom-color: #a855f7;
+  width: 7px;
+  height: 7px;
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: #7c3aed !important;
+  opacity: 0.15 !important;
+  border-radius: 1rem;
+}
+
+.react-grid-item.react-draggable-dragging {
+  box-shadow: 0 8px 30px -4px rgba(139, 92, 246, 0.35) !important;
+}
+
+.react-grid-item.resizing {
+  box-shadow: 0 4px 20px -2px rgba(139, 92, 246, 0.2) !important;
+}

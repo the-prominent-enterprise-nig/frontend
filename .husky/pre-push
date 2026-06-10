@@ -1,0 +1,6 @@
+pnpm format
+
+if ! git diff --quiet; then
+  git add -A
+  git commit -m "chore: auto-format"
+fi

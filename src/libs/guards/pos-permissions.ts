@@ -1,0 +1,48 @@
+export const POS_PERMISSIONS = {
+  TERMINALS_READ: 'pos:terminals:read',
+  TERMINALS_MANAGE: 'pos:terminals:manage',
+  SESSIONS_READ: 'pos:sessions:read',
+  SESSIONS_OPEN: 'pos:sessions:open',
+  SESSIONS_CLOSE: 'pos:sessions:close',
+  TRANSACTIONS_READ: 'pos:transactions:read',
+  TRANSACTIONS_CREATE: 'pos:transactions:create',
+  TRANSACTIONS_VOID: 'pos:transactions:void',
+  PROMO_CODES_READ: 'pos:promo-codes:read',
+  PROMO_CODES_MANAGE: 'pos:promo-codes:manage',
+  GIFT_CARDS_READ: 'pos:gift-cards:read',
+  GIFT_CARDS_MANAGE: 'pos:gift-cards:manage',
+  LOYALTY_READ: 'pos:loyalty:read',
+  LOYALTY_MANAGE: 'pos:loyalty:manage',
+  CASH_DRAWER_READ: 'pos:cash-drawer:read',
+  CASH_DRAWER_MANAGE: 'pos:cash-drawer:manage',
+  BRANCH_PRICING_READ: 'pos:branch-pricing:read',
+  BRANCH_PRICING_MANAGE: 'pos:branch-pricing:manage',
+  WILDCARD: 'pos:*',
+} as const
+
+export const POS_PERMISSION_DESCRIPTIONS: Record<
+  (typeof POS_PERMISSIONS)[keyof typeof POS_PERMISSIONS],
+  string
+> = {
+  'pos:terminals:read': 'View POS terminals',
+  'pos:terminals:manage': 'Create, edit, and delete POS terminals',
+  'pos:sessions:read': 'View POS sessions',
+  'pos:sessions:open': 'Open a POS session',
+  'pos:sessions:close': 'Close a POS session',
+  'pos:transactions:read': 'View POS transactions',
+  'pos:transactions:create': 'Create new POS transactions',
+  'pos:transactions:void': 'Void POS transactions',
+  'pos:promo-codes:read': 'View promo codes',
+  'pos:promo-codes:manage': 'Create, edit, and delete promo codes',
+  'pos:gift-cards:read': 'View gift cards',
+  'pos:gift-cards:manage': 'Issue and void gift cards',
+  'pos:loyalty:read': 'View loyalty accounts',
+  'pos:loyalty:manage': 'Manage loyalty points',
+  'pos:cash-drawer:read': 'View cash drawer events',
+  'pos:cash-drawer:manage': 'Record cash drawer events',
+  'pos:branch-pricing:read': 'View branch price overrides',
+  'pos:branch-pricing:manage': 'Create and edit branch price overrides',
+  'pos:*': 'Wildcard full POS access',
+}
+
+export type PosPermission = (typeof POS_PERMISSIONS)[keyof typeof POS_PERMISSIONS]

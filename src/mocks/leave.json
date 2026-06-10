@@ -1,0 +1,852 @@
+{
+  "employees": [
+    {
+      "id": "emp-001",
+      "employeeCode": "EMP-001",
+      "firstName": "Juan",
+      "lastName": "Dela Cruz",
+      "department": { "id": "dept-001", "name": "Operations" }
+    },
+    {
+      "id": "emp-002",
+      "employeeCode": "EMP-002",
+      "firstName": "Maria",
+      "lastName": "Santos",
+      "department": { "id": "dept-002", "name": "Human Resources" }
+    },
+    {
+      "id": "emp-003",
+      "employeeCode": "EMP-003",
+      "firstName": "Jose",
+      "lastName": "Reyes",
+      "department": { "id": "dept-001", "name": "Operations" }
+    },
+    {
+      "id": "emp-004",
+      "employeeCode": "EMP-004",
+      "firstName": "Ana",
+      "lastName": "Mendoza",
+      "department": { "id": "dept-003", "name": "Accounting" }
+    },
+    {
+      "id": "emp-005",
+      "employeeCode": "EMP-005",
+      "firstName": "Carlo",
+      "lastName": "Bautista",
+      "department": { "id": "dept-001", "name": "Operations" }
+    },
+    {
+      "id": "emp-006",
+      "employeeCode": "EMP-006",
+      "firstName": "Liza",
+      "lastName": "Gonzales",
+      "department": { "id": "dept-004", "name": "Sales" }
+    }
+  ],
+  "leaveTypes": [
+    {
+      "id": "lt-001",
+      "name": "Vacation Leave",
+      "code": "VL",
+      "description": "Annual paid vacation leave",
+      "defaultYearlyAllocation": 15,
+      "isCarryoverAllowed": true,
+      "maxCarryoverDays": 5,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-002",
+      "name": "Sick Leave",
+      "code": "SL",
+      "description": "Annual paid sick leave",
+      "defaultYearlyAllocation": 15,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": true,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-003",
+      "name": "Service Incentive Leave",
+      "code": "SIL",
+      "description": "Mandatory 5-day SIL (DOLE)",
+      "defaultYearlyAllocation": 5,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": true,
+      "isActive": true
+    },
+    {
+      "id": "lt-004",
+      "name": "Maternity Leave",
+      "code": "ML",
+      "description": "105-day paid maternity leave (RA 11210)",
+      "defaultYearlyAllocation": 105,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": true,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": "Female",
+      "isGovernmentMandated": true,
+      "isActive": true
+    },
+    {
+      "id": "lt-005",
+      "name": "Paternity Leave",
+      "code": "PL",
+      "description": "7-day paternity leave (RA 8187)",
+      "defaultYearlyAllocation": 7,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": "Male",
+      "isGovernmentMandated": true,
+      "isActive": true
+    },
+    {
+      "id": "lt-006",
+      "name": "Emergency Leave",
+      "code": "EL",
+      "description": "For urgent personal emergencies",
+      "defaultYearlyAllocation": 3,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-007",
+      "name": "Bereavement Leave",
+      "code": "BL",
+      "description": "For death of immediate family member",
+      "defaultYearlyAllocation": 3,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": true,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-008",
+      "name": "Unpaid Leave",
+      "code": "UL",
+      "description": "Leave without pay",
+      "defaultYearlyAllocation": 0,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": false,
+      "isPaidLeave": false,
+      "allowUnpaidIfZeroBalance": true,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-009",
+      "name": "Official Business Leave",
+      "code": "OBL",
+      "description": "Work-related travel or events outside the office",
+      "defaultYearlyAllocation": 0,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": true,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": true,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-010",
+      "name": "Compensatory Time Off",
+      "code": "CTO",
+      "description": "Earned time off in lieu of overtime",
+      "defaultYearlyAllocation": 0,
+      "isCarryoverAllowed": true,
+      "maxCarryoverDays": 10,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-011",
+      "name": "Special Leave",
+      "code": "SPL",
+      "description": "Special leaves granted by company policy",
+      "defaultYearlyAllocation": 5,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": false,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": false,
+      "isActive": true
+    },
+    {
+      "id": "lt-012",
+      "name": "Solo Parent Leave",
+      "code": "SOPL",
+      "description": "7-day leave for solo parents (RA 8972)",
+      "defaultYearlyAllocation": 7,
+      "isCarryoverAllowed": false,
+      "maxCarryoverDays": 0,
+      "requiresAttachment": true,
+      "isPaidLeave": true,
+      "allowUnpaidIfZeroBalance": false,
+      "applicableGender": null,
+      "isGovernmentMandated": true,
+      "isActive": true
+    }
+  ],
+  "leaveRequests": [
+    {
+      "id": "lr-001",
+      "employee": {
+        "id": "emp-001",
+        "employeeCode": "EMP-001",
+        "firstName": "Juan",
+        "lastName": "Dela Cruz"
+      },
+      "leaveType": { "id": "lt-001", "name": "Vacation Leave", "code": "VL", "isPaidLeave": true },
+      "startDate": "2026-05-12",
+      "endDate": "2026-05-14",
+      "totalDaysRequested": 3,
+      "reason": "Family vacation out of town",
+      "supportingAttachment": null,
+      "status": "Pending",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-02",
+      "reviewedBy": null,
+      "reviewDate": null,
+      "remarks": null
+    },
+    {
+      "id": "lr-002",
+      "employee": {
+        "id": "emp-003",
+        "employeeCode": "EMP-003",
+        "firstName": "Jose",
+        "lastName": "Reyes"
+      },
+      "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+      "startDate": "2026-05-08",
+      "endDate": "2026-05-09",
+      "totalDaysRequested": 2,
+      "reason": "Fever and flu, doctor's recommendation",
+      "supportingAttachment": "medical_cert_reyes.pdf",
+      "status": "Pending",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-07",
+      "reviewedBy": null,
+      "reviewDate": null,
+      "remarks": null
+    },
+    {
+      "id": "lr-003",
+      "employee": {
+        "id": "emp-005",
+        "employeeCode": "EMP-005",
+        "firstName": "Carlo",
+        "lastName": "Bautista"
+      },
+      "leaveType": { "id": "lt-006", "name": "Emergency Leave", "code": "EL", "isPaidLeave": true },
+      "startDate": "2026-05-05",
+      "endDate": "2026-05-05",
+      "totalDaysRequested": 1,
+      "reason": "Household emergency — burst pipe flooding at home",
+      "supportingAttachment": null,
+      "status": "Pending",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-04",
+      "reviewedBy": null,
+      "reviewDate": null,
+      "remarks": null
+    },
+    {
+      "id": "lr-004",
+      "employee": {
+        "id": "emp-004",
+        "employeeCode": "EMP-004",
+        "firstName": "Ana",
+        "lastName": "Mendoza"
+      },
+      "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+      "startDate": "2026-05-19",
+      "endDate": "2026-05-20",
+      "totalDaysRequested": 2,
+      "reason": "Scheduled dental surgery and recovery",
+      "supportingAttachment": "dental_cert.pdf",
+      "status": "Pending",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-03",
+      "reviewedBy": null,
+      "reviewDate": null,
+      "remarks": null
+    },
+    {
+      "id": "lr-005",
+      "employee": {
+        "id": "emp-006",
+        "employeeCode": "EMP-006",
+        "firstName": "Liza",
+        "lastName": "Gonzales"
+      },
+      "leaveType": {
+        "id": "lt-007",
+        "name": "Bereavement Leave",
+        "code": "BL",
+        "isPaidLeave": true
+      },
+      "startDate": "2026-05-06",
+      "endDate": "2026-05-08",
+      "totalDaysRequested": 3,
+      "reason": "Death of grandfather",
+      "supportingAttachment": "death_cert.pdf",
+      "status": "Pending",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-04",
+      "reviewedBy": null,
+      "reviewDate": null,
+      "remarks": null
+    },
+    {
+      "id": "lr-006",
+      "employee": {
+        "id": "emp-002",
+        "employeeCode": "EMP-002",
+        "firstName": "Maria",
+        "lastName": "Santos"
+      },
+      "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+      "startDate": "2026-05-02",
+      "endDate": "2026-05-02",
+      "totalDaysRequested": 1,
+      "reason": "High fever, could not report to work",
+      "supportingAttachment": null,
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-02",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-05-02",
+      "remarks": "Approved. Please submit medical certificate if absence extends."
+    },
+    {
+      "id": "lr-007",
+      "employee": {
+        "id": "emp-001",
+        "employeeCode": "EMP-001",
+        "firstName": "Juan",
+        "lastName": "Dela Cruz"
+      },
+      "leaveType": {
+        "id": "lt-010",
+        "name": "Compensatory Time Off",
+        "code": "CTO",
+        "isPaidLeave": true
+      },
+      "startDate": "2026-05-16",
+      "endDate": "2026-05-16",
+      "totalDaysRequested": 1,
+      "reason": "Offsetting overtime worked last April 30",
+      "supportingAttachment": null,
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-03",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-05-04",
+      "remarks": null
+    },
+    {
+      "id": "lr-008",
+      "employee": {
+        "id": "emp-003",
+        "employeeCode": "EMP-003",
+        "firstName": "Jose",
+        "lastName": "Reyes"
+      },
+      "leaveType": { "id": "lt-001", "name": "Vacation Leave", "code": "VL", "isPaidLeave": true },
+      "startDate": "2026-05-26",
+      "endDate": "2026-05-28",
+      "totalDaysRequested": 3,
+      "reason": "Out-of-town trip",
+      "supportingAttachment": null,
+      "status": "Rejected",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-05-01",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-05-02",
+      "remarks": "Rejected. Peak season — insufficient headcount. Please reschedule."
+    },
+    {
+      "id": "lr-009",
+      "employee": {
+        "id": "emp-005",
+        "employeeCode": "EMP-005",
+        "firstName": "Carlo",
+        "lastName": "Bautista"
+      },
+      "leaveType": {
+        "id": "lt-009",
+        "name": "Official Business Leave",
+        "code": "OBL",
+        "isPaidLeave": true
+      },
+      "startDate": "2026-04-22",
+      "endDate": "2026-04-23",
+      "totalDaysRequested": 2,
+      "reason": "Client site visit — Cebu branch",
+      "supportingAttachment": "obl_form_bautista.pdf",
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-04-18",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-04-19",
+      "remarks": null
+    },
+    {
+      "id": "lr-010",
+      "employee": {
+        "id": "emp-006",
+        "employeeCode": "EMP-006",
+        "firstName": "Liza",
+        "lastName": "Gonzales"
+      },
+      "leaveType": { "id": "lt-001", "name": "Vacation Leave", "code": "VL", "isPaidLeave": true },
+      "startDate": "2026-04-14",
+      "endDate": "2026-04-16",
+      "totalDaysRequested": 3,
+      "reason": "Semana Santa rest days with family",
+      "supportingAttachment": null,
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-04-07",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-04-08",
+      "remarks": null
+    },
+    {
+      "id": "lr-011",
+      "employee": {
+        "id": "emp-004",
+        "employeeCode": "EMP-004",
+        "firstName": "Ana",
+        "lastName": "Mendoza"
+      },
+      "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+      "startDate": "2026-04-10",
+      "endDate": "2026-04-11",
+      "totalDaysRequested": 2,
+      "reason": "Flu and fever",
+      "supportingAttachment": null,
+      "status": "Rejected",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-04-09",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-04-09",
+      "remarks": "Medical certificate required for sick leave exceeding 1 day."
+    },
+    {
+      "id": "lr-012",
+      "employee": {
+        "id": "emp-001",
+        "employeeCode": "EMP-001",
+        "firstName": "Juan",
+        "lastName": "Dela Cruz"
+      },
+      "leaveType": {
+        "id": "lt-003",
+        "name": "Service Incentive Leave",
+        "code": "SIL",
+        "isPaidLeave": true
+      },
+      "startDate": "2026-03-28",
+      "endDate": "2026-03-28",
+      "totalDaysRequested": 1,
+      "reason": "Personal day off",
+      "supportingAttachment": null,
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-03-25",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-03-26",
+      "remarks": null
+    },
+    {
+      "id": "lr-013",
+      "employee": {
+        "id": "emp-002",
+        "employeeCode": "EMP-002",
+        "firstName": "Maria",
+        "lastName": "Santos"
+      },
+      "leaveType": { "id": "lt-011", "name": "Special Leave", "code": "SPL", "isPaidLeave": true },
+      "startDate": "2026-03-10",
+      "endDate": "2026-03-12",
+      "totalDaysRequested": 3,
+      "reason": "Company-approved wellness day",
+      "supportingAttachment": null,
+      "status": "Approved",
+      "isUnpaidLeave": false,
+      "submittedDate": "2026-03-05",
+      "reviewedBy": "HR Admin",
+      "reviewDate": "2026-03-06",
+      "remarks": null
+    }
+  ],
+  "leaveBalances": {
+    "emp-001": [
+      {
+        "id": "lb-001",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 4,
+        "carryoverDays": 3
+      },
+      {
+        "id": "lb-002",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-003",
+        "leaveTypeId": "lt-003",
+        "leaveType": {
+          "id": "lt-003",
+          "name": "Service Incentive Leave",
+          "code": "SIL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 5,
+        "adjustedDays": 0,
+        "usedDays": 1,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-013",
+        "leaveTypeId": "lt-010",
+        "leaveType": {
+          "id": "lt-010",
+          "name": "Compensatory Time Off",
+          "code": "CTO",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 0,
+        "adjustedDays": 4,
+        "usedDays": 1,
+        "carryoverDays": 0
+      }
+    ],
+    "emp-002": [
+      {
+        "id": "lb-004",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 2,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-005",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 1,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-006",
+        "leaveTypeId": "lt-003",
+        "leaveType": {
+          "id": "lt-003",
+          "name": "Service Incentive Leave",
+          "code": "SIL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 5,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-021",
+        "leaveTypeId": "lt-006",
+        "leaveType": {
+          "id": "lt-006",
+          "name": "Emergency Leave",
+          "code": "EL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 3,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-022",
+        "leaveTypeId": "lt-007",
+        "leaveType": {
+          "id": "lt-007",
+          "name": "Bereavement Leave",
+          "code": "BL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 3,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-023",
+        "leaveTypeId": "lt-011",
+        "leaveType": {
+          "id": "lt-011",
+          "name": "Special Leave",
+          "code": "SPL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 5,
+        "adjustedDays": 0,
+        "usedDays": 3,
+        "carryoverDays": 0
+      }
+    ],
+    "emp-003": [
+      {
+        "id": "lb-007",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 5
+      },
+      {
+        "id": "lb-008",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 2,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-009",
+        "leaveTypeId": "lt-003",
+        "leaveType": {
+          "id": "lt-003",
+          "name": "Service Incentive Leave",
+          "code": "SIL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 5,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      }
+    ],
+    "emp-004": [
+      {
+        "id": "lb-010",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-011",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 2,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-012",
+        "leaveTypeId": "lt-003",
+        "leaveType": {
+          "id": "lt-003",
+          "name": "Service Incentive Leave",
+          "code": "SIL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 5,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      }
+    ],
+    "emp-005": [
+      {
+        "id": "lb-014",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 2
+      },
+      {
+        "id": "lb-015",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-016",
+        "leaveTypeId": "lt-006",
+        "leaveType": {
+          "id": "lt-006",
+          "name": "Emergency Leave",
+          "code": "EL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 3,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-017",
+        "leaveTypeId": "lt-009",
+        "leaveType": {
+          "id": "lt-009",
+          "name": "Official Business Leave",
+          "code": "OBL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 0,
+        "adjustedDays": 5,
+        "usedDays": 2,
+        "carryoverDays": 0
+      }
+    ],
+    "emp-006": [
+      {
+        "id": "lb-018",
+        "leaveTypeId": "lt-001",
+        "leaveType": {
+          "id": "lt-001",
+          "name": "Vacation Leave",
+          "code": "VL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 3,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-019",
+        "leaveTypeId": "lt-002",
+        "leaveType": { "id": "lt-002", "name": "Sick Leave", "code": "SL", "isPaidLeave": true },
+        "year": 2026,
+        "allocatedDays": 15,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      },
+      {
+        "id": "lb-020",
+        "leaveTypeId": "lt-007",
+        "leaveType": {
+          "id": "lt-007",
+          "name": "Bereavement Leave",
+          "code": "BL",
+          "isPaidLeave": true
+        },
+        "year": 2026,
+        "allocatedDays": 3,
+        "adjustedDays": 0,
+        "usedDays": 0,
+        "carryoverDays": 0
+      }
+    ]
+  }
+}

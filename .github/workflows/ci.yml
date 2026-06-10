@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: ['main', 'development', 'dev']
+  pull_request:
+    branches: ['main', 'development', 'dev']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm must be installed BEFORE setup-node's cache: 'pnpm' tries to
+      # detect it on PATH — otherwise setup-node fails with
+      # "Unable to locate executable file: pnpm".
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Check TypeScript
+        run: pnpm type-check
+
+      - name: Check Formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+  build:
+    name: Build Verification
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Build
+        run: pnpm build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
+          NEXT_PUBLIC_API_URL: https://api-dev.example.com
+
+  test:
+    name: Tests
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Run tests
+        run: pnpm test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}

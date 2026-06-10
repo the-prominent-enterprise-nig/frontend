@@ -1,0 +1,89 @@
+{
+  "logs": [
+    {
+      "id": 1,
+      "employee": "Juan Dela Cruz",
+      "date": "2026-03-21",
+      "startTime": "09:00 AM",
+      "endTime": "06:00 PM",
+      "totalHours": 9,
+      "status": "Present"
+    },
+    {
+      "id": 2,
+      "employee": "Maria Santos",
+      "date": "2026-03-21",
+      "startTime": "09:20 AM",
+      "endTime": "06:00 PM",
+      "totalHours": 8.67,
+      "status": "Late"
+    }
+  ],
+  "summary": [
+    {
+      "id": 1,
+      "employee": "Juan Dela Cruz",
+      "cutoffPeriod": "Mar 01 - Mar 15",
+      "totalTrackedHours": 120,
+      "totalDaysWorked": 15,
+      "totalAbsences": 0,
+      "totalTardiness": 1,
+      "totalOvertimeHours": 6,
+      "leaveDaysRecorded": 0,
+      "status": "Finalized"
+    }
+  ],
+  "shiftSchedules": [
+    {
+      "id": 1,
+      "shiftName": "Regular Shift",
+      "employee": "Juan Dela Cruz",
+      "expectedStart": "09:00 AM",
+      "expectedEnd": "06:00 PM",
+      "status": "Active"
+    }
+  ],
+  "correctionRequests": [
+    {
+      "id": 1,
+      "employee": "Maria Santos",
+      "date": "2026-03-21",
+      "originalStart": "09:20 AM",
+      "requestedStart": "09:00 AM",
+      "reason": "Incorrect time",
+      "status": "Pending"
+    }
+  ],
+  "overtimeRequests": [
+    {
+      "id": 1,
+      "employee": "Juan Dela Cruz",
+      "date": "2026-03-21",
+      "startTime": "06:00 PM",
+      "endTime": "08:00 PM",
+      "totalHours": 2,
+      "reason": "Deadline",
+      "status": "Approved"
+    }
+  ],
+  "statusTypes": [
+    {
+      "id": 1,
+      "statusName": "Present",
+      "statusCode": "PRESENT",
+      "category": "Working",
+      "payrollImpact": "Paid",
+      "isActive": true
+    }
+  ],
+  "adjustments": [
+    {
+      "id": 1,
+      "employee": "Maria Santos",
+      "adjustmentType": "Time Adjustment",
+      "adjustedValue": "+0.33",
+      "reason": "Approved correction",
+      "date": "2026-03-21"
+    }
+  ]
+}
