@@ -654,7 +654,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  let segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
+  const segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
 
   const resolvedSegment = resolveModuleSegment(segment, session)
 
