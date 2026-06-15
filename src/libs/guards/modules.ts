@@ -33,14 +33,15 @@ export const MODULES: AppModule[] = [
     requiredPermission: 'inventory:*',
     icon: 'package',
   },
-  {
-    key: 'procurement',
-    routeSegment: 'procurement',
-    label: 'Procurement',
-    href: '/procurement/suppliers',
-    requiredPermission: 'procurement:*',
-    icon: 'truck',
-  },
+  // Procurement module not yet implemented
+  // {
+  //   key: 'procurement',
+  //   routeSegment: 'procurement',
+  //   label: 'Procurement',
+  //   href: '/procurement/suppliers',
+  //   requiredPermission: 'procurement:*',
+  //   icon: 'truck',
+  // },
   {
     key: 'pos',
     routeSegment: 'pos',

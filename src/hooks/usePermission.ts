@@ -93,7 +93,12 @@ export function usePermission(session: SessionUser | null, permission: string): 
  */
 export function hasModuleAccess(session: SessionUser | null, moduleKey: string): boolean {
   if (!session) return false
-  if (session.primaryRole === 'enterprise-owner' || session.roles.includes('enterprise-owner'))
+  if (
+    session.primaryRole === 'enterprise-owner' ||
+    session.roles.includes('enterprise-owner') ||
+    session.primaryRole === 'branch-manager' ||
+    session.roles.includes('branch-manager')
+  )
     return true
 
   // Collect all role identifiers (primaryRole + roles[]), normalised to lowercase
