@@ -51,14 +51,6 @@ export const MODULES: AppModule[] = [
     icon: 'shopping-cart',
   },
   {
-    key: 'queue',
-    routeSegment: 'queue-management',
-    label: 'Queue',
-    href: '/queue-management',
-    requiredPermission: 'queue:*',
-    icon: 'bell',
-  },
-  {
     key: 'crm',
     routeSegment: 'crm',
     label: 'CRM',

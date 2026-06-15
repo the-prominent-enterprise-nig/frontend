@@ -62,7 +62,6 @@ const MODULE_LABELS: Record<string, string> = {
   pos: 'Point of Sale',
   crm: 'CRM',
   sales: 'Sales & Orders',
-  'queue-management': 'Queue Management',
   'project-management': 'Project Management',
 }
 

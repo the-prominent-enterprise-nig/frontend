@@ -25,7 +25,6 @@ export const ACCESS_MODULES: AccessModule[] = [
   { key: 'inventory', label: 'Inventory', permissionModules: ['inventory'] },
   { key: 'procurement', label: 'Procurement', permissionModules: ['procurement'] },
   { key: 'pos', label: 'Point of Sale', permissionModules: ['pos'] },
-  { key: 'queue', label: 'Queue', permissionModules: ['queue', 'queue-management'] },
   { key: 'crm', label: 'CRM', permissionModules: ['crm'] },
   { key: 'sales', label: 'Sales & Orders', permissionModules: ['sales'] },
   { key: 'files', label: 'Files', permissionModules: ['files'] },
