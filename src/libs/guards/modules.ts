@@ -33,14 +33,15 @@ export const MODULES: AppModule[] = [
     requiredPermission: 'inventory:*',
     icon: 'package',
   },
-  {
-    key: 'procurement',
-    routeSegment: 'procurement',
-    label: 'Procurement',
-    href: '/procurement/suppliers',
-    requiredPermission: 'procurement:*',
-    icon: 'truck',
-  },
+  // Procurement module not yet implemented
+  // {
+  //   key: 'procurement',
+  //   routeSegment: 'procurement',
+  //   label: 'Procurement',
+  //   href: '/procurement/suppliers',
+  //   requiredPermission: 'procurement:*',
+  //   icon: 'truck',
+  // },
   {
     key: 'pos',
     routeSegment: 'pos',
@@ -48,14 +49,6 @@ export const MODULES: AppModule[] = [
     href: '/pos',
     requiredPermission: 'pos:sessions:open',
     icon: 'shopping-cart',
-  },
-  {
-    key: 'queue',
-    routeSegment: 'queue-management',
-    label: 'Queue',
-    href: '/queue-management',
-    requiredPermission: 'queue:*',
-    icon: 'bell',
   },
   {
     key: 'crm',

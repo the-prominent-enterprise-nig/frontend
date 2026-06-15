@@ -62,11 +62,6 @@ const ALL_MODULES = [
   { code: 'crm', label: 'CRM', description: 'Customer relationship management' },
   { code: 'sales', label: 'Sales & Orders', description: 'Quotations and sales orders' },
   {
-    code: 'queue-management',
-    label: 'Queue Management',
-    description: 'Customer queue and ticketing',
-  },
-  {
     code: 'project-management',
     label: 'Project Management',
     description: 'Projects and task tracking',

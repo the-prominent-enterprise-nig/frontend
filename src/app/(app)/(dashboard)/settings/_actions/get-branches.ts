@@ -23,13 +23,15 @@ export interface BranchDetail {
 
 export async function getBranches(): Promise<ApiResponse<BranchDetail[]>> {
   try {
-    const result = await api.get<BranchDetail[]>('/enterprise/branches', undefined, {
-      tags: ['branches'],
-    })
+    const result = await api.get<{ data: BranchDetail[]; meta: { total: number } }>(
+      '/branches',
+      undefined,
+      { tags: ['branches'] }
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch branches' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.data }
   } catch (error) {
     return {
       success: false,

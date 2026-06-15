@@ -75,6 +75,7 @@ interface SessionUser {
   permissions: string[]
   primaryRole?: string
   moduleAccess?: string[]
+  branchId?: string | null
 }
 
 type NavConfig = {
@@ -593,6 +594,22 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
 ]
 
+function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
+  return [
+    { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
+    ...(branchId
+      ? [
+          {
+            section: 'My Workspace' as const,
+            label: 'My Branch',
+            href: `/settings/branches/${branchId}`,
+            icon: Warehouse,
+          },
+        ]
+      : []),
+  ]
+}
+
 const MODULE_SECTION_LABELS: Record<string, string> = {
   inventory: 'Inventory',
   accounting: 'Accounting',
@@ -603,6 +620,8 @@ const MODULE_SECTION_LABELS: Record<string, string> = {
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   switch (session?.primaryRole) {
     case 'enterprise-owner':
+      return 'enterprise-owner'
+    case 'branch-manager':
       return 'enterprise-owner'
     case 'accounting':
       return 'accounting'
@@ -663,8 +682,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     session?.roles.includes('enterprise-owner') ||
     false
 
+  const isBranchManager = session?.primaryRole === 'branch-manager'
+
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
   const moduleWithWorkspace = resolvedSegment !== 'enterprise-owner'
+
+  const bmWorkspaceItems = branchManagerWorkspaceItems(session?.branchId)
 
   let mainItems: NavItem[]
   if (isOwner) {
@@ -678,6 +701,17 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       )
       mainItems = [...OWNER_WORKSPACE_ITEMS, ...labeledModuleItems]
     }
+  } else if (isBranchManager) {
+    if (resolvedSegment === 'enterprise-owner') {
+      mainItems = bmWorkspaceItems
+    } else {
+      const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
+      const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
+      const labeledModuleItems = moduleItems.map((item, idx) =>
+        idx === 0 ? { ...item, section: moduleLabel } : item
+      )
+      mainItems = [...bmWorkspaceItems, ...labeledModuleItems]
+    }
   } else if (moduleWithWorkspace) {
     const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
     const labeledModuleItems = config.main.map((item, idx) =>
@@ -689,6 +723,8 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   }
 
   const filterItem = (item: NavItem) => {
+    // Branch managers see all module items — data is scoped server-side by their branchId
+    if (isBranchManager) return true
     if (item.requiredPermission && !hasPermission(session, item.requiredPermission)) return false
     return true
   }

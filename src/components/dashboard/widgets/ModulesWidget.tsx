@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Users, Calculator, Package, ExternalLink, Bell } from 'lucide-react'
+import { Users, Calculator, Package, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { QueueCategories, QueueStatsAPI } from '@/src/libs/data/QueueData'
 import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
 import { api } from '@/src/libs/api/client'
 
@@ -47,11 +46,6 @@ export default function ModulesWidget() {
     { label: 'Low Stock', value: '—' },
     { label: 'Value', value: '—' },
   ])
-  const [queueStats, setQueueStats] = useState<ModuleStat[]>([
-    { label: 'Queues', value: '—' },
-    { label: 'Now Serving', value: '—' },
-    { label: 'Waiting', value: '—' },
-  ])
   const [accountingStats, setAccountingStats] = useState<ModuleStat[]>([
     { label: 'Invoices', value: '—' },
     { label: 'Outstanding', value: '—' },
@@ -61,7 +55,7 @@ export default function ModulesWidget() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [employees, summary, items, cats, qStats, ar] = await Promise.all([
+      const [employees, summary, items, ar] = await Promise.all([
         api.get<{ meta?: { total?: number } }>('/employees', { limit: 1 }),
         api.get<{
           pending?: number
@@ -70,8 +64,6 @@ export default function ModulesWidget() {
           approvedRequests?: number
         }>('/leave-management/summary'),
         api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
-        QueueCategories.list(),
-        QueueStatsAPI.get(),
         ARInvoices.list(),
       ])
       if (cancelled) return
@@ -86,12 +78,6 @@ export default function ModulesWidget() {
         { label: 'Products', value: items.data?.meta?.total ?? 0 },
         { label: 'Low Stock', value: '—' },
         { label: 'Value', value: '—' },
-      ])
-
-      setQueueStats([
-        { label: 'Queues', value: cats.data?.length ?? 0 },
-        { label: 'Now Serving', value: qStats.data?.nowServing ?? 0 },
-        { label: 'Waiting', value: qStats.data?.waiting ?? 0 },
       ])
 
       const invoices = ar.data?.items ?? []
@@ -144,15 +130,6 @@ export default function ModulesWidget() {
       iconColor: 'text-amber-600',
       href: '/inventory',
       stats: inventoryStats,
-    },
-    {
-      label: 'Queue Management',
-      description: 'Service queues, tickets, and counters',
-      icon: Bell,
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-      href: '/queue-management',
-      stats: queueStats,
     },
   ]
 

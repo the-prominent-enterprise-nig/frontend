@@ -51,11 +51,6 @@ const ALL_MODULES = [
     description: 'Quotations, invoices, and order fulfilment.',
   },
   {
-    code: 'queue-management',
-    label: 'Queue Management',
-    description: 'Customer queuing and service tracking.',
-  },
-  {
     code: 'project-management',
     label: 'Project Management',
     description: 'Tasks, milestones, and team collaboration.',

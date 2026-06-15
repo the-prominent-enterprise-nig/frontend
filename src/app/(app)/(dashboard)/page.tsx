@@ -27,5 +27,10 @@ export default async function RootPage() {
     redirect('/human-resource/profile')
   }
 
+  // Branch managers land on the main dashboard (same as owner)
+  if (session.primaryRole === 'branch-manager') {
+    redirect('/dashboard')
+  }
+
   redirect('/403')
 }
