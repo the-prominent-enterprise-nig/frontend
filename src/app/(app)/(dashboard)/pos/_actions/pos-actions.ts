@@ -1028,13 +1028,18 @@ export interface Branch {
 
 export async function getBranches(): Promise<ApiResponse<Branch[]>> {
   try {
-    const result = await api.get<{ branches: Branch[] }>('/employees/org-relations', undefined, {
-      tags: ['org-relations'],
-    })
+    const result = await api.get<{ data: Branch[] } | Branch[]>(
+      '/branches',
+      { limit: '200' },
+      {
+        tags: ['branches'],
+      }
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch branches' }
     }
-    return { success: true, data: result.data.branches }
+    const branches = Array.isArray(result.data) ? result.data : result.data.data
+    return { success: true, data: branches }
   } catch {
     return { success: false, error: 'Failed to fetch branches' }
   }
