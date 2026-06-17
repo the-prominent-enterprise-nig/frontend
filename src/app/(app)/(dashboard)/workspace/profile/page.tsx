@@ -12,7 +12,7 @@ export default async function WorkspaceProfilePage() {
 
   if (!session) redirect('/login')
 
-  if (session.primaryRole === 'enterprise-owner' || session.roles.includes('enterprise-owner')) {
+  if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')) {
     return <OwnerProfileView session={session} />
   }
 

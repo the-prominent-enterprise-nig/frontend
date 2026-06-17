@@ -50,7 +50,7 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const hasAdminSettings = hasPermission(session, 'admin:roles:manage')
-  const showAdminDropdown = hasAdminSettings && session?.primaryRole !== 'enterprise-owner'
+  const showAdminDropdown = hasAdminSettings && session?.primaryRole !== 'Business Owner'
   const displayName = session?.firstName || session?.fullName || session?.email || 'User'
   const initials =
     displayName
