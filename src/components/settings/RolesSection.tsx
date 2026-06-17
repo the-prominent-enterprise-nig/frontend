@@ -15,6 +15,16 @@ import {
   type AccessLevel,
 } from './access-levels'
 
+// Default roles — cannot be deleted
+const PROTECTED_ROLE_NAMES = new Set([
+  'Business Owner',
+  'branch-manager',
+  'Accountant',
+  'Stock Controller',
+  'Cashier',
+  'Marketing Manager',
+])
+
 type OpenMenu = string | null
 
 type RolesSectionProps = {
@@ -155,6 +165,7 @@ export default function RolesSection({
                     moduleConfig,
                     level: getAccessLevelForRole(role, moduleConfig),
                   })).filter((item) => item.level !== 'none')
+                  const isProtected = PROTECTED_ROLE_NAMES.has(role.name)
                   return (
                     <tr key={role.id} className="border-t border-zinc-100 hover:bg-zinc-50">
                       <td className="px-4 py-3 font-medium text-zinc-900">{role.name}</td>
@@ -232,14 +243,16 @@ export default function RolesSection({
                                   <Pencil className="h-4 w-4 text-zinc-500" />
                                   {role.isActive ? 'Deactivate' : 'Activate'}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(role.id)}
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete
-                                </button>
+                                {!isProtected && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(role.id)}
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                  </button>
+                                )}
                               </div>
                             </>
                           )}

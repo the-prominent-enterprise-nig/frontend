@@ -54,7 +54,7 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
  */
 export function hasPermission(session: SessionUser | null, permission: string): boolean {
   if (!session) return false
-  if (session.primaryRole === 'enterprise-owner' || session.roles.includes('enterprise-owner')) {
+  if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner')) {
     return true
   }
   return session.permissions.some((p) => matchesPermission(p, permission))
@@ -94,8 +94,8 @@ export function usePermission(session: SessionUser | null, permission: string): 
 export function hasModuleAccess(session: SessionUser | null, moduleKey: string): boolean {
   if (!session) return false
   if (
-    session.primaryRole === 'enterprise-owner' ||
-    session.roles.includes('enterprise-owner') ||
+    session.primaryRole === 'Business Owner' ||
+    session.roles.includes('Business Owner') ||
     session.primaryRole === 'branch-manager' ||
     session.roles.includes('branch-manager')
   )

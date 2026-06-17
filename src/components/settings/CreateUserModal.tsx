@@ -23,11 +23,15 @@ function genEmployeeCode() {
 }
 
 const Step1Schema = z.object({
-  firstName: z.string().min(1, 'First name is required').max(60),
-  lastName: z.string().min(1, 'Last name is required').max(60),
-  middleName: z.string().max(60).optional(),
+  firstName: z.string().min(1, 'First name is required').max(60, 'Max 60 characters'),
+  lastName: z.string().min(1, 'Last name is required').max(60, 'Max 60 characters'),
+  middleName: z.string().max(60, 'Max 60 characters').optional(),
   dateOfBirth: z.string().min(1, 'Date of birth is required'),
-  email: z.string().min(1, 'Email is required').email('Must be a valid email'),
+  email: z
+    .string()
+    .min(1, 'Email is required')
+    .email('Must be a valid email')
+    .max(254, 'Max 254 characters'),
   contactNumber: z
     .string()
     .min(1, 'Contact number is required')
@@ -64,8 +68,6 @@ export default function CreateUserModal({
   const [step, setStep] = useState(0)
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [orgRelations, setOrgRelations] = useState<OrgRelations>({
-    departments: [],
-    positions: [],
     branches: [],
   })
 
@@ -118,16 +120,14 @@ export default function CreateUserModal({
 
   const onSubmit = async (data: FormData) => {
     const result = await createEmployee({
-      employeeCode: genEmployeeCode(),
       firstName: data.firstName,
       lastName: data.lastName,
       middleName: data.middleName || undefined,
       email: data.email,
-      contactNumber: data.contactNumber,
-      dateOfBirth: data.dateOfBirth,
-      maritalStatus: data.maritalStatus,
-      hireDate: data.hireDate,
-      status: 'active',
+      contactNumber: data.contactNumber || undefined,
+      dateOfBirth: data.dateOfBirth || undefined,
+      maritalStatus: data.maritalStatus || undefined,
+      hireDate: data.hireDate || undefined,
       branchId: data.branchId || undefined,
       roleIds: data.roleIds,
     })
@@ -224,6 +224,7 @@ export default function CreateUserModal({
                         {...field}
                         type="text"
                         placeholder="Juan"
+                        maxLength={60}
                         className={inputClass(!!errors.firstName)}
                       />
                     )}
@@ -244,6 +245,7 @@ export default function CreateUserModal({
                         {...field}
                         type="text"
                         placeholder="Dela Cruz"
+                        maxLength={60}
                         className={inputClass(!!errors.lastName)}
                       />
                     )}
@@ -267,6 +269,7 @@ export default function CreateUserModal({
                         {...field}
                         type="text"
                         placeholder="Optional"
+                        maxLength={60}
                         className={inputClass()}
                       />
                     )}
@@ -301,6 +304,7 @@ export default function CreateUserModal({
                       {...field}
                       type="email"
                       placeholder="user@example.com"
+                      maxLength={254}
                       className={inputClass(!!errors.email)}
                     />
                   )}

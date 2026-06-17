@@ -40,7 +40,6 @@ export async function createUser(input: unknown): Promise<ApiResponse<CreateUser
     // Revalidate users and employee masterlist caches. User creation now
     // creates/links an Employee profile server-side.
     revalidatePath('/settings/users')
-    revalidatePath('/human-resource/employees')
     revalidateTag('users', 'max')
     revalidateTag('employees', 'max')
 
