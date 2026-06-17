@@ -86,7 +86,6 @@ type NavConfig = {
 
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
-  'Business Owner': {
     main: [
       { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ],
@@ -351,13 +350,15 @@ function NavLink({
       <Link
         href={item.href}
         onClick={onClick}
-        className={`flex items-center gap-2.5 rounded-lg transition-all duration-150 ${collapsed ? 'justify-center px-1.5 py-1.5' : 'px-2 py-1.5'
-          } ${isActive
+        className={`flex items-center gap-2.5 rounded-lg transition-all duration-150 ${
+          collapsed ? 'justify-center px-1.5 py-1.5' : 'px-2 py-1.5'
+        } ${
+          isActive
             ? 'bg-prominent-orange-200/20'
             : isMobile
               ? 'hover:bg-gray-100'
               : 'hover:bg-gray-100/20'
-          }`}
+        }`}
       >
         {/* Icon */}
         <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg`}>
@@ -423,8 +424,9 @@ function AdminSettingsDropdownItem({
     <div className="relative group/dropdown">
       {/* Trigger — not a link, just a visual row */}
       <div
-        className={`flex cursor-default items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${collapsed ? 'justify-center' : ''
-          } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : 'hover:bg-gray-100/20'}`}
+        className={`flex cursor-default items-center gap-2.5 rounded-lg px-2 py-1.5 transition-all duration-150 ${
+          collapsed ? 'justify-center' : ''
+        } ${isActive ? 'bg-prominent-orange-200/20' : isMobile ? 'hover:bg-gray-100' : 'hover:bg-gray-100/20'}`}
       >
         <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
           <item.icon
@@ -451,8 +453,9 @@ function AdminSettingsDropdownItem({
 
       {/* Flyout — upward on desktop, right when collapsed */}
       <div
-        className={`pointer-events-none absolute z-50 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100 ${collapsed ? 'left-full top-0 min-w-45 pl-3' : 'bottom-full left-0 w-full pb-2'
-          }`}
+        className={`pointer-events-none absolute z-50 opacity-0 transition-all duration-150 group-hover/dropdown:pointer-events-auto group-hover/dropdown:opacity-100 ${
+          collapsed ? 'left-full top-0 min-w-45 pl-3' : 'bottom-full left-0 w-full pb-2'
+        }`}
       >
         <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
           <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -465,10 +468,11 @@ function AdminSettingsDropdownItem({
                 key={sub.href}
                 href={sub.href}
                 onClick={onClick}
-                className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${subActive
+                className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors ${
+                  subActive
                     ? 'bg-prominent-orange-50 text-prominent-orange-700'
                     : 'text-zinc-700 hover:bg-zinc-50'
-                  }`}
+                }`}
               >
                 <sub.icon className="h-4 w-4 shrink-0" />
                 {sub.label}
@@ -523,8 +527,9 @@ function NavItems({
         <div key={item.href}>
           {showSection && (
             <p
-              className={`px-2 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider ${isMobile ? 'text-zinc-400' : 'text-white/45'
-                }`}
+              className={`px-2 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider ${
+                isMobile ? 'text-zinc-400' : 'text-white/45'
+              }`}
             >
               {item.section}
             </p>
@@ -594,13 +599,13 @@ function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
     { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ...(branchId
       ? [
-        {
-          section: 'My Workspace' as const,
-          label: 'My Branch',
-          href: `/settings/branches/${branchId}`,
-          icon: Warehouse,
-        },
-      ]
+          {
+            section: 'My Workspace' as const,
+            label: 'My Branch',
+            href: `/settings/branches/${branchId}`,
+            icon: Warehouse,
+          },
+        ]
       : []),
   ]
 }
@@ -674,19 +679,16 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   const isOwner =
     session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
-    session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
 
   const isBranchManager = session?.primaryRole === 'branch-manager'
 
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
-  const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
   const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
 
   const bmWorkspaceItems = branchManagerWorkspaceItems(session?.branchId)
 
   let mainItems: NavItem[]
   if (isOwner) {
-    if (resolvedSegment === 'Business Owner') {
     if (resolvedSegment === 'Business Owner') {
       mainItems = OWNER_WORKSPACE_ITEMS
     } else {
@@ -734,8 +736,9 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     <>
       {/* Desktop sidebar */}
       <aside
-        className={`relative prominent-gradient hidden h-full flex-col pt-0 pb-4 px-2 transition-all duration-200 md:flex ${collapsed ? 'w-14' : 'w-64'
-          }`}
+        className={`relative prominent-gradient hidden h-full flex-col pt-0 pb-4 px-2 transition-all duration-200 md:flex ${
+          collapsed ? 'w-14' : 'w-64'
+        }`}
       >
         {/* Floating collapse/expand button — edge of sidebar */}
         <Button
@@ -765,8 +768,9 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
           return (
             <Link key={item.href} href={item.href} className="flex flex-col items-center gap-0.5">
               <span
-                className={`flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all ${isActive ? 'bg-prominent-orange-200/30' : 'bg-white/10'
-                  }`}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl text-base transition-all ${
+                  isActive ? 'bg-prominent-orange-200/30' : 'bg-white/10'
+                }`}
               >
                 <item.icon className="h-4 w-4 text-white" />
               </span>
