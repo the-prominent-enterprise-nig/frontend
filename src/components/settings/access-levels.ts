@@ -16,18 +16,10 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
 }
 
 export const ACCESS_MODULES: AccessModule[] = [
-  {
-    key: 'hr',
-    label: 'HR & Payroll',
-    permissionModules: ['hr', 'employees', 'attendance', 'leave', 'payroll', 'payslips'],
-  },
   { key: 'accounting', label: 'Accounting', permissionModules: ['accounting'] },
   { key: 'inventory', label: 'Inventory', permissionModules: ['inventory'] },
-  { key: 'procurement', label: 'Procurement', permissionModules: ['procurement'] },
   { key: 'pos', label: 'Point of Sale', permissionModules: ['pos'] },
   { key: 'crm', label: 'CRM', permissionModules: ['crm'] },
-  { key: 'sales', label: 'Sales & Orders', permissionModules: ['sales'] },
-  { key: 'files', label: 'Files', permissionModules: ['files'] },
 ]
 
 const READ_ACTIONS = new Set([

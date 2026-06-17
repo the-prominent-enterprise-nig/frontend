@@ -64,8 +64,6 @@ export default function CreateUserModal({
   const [step, setStep] = useState(0)
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [orgRelations, setOrgRelations] = useState<OrgRelations>({
-    departments: [],
-    positions: [],
     branches: [],
   })
 
@@ -118,16 +116,14 @@ export default function CreateUserModal({
 
   const onSubmit = async (data: FormData) => {
     const result = await createEmployee({
-      employeeCode: genEmployeeCode(),
       firstName: data.firstName,
       lastName: data.lastName,
       middleName: data.middleName || undefined,
       email: data.email,
-      contactNumber: data.contactNumber,
-      dateOfBirth: data.dateOfBirth,
-      maritalStatus: data.maritalStatus,
-      hireDate: data.hireDate,
-      status: 'active',
+      contactNumber: data.contactNumber || undefined,
+      dateOfBirth: data.dateOfBirth || undefined,
+      maritalStatus: data.maritalStatus || undefined,
+      hireDate: data.hireDate || undefined,
       branchId: data.branchId || undefined,
       roleIds: data.roleIds,
     })
