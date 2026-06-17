@@ -85,7 +85,7 @@ type NavConfig = {
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
-  'enterprise-owner': {
+  'Business Owner': {
     main: [
       { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ],
@@ -619,24 +619,24 @@ const MODULE_SECTION_LABELS: Record<string, string> = {
 
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   switch (session?.primaryRole) {
-    case 'enterprise-owner':
-      return 'enterprise-owner'
+    case 'Business Owner':
+      return 'Business Owner'
     case 'branch-manager':
-      return 'enterprise-owner'
-    case 'accounting':
+      return 'Business Owner'
+    case 'Accountant':
       return 'accounting'
-    case 'inventory':
+    case 'Stock Controller':
       return 'inventory'
-    case 'pos':
+    case 'Cashier':
       return 'pos'
-    case 'crm':
+    case 'Marketing Manager':
       return 'crm'
     default:
       break
   }
 
-  if (session?.roles.includes('enterprise-owner')) return 'enterprise-owner'
-  if (session?.roles.includes('cashier') || session?.roles.includes('pos-manager')) return 'pos'
+  if (session?.roles.includes('Business Owner')) return 'Business Owner'
+  if (session?.roles.includes('Cashier')) return 'pos'
   if (session?.permissions.some((p) => p.startsWith('inventory:'))) return 'inventory'
   if (session?.permissions.some((p) => p.startsWith('accounting:'))) return 'accounting'
   if (session?.permissions.some((p) => p.startsWith('pos:'))) return 'pos'
@@ -678,20 +678,18 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const resolvedSegment = resolveModuleSegment(segment, session)
 
   const isOwner =
-    session?.primaryRole === 'enterprise-owner' ||
-    session?.roles.includes('enterprise-owner') ||
-    false
+    session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
 
   const isBranchManager = session?.primaryRole === 'branch-manager'
 
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
-  const moduleWithWorkspace = resolvedSegment !== 'enterprise-owner'
+  const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
 
   const bmWorkspaceItems = branchManagerWorkspaceItems(session?.branchId)
 
   let mainItems: NavItem[]
   if (isOwner) {
-    if (resolvedSegment === 'enterprise-owner') {
+    if (resolvedSegment === 'Business Owner') {
       mainItems = OWNER_WORKSPACE_ITEMS
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment

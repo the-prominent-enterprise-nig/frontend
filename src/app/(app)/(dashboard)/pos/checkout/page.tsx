@@ -26,7 +26,6 @@ import {
   Users,
 } from 'lucide-react'
 import { computePricingTotals } from './_utils/calculations'
-import { updateTableStatus } from '../../queue-management/_actions/qms-actions'
 import { useSessions } from '../_hooks/usePos'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
@@ -902,9 +901,7 @@ export default function CheckoutPage() {
         }
       }
 
-      // If this sale came from a QMS restaurant tab, free the table
       if (fromTab) {
-        await Promise.allSettled([updateTableStatus(fromTab.tableId, 'needs_bussing')])
         localStorage.removeItem(POS_FROM_TAB_KEY)
       }
 

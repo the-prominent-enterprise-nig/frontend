@@ -5,34 +5,9 @@ import { toast } from 'sonner'
 
 const ALL_MODULES = [
   {
-    code: 'hr',
-    label: 'HR & Payroll',
-    description: 'Employee records, org structure, and payroll processing.',
-  },
-  {
-    code: 'attendance',
-    label: 'Attendance & Time',
-    description: 'Clock-in/out, timesheets, and scheduling.',
-  },
-  {
-    code: 'leave',
-    label: 'Leave Management',
-    description: 'Leave requests, approvals, and balances.',
-  },
-  {
-    code: 'payroll',
-    label: 'Payroll',
-    description: 'Payslip generation, deductions, and contributions.',
-  },
-  {
     code: 'accounting',
     label: 'Accounting',
     description: 'Journal entries, ledger, and financial reports.',
-  },
-  {
-    code: 'procurement',
-    label: 'Procurement',
-    description: 'Purchase orders, vendors, and requisitions.',
   },
   {
     code: 'inventory',
@@ -45,16 +20,6 @@ const ALL_MODULES = [
     description: 'Sales transactions, receipts, and cashiering.',
   },
   { code: 'crm', label: 'CRM', description: 'Customer profiles, leads, and follow-ups.' },
-  {
-    code: 'sales',
-    label: 'Sales & Orders',
-    description: 'Quotations, invoices, and order fulfilment.',
-  },
-  {
-    code: 'project-management',
-    label: 'Project Management',
-    description: 'Tasks, milestones, and team collaboration.',
-  },
 ]
 
 interface Props {
