@@ -37,6 +37,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/password': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Change own password while logged in */
+    patch: operations['AuthController_changePassword']
+    trace?: never
+  }
+  '/auth/password/reset': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Request a password reset email */
+    post: operations['AuthController_requestPasswordReset']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/invite/{token}': {
     parameters: {
       query?: never
@@ -225,64 +259,21 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/employees': {
+  '/audit-logs': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /**
-     * List all employees
-     * @description Supports filtering by status, department, branch, and a search query across name, email, and employee code. Results are paginated.
-     */
-    get: operations['EmployeeController_findAll']
-    put?: never
-    /** Create a new employee */
-    post: operations['EmployeeController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/employees/org-relations': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /**
-     * Get org relations
-     * @description Returns active departments, positions, and branches for this enterprise.
-     */
-    get: operations['EmployeeController_getOrgRelations']
+    /** List audit logs for the current tenant (Admin / Super Admin only) */
+    get: operations['AuditLogController_findAll']
     put?: never
     post?: never
     delete?: never
     options?: never
     head?: never
     patch?: never
-    trace?: never
-  }
-  '/employees/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single employee by ID */
-    get: operations['EmployeeController_findOne']
-    put?: never
-    post?: never
-    /** Delete an employee */
-    delete: operations['EmployeeController_remove']
-    options?: never
-    head?: never
-    /** Update an employee — all fields are optional */
-    patch: operations['EmployeeController_update']
     trace?: never
   }
   '/roles': {
@@ -379,657 +370,6 @@ export interface paths {
     options?: never
     head?: never
     patch: operations['PermissionsController_update']
-    trace?: never
-  }
-  '/attendance/status-types': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getStatusTypes']
-    put?: never
-    post: operations['AttendanceController_createStatusType']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/status-types/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete: operations['AttendanceController_deleteStatusType']
-    options?: never
-    head?: never
-    patch: operations['AttendanceController_updateStatusType']
-    trace?: never
-  }
-  '/attendance/status-types/{id}/deactivate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['AttendanceController_deactivateStatusType']
-    trace?: never
-  }
-  '/attendance/status-types/{id}/activate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['AttendanceController_activateStatusType']
-    trace?: never
-  }
-  '/attendance/adjustment-records': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getAdjustmentRecords']
-    put?: never
-    post: operations['AttendanceController_createAdjustmentRecord']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/overtime-requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getOvertimeRequests']
-    put?: never
-    post: operations['AttendanceController_createOvertimeRequest']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/overtime-requests/{id}/status': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_updateOvertimeRequestStatus']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/logs': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getAttendanceLogs']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/shift-schedules': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getShiftSchedules']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/correction-requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getCorrectionRequests']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/summary': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getAttendanceSummary']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-log/active': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getActiveTimer']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-logs': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getMyTimeLogs']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-log/start': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_startTimer']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-log/pause': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_pauseTimer']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-log/resume': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_resumeTimer']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/my-time-log/stop': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_stopTimer']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/time-logs': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getAllTimeLogs']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/attendance/settings': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['AttendanceController_getAttendanceSettings']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['AttendanceController_updateAttendanceCutoff']
-    trace?: never
-  }
-  '/attendance/process': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['AttendanceController_processAttendance']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/types': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getLeaveTypes']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/calculate-days': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_calculateDays']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/requests/archived': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getArchivedRequests']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getLeaveRequests']
-    put?: never
-    post: operations['LeaveManagementController_createLeaveRequest']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/requests/{id}/approve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['LeaveManagementController_approveLeaveRequest']
-    trace?: never
-  }
-  '/leave-management/requests/{id}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['LeaveManagementController_rejectLeaveRequest']
-    trace?: never
-  }
-  '/leave-management/requests/{id}/reverse': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['LeaveManagementController_reverseLeaveRequest']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/summary': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getMonthlySummary']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/personal/balances': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getPersonalBalances']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/personal/requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['LeaveManagementController_getPersonalRequests']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/leave-management/adjustments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['LeaveManagementController_createLeaveAdjustment']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/periods': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get all payroll periods */
-    get: operations['PayrollController_findAll']
-    put?: never
-    /** Create a new payroll period */
-    post: operations['PayrollController_createPeriod']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/payslips': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Generate payslips for a payroll period */
-    post: operations['PayrollController_generatePayslips']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/periods/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single payroll period with payslips */
-    get: operations['PayrollController_findOne']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Update payroll period totals or status */
-    patch: operations['PayrollController_updatePeriod']
-    trace?: never
-  }
-  '/payroll/periods/{id}/payslips': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /** Delete all payslips for a period (used in re-edit) */
-    delete: operations['PayrollController_deletePayslips']
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/payslips/release': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    /** Release payslips (make visible) by cycle dates */
-    put: operations['PayrollController_releasePayslips']
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/approval-steps/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Approve a payroll step */
-    patch: operations['PayrollController_approveStep']
-    trace?: never
-  }
-  '/payroll/periods/{id}/reset-approval': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Reset approval steps for a period back to DRAFT */
-    patch: operations['PayrollController_resetApproval']
-    trace?: never
-  }
-  '/payroll/periods/{id}/audit': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get audit trail for a payroll period */
-    get: operations['PayrollController_getAuditTrail']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payroll/periods/{id}/hide': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Hide a payroll period (soft archive) */
-    patch: operations['PayrollController_hidePeriod']
     trace?: never
   }
   '/pos/terminals': {
@@ -1985,6 +1325,77 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/menu-items': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all active POS menu items */
+    get: operations['PosMenuItemsController_findAll']
+    put?: never
+    /** Create a new POS menu item */
+    post: operations['PosMenuItemsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/menu-items/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Delete a POS menu item */
+    delete: operations['PosMenuItemsController_remove']
+    options?: never
+    head?: never
+    /** Update a POS menu item */
+    patch: operations['PosMenuItemsController_update']
+    trace?: never
+  }
+  '/pos/menu-items/{id}/ingredients': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List ingredients for a menu item */
+    get: operations['PosMenuItemsController_getIngredients']
+    put?: never
+    /** Add an ingredient to a menu item */
+    post: operations['PosMenuItemsController_addIngredient']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/menu-items/{id}/ingredients/{ingredientId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove an ingredient from a menu item */
+    delete: operations['PosMenuItemsController_removeIngredient']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/images/bulk-import': {
     parameters: {
       query?: never
@@ -2170,6 +1581,23 @@ export interface paths {
     /** Add a component item to a bundle (item must have isBundle=true) */
     post: operations['ItemsController_addBundleComponent']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/bundle-components/{componentId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a component from a bundle */
+    delete: operations['ItemsController_removeBundleComponent']
     options?: never
     head?: never
     patch?: never
@@ -3720,88 +3148,17 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/payslips': {
+  '/accounting/tax-rates/{id}/unset-default': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** Get all payslips with optional filters */
-    get: operations['PayslipController_findAll']
+    get?: never
     put?: never
-    /** Create a single payslip */
-    post: operations['PayslipController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payslips/employee/{employeeId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get all payslips for a specific employee */
-    get: operations['PayslipController_findByEmployee']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payslips/me': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get own payslips (self-service, no admin permission needed) */
-    get: operations['PayslipController_findMine']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/payslips/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single payslip by ID */
-    get: operations['PayslipController_findOne']
-    put?: never
-    post?: never
-    /** Delete a payslip */
-    delete: operations['PayslipController_remove']
-    options?: never
-    head?: never
-    /** Update a payslip */
-    patch: operations['PayslipController_update']
-    trace?: never
-  }
-  '/payslips/{id}/download': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Download a payslip as PDF */
-    get: operations['PayslipController_download']
-    put?: never
-    post?: never
+    /** Remove this rate as the business default */
+    post: operations['TaxRatesController_unsetDefault']
     delete?: never
     options?: never
     head?: never
@@ -5123,397 +4480,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/procurement/purchase-requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List purchase requests (paginated, filterable) */
-    get: operations['PurchaseRequestController_findAll']
-    put?: never
-    /** Create a purchase request with line items */
-    post: operations['PurchaseRequestController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-requests/sweep-reorder': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Sweep all ReorderRules with autoCreatePr=true; auto-create PRs for items at or below reorder point (INV-07 + PRO-02) */
-    post: operations['PurchaseRequestController_sweepReorder']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-requests/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a purchase request (with lines) */
-    get: operations['PurchaseRequestController_findOne']
-    put?: never
-    post?: never
-    /** Cancel a purchase request (only non-terminal statuses) */
-    delete: operations['PurchaseRequestController_cancel']
-    options?: never
-    head?: never
-    /** Update PR header fields (status excluded) */
-    patch: operations['PurchaseRequestController_update']
-    trace?: never
-  }
-  '/procurement/purchase-requests/{id}/approve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Approve a submitted purchase request */
-    post: operations['PurchaseRequestController_approve']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-requests/{id}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Reject a submitted purchase request */
-    post: operations['PurchaseRequestController_reject']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-orders': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List purchase orders */
-    get: operations['PurchaseOrderController_findAll']
-    put?: never
-    /** Create a purchase order with line items */
-    post: operations['PurchaseOrderController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-orders/convert-from-pr': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Convert an approved purchase request into a PO */
-    post: operations['PurchaseOrderController_convertFromPr']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-orders/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a purchase order (with lines) */
-    get: operations['PurchaseOrderController_findOne']
-    put?: never
-    post?: never
-    /** Cancel a PO */
-    delete: operations['PurchaseOrderController_cancel']
-    options?: never
-    head?: never
-    /** Update PO header fields */
-    patch: operations['PurchaseOrderController_update']
-    trace?: never
-  }
-  '/procurement/purchase-orders/{id}/send': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Mark PO as sent to supplier */
-    post: operations['PurchaseOrderController_send']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-orders/{id}/close': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Close a PO */
-    post: operations['PurchaseOrderController_close']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/goods-receipts': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List goods receipts */
-    get: operations['GoodsReceiptController_findAll']
-    put?: never
-    /** Receive goods against a PO. Updates stock ledger and balance atomically. */
-    post: operations['GoodsReceiptController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/goods-receipts/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a goods receipt (with lines) */
-    get: operations['GoodsReceiptController_findOne']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/categories': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List queue categories (optionally scoped to branch) */
-    get: operations['QueueManagementController_findAllCategories']
-    put?: never
-    post: operations['QueueManagementController_createCategory']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/categories/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['QueueManagementController_findCategory']
-    put?: never
-    post?: never
-    delete: operations['QueueManagementController_removeCategory']
-    options?: never
-    head?: never
-    patch: operations['QueueManagementController_updateCategory']
-    trace?: never
-  }
-  '/queue-management/categories/{id}/tickets': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['QueueManagementController_listTickets']
-    put?: never
-    /** Issue one or more tickets for a queue */
-    post: operations['QueueManagementController_issueTickets']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/categories/{id}/next': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Call the next waiting ticket */
-    post: operations['QueueManagementController_callNext']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/categories/{id}/prev': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['QueueManagementController_callPrev']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/tickets/{ticketId}/serve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['QueueManagementController_markServed']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/tickets/{ticketId}/cancel': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['QueueManagementController_cancelTicket']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/tickets/{ticketId}/attach-sales': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Attach sales order / POS transaction id to a ticket (QMS-05, QMS-09) */
-    patch: operations['QueueManagementController_attachSales']
-    trace?: never
-  }
-  '/queue-management/categories/{id}/reset': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['QueueManagementController_resetQueue']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/stats': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['QueueManagementController_getStats']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/queue-management/reports/hourly': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['QueueManagementController_hourlyReport']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/crm/pipeline-stages': {
     parameters: {
       query?: never
@@ -5889,14 +4855,33 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/sales/summary': {
+  '/branches': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    get: operations['SalesController_getSummary']
+    /** List all branches for the enterprise */
+    get: operations['BranchesController_findAll']
+    put?: never
+    /** Create a new branch */
+    post: operations['BranchesController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/branches/{id}/summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get branch dashboard summary */
+    get: operations['BranchesController_getSummary']
     put?: never
     post?: never
     delete?: never
@@ -5905,39 +4890,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/sales/quotations': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['SalesController_listQuotations']
-    put?: never
-    post: operations['SalesController_createQuotation']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/sales/quotations/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['SalesController_getQuotation']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch: operations['SalesController_updateQuotation']
-    trace?: never
-  }
-  '/sales/quotations/{id}/convert-to-order': {
+  '/branches/{id}/managers': {
     parameters: {
       query?: never
       header?: never
@@ -5946,43 +4899,47 @@ export interface paths {
     }
     get?: never
     put?: never
-    post: operations['SalesController_convertToOrder']
+    /** Add a branch manager */
+    post: operations['BranchesController_addManager']
     delete?: never
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/sales/orders': {
+  '/branches/{id}/managers/{userId}': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    get: operations['SalesController_listOrders']
+    get?: never
     put?: never
-    post: operations['SalesController_createOrder']
-    delete?: never
+    post?: never
+    /** Remove a branch manager */
+    delete: operations['BranchesController_removeManager']
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/sales/orders/{id}': {
+  '/branches/{id}': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    get: operations['SalesController_getOrder']
+    /** Get branch detail */
+    get: operations['BranchesController_findOne']
     put?: never
     post?: never
     delete?: never
     options?: never
     head?: never
-    patch: operations['SalesController_updateOrder']
+    /** Update branch details */
+    patch: operations['BranchesController_update']
     trace?: never
   }
   '/enterprise/branches': {
@@ -6015,63 +4972,6 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
-    trace?: never
-  }
-  '/holidays': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List holidays for the current enterprise */
-    get: operations['HolidayController_findAll']
-    put?: never
-    /** Create a holiday */
-    post: operations['HolidayController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/holidays/apply-template/philippines': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /**
-     * Apply Philippine national holiday template
-     * @description Creates PH public holidays for the given year (default: current year). Skips holidays that already exist. Supports years 2025–2027.
-     */
-    post: operations['HolidayController_applyPhilippineTemplate']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/holidays/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single holiday */
-    get: operations['HolidayController_findOne']
-    put?: never
-    post?: never
-    /** Delete a holiday */
-    delete: operations['HolidayController_remove']
-    options?: never
-    head?: never
-    /** Update a holiday */
-    patch: operations['HolidayController_update']
     trace?: never
   }
   '/super-admin/dashboard': {
@@ -6461,6 +5361,16 @@ export interface components {
       access_token: string
       user: components['schemas']['LoginUserDto']
     }
+    ChangePasswordDto: {
+      /** @example CurrentPass@123 */
+      currentPassword: string
+      /** @example NewPass@456 */
+      newPassword: string
+    }
+    ResetPasswordDto: {
+      /** @example employee@tpe-nig.com */
+      email: string
+    }
     ClaimInviteDto: Record<string, never>
     EmployeeSummaryDto: {
       /** @example uuid */
@@ -6644,291 +5554,6 @@ export interface components {
       /** @description Branch UUID to assign to user */
       branchId: string
     }
-    CreateEmployeeDto: {
-      /** @example EMP-0001 */
-      employeeCode: string
-      /** @example Juan */
-      firstName: string
-      /** @example Dela Cruz */
-      lastName: string
-      /** @example Reyes */
-      middleName?: string
-      /** @example juan.delacruz@company.com */
-      email?: string
-      /** @example 09171234567 */
-      contactNumber?: string
-      /** @example 1990-01-15 */
-      dateOfBirth?: string
-      /** @example 2021-03-01 */
-      hireDate?: string
-      /**
-       * @default active
-       * @enum {string}
-       */
-      status: 'active' | 'inactive' | 'resigned' | 'terminated'
-      /** @example O+ */
-      bloodType?: string
-      /**
-       * @default Single
-       * @enum {string}
-       */
-      maritalStatus: 'Single' | 'Married' | 'Widowed' | 'Separated'
-      /** @example Visual Impairment */
-      pwdType?: string
-      /**
-       * @default false
-       * @example false
-       */
-      isStudent: boolean
-      /**
-       * @default 0
-       * @example 1000
-       */
-      allowance: number
-      /**
-       * @default First Cycle
-       * @example First Cycle
-       */
-      allowancePayoutCycle: string
-      /**
-       * @default 0
-       * @example 0
-       */
-      loan: number
-      /**
-       * @default 0
-       * @example 0
-       */
-      loanDeduction: number
-      /**
-       * @default 0
-       * @example 0
-       */
-      silc: number
-      /** @description UUID of the department */
-      departmentId?: string
-      /** @description UUID of the position */
-      positionId?: string
-      /** @description UUID of the branch */
-      branchId?: string
-      /** @description Role IDs to assign when provisioning a system user for this employee */
-      roleIds?: string[]
-    }
-    DepartmentRefDto: {
-      id: string
-      /** @example Engineering */
-      name: string
-    }
-    PositionRefDto: {
-      id: string
-      /** @example Software Engineer */
-      title: string
-    }
-    BranchRefDto: {
-      id: string
-      /** @example Cebu Main */
-      name: string
-    }
-    GovernmentIDRefDto: {
-      id: string
-      /** @enum {string} */
-      type: 'SSS' | 'PhilHealth' | 'PagIbig' | 'TIN'
-      /** @example 1234567890 */
-      number: string
-      isActive: boolean
-    }
-    BankAccountRefDto: {
-      id: string
-      /** @example BDO */
-      bankName: string
-      /** @example 123456789012 */
-      accountNumber: string
-      /** @example JUAN DELA CRUZ */
-      accountName?: string
-      isPrimary: boolean
-      isActive: boolean
-    }
-    EmergencyContactRefDto: {
-      id: string
-      /** @example Maria Dela Cruz */
-      name: string
-      /** @example Spouse */
-      relationship: string
-      /** @example 09181234567 */
-      contactNumber: string
-      isPrimary: boolean
-    }
-    EmployeeDetailDto: {
-      id: string
-      /** @example EMP-0001 */
-      employeeCode: string
-      /** @example Juan */
-      firstName: string
-      /** @example Dela Cruz */
-      lastName: string
-      /** @example Reyes */
-      middleName?: string
-      /** @example juan.delacruz@company.com */
-      email?: string
-      /** @example 09171234567 */
-      contactNumber?: string
-      /** @example 2021-03-01 */
-      hireDate?: string
-      /** @enum {string} */
-      status: 'active' | 'inactive' | 'resigned' | 'terminated'
-      department?: components['schemas']['DepartmentRefDto']
-      position?: components['schemas']['PositionRefDto']
-      branch?: components['schemas']['BranchRefDto']
-      createdAt: string
-      updatedAt: string
-      /** @example O+ */
-      bloodType?: string
-      /** @enum {string} */
-      maritalStatus?: 'Single' | 'Married' | 'Widowed' | 'Separated'
-      /** @example Visual Impairment */
-      pwdType?: string
-      /** @example false */
-      isStudent: boolean
-      /** @example 1000 */
-      allowance: number
-      /** @enum {string} */
-      allowancePayoutCycle: 'FirstCycle' | 'SecondCycle'
-      /** @example 0 */
-      loan: number
-      /** @example 0 */
-      loanDeduction: number
-      /** @example 0 */
-      silc: number
-      governmentIDs: components['schemas']['GovernmentIDRefDto'][]
-      bankAccounts: components['schemas']['BankAccountRefDto'][]
-      emergencyContacts: components['schemas']['EmergencyContactRefDto'][]
-      deletedAt?: string
-    }
-    EmployeeListItemDto: {
-      id: string
-      /** @example EMP-0001 */
-      employeeCode: string
-      /** @example Juan */
-      firstName: string
-      /** @example Dela Cruz */
-      lastName: string
-      /** @example Reyes */
-      middleName?: string
-      /** @example juan.delacruz@company.com */
-      email?: string
-      /** @example 09171234567 */
-      contactNumber?: string
-      /** @example 2021-03-01 */
-      hireDate?: string
-      /** @enum {string} */
-      status: 'active' | 'inactive' | 'resigned' | 'terminated'
-      department?: components['schemas']['DepartmentRefDto']
-      position?: components['schemas']['PositionRefDto']
-      branch?: components['schemas']['BranchRefDto']
-      createdAt: string
-      updatedAt: string
-    }
-    PaginationMetaDto: {
-      total: number
-      page: number
-      limit: number
-      lastPage: number
-    }
-    PaginatedEmployeeDto: {
-      data: components['schemas']['EmployeeListItemDto'][]
-      meta: components['schemas']['PaginationMetaDto']
-    }
-    DepartmentDto: {
-      id: string
-      /** @example Engineering */
-      name: string
-      isActive: boolean
-      createdAt: string
-      updatedAt: string
-    }
-    PositionDto: {
-      id: string
-      /** @example Software Engineer */
-      title: string
-      isActive: boolean
-      createdAt: string
-      updatedAt: string
-    }
-    OrgRelationsDto: {
-      departments: components['schemas']['DepartmentDto'][]
-      positions: components['schemas']['PositionDto'][]
-      branches: components['schemas']['BranchDto'][]
-    }
-    UpdateEmployeeDto: {
-      /** @example EMP-0001 */
-      employeeCode?: string
-      /** @example Juan */
-      firstName?: string
-      /** @example Dela Cruz */
-      lastName?: string
-      /** @example Reyes */
-      middleName?: string
-      /** @example juan.delacruz@company.com */
-      email?: string
-      /** @example 09171234567 */
-      contactNumber?: string
-      /** @example 1990-01-15 */
-      dateOfBirth?: string
-      /** @example 2021-03-01 */
-      hireDate?: string
-      /**
-       * @default active
-       * @enum {string}
-       */
-      status: 'active' | 'inactive' | 'resigned' | 'terminated'
-      /** @example O+ */
-      bloodType?: string
-      /**
-       * @default Single
-       * @enum {string}
-       */
-      maritalStatus: 'Single' | 'Married' | 'Widowed' | 'Separated'
-      /** @example Visual Impairment */
-      pwdType?: string
-      /**
-       * @default false
-       * @example false
-       */
-      isStudent: boolean
-      /**
-       * @default 0
-       * @example 1000
-       */
-      allowance: number
-      /**
-       * @default First Cycle
-       * @example First Cycle
-       */
-      allowancePayoutCycle: string
-      /**
-       * @default 0
-       * @example 0
-       */
-      loan: number
-      /**
-       * @default 0
-       * @example 0
-       */
-      loanDeduction: number
-      /**
-       * @default 0
-       * @example 0
-       */
-      silc: number
-      /** @description UUID of the department */
-      departmentId?: string
-      /** @description UUID of the position */
-      positionId?: string
-      /** @description UUID of the branch */
-      branchId?: string
-      /** @description Role IDs to assign when provisioning a system user for this employee */
-      roleIds?: string[]
-    }
     CreateRoleDto: Record<string, never>
     UpdateRoleDto: Record<string, never>
     AssignPermissionsDto: {
@@ -6937,72 +5562,6 @@ export interface components {
     }
     CreatePermissionDto: Record<string, never>
     UpdatePermissionDto: Record<string, never>
-    CreateStatusTypeDto: Record<string, never>
-    UpdateStatusTypeDto: Record<string, never>
-    CreateAdjustmentRecordDto: Record<string, never>
-    CreateOvertimeRequestDto: Record<string, never>
-    UpdateOvertimeStatusDto: Record<string, never>
-    UpdateAttendanceCutoffDto: Record<string, never>
-    ProcessAttendanceDto: Record<string, never>
-    CreateLeaveRequestDto: Record<string, never>
-    ReviewLeaveRequestDto: Record<string, never>
-    CreateLeaveAdjustmentDto: Record<string, never>
-    CreatePayrollPeriodDto: {
-      /** @example 2026-05-01 */
-      startDate: string
-      /** @example 2026-05-15 */
-      endDate: string
-      note?: string
-      /** @example 200 */
-      totalActualDays: number
-      /** @example 15000 */
-      totalDailyRate: number
-      /** @example 300000 */
-      totalAmount: number
-      /** @example 50000 */
-      totalDeductions: number
-      /** @example 250000 */
-      totalNetPay: number
-      /** @description Employee ID of the final approver */
-      finalApproverId?: string
-    }
-    PayslipEmployeeDto: {
-      id: string
-      salaryData: Record<string, never>
-      loanBalance: number
-    }
-    GeneratePayslipsDto: {
-      payrollPeriodId: string
-      /** @example 2026-05-01 */
-      startDate: string
-      /** @example 2026-05-15 */
-      endDate: string
-      /** @example 1 */
-      cycle: number
-      employees: components['schemas']['PayslipEmployeeDto'][]
-    }
-    UpdatePayrollPeriodDto: {
-      note?: string
-      totalActualDays?: number
-      totalDailyRate?: number
-      totalAmount?: number
-      totalDeductions?: number
-      totalNetPay?: number
-      /** @enum {string} */
-      status?: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'
-      approvalDate?: Record<string, never>
-      approvalNote?: Record<string, never>
-    }
-    ReleasePayslipsDto: {
-      /** @example 2026-05-01 */
-      cycleStartDate: string
-      /** @example 2026-05-15 */
-      cycleEndDate: string
-    }
-    ApprovePayrollStepDto: {
-      isSignedStatus?: boolean
-      label?: string
-    }
     CreateTerminalDto: {
       /** @example TERM-001 */
       terminalCode: string
@@ -7061,6 +5620,25 @@ export interface components {
       declaredCash: number
       notes?: string
     }
+    ScPwdDiscountDto: {
+      /**
+       * @description Senior Citizen or Person with Disability
+       * @enum {string}
+       */
+      type: 'SC' | 'PWD'
+      /**
+       * @description Government-issued SC/PWD ID number
+       * @example 1234567890
+       */
+      idNumber: string
+      /**
+       * @description Full name on SC/PWD ID
+       * @example Juan dela Cruz
+       */
+      name: string
+      /** @description Base64-encoded signature capture or URL */
+      signatureCapture?: string
+    }
     CreateTransactionLineDto: {
       /** @example uuid-item-id */
       itemId: string
@@ -7084,6 +5662,11 @@ export interface components {
        * @example 50
        */
       taxAmount?: number
+      /**
+       * @description Per-line pricing mode override (POS-52). Omit to use tenant default.
+       * @enum {string}
+       */
+      pricingMode?: 'inclusive' | 'exclusive' | 'exempt'
       notes?: string
     }
     CreateTransactionDto: {
@@ -7167,6 +5750,8 @@ export interface components {
        */
       journalEntryId?: string
       notes?: string
+      /** @description SC/PWD discount — triggers 20% BIR-compliant discount on VAT-exclusive base with VAT exemption (POS-42/53) */
+      scPwdDiscount?: components['schemas']['ScPwdDiscountDto']
       lines: components['schemas']['CreateTransactionLineDto'][]
     }
     SyncTransactionsDto: {
@@ -7410,6 +5995,11 @@ export interface components {
       effectiveFrom?: string
       /** @example 2026-12-31 */
       effectiveTo?: string
+      /**
+       * @description Per-item pricing mode override. Overrides PosConfig.defaultPricingMode for this item at this branch (POS-52).
+       * @enum {string}
+       */
+      pricingMode?: 'inclusive' | 'exclusive'
       notes?: string
     }
     UpdateBranchPricingDto: {
@@ -7421,6 +6011,11 @@ export interface components {
       taxRate?: number
       effectiveFrom?: string
       effectiveTo?: string
+      /**
+       * @description Per-item pricing mode override (POS-52).
+       * @enum {string}
+       */
+      pricingMode?: 'inclusive' | 'exclusive'
       notes?: string
     }
     CreatePosConfigDto: {
@@ -7436,10 +6031,38 @@ export interface components {
        * @example 90
        */
       receiptlessReturnDays?: number
+      /**
+       * @description Queue category to auto-issue a pickup ticket into when a sale completes. Set to null to disable.
+       * @example uuid-queue-category-id
+       */
+      orderQueueCategoryId?: Record<string, never>
+      /**
+       * @description Enable POS order mode — completed sales auto-issue a queue ticket and the order queue display is activated.
+       * @example true
+       */
+      orderMode?: boolean
+      /**
+       * @description Tenant-wide default pricing mode for tax calculation (POS-51/52). "inclusive" = VAT is extracted from tag price; "exclusive" = VAT added on top.
+       * @default exclusive
+       * @enum {string}
+       */
+      defaultPricingMode: 'inclusive' | 'exclusive'
     }
     UpdatePosConfigDto: {
       discountOverrideThreshold?: number
       receiptlessReturnDays?: number
+      /** @description Queue category to auto-issue a pickup ticket into when a sale completes. Set to null to disable. */
+      orderQueueCategoryId?: Record<string, never>
+      /**
+       * @description Enable POS order mode — completed sales auto-issue a queue ticket and the order queue display is activated.
+       * @example true
+       */
+      orderMode?: boolean
+      /**
+       * @description Tenant-wide default pricing mode (POS-51/52).
+       * @enum {string}
+       */
+      defaultPricingMode?: 'inclusive' | 'exclusive'
     }
     CreatePosCustomerDto: {
       /** @example Juan */
@@ -7487,6 +6110,28 @@ export interface components {
       managerId: string
       /** @example 9999 */
       pin: string
+    }
+    CreatePosMenuItemDto: {
+      /** @example Chicken Adobo */
+      name: string
+      /** @example CHK-ABO */
+      sku?: string
+      /** @example 120 */
+      sellingPrice?: number
+      /** @description Unit of measure UUID */
+      baseUnitId?: string
+    }
+    UpdatePosMenuItemDto: {
+      name?: string
+      sku?: string
+      sellingPrice?: number
+      baseUnitId?: string
+    }
+    AddMenuItemIngredientDto: {
+      /** @description Inventory item UUID */
+      inventoryItemId: string
+      /** @example 0.25 */
+      quantity: number
     }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
@@ -8697,29 +7342,6 @@ export interface components {
       effectiveFrom?: string
       effectiveTo?: string
     }
-    CreatePayslipDto: {
-      payrollPeriodId: string
-      employeeId: string
-      /** @example 1 */
-      cycle: number
-      /** @default false */
-      visibility: boolean
-      /** @description Payslip salary breakdown data */
-      payslipData: Record<string, never>
-      /** @example 2026-05-01 */
-      cycleStartDate: string
-      /** @example 2026-05-15 */
-      cycleEndDate: string
-    }
-    UpdatePayslipDto: {
-      cycle?: number
-      visibility?: boolean
-      payslipData?: Record<string, never>
-      /** @example 2026-05-01 */
-      cycleStartDate?: string
-      /** @example 2026-05-15 */
-      cycleEndDate?: string
-    }
     SupplierBankAccountInputDto: {
       /** @example BPI */
       bankName: string
@@ -8844,6 +7466,12 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       createdAt: string
       updatedAt: string
+    }
+    PaginationMetaDto: {
+      total: number
+      page: number
+      limit: number
+      lastPage: number
     }
     PaginatedSupplierDto: {
       data: components['schemas']['SupplierListItemDto'][]
@@ -9210,168 +7838,6 @@ export interface components {
       currencyId?: string
       transactions?: components['schemas']['TransactionLineDto'][]
     }
-    CreatePurchaseRequestLineDto: {
-      itemId: string
-      /** @example 100 */
-      quantity: number
-      suggestedSupplierId?: string
-      notes?: string
-    }
-    CreatePurchaseRequestDto: {
-      /** @example tenant-001 */
-      tenantId: string
-      /** @example PR-2026-0001 */
-      code: string
-      /** @description User ID of the requestor */
-      requestedById: string
-      branchId?: string
-      reason?: string
-      notes?: string
-      lines: components['schemas']['CreatePurchaseRequestLineDto'][]
-    }
-    UpdatePurchaseRequestDto: {
-      /** @example tenant-001 */
-      tenantId?: string
-      /** @example PR-2026-0001 */
-      code?: string
-      /** @description User ID of the requestor */
-      requestedById?: string
-      branchId?: string
-      reason?: string
-      notes?: string
-      lines?: components['schemas']['CreatePurchaseRequestLineDto'][]
-      /** @enum {string} */
-      status?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'converted' | 'cancelled'
-    }
-    ApprovePurchaseRequestDto: {
-      /** @description User ID of approver */
-      approvedById: string
-    }
-    RejectPurchaseRequestDto: {
-      reason: string
-    }
-    CreatePurchaseOrderLineDto: {
-      itemId: string
-      /** @example 100 */
-      quantity: number
-      /** @example 25.5 */
-      unitPrice: number
-      notes?: string
-    }
-    CreatePurchaseOrderDto: {
-      tenantId: string
-      /** @example PO-2026-0001 */
-      code: string
-      supplierId: string
-      branchId?: string
-      warehouseId?: string
-      /** @example 2026-06-30 */
-      expectedDeliveryDate?: string
-      /**
-       * @default PHP
-       * @example PHP
-       */
-      currency: string
-      /** @example Net 30 */
-      paymentTerms?: string
-      shippingAddress?: string
-      notes?: string
-      lines: components['schemas']['CreatePurchaseOrderLineDto'][]
-    }
-    ConvertFromPrDto: {
-      /** @description Source purchase-request ID */
-      purchaseRequestId: string
-      /** @example PO-2026-0001 */
-      code: string
-      /** @description Supplier to use for the new PO */
-      supplierId: string
-      warehouseId?: string
-      expectedDeliveryDate?: string
-      /**
-       * @description Unit prices keyed by purchase_request_line itemId
-       * @example {
-       *       "item-uuid-1": 25.5,
-       *       "item-uuid-2": 10
-       *     }
-       */
-      unitPricesByItemId: Record<string, never>
-    }
-    UpdatePurchaseOrderDto: {
-      tenantId?: string
-      /** @example PO-2026-0001 */
-      code?: string
-      supplierId?: string
-      branchId?: string
-      warehouseId?: string
-      /** @example 2026-06-30 */
-      expectedDeliveryDate?: string
-      /**
-       * @default PHP
-       * @example PHP
-       */
-      currency: string
-      /** @example Net 30 */
-      paymentTerms?: string
-      shippingAddress?: string
-      notes?: string
-      lines?: components['schemas']['CreatePurchaseOrderLineDto'][]
-      /** @enum {string} */
-      status?: 'draft' | 'sent' | 'partially_received' | 'fully_received' | 'closed' | 'cancelled'
-    }
-    CreateGoodsReceiptLineDto: {
-      purchaseOrderLineId: string
-      /** @example 10 */
-      quantityReceived: number
-      batchNumber?: string
-      /** @example 2027-01-01 */
-      expiryDate?: string
-      serialNumbers?: string[]
-      /** @default false */
-      qualityHold: boolean
-      notes?: string
-    }
-    CreateGoodsReceiptDto: {
-      tenantId: string
-      /** @example GR-2026-0001 */
-      code: string
-      purchaseOrderId: string
-      warehouseId: string
-      /** @description User ID of receiver */
-      receivedById: string
-      /** @enum {string} */
-      status?: 'draft' | 'received' | 'quality_hold' | 'rejected'
-      notes?: string
-      lines: components['schemas']['CreateGoodsReceiptLineDto'][]
-    }
-    CreateQueueCategoryDto: {
-      /** @example Cashier */
-      name: string
-      branchId?: string
-      description?: string
-      /** @example Counter 1 */
-      counterName?: string
-    }
-    UpdateQueueCategoryDto: {
-      name?: string
-      description?: string
-      counterName?: string
-      visibility?: boolean
-    }
-    IssueTicketDto: {
-      /**
-       * @default 1
-       * @example 1
-       */
-      count: number
-      customerName?: string
-      customerId?: string
-      salesOrderId?: string
-      notes?: string
-    }
-    AttachSalesOrderDto: {
-      salesOrderId?: string
-      posTransactionId?: string
-    }
     CreatePipelineStageDto: {
       /** @example tenant-001 */
       tenantId: string
@@ -9708,50 +8174,29 @@ export interface components {
        */
       ruleDefinition?: Record<string, never>
     }
-    CreateQuotationDto: Record<string, never>
-    UpdateQuotationDto: Record<string, never>
-    CreateSalesOrderDto: Record<string, never>
-    UpdateSalesOrderDto: Record<string, never>
-    CreateHolidayDto: {
-      /** @example New Year's Day */
+    AssignManagerDto: {
+      /** @example a1b2c3d4-... */
+      userId: string
+    }
+    UpdateBranchDto: {
+      /** @example Manila HQ */
+      name?: string
+      /** @enum {string} */
+      type?: 'retail' | 'warehouse' | 'office' | 'mixed'
+      /** @example 88 Ayala Ave, Makati, Manila */
+      address?: string
+    }
+    CreateBranchDto: {
+      /** @example Manila HQ */
       name: string
       /**
-       * @description ISO date string YYYY-MM-DD
-       * @example 2026-01-01
-       */
-      date: string
-      /**
-       * @default Regular
+       * @example retail
        * @enum {string}
        */
-      type: 'Regular' | 'SpecialNonWorking' | 'Company' | 'Branch'
-      /**
-       * @default Enterprise
-       * @enum {string}
-       */
-      scope: 'Enterprise' | 'BranchOnly'
-      /** @description Required when scope is BranchOnly */
-      branchId?: string
-      /**
-       * @description Pay multiplier when employee works on this holiday
-       * @default 2
-       */
-      payWhenWorkedMultiplier: number
-      /**
-       * @description Pay multiplier when employee does not work on this holiday
-       * @default 1
-       */
-      payWhenNotWorkedMultiplier: number
-      /**
-       * @description Whether this holiday counts against leave balance when taken as leave
-       * @default false
-       */
-      affectsLeaveCount: boolean
-      notes?: string
-      /** @default true */
-      isActive: boolean
+      type: 'retail' | 'warehouse' | 'office' | 'mixed'
+      /** @example 123 Main St, Manila */
+      address?: string
     }
-    UpdateHolidayDto: Record<string, never>
     CreateEnterpriseDto: Record<string, never>
     UpdateEnterpriseDto: Record<string, never>
     UpdateEnterpriseStatusDto: Record<string, never>
@@ -9819,6 +8264,57 @@ export interface operations {
       }
       /** @description Invalid credentials */
       401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AuthController_changePassword: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChangePasswordDto']
+      }
+    }
+    responses: {
+      /** @description Password updated successfully */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Current password is incorrect */
+      401: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AuthController_requestPasswordReset: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResetPasswordDto']
+      }
+    }
+    responses: {
+      /** @description Reset link sent if email is registered */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -10145,16 +8641,17 @@ export interface operations {
       }
     }
   }
-  EmployeeController_findAll: {
+  AuditLogController_findAll: {
     parameters: {
       query?: {
-        /** @description Search by name, email, or employee code */
-        search?: string
-        status?: 'active' | 'inactive' | 'resigned' | 'terminated'
-        /** @description Filter by department UUID */
-        departmentId?: string
-        /** @description Filter by branch UUID */
-        branchId?: string
+        /** @description Filter by actor user ID */
+        actorId?: string
+        resourceType?: string
+        resourceId?: string
+        /** @description Inclusive start date (YYYY-MM-DD) */
+        dateFrom?: string
+        /** @description Inclusive end date (YYYY-MM-DD) */
+        dateTo?: string
         page?: number
         limit?: number
       }
@@ -10165,141 +8662,6 @@ export interface operations {
     requestBody?: never
     responses: {
       200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['PaginatedEmployeeDto']
-        }
-      }
-    }
-  }
-  EmployeeController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateEmployeeDto']
-      }
-    }
-    responses: {
-      /** @description Employee created successfully */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['EmployeeDetailDto']
-        }
-      }
-    }
-  }
-  EmployeeController_getOrgRelations: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['OrgRelationsDto']
-        }
-      }
-    }
-  }
-  EmployeeController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Employee UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['EmployeeDetailDto']
-        }
-      }
-      /** @description Employee not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Employee UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Employee deleted successfully */
-      204: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      /** @description Employee not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  EmployeeController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Employee UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateEmployeeDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['EmployeeDetailDto']
-        }
-      }
-      /** @description Employee not found */
-      404: {
         headers: {
           [name: string]: unknown
         }
@@ -10540,936 +8902,6 @@ export interface operations {
         'application/json': components['schemas']['UpdatePermissionDto']
       }
     }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getStatusTypes: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_createStatusType: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateStatusTypeDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_deleteStatusType: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_updateStatusType: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateStatusTypeDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_deactivateStatusType: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_activateStatusType: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getAdjustmentRecords: {
-    parameters: {
-      query: {
-        employeeId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_createAdjustmentRecord: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateAdjustmentRecordDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getOvertimeRequests: {
-    parameters: {
-      query: {
-        employeeId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_createOvertimeRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateOvertimeRequestDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_updateOvertimeRequestStatus: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateOvertimeStatusDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getAttendanceLogs: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getShiftSchedules: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getCorrectionRequests: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getAttendanceSummary: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getActiveTimer: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getMyTimeLogs: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_startTimer: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_pauseTimer: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_resumeTimer: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_stopTimer: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getAllTimeLogs: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_getAttendanceSettings: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_updateAttendanceCutoff: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateAttendanceCutoffDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AttendanceController_processAttendance: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ProcessAttendanceDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getLeaveTypes: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_calculateDays: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getArchivedRequests: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getLeaveRequests: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_createLeaveRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateLeaveRequestDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_approveLeaveRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ReviewLeaveRequestDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_rejectLeaveRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ReviewLeaveRequestDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_reverseLeaveRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getMonthlySummary: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getPersonalBalances: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_getPersonalRequests: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  LeaveManagementController_createLeaveAdjustment: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateLeaveAdjustmentDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_findAll: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of payroll periods */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_createPeriod: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreatePayrollPeriodDto']
-      }
-    }
-    responses: {
-      /** @description Payroll period created */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_generatePayslips: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['GeneratePayslipsDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_updatePeriod: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdatePayrollPeriodDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_deletePayslips: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_releasePayslips: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ReleasePayslipsDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_approveStep: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Approval step UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ApprovePayrollStepDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_resetApproval: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_getAuditTrail: {
-    parameters: {
-      query?: {
-        employeeId?: string
-        actionType?: string
-        from?: string
-        to?: string
-        page?: number
-        pageSize?: number
-      }
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayrollController_hidePeriod: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payroll period UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -13008,6 +10440,160 @@ export interface operations {
       }
     }
   }
+  PosMenuItemsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Menu items with ingredients */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreatePosMenuItemDto']
+      }
+    }
+    responses: {
+      /** @description Menu item created */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Menu item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Menu item not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Menu item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePosMenuItemDto']
+      }
+    }
+    responses: {
+      /** @description Menu item not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_getIngredients: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Menu item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_addIngredient: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Menu item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddMenuItemIngredientDto']
+      }
+    }
+    responses: {
+      /** @description Ingredient added */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosMenuItemsController_removeIngredient: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Menu item UUID */
+        id: string
+        /** @description Ingredient UUID */
+        ingredientId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Ingredient not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemImagesController_bulkImport: {
     parameters: {
       query?: never
@@ -13491,6 +11077,36 @@ export interface operations {
     responses: {
       /** @description Bundle component added */
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_removeBundleComponent: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Bundle item UUID */
+        id: string
+        /** @description Bundle component UUID */
+        componentId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Bundle component removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Bundle or component not found */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -16275,164 +13891,17 @@ export interface operations {
       }
     }
   }
-  PayslipController_findAll: {
-    parameters: {
-      query?: {
-        employeeId?: string
-        payrollPeriodId?: string
-        visibility?: 'true' | 'false'
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of payslips */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreatePayslipDto']
-      }
-    }
-    responses: {
-      /** @description Payslip created */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_findByEmployee: {
+  TaxRatesController_unsetDefault: {
     parameters: {
       query?: never
       header?: never
       path: {
-        /** @description Employee UUID */
-        employeeId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_findMine: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payslip UUID */
         id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payslip UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payslip UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdatePayslipDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PayslipController_download: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Payslip UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description PDF file stream */
       200: {
         headers: {
           [name: string]: unknown
@@ -18915,701 +16384,6 @@ export interface operations {
       }
     }
   }
-  PurchaseRequestController_findAll: {
-    parameters: {
-      query?: {
-        search?: string
-        status?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'converted' | 'cancelled'
-        requestedById?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreatePurchaseRequestDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_sweepReorder: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_cancel: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdatePurchaseRequestDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_approve: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ApprovePurchaseRequestDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_reject: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectPurchaseRequestDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_findAll: {
-    parameters: {
-      query?: {
-        search?: string
-        status?: 'draft' | 'sent' | 'partially_received' | 'fully_received' | 'closed' | 'cancelled'
-        supplierId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreatePurchaseOrderDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_convertFromPr: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ConvertFromPrDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_cancel: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdatePurchaseOrderDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_send: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseOrderController_close: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  GoodsReceiptController_findAll: {
-    parameters: {
-      query?: {
-        search?: string
-        status?: 'draft' | 'received' | 'quality_hold' | 'rejected'
-        purchaseOrderId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  GoodsReceiptController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateGoodsReceiptDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  GoodsReceiptController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_findAllCategories: {
-    parameters: {
-      query: {
-        branchId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_createCategory: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateQueueCategoryDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_findCategory: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_removeCategory: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_updateCategory: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateQueueCategoryDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_listTickets: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_issueTickets: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['IssueTicketDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_callNext: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_callPrev: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_markServed: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        ticketId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_cancelTicket: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        ticketId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_attachSales: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        ticketId: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AttachSalesOrderDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_resetQueue: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_getStats: {
-    parameters: {
-      query: {
-        categoryId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  QueueManagementController_hourlyReport: {
-    parameters: {
-      query: {
-        startDate: string
-        endDate: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   PipelineStageController_findAll: {
     parameters: {
       query?: {
@@ -20608,7 +17382,7 @@ export interface operations {
       }
     }
   }
-  SalesController_getSummary: {
+  BranchesController_findAll: {
     parameters: {
       query?: never
       header?: never
@@ -20625,24 +17399,7 @@ export interface operations {
       }
     }
   }
-  SalesController_listQuotations: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  SalesController_createQuotation: {
+  BranchesController_create: {
     parameters: {
       query?: never
       header?: never
@@ -20651,7 +17408,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['CreateQuotationDto']
+        'application/json': components['schemas']['CreateBranchDto']
       }
     }
     responses: {
@@ -20663,7 +17420,7 @@ export interface operations {
       }
     }
   }
-  SalesController_getQuotation: {
+  BranchesController_getSummary: {
     parameters: {
       query?: never
       header?: never
@@ -20682,7 +17439,7 @@ export interface operations {
       }
     }
   }
-  SalesController_updateQuotation: {
+  BranchesController_addManager: {
     parameters: {
       query?: never
       header?: never
@@ -20693,7 +17450,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['UpdateQuotationDto']
+        'application/json': components['schemas']['AssignManagerDto']
       }
     }
     responses: {
@@ -20705,30 +17462,14 @@ export interface operations {
       }
     }
   }
-  SalesController_convertToOrder: {
+  BranchesController_removeManager: {
     parameters: {
       query?: never
       header?: never
       path: {
         id: string
+        userId: string
       }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  SalesController_listOrders: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
       cookie?: never
     }
     requestBody?: never
@@ -20741,28 +17482,7 @@ export interface operations {
       }
     }
   }
-  SalesController_createOrder: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateSalesOrderDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  SalesController_getOrder: {
+  BranchesController_findOne: {
     parameters: {
       query?: never
       header?: never
@@ -20781,7 +17501,7 @@ export interface operations {
       }
     }
   }
-  SalesController_updateOrder: {
+  BranchesController_update: {
     parameters: {
       query?: never
       header?: never
@@ -20792,7 +17512,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['UpdateSalesOrderDto']
+        'application/json': components['schemas']['UpdateBranchDto']
       }
     }
     responses: {
@@ -20829,135 +17549,6 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_findAll: {
-    parameters: {
-      query?: {
-        /** @description Filter by year, e.g. 2026 */
-        year?: number
-        type?: 'Regular' | 'SpecialNonWorking' | 'Company' | 'Branch'
-        scope?: 'Enterprise' | 'BranchOnly'
-        branchId?: string
-        /** @description 'true' or 'false'. Omit for all. */
-        isActive?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Array of holidays */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateHolidayDto']
-      }
-    }
-    responses: {
-      /** @description Holiday created */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_applyPhilippineTemplate: {
-    parameters: {
-      query?: {
-        /** @description Year for the PH holiday template. Supported: 2025–2027. Defaults to current year. */
-        year?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  HolidayController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateHolidayDto']
-      }
-    }
     responses: {
       200: {
         headers: {
