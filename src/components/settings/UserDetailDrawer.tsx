@@ -45,7 +45,7 @@ export default function UserDetailDrawer({
     (user.employee ? `${user.employee.firstName} ${user.employee.lastName}` : null) ||
     'Unknown User'
 
-  const branches = user.userBranches.map((ub) => ub.branch.name)
+  const homeBranch = user.employee?.branch?.name ?? null
   const roles = user.userRoles.map((ur) => ur.role)
 
   return (
@@ -184,26 +184,16 @@ export default function UserDetailDrawer({
             </Section>
           )}
 
-          {/* Branches */}
+          {/* Branch Access */}
           <Section title="Branch Access">
-            {branches.length === 0 ? (
-              <div className="flex items-center gap-2 text-sm text-zinc-500">
-                <Building2 className="h-4 w-4 text-zinc-400" />
-                <span>Head Office (all branches)</span>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {branches.map((b) => (
-                  <span
-                    key={b}
-                    className="flex items-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-1 text-sm text-zinc-700"
-                  >
-                    <Building2 className="h-3.5 w-3.5 text-zinc-400" />
-                    {b}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-2 text-sm text-zinc-700">
+              <Building2 className="h-4 w-4 text-zinc-400" />
+              {homeBranch ? (
+                <span className="rounded-lg bg-zinc-100 px-3 py-1">{homeBranch}</span>
+              ) : (
+                <span className="text-zinc-500">Head Office (all branches)</span>
+              )}
+            </div>
           </Section>
 
           {/* Roles */}
