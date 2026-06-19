@@ -5,6 +5,7 @@ import { MoreHorizontal, Pencil, Trash2, Shield, UserCog } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import CreateUserModal from './CreateUserModal'
 import AssignRoleModal from './AssignRoleModal'
+import EditUserModal from './EditUserModal'
 import UserDetailDrawer from './UserDetailDrawer'
 import { type User, type Role } from '@/src/schema/settings/list'
 import { setUserStatus } from '@/src/app/(app)/(dashboard)/settings/_actions/set-user-status'
@@ -30,6 +31,7 @@ export default function UsersSection({
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [assignTarget, setAssignTarget] = useState<User | null>(null)
+  const [editTarget, setEditTarget] = useState<User | null>(null)
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [drawerUser, setDrawerUser] = useState<User | null>(null)
 
@@ -79,6 +81,12 @@ export default function UsersSection({
   const handleDelete = (user: User) => {
     // TODO: Implement delete user API call
     console.log('Delete user:', user.id)
+    setOpenMenu(null)
+    setDrawerUser(null)
+  }
+
+  const handleEdit = (user: User) => {
+    setEditTarget(user)
     setOpenMenu(null)
     setDrawerUser(null)
   }
@@ -215,6 +223,14 @@ export default function UsersSection({
                                 >
                                   <button
                                     type="button"
+                                    onClick={() => handleEdit(user)}
+                                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleAssignRole(user)}
                                     className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
                                   >
@@ -282,10 +298,15 @@ export default function UsersSection({
         />
       )}
 
+      {editTarget && (
+        <EditUserModal user={editTarget} isOpen={true} onClose={() => setEditTarget(null)} />
+      )}
+
       <UserDetailDrawer
         user={drawerUser}
         onClose={() => setDrawerUser(null)}
         isSelf={drawerUser?.id === currentUserId}
+        onEdit={handleEdit}
         onAssignRole={handleAssignRole}
         onToggleActive={handleToggleActive}
         onDelete={handleDelete}
