@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { type User, type Role } from '@/src/schema/settings/list'
 import { assignRole } from '@/src/app/(app)/(dashboard)/settings/_actions/assign-role'
+import { removeRole } from '@/src/app/(app)/(dashboard)/settings/_actions/remove-role'
 import { showToast } from '@/src/components/ui/toast'
 
 type AssignRoleModalProps = {
@@ -23,9 +24,39 @@ export default function AssignRoleModal({
   const router = useRouter()
   const [selectedRoleId, setSelectedRoleId] = useState<string>('')
   const [isAssigning, setIsAssigning] = useState(false)
+  const [removingRoleId, setRemovingRoleId] = useState<string | null>(null)
 
-  // Get currently assigned role IDs
   const currentRoleIds = new Set(user.userRoles.map((ur) => ur.role.id))
+
+  const handleRemove = async (roleId: string, roleName: string) => {
+    setRemovingRoleId(roleId)
+    try {
+      const result = await removeRole(user.id, roleId)
+      if (!result.success) {
+        showToast({
+          title: 'Failed to remove role',
+          description: result.error ?? 'Please try again.',
+          status: 'error',
+        })
+        return
+      }
+      showToast({
+        title: 'Role removed',
+        description: `${roleName} has been removed from ${user.email}.`,
+        status: 'success',
+      })
+      router.refresh()
+      onClose()
+    } catch (error) {
+      showToast({
+        title: 'Failed to remove role',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+      })
+    } finally {
+      setRemovingRoleId(null)
+    }
+  }
 
   const handleAssign = async () => {
     if (!selectedRoleId) {
@@ -99,23 +130,34 @@ export default function AssignRoleModal({
         {/* Body */}
         <div className="px-6 py-5">
           {/* Current roles */}
-          {user.userRoles.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Current Roles
-              </p>
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Current Roles
+            </p>
+            {user.userRoles.length === 0 ? (
+              <p className="text-sm text-zinc-500">No roles assigned yet.</p>
+            ) : (
               <div className="flex flex-wrap gap-2">
                 {user.userRoles.map((ur) => (
                   <span
                     key={ur.role.id}
-                    className="inline-flex items-center rounded-full bg-prominent-purple-100 px-3 py-1 text-xs font-medium text-prominent-purple-700"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-100 pl-3 pr-1.5 py-1 text-xs font-medium text-prominent-purple-700"
                   >
                     {ur.role.name}
+                    <button
+                      type="button"
+                      disabled={removingRoleId === ur.role.id}
+                      onClick={() => handleRemove(ur.role.id, ur.role.name)}
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-prominent-purple-500 transition hover:bg-prominent-purple-200 hover:text-prominent-purple-800 disabled:opacity-50"
+                      title={`Remove ${ur.role.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </span>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Role selection */}
           <div>

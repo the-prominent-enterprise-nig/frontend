@@ -1,41 +1,41 @@
-import { UserPlus, FileEdit, CheckCircle, AlertTriangle, Settings } from 'lucide-react'
+import { ShoppingCart, AlertTriangle, CheckCircle, UserPlus, Settings } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 
 const ACTIVITIES = [
   {
-    icon: UserPlus,
-    color: 'text-purple-500 bg-purple-50',
-    label: 'New employee added',
-    sub: 'Miguel Rivera — Operations',
-    time: '12m ago',
-  },
-  {
-    icon: FileEdit,
+    icon: ShoppingCart,
     color: 'text-blue-500 bg-blue-50',
-    label: 'Payroll period updated',
-    sub: 'May 2026 1st Half',
-    time: '1h ago',
-  },
-  {
-    icon: CheckCircle,
-    color: 'text-emerald-500 bg-emerald-50',
-    label: 'Leave request approved',
-    sub: 'Ana Reyes — 1 day',
-    time: '2h ago',
+    label: 'Sale completed — Invoice #1048',
+    sub: 'Cebu Branch · ₱8,500 · Cash',
+    time: '5m ago',
   },
   {
     icon: AlertTriangle,
     color: 'text-amber-500 bg-amber-50',
-    label: 'Low stock alert triggered',
-    sub: 'Product SKU-0412',
-    time: '3h ago',
+    label: 'Low stock alert — SKU-0412',
+    sub: 'Main Warehouse · 2 units left',
+    time: '42m ago',
+  },
+  {
+    icon: CheckCircle,
+    color: 'text-emerald-500 bg-emerald-50',
+    label: 'Purchase Order approved',
+    sub: 'PO-0012 · Juan dela Cruz',
+    time: '1h ago',
+  },
+  {
+    icon: UserPlus,
+    color: 'text-purple-500 bg-purple-50',
+    label: 'New user invited',
+    sub: 'maria.santos@nig.com — Cashier',
+    time: '2h ago',
   },
   {
     icon: Settings,
     color: 'text-zinc-400 bg-zinc-100',
     label: 'Role permissions updated',
-    sub: 'HR Manager role',
-    time: '5h ago',
+    sub: 'Branch Manager role',
+    time: '4h ago',
   },
 ]
 

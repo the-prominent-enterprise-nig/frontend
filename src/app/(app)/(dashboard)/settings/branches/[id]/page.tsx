@@ -19,7 +19,7 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
 
-  const isBranchManager = session.primaryRole === 'branch-manager'
+  const isBranchManager = session.primaryRole === 'Branch Manager'
   if (!isAdmin(session) && !isBranchManager) redirect('/403')
   if (isBranchManager && session.branchId !== id) redirect('/403')
 

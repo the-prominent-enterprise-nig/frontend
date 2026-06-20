@@ -1,16 +1,16 @@
 import Link from 'next/link'
-import { UserPlus, FileText, CreditCard, BarChart2, Settings, Calendar } from 'lucide-react'
+import { UserPlus, FileText, BarChart2, Settings, ShoppingCart, Package } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { useWidgetConfig } from '../WidgetSizeContext'
 import type { QuickActionsSettings } from '@/src/libs/dashboardWidgets'
 
 export const QUICK_ACTIONS = [
   {
-    id: 'add-employee',
-    label: 'Add Employee',
-    icon: UserPlus,
-    href: '/human-resource/employees/new',
-    color: 'bg-purple-100 text-purple-700 hover:bg-purple-200',
+    id: 'new-sale',
+    label: 'New Sale',
+    icon: ShoppingCart,
+    href: '/point-of-sale/checkout',
+    color: 'bg-green-100 text-green-700 hover:bg-green-200',
   },
   {
     id: 'new-invoice',
@@ -20,11 +20,11 @@ export const QUICK_ACTIONS = [
     color: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
   },
   {
-    id: 'run-payroll',
-    label: 'Run Payroll',
-    icon: CreditCard,
-    href: '/human-resource/payroll',
-    color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
+    id: 'add-customer',
+    label: 'Add Customer',
+    icon: UserPlus,
+    href: '/crm/customers/new',
+    color: 'bg-purple-100 text-purple-700 hover:bg-purple-200',
   },
   {
     id: 'view-reports',
@@ -34,11 +34,11 @@ export const QUICK_ACTIONS = [
     color: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
   },
   {
-    id: 'leave-calendar',
-    label: 'Leave Calendar',
-    icon: Calendar,
-    href: '/human-resource/leave',
-    color: 'bg-pink-100 text-pink-700 hover:bg-pink-200',
+    id: 'stock-receive',
+    label: 'Receive Stock',
+    icon: Package,
+    href: '/inventory/receiving',
+    color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
   },
   {
     id: 'settings',
