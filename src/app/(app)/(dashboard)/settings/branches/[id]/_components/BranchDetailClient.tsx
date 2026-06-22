@@ -15,7 +15,6 @@ import {
   Monitor,
   TrendingUp,
   Clock,
-  FileText,
   ShoppingCart,
   UserPlus,
   Trash2,
@@ -196,7 +195,6 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
 
   const hasPOS = (summary?.pos.terminals ?? 0) > 0
   const hasAlerts =
-    (summary?.hr.pendingLeaveRequests ?? 0) > 0 ||
     (summary?.inventory.pendingPurchaseRequests ?? 0) > 0 ||
     (summary?.inventory.pendingPurchaseOrders ?? 0) > 0
 
@@ -351,17 +349,6 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
                       accent={summary.pos.activeSessions > 0 ? 'text-blue-600' : 'text-zinc-900'}
                     />
                   </>
-                )}
-                {(summary.hr.pendingLeaveRequests > 0 || !hasPOS) && (
-                  <StatCard
-                    icon={FileText}
-                    label="Pending Leave"
-                    value={summary.hr.pendingLeaveRequests}
-                    sub="awaiting approval"
-                    accent={
-                      summary.hr.pendingLeaveRequests > 0 ? 'text-amber-600' : 'text-zinc-900'
-                    }
-                  />
                 )}
                 {(summary.inventory.pendingPurchaseRequests > 0 ||
                   summary.inventory.pendingPurchaseOrders > 0 ||
