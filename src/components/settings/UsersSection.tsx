@@ -20,6 +20,7 @@ import EditUserModal from './EditUserModal'
 import UserDetailDrawer from './UserDetailDrawer'
 import { type User, type Role } from '@/src/schema/settings/list'
 import { setUserStatus } from '@/src/app/(app)/(dashboard)/settings/_actions/set-user-status'
+import { adminResetUserPassword } from '@/src/libs/auth/actions/admin-reset-password'
 import { showToast } from '@/src/components/ui/toast'
 
 type OpenMenu = string | null
@@ -150,6 +151,24 @@ export default function UsersSection({
     console.log('Delete user:', user.id)
     setOpenMenu(null)
     setDrawerUser(null)
+  }
+
+  const handleResetPassword = async (user: User) => {
+    setOpenMenu(null)
+    const result = await adminResetUserPassword(user.id)
+    if (result.success) {
+      showToast({
+        title: 'Reset email sent',
+        description: `Password reset email sent to ${user.email}.`,
+        status: 'success',
+      })
+    } else {
+      showToast({
+        title: 'Failed to send reset email',
+        description: result.error ?? 'Please try again.',
+        status: 'error',
+      })
+    }
   }
 
   const handleEdit = (user: User) => {
@@ -448,6 +467,7 @@ export default function UsersSection({
         onAssignRole={handleAssignRole}
         onToggleActive={handleToggleActive}
         onDelete={handleDelete}
+        onResetPassword={handleResetPassword}
       />
     </>
   )
