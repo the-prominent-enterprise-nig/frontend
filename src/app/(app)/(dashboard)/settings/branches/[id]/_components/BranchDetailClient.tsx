@@ -19,6 +19,8 @@ import {
   ShoppingCart,
   UserPlus,
   Trash2,
+  Building2,
+  Power,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BranchFull } from '../../../_actions/get-branch'
@@ -26,6 +28,7 @@ import { BranchSummary } from '../../../_actions/get-branch-summary'
 import { updateBranch } from '../../../_actions/update-branch'
 import { assignBranchManager } from '../../../_actions/assign-branch-manager'
 import { removeBranchManager } from '../../../_actions/remove-branch-manager'
+import { setBranchStatus } from '../../../_actions/set-branch-status'
 import { BRANCH_TYPES } from '@/src/schema/settings/create-branch'
 import AssignManagerModal from './AssignManagerModal'
 
@@ -97,13 +100,19 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
   const [assigningManager, setAssigningManager] = useState(false)
   const [removingManagerId, setRemovingManagerId] = useState<string | null>(null)
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+  const [confirmStatusChange, setConfirmStatusChange] = useState(false)
+  const [changingStatus, setChangingStatus] = useState(false)
 
   const [name, setName] = useState(branch.name)
   const [type, setType] = useState(branch.type)
   const [address, setAddress] = useState(branch.addressLine1 ?? '')
+  const [city, setCity] = useState(branch.city ?? '')
 
   const isDirty =
-    name !== branch.name || type !== branch.type || address !== (branch.addressLine1 ?? '')
+    name !== branch.name ||
+    type !== branch.type ||
+    address !== (branch.addressLine1 ?? '') ||
+    city !== (branch.city ?? '')
 
   const managers = branch.managers ?? []
   const managerIds = new Set(managers.map((m) => m.id))
@@ -142,7 +151,24 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
     setName(branch.name)
     setType(branch.type)
     setAddress(branch.addressLine1 ?? '')
+    setCity(branch.city ?? '')
     setEditing(false)
+  }
+
+  const handleStatusChange = async () => {
+    setChangingStatus(true)
+    const action = branch.isActive ? 'deactivate' : 'reactivate'
+    const result = await setBranchStatus(branch.id, action)
+    setChangingStatus(false)
+    setConfirmStatusChange(false)
+
+    if (!result.success) {
+      toast.error(result.message || result.error || `Failed to ${action} branch`)
+      return
+    }
+
+    toast.success(branch.isActive ? 'Branch deactivated' : 'Branch reactivated')
+    router.refresh()
   }
 
   const handleSave = async () => {
@@ -153,6 +179,7 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
       name: name.trim(),
       type: type as (typeof BRANCH_TYPES)[number],
       address: address.trim() || undefined,
+      city: city.trim() || undefined,
     })
 
     setSaving(false)
@@ -235,14 +262,30 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Edit
-                </button>
+                <div className="flex items-center gap-2">
+                  {canManageManagers && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmStatusChange(true)}
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        branch.isActive
+                          ? 'border-red-200 text-red-600 hover:bg-red-50'
+                          : 'border-green-200 text-green-700 hover:bg-green-50'
+                      }`}
+                    >
+                      <Power className="h-4 w-4" />
+                      {branch.isActive ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -397,14 +440,24 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
               Address
             </div>
             {editing ? (
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="e.g. 88 Ayala Ave, Makati, Manila"
-                maxLength={255}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-              />
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Street address"
+                  maxLength={255}
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                />
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="City"
+                  maxLength={100}
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                />
+              </div>
             ) : (
               <p className="text-sm font-medium text-zinc-800">
                 {[branch.addressLine1, branch.city].filter(Boolean).join(', ') || (
@@ -412,6 +465,18 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
                 )}
               </p>
             )}
+          </div>
+
+          {/* Assigned Staff */}
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+              <Building2 className="h-3.5 w-3.5" />
+              Assigned Staff
+            </div>
+            <p className="text-3xl font-semibold text-zinc-900">{branch.employeeCount ?? 0}</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {(branch.employeeCount ?? 0) === 1 ? 'user assigned' : 'users assigned'}
+            </p>
           </div>
 
           {/* Managers */}
@@ -488,6 +553,62 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
         </div>
       </div>
 
+      {/* Deactivate / Reactivate confirmation */}
+      {confirmStatusChange && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-1 flex items-center gap-2">
+              <Power className={`h-4 w-4 ${branch.isActive ? 'text-red-500' : 'text-green-600'}`} />
+              <h3 className="text-sm font-semibold text-zinc-900">
+                {branch.isActive ? 'Deactivate Branch' : 'Reactivate Branch'}
+              </h3>
+            </div>
+            <p className="mt-2 text-sm text-zinc-600">
+              {branch.isActive ? (
+                <>
+                  Deactivating <span className="font-medium">{branch.name}</span> will mark it as
+                  inactive. Assigned users will retain their access but the branch will no longer
+                  appear as active.
+                </>
+              ) : (
+                <>
+                  Reactivating <span className="font-medium">{branch.name}</span> will restore its
+                  active status.
+                </>
+              )}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmStatusChange(false)}
+                disabled={changingStatus}
+                className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleStatusChange}
+                disabled={changingStatus}
+                className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition disabled:opacity-50 ${
+                  branch.isActive
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
+              >
+                {changingStatus
+                  ? branch.isActive
+                    ? 'Deactivating…'
+                    : 'Reactivating…'
+                  : branch.isActive
+                    ? 'Deactivate'
+                    : 'Reactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add manager modal — admin only */}
       {canManageManagers && (
         <AssignManagerModal
@@ -517,7 +638,7 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
                 </div>
                 <p className="mt-2 text-sm text-zinc-600">
                   Remove <span className="font-medium">{targetName}</span> as a branch manager?
-                  Their branch-manager role and branch access will be revoked.
+                  Their Branch Manager role and branch access will be revoked.
                 </p>
                 <div className="mt-5 flex justify-end gap-2">
                   <button

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Users, UserCheck, Calendar, Package } from 'lucide-react'
+import { Users, UserCheck, Calendar } from 'lucide-react'
 import { getEnterpriseSummary, type EnterpriseSummary } from '@/src/libs/actions/enterprise.actions'
 
 export default function EnterpriseSummaryWidget() {
@@ -37,19 +37,12 @@ export default function EnterpriseSummaryWidget() {
       iconBg: 'bg-amber-100',
       iconColor: 'text-amber-600',
     },
-    {
-      label: 'Active Modules',
-      value: data?.enabledModules?.length ?? 0,
-      icon: Package,
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-    },
   ]
 
   if (loading) return <div className="h-24 animate-pulse rounded-xl bg-zinc-100" />
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="grid grid-cols-3 gap-2">
       {stats.map((s) => {
         const Icon = s.icon
         return (

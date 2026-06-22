@@ -19,7 +19,6 @@ import {
   ClipboardList,
   Coins,
   Contact,
-  CreditCard,
   FileBarChart,
   FileSpreadsheet,
   FolderOpen,
@@ -575,12 +574,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
   {
     section: 'My Workspace',
-    label: 'Subscription',
-    href: '/settings/subscription',
-    icon: CreditCard,
-  },
-  {
-    section: 'My Workspace',
     label: 'Reports',
     href: '/settings/export',
     icon: FileBarChart,
@@ -621,7 +614,7 @@ function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   switch (session?.primaryRole) {
     case 'Business Owner':
       return 'Business Owner'
-    case 'branch-manager':
+    case 'Branch Manager':
       return 'Business Owner'
     case 'accounting':
       return 'accounting'
@@ -680,7 +673,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const isOwner =
     session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
 
-  const isBranchManager = session?.primaryRole === 'branch-manager'
+  const isBranchManager = session?.primaryRole === 'Branch Manager'
 
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
   const moduleWithWorkspace = resolvedSegment !== 'Business Owner'

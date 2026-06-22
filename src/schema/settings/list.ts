@@ -36,6 +36,13 @@ export const SessionEmployeeSchema = z.object({
   employeeCode: z.string(),
   firstName: z.string(),
   lastName: z.string(),
+  middleName: z.string().nullable().optional(),
+  contactNumber: z.string().nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(),
+  maritalStatus: z.string().nullable().optional(),
+  hireDate: z.string().nullable().optional(),
+  branchId: z.string().nullable().optional(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 // Session Branch Schema
@@ -72,13 +79,15 @@ export const MetaSchema = z.object({
   total: z.number().int().nonnegative(),
   page: z.number().int().positive().default(1),
   limit: z.number().int().positive().default(10),
-  lastPage: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative().optional(),
+  lastPage: z.number().int().nonnegative().optional(),
 })
 
 // Query Params Schema (used for all list endpoints)
 export const QueryParamsSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
+  branchId: z.string().optional(),
   page: z.number().int().positive().optional().default(1),
   limit: z.number().int().positive().optional().default(10),
   sortBy: z.string().optional(),
