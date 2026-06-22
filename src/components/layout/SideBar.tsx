@@ -19,7 +19,6 @@ import {
   ClipboardList,
   Coins,
   Contact,
-  CreditCard,
   FileBarChart,
   FileSpreadsheet,
   FolderOpen,
@@ -573,12 +572,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
-  {
-    section: 'My Workspace',
-    label: 'Subscription',
-    href: '/settings/subscription',
-    icon: CreditCard,
-  },
   {
     section: 'My Workspace',
     label: 'Reports',
