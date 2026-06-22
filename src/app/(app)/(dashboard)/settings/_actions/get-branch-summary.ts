@@ -15,9 +15,6 @@ export interface BranchSummary {
     monthRevenue: number
     monthTransactions: number
   }
-  hr: {
-    pendingLeaveRequests: number
-  }
   inventory: {
     pendingPurchaseRequests: number
     pendingPurchaseOrders: number
