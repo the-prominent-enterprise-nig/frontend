@@ -46,6 +46,11 @@ import {
   getParkedSales,
   resumeParkedSale,
   cancelParkedSale,
+  submitVoidRequest,
+  getVoidRequests,
+  getPendingVoidRequests,
+  approveVoidRequest,
+  rejectVoidRequest,
 } from '../_actions/pos-actions'
 import type {
   CreateTerminalInput,
@@ -67,6 +72,8 @@ import type {
   CreateCashDrawerEventInput,
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
+  SubmitVoidRequestInput,
+  ReviewVoidRequestInput,
 } from '@/src/schema/pos'
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
@@ -463,5 +470,65 @@ export function useUpdatePosConfig() {
     mutationFn: ({ id, input }: { id: string; input: UpdatePosConfigInput }) =>
       updatePosConfig(id, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-config'] }),
+  })
+}
+
+// ─── Void Requests ────────────────────────────────────────────────────────────
+
+export function useSubmitVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      transactionId,
+      input,
+    }: {
+      transactionId: string
+      input: SubmitVoidRequestInput
+    }) => submitVoidRequest(transactionId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+    },
+  })
+}
+
+export function useVoidRequests(transactionId: string) {
+  return useQuery({
+    queryKey: ['pos-void-requests', transactionId],
+    queryFn: () => getVoidRequests(transactionId),
+    enabled: !!transactionId,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function usePendingVoidRequests() {
+  return useQuery({
+    queryKey: ['pos-void-requests-pending'],
+    queryFn: getPendingVoidRequests,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useApproveVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ requestId, input }: { requestId: string; input: ReviewVoidRequestInput }) =>
+      approveVoidRequest(requestId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+      qc.invalidateQueries({ queryKey: ['pos-void-requests-pending'] })
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+    },
+  })
+}
+
+export function useRejectVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ requestId, input }: { requestId: string; input: ReviewVoidRequestInput }) =>
+      rejectVoidRequest(requestId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+      qc.invalidateQueries({ queryKey: ['pos-void-requests-pending'] })
+    },
   })
 }
