@@ -597,6 +597,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requiredPermission: 'admin:audit-logs:read',
   },
+  {
+    section: 'My Workspace',
+    label: 'Configuration',
+    href: '/settings/configuration',
+    icon: Settings,
+  },
 ]
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
@@ -699,9 +705,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item, idx) =>
-        idx === 0 ? { ...item, section: moduleLabel } : item
-      )
+      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
       mainItems = [...OWNER_WORKSPACE_ITEMS, ...labeledModuleItems]
     }
   } else if (isBranchManager) {
@@ -710,16 +714,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item, idx) =>
-        idx === 0 ? { ...item, section: moduleLabel } : item
-      )
+      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
       mainItems = [...bmWorkspaceItems, ...labeledModuleItems]
     }
   } else if (moduleWithWorkspace) {
     const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
-    const labeledModuleItems = config.main.map((item, idx) =>
-      idx === 0 ? { ...item, section: moduleLabel } : item
-    )
+    const labeledModuleItems = config.main.map((item) => ({ ...item, section: moduleLabel }))
     mainItems = [...MY_WORKSPACE_ITEMS, ...labeledModuleItems]
   } else {
     mainItems = config.main

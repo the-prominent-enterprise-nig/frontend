@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { BranchPaymentMethodsResponse, PosPaymentMethod } from '@/src/schema/pos'
+import type { BranchPaymentMethodsResponse, PosPaymentMethod } from '@/src/schema/pos'
 
 export async function getBranchPaymentMethods(
   branchId: string
@@ -15,27 +15,24 @@ export async function getBranchPaymentMethods(
       return { success: false, error: response.error || 'Failed to load payment methods' }
     }
     return { success: true, data: response.data }
-  } catch (error) {
+  } catch {
     return { success: false, error: 'Failed to load payment methods' }
   }
 }
 
-export async function toggleBranchPaymentMethod(
+export async function saveBranchPaymentMethods(
   branchId: string,
-  method: PosPaymentMethod,
-  isEnabled: boolean
+  changes: { method: PosPaymentMethod; isEnabled: boolean }[]
 ): Promise<ApiResponse> {
   try {
-    const response = await api.patch(`/pos/branches/${branchId}/payment-methods/${method}`, {
-      isEnabled,
-    })
+    const response = await api.patch(`/pos/branches/${branchId}/payment-methods`, { changes })
     if (!response.success) {
-      return { success: false, error: response.error || 'Failed to update payment method' }
+      return { success: false, error: response.error || 'Failed to save payment methods' }
     }
     revalidatePath(`/settings/branches/${branchId}`)
     return { success: true }
-  } catch (error) {
-    return { success: false, error: 'Failed to update payment method' }
+  } catch {
+    return { success: false, error: 'Failed to save payment methods' }
   }
 }
 
@@ -47,7 +44,7 @@ export async function resetBranchPaymentMethods(branchId: string): Promise<ApiRe
     }
     revalidatePath(`/settings/branches/${branchId}`)
     return { success: true }
-  } catch (error) {
+  } catch {
     return { success: false, error: 'Failed to reset payment methods' }
   }
 }

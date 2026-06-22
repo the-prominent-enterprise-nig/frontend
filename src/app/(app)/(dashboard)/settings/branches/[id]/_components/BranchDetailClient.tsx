@@ -20,6 +20,7 @@ import {
   Trash2,
   Building2,
   Power,
+  CreditCard,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BranchFull } from '../../../_actions/get-branch'
@@ -130,12 +131,10 @@ export default function BranchDetailClient({
     setAssigningManager(true)
     const result = await assignBranchManager(branch.id, userId)
     setAssigningManager(false)
-
     if (!result.success) {
       toast.error(result.message || result.error || 'Failed to assign manager')
       return
     }
-
     toast.success('Manager added')
     setManagerModalOpen(false)
     router.refresh()
@@ -145,12 +144,10 @@ export default function BranchDetailClient({
     setRemovingManagerId(userId)
     const result = await removeBranchManager(branch.id, userId)
     setRemovingManagerId(null)
-
     if (!result.success) {
       toast.error(result.message || result.error || 'Failed to remove manager')
       return
     }
-
     toast.success('Manager removed')
     setConfirmRemoveId(null)
     router.refresh()
@@ -170,12 +167,10 @@ export default function BranchDetailClient({
     const result = await setBranchStatus(branch.id, action)
     setChangingStatus(false)
     setConfirmStatusChange(false)
-
     if (!result.success) {
       toast.error(result.message || result.error || `Failed to ${action} branch`)
       return
     }
-
     toast.success(branch.isActive ? 'Branch deactivated' : 'Branch reactivated')
     router.refresh()
   }
@@ -183,21 +178,17 @@ export default function BranchDetailClient({
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
-
     const result = await updateBranch(branch.id, {
       name: name.trim(),
       type: type as (typeof BRANCH_TYPES)[number],
       address: address.trim() || undefined,
       city: city.trim() || undefined,
     })
-
     setSaving(false)
-
     if (!result.success) {
       toast.error(result.message || result.error || 'Failed to save changes')
       return
     }
-
     toast.success('Branch updated')
     setEditing(false)
     router.refresh()
@@ -207,6 +198,10 @@ export default function BranchDetailClient({
   const hasAlerts =
     (summary?.inventory.pendingPurchaseRequests ?? 0) > 0 ||
     (summary?.inventory.pendingPurchaseOrders ?? 0) > 0
+
+  const addressDisplay = [branch.addressLine1, branch.city].filter(Boolean).join(', ')
+
+  const showPaymentMethods = canManageManagers || isBranchManager
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -222,10 +217,11 @@ export default function BranchDetailClient({
           </Link>
         )}
 
-        {/* Header card */}
+        {/* Header card — name + all metadata + actions */}
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
+            {/* Left: name + meta */}
+            <div className="min-w-0 flex-1">
               {editing ? (
                 <input
                   type="text"
@@ -245,8 +241,89 @@ export default function BranchDetailClient({
                   {branch.status}
                 </span>
               </div>
+
+              {/* Compact metadata strip */}
+              {editing ? (
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-400">Type</label>
+                    <select
+                      value={type}
+                      onChange={(e) => setType(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    >
+                      {BRANCH_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {BRANCH_TYPE_LABELS[t]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-400">
+                      Street Address
+                    </label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Street address"
+                      maxLength={255}
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-400">City</label>
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="City"
+                      maxLength={100}
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  {addressDisplay && (
+                    <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      {addressDisplay}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                    <Tag className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                    {BRANCH_TYPE_LABELS[type] ?? type}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                    <Calendar className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                    {formatDate(branch.createdAt)}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                    {branch.employeeCount ?? 0}{' '}
+                    {(branch.employeeCount ?? 0) === 1 ? 'staff member' : 'staff members'}
+                  </span>
+                  {managers.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                      <Users className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      {managers.length === 1
+                        ? managers[0]
+                          ? [managers[0].firstName, managers[0].lastName]
+                              .filter(Boolean)
+                              .join(' ') ||
+                            managers[0].name ||
+                            'Manager'
+                          : '1 manager'
+                        : `${managers.length} managers`}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* Right: actions */}
             <div className="flex shrink-0 items-center gap-2">
               {editing ? (
                 <>
@@ -299,10 +376,9 @@ export default function BranchDetailClient({
           </div>
         </div>
 
-        {/* Dashboard stats */}
+        {/* Stats */}
         {summary && (
           <div className="space-y-4">
-            {/* People + POS revenue */}
             <div
               className={`grid grid-cols-2 gap-4 ${hasPOS ? 'lg:grid-cols-4' : 'lg:grid-cols-2'}`}
             >
@@ -340,7 +416,6 @@ export default function BranchDetailClient({
               )}
             </div>
 
-            {/* POS ops + alerts */}
             {(hasPOS || hasAlerts) && (
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {hasPOS && (
@@ -394,90 +469,10 @@ export default function BranchDetailClient({
           </div>
         )}
 
-        {/* Branch details */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Type */}
+        {/* Managers + Payment Methods side by side */}
+        <div className={`grid grid-cols-1 gap-6 ${showPaymentMethods ? 'lg:grid-cols-2' : ''}`}>
+          {/* Branch Managers */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-              <Tag className="h-3.5 w-3.5" />
-              Branch Type
-            </div>
-            {editing ? (
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-              >
-                {BRANCH_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {BRANCH_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-sm font-medium text-zinc-800">
-                {BRANCH_TYPE_LABELS[type] ?? type}
-              </p>
-            )}
-          </div>
-
-          {/* Created */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-              <Calendar className="h-3.5 w-3.5" />
-              Created
-            </div>
-            <p className="text-sm font-medium text-zinc-800">{formatDate(branch.createdAt)}</p>
-          </div>
-
-          {/* Address */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-              <MapPin className="h-3.5 w-3.5" />
-              Address
-            </div>
-            {editing ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Street address"
-                  maxLength={255}
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                />
-                <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="City"
-                  maxLength={100}
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                />
-              </div>
-            ) : (
-              <p className="text-sm font-medium text-zinc-800">
-                {[branch.addressLine1, branch.city].filter(Boolean).join(', ') || (
-                  <span className="italic text-zinc-400">No address set</span>
-                )}
-              </p>
-            )}
-          </div>
-
-          {/* Assigned Staff */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-              <Building2 className="h-3.5 w-3.5" />
-              Assigned Staff
-            </div>
-            <p className="text-3xl font-semibold text-zinc-900">{branch.employeeCount ?? 0}</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {(branch.employeeCount ?? 0) === 1 ? 'user assigned' : 'users assigned'}
-            </p>
-          </div>
-
-          {/* Managers */}
-          <div className="col-span-1 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:col-span-2">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
                 <Users className="h-3.5 w-3.5" />
@@ -547,24 +542,24 @@ export default function BranchDetailClient({
               </ul>
             )}
           </div>
+
+          {/* Payment Methods */}
+          {showPaymentMethods && (
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+                <CreditCard className="h-3.5 w-3.5" />
+                Payment Methods
+              </div>
+              <BranchPaymentMethodsSection
+                branchId={branch.id}
+                branchName={branch.name}
+                initialMethods={initialPaymentMethods}
+                readOnly={false}
+              />
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Payment Methods */}
-      {(canManageManagers || isBranchManager) && (
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
-            <ShoppingCart className="h-3.5 w-3.5" />
-            Payment Methods
-          </div>
-          <BranchPaymentMethodsSection
-            branchId={branch.id}
-            branchName={branch.name}
-            initialMethods={initialPaymentMethods}
-            readOnly={false}
-          />
-        </div>
-      )}
 
       {/* Deactivate / Reactivate confirmation */}
       {confirmStatusChange && (
@@ -622,7 +617,7 @@ export default function BranchDetailClient({
         </div>
       )}
 
-      {/* Add manager modal — admin only */}
+      {/* Add manager modal */}
       {canManageManagers && (
         <AssignManagerModal
           isOpen={managerModalOpen}
@@ -633,7 +628,7 @@ export default function BranchDetailClient({
         />
       )}
 
-      {/* Remove confirmation — admin only */}
+      {/* Remove confirmation */}
       {canManageManagers &&
         confirmRemoveId &&
         (() => {

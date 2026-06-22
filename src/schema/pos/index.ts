@@ -93,12 +93,22 @@ export type PosPaymentMethod =
   | 'loyalty_points'
   | 'bank_transfer'
 
+export interface OwnerPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+}
+
+export interface OwnerPaymentMethodsResponse {
+  data: OwnerPaymentMethod[]
+}
+
 export interface BranchPaymentMethod {
   method: PosPaymentMethod
   label: string
   isEnabled: boolean
   isOverridden: boolean
-  tenantDefault: boolean
+  ownerDefault: boolean
 }
 
 export interface BranchPaymentMethodsResponse {
