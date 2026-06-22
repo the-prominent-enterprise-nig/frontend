@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Button } from 'react-aria-components'
 import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
@@ -765,7 +764,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         }`}
       >
         {/* Floating collapse/expand button — edge of sidebar */}
-        <Button
+        <button
           onClick={() => setCollapsed((v) => !v)}
           className="absolute -right-3.5 top-5.5 z-50 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-prominent-purple-600 shadow-md ring-2 ring-white/20 transition-colors hover:bg-prominent-purple-700"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -773,7 +772,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
           <ChevronLeft
             className={`h-3.5 w-3.5 text-white transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`}
           />
-        </Button>
+        </button>
 
         <nav className="flex flex-1 flex-col gap-1 min-h-0">
           <div className="flex-1 overflow-y-auto flex flex-col gap-1 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
@@ -806,15 +805,15 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         })}
 
         {allItems.length > 4 && (
-          <Button
-            onPress={() => setDrawerOpen(true)}
+          <button
+            onClick={() => setDrawerOpen(true)}
             className="flex flex-col items-center gap-0.5"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-base">
               <MoreHorizontal className="h-4 w-4 text-white" />
             </span>
             <span className="text-[10px] font-medium text-white">More</span>
-          </Button>
+          </button>
         )}
       </nav>
 
@@ -830,12 +829,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
               <span className="text-[14px] ml-2.5 font-semibold uppercase tracking-widest text-gray-700">
                 Menu
               </span>
-              <Button
-                onPress={() => setDrawerOpen(false)}
+              <button
+                onClick={() => setDrawerOpen(false)}
                 className="rounded-full p-1 hover:bg-gray-100"
               >
                 <X className="h-5 w-5 text-gray-700" />
-              </Button>
+              </button>
             </div>
             <nav className="flex flex-col gap-1">
               <NavItems
