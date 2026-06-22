@@ -16,24 +16,14 @@ import DashboardWidgetWrapper from './DashboardWidgetWrapper'
 // Widgets
 import StatsOverviewWidget from './widgets/StatsOverviewWidget'
 import ModulesWidget from './widgets/ModulesWidget'
-import WeatherWidget from './widgets/WeatherWidget'
-import EventsWidget from './widgets/EventsWidget'
-import MemoAdvisoryWidget from './widgets/MemoAdvisoryWidget'
 import PendingRequestsWidget from './widgets/PendingRequestsWidget'
-import AnnouncementsWidget from './widgets/AnnouncementsWidget'
 import RemindersWidget from './widgets/RemindersWidget'
-import AttendanceSummaryWidget from './widgets/AttendanceSummaryWidget'
-import LeaveRequestsWidget from './widgets/LeaveRequestsWidget'
-import OvertimeRequestsWidget from './widgets/OvertimeRequestsWidget'
-import PayrollSummaryWidget from './widgets/PayrollSummaryWidget'
-import PayslipStatusWidget from './widgets/PayslipStatusWidget'
 import EmployeeBirthdaysWidget from './widgets/EmployeeBirthdaysWidget'
 import RecentActivityWidget from './widgets/RecentActivityWidget'
 import QuickActionsWidget from './widgets/QuickActionsWidget'
 import SystemAlertsWidget from './widgets/SystemAlertsWidget'
 import TaskOverviewWidget from './widgets/TaskOverviewWidget'
 import CalendarWidget from './widgets/CalendarWidget'
-import DepartmentSummaryWidget from './widgets/DepartmentSummaryWidget'
 import SalesStatsWidget from './widgets/SalesStatsWidget'
 import SalesTrendWidget from './widgets/SalesTrendWidget'
 import TopCustomersWidget from './widgets/TopCustomersWidget'
@@ -42,6 +32,8 @@ import OutstandingInvoicesWidget from './widgets/OutstandingInvoicesWidget'
 import PendingDeliveriesWidget from './widgets/PendingDeliveriesWidget'
 import SalesByBranchWidget from './widgets/SalesByBranchWidget'
 import EnterpriseSummaryWidget from './widgets/EnterpriseSummaryWidget'
+import ModuleStatsWidget from './widgets/ModuleStatsWidget'
+import PendingApprovalsWidget from './widgets/PendingApprovalsWidget'
 
 // ── Widget component registry ─────────────────────────────────────────────────
 
@@ -49,24 +41,14 @@ type WidgetComponent = React.ComponentType<{ userName?: string }>
 const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   stats: StatsOverviewWidget,
   modules: ModulesWidget,
-  weather: WeatherWidget,
-  events: EventsWidget,
-  'memo-advisory': MemoAdvisoryWidget,
   'pending-requests': PendingRequestsWidget,
-  announcements: AnnouncementsWidget,
   reminders: RemindersWidget,
-  'attendance-summary': AttendanceSummaryWidget,
-  'leave-requests': LeaveRequestsWidget,
-  'overtime-requests': OvertimeRequestsWidget,
-  'payroll-summary': PayrollSummaryWidget,
-  'payslip-status': PayslipStatusWidget,
   'employee-birthdays': EmployeeBirthdaysWidget,
   'recent-activity': RecentActivityWidget,
   'quick-actions': QuickActionsWidget,
   'system-alerts': SystemAlertsWidget,
   'task-overview': TaskOverviewWidget,
   calendar: CalendarWidget,
-  'department-summary': DepartmentSummaryWidget,
   'sales-stats': SalesStatsWidget,
   'sales-trend': SalesTrendWidget,
   'top-customers': TopCustomersWidget,
@@ -75,6 +57,8 @@ const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   'pending-deliveries': PendingDeliveriesWidget,
   'sales-by-branch': SalesByBranchWidget,
   'enterprise-summary': EnterpriseSummaryWidget,
+  'module-stats': ModuleStatsWidget,
+  'pending-approvals': PendingApprovalsWidget,
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -147,6 +131,23 @@ export default function EditableDashboard({
       }))
     )
   }
+
+  // Re-fit all widget heights whenever the user opens edit mode, so stale h
+  // values from prior sessions don't leave blank space inside the cards.
+  useEffect(() => {
+    if (!isEditing) return
+    const timer = setTimeout(() => {
+      const measured = Object.keys(naturalHeightsRef.current)
+      if (measured.length === 0) return
+      onLayoutChange(
+        compactLayoutVertically(
+          fitLayoutToContent(filteredLayoutRef.current, naturalHeightsRef.current)
+        )
+      )
+    }, 200)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing])
 
   // One-time auto-fit flag — fires when all visible widgets have reported heights.
   const hasAutoFittedRef = useRef(false)
