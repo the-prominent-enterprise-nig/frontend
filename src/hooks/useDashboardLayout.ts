@@ -64,7 +64,13 @@ export function useDashboardLayout(role: DashboardRole): DashboardLayoutState {
           // Merge saved layout with the full layout (handles newly added widgets).
           const fullLayout = buildFullLayout(role)
           const savedMap = new Map(state.layout.map((item) => [item.i, item]))
-          const merged = fullLayout.map((item) => savedMap.get(item.i) ?? item)
+          // Always take minW/minH from fresh defaults so constraint changes in
+          // code are immediately applied to saved layouts on next load.
+          const merged = fullLayout.map((item) => {
+            const saved = savedMap.get(item.i)
+            if (!saved) return item
+            return { ...saved, minW: item.minW, minH: item.minH }
+          })
           // Compact visible widgets' y positions to fix gaps from old saves.
           const visibleSet = new Set(state.visibleWidgets)
           const visibleItems = merged.filter((item) => visibleSet.has(item.i))

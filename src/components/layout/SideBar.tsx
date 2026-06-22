@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Button } from 'react-aria-components'
-import { hasPermission } from '@/src/hooks/usePermission'
+import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
   ArrowLeftRight,
@@ -59,6 +60,7 @@ type NavItem = {
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   section?: string
   activeWhen?: string[]
+  usePrefix?: boolean
 }
 
 type NavGroup = {
@@ -81,6 +83,13 @@ type NavConfig = {
   main: NavItem[]
   groups?: NavGroup[]
   bottom: NavItem[]
+}
+
+const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
+  'chart-bar': BarChart3,
+  package: Package,
+  'shopping-cart': ShoppingCart,
+  'users-round': UsersRound,
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
@@ -343,7 +352,11 @@ function NavLink({
   onClick?: () => void
   isMobile?: boolean
 }) {
-  const isActive = item.activeWhen ? item.activeWhen.includes(pathname) : pathname === item.href
+  const isActive = item.activeWhen
+    ? item.activeWhen.includes(pathname)
+    : item.usePrefix
+      ? pathname === item.href || pathname.startsWith(item.href + '/')
+      : pathname === item.href
   return (
     <div className="relative group">
       <Link
@@ -720,8 +733,26 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     return true
   }
 
+  // Module nav items — filtered by the user's moduleAccess
+  const moduleNavItems: NavItem[] = MODULES.filter((m) => hasModuleAccess(session, m.key)).map(
+    (m, idx) => ({
+      label: m.label,
+      href: m.href,
+      icon: MODULE_ICON_MAP[m.icon] ?? Package,
+      section: idx === 0 ? 'Modules' : undefined,
+      usePrefix: true,
+    })
+  )
+
   // Always prepend Dashboard item so it's visible on every route
-  const main = [DASHBOARD_ITEM, ...mainItems.filter(filterItem)]
+  // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
+  const rawMain = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  const seen = new Set<string>()
+  const main = rawMain.filter((item) => {
+    if (seen.has(item.href)) return false
+    seen.add(item.href)
+    return true
+  })
   const finalBottom = config.bottom.filter(filterItem)
   const allItems = [...main, ...finalBottom]
 
