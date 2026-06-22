@@ -13,6 +13,15 @@ export interface PosTerminal {
   branch?: { id: string; name: string }
 }
 
+// Cashier Terminal Access
+export interface CashierTerminalAccess {
+  id: string
+  userId: string
+  terminalId: string
+  createdAt: string
+  user: { id: string; name: string | null; email: string | null }
+}
+
 export interface CreateTerminalInput {
   terminalCode: string
   name: string
@@ -80,6 +89,32 @@ export interface SalesSummary {
   transactionCount: number
 }
 
+// Payment Method Configuration
+export type PaymentMethodType = 'standard' | 'custom'
+
+export interface PaymentMethodConfig {
+  id: string
+  key: string | null
+  name: string
+  label: string
+  type: PaymentMethodType
+  isEnabled: boolean
+  displayOrder: number
+  glAccountId: string | null
+  referenceFieldLabel: string | null
+  referenceFieldRegex: string | null
+  referenceIsRequired: boolean
+}
+
+export interface CreateCustomPaymentMethodInput {
+  name: string
+  label: string
+  referenceFieldLabel?: string
+  referenceFieldRegex?: string
+  referenceIsRequired?: boolean
+  glAccountId?: string
+}
+
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
@@ -92,6 +127,7 @@ export type PosPaymentMethod =
   | 'bank_transfer'
   | 'gcash'
   | 'paymaya'
+  | 'custom'
 
 export interface PosTransactionLine {
   id: string
@@ -203,6 +239,7 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  paymentMethodConfigId?: string
   currency?: string
   fxRate?: number
   notes?: string

@@ -628,6 +628,7 @@ function resolvePrimarySidebarSegment(session: SessionUser | null): string {
     case 'Stock Controller':
       return 'inventory'
     case 'Cashier':
+    case 'pos':
       return 'pos'
     case 'Marketing Manager':
       return 'crm'
@@ -636,7 +637,15 @@ function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   }
 
   if (session?.roles.includes('Business Owner')) return 'Business Owner'
-  if (session?.roles.includes('cashier') || session?.roles.includes('pos-manager')) return 'pos'
+
+  const allRoles = [
+    ...(session?.primaryRole ? [session.primaryRole] : []),
+    ...(session?.roles ?? []),
+  ].map((r) => r.toLowerCase())
+
+  if (allRoles.some((r) => r === 'cashier' || r === 'pos-manager' || r === 'pos')) return 'pos'
+  if (allRoles.some((r) => r === 'stock controller' || r === 'stock-controller')) return 'inventory'
+
   if (session?.permissions.some((p) => p.startsWith('inventory:'))) return 'inventory'
   if (session?.permissions.some((p) => p.startsWith('accounting:'))) return 'accounting'
   if (session?.permissions.some((p) => p.startsWith('pos:'))) return 'pos'

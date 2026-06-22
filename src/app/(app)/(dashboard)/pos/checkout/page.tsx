@@ -24,6 +24,9 @@ import {
   UtensilsCrossed,
   Bell,
   Users,
+  Mail,
+  Phone,
+  Send,
 } from 'lucide-react'
 import { computePricingTotals } from './_utils/calculations'
 import { useSessions } from '../_hooks/usePos'
@@ -47,6 +50,8 @@ import {
   syncTransactions,
   updateSessionDisplay,
   addToOrderQueue,
+  sendReceipt,
+  getPaymentMethods,
   getDefaultAccountingTaxRate,
 } from '../_actions/pos-actions'
 import type {
@@ -94,6 +99,11 @@ interface PaymentRow {
   method: PosPaymentMethod
   amount: number
   referenceNumber: string
+  // populated for custom / configured methods
+  configId?: string
+  refFieldLabel?: string
+  refRequired?: boolean
+  refRegex?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -107,6 +117,7 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   bank_transfer: 'Bank Transfer',
   gcash: 'GCash',
   paymaya: 'PayMaya',
+  custom: 'Custom',
 }
 
 const REF_METHODS: PosPaymentMethod[] = ['card', 'bank_transfer', 'gift_card', 'gcash', 'paymaya']
@@ -204,6 +215,10 @@ export default function CheckoutPage() {
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
+  // Configured payment methods from API — falls back to hardcoded list if not loaded
+  const [configuredMethods, setConfiguredMethods] = useState<
+    import('@/src/schema/pos').PaymentMethodConfig[]
+  >([])
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -271,6 +286,17 @@ export default function CheckoutPage() {
   // Measured-item quantity dialog
   const [measuredItem, setMeasuredItem] = useState<LookupItem | null>(null)
   const [measuredQtyInput, setMeasuredQtyInput] = useState('')
+
+  // Load configured payment methods once
+  useEffect(() => {
+    getPaymentMethods().then((res) => {
+      if (res.success && res.data?.data?.length) {
+        setConfiguredMethods(
+          res.data.data.filter((m) => m.isEnabled).sort((a, b) => a.displayOrder - b.displayOrder)
+        )
+      }
+    })
+  }, [])
 
   // Auto-select the only open session
   useEffect(() => {
@@ -658,7 +684,25 @@ export default function CheckoutPage() {
   // ─── Payment actions ───────────────────────────────────────────────────────
 
   function addPaymentRow() {
-    setPayments((prev) => [...prev, { method: 'cash', amount: 0, referenceNumber: '' }])
+    if (configuredMethods.length > 0) {
+      const first =
+        configuredMethods.find((m) => !isOffline || m.key === 'cash') ?? configuredMethods[0]
+      setPayments((prev) => [
+        ...prev,
+        {
+          method:
+            first.type === 'custom' ? 'custom' : ((first.key as PosPaymentMethod) ?? 'custom'),
+          amount: 0,
+          referenceNumber: '',
+          configId: first.id,
+          refFieldLabel: first.referenceFieldLabel ?? undefined,
+          refRequired: first.referenceIsRequired,
+          refRegex: first.referenceFieldRegex ?? undefined,
+        },
+      ])
+    } else {
+      setPayments((prev) => [...prev, { method: 'cash', amount: 0, referenceNumber: '' }])
+    }
   }
 
   function updatePayment(idx: number, patch: Partial<PaymentRow>) {
@@ -857,9 +901,18 @@ export default function CheckoutPage() {
           paymentMethod: p.method,
           amount: actualAmount,
           referenceNumber: p.referenceNumber || undefined,
+          paymentMethodConfigId: p.configId,
         })
         if (!payRes.success) {
-          setError(`Transaction created but payment failed: ${payRes.error}`)
+          const isRefFail =
+            payRes.error?.includes('REFERENCE_VALIDATION_FAILED') ||
+            payRes.error?.toLowerCase().includes('reference validation')
+          const label = p.refFieldLabel ?? PAYMENT_LABELS[p.method] ?? 'Reference'
+          setError(
+            isRefFail
+              ? `Invalid ${label} format — please check the value and try again.`
+              : `Transaction created but payment failed: ${payRes.error}`
+          )
           setSubmitting(false)
           return
         }
@@ -1689,18 +1742,44 @@ export default function CheckoutPage() {
                     <div className="relative min-w-0 flex-1">
                       <select
                         className="w-full appearance-none cursor-pointer rounded-lg border border-gray-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        value={p.method}
-                        onChange={(e) =>
-                          updatePayment(i, { method: e.target.value as PosPaymentMethod })
-                        }
+                        value={p.configId ?? p.method}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (configuredMethods.length > 0) {
+                            const cfg = configuredMethods.find((m) => m.id === val)
+                            if (cfg) {
+                              updatePayment(i, {
+                                method:
+                                  cfg.type === 'custom'
+                                    ? 'custom'
+                                    : ((cfg.key as PosPaymentMethod) ?? 'custom'),
+                                configId: cfg.id,
+                                refFieldLabel: cfg.referenceFieldLabel ?? undefined,
+                                refRequired: cfg.referenceIsRequired,
+                                refRegex: cfg.referenceFieldRegex ?? undefined,
+                                referenceNumber: '',
+                              })
+                              return
+                            }
+                          }
+                          updatePayment(i, { method: val as PosPaymentMethod, configId: undefined })
+                        }}
                       >
-                        {Object.entries(PAYMENT_LABELS)
-                          .filter(([v]) => !isOffline || v === 'cash')
-                          .map(([v, l]) => (
-                            <option key={v} value={v}>
-                              {l}
-                            </option>
-                          ))}
+                        {configuredMethods.length > 0
+                          ? configuredMethods
+                              .filter((m) => !isOffline || m.key === 'cash')
+                              .map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name}
+                                </option>
+                              ))
+                          : Object.entries(PAYMENT_LABELS)
+                              .filter(([v]) => !isOffline || v === 'cash')
+                              .map(([v, l]) => (
+                                <option key={v} value={v}>
+                                  {l}
+                                </option>
+                              ))}
                       </select>
                       <ChevronDown
                         size={11}
@@ -1760,20 +1839,31 @@ export default function CheckoutPage() {
                   </div>
                 )}
 
-                {/* Reference number — required for card / bank / gift card */}
-                {payments.some((p) => REF_METHODS.includes(p.method) && p.amount > 0) && (
+                {/* Reference number — required for card / bank / gift card / custom with ref field */}
+                {payments.some(
+                  (p) => p.amount > 0 && (REF_METHODS.includes(p.method) || p.refFieldLabel)
+                ) && (
                   <div className="mt-2 space-y-1.5">
-                    {payments.map((p, i) =>
-                      REF_METHODS.includes(p.method) && p.amount > 0 ? (
-                        <input
-                          key={i}
-                          className={`w-full rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!p.referenceNumber.trim() ? 'border-amber-300 bg-amber-50 placeholder:text-amber-500' : 'border-gray-200'}`}
-                          placeholder={`${PAYMENT_LABELS[p.method]} reference * required`}
-                          value={p.referenceNumber}
-                          onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
-                        />
+                    {payments.map((p, i) => {
+                      const needsRef =
+                        p.amount > 0 && (REF_METHODS.includes(p.method) || p.refFieldLabel)
+                      const label =
+                        p.refFieldLabel ??
+                        (PAYMENT_LABELS[p.method]
+                          ? `${PAYMENT_LABELS[p.method]} reference`
+                          : 'Reference')
+                      const isRequired = p.refRequired ?? REF_METHODS.includes(p.method)
+                      return needsRef ? (
+                        <div key={i}>
+                          <input
+                            className={`w-full rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${isRequired && !p.referenceNumber.trim() ? 'border-amber-300 bg-amber-50 placeholder:text-amber-500' : 'border-gray-200'}`}
+                            placeholder={`${label}${isRequired ? ' * required' : ''}`}
+                            value={p.referenceNumber}
+                            onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
+                          />
+                        </div>
                       ) : null
-                    )}
+                    })}
                   </div>
                 )}
 
@@ -2272,6 +2362,13 @@ function SuccessScreen({
   const [queueError, setQueueError] = useState('')
   const queueInFlight = useRef(false)
 
+  // Send Receipt state
+  const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
+  const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
+  const [receiptSending, setReceiptSending] = useState(false)
+  const [receiptSent, setReceiptSent] = useState<string | null>(null)
+  const [receiptError, setReceiptError] = useState('')
+
   async function handleAddToQueue() {
     if (!success.transactionId || queueInFlight.current) return
     queueInFlight.current = true
@@ -2289,6 +2386,25 @@ function SuccessScreen({
     }
     setQueueResult({ number: res.data.ticket.number, categoryName: res.data.categoryName })
     setShowQueueForm(false)
+  }
+
+  async function handleSendReceipt() {
+    const email = receiptEmail.trim()
+    const phone = receiptPhone.trim()
+    if (!email && !phone) return
+    setReceiptSending(true)
+    setReceiptError('')
+    setReceiptSent(null)
+    const res = await sendReceipt(success.transactionId, {
+      email: email || undefined,
+      phone: phone || undefined,
+    })
+    setReceiptSending(false)
+    if (!res.success) {
+      setReceiptError(res.error ?? 'Failed to send receipt')
+      return
+    }
+    setReceiptSent(email || phone)
   }
 
   return (
@@ -2427,6 +2543,72 @@ function SuccessScreen({
               )}
             </div>
           )}
+
+        {/* Send Receipt */}
+        {!success.offlineBuffered && success.transactionId && (
+          <div className="w-full rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <Mail size={12} />
+              Send Receipt
+            </p>
+
+            {receiptSent ? (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
+                <CheckCircle2 size={14} className="shrink-0 text-green-500" />
+                <p className="text-xs font-medium text-green-700">Receipt sent to {receiptSent}</p>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Mail
+                    size={13}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={receiptEmail}
+                    onChange={(e) => setReceiptEmail(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+                <div className="relative">
+                  <Phone
+                    size={13}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone number (SMS not yet active)"
+                    value={receiptPhone}
+                    onChange={(e) => setReceiptPhone(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                  />
+                </div>
+                {receiptError && (
+                  <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {receiptError}
+                  </p>
+                )}
+                <button
+                  onClick={handleSendReceipt}
+                  disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white hover:bg-gray-900 disabled:opacity-40 transition-colors"
+                >
+                  {receiptSending ? (
+                    <>
+                      <Loader2 size={11} className="animate-spin" /> Sending…
+                    </>
+                  ) : (
+                    <>
+                      <Send size={11} /> Send Receipt
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         <button
           onClick={onReset}

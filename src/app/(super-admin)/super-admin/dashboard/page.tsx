@@ -118,7 +118,9 @@ export default async function SuperAdminDashboard() {
             <div className={`mb-4 inline-flex rounded-full p-2.5 ${card.iconBg}`}>
               <card.icon className={`h-5 w-5 ${card.iconColor}`} />
             </div>
-            <p className="text-2xl font-bold text-zinc-900">{card.value.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-zinc-900" suppressHydrationWarning>
+              {card.value.toLocaleString()}
+            </p>
             <p className="mt-0.5 text-xs font-medium text-zinc-500">{card.label}</p>
           </div>
         ))}

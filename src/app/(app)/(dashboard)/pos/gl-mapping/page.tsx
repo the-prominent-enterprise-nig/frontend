@@ -13,6 +13,7 @@ import {
 const POS_KEYS = [
   'POS_CASH',
   'POS_CARD',
+  'POS_EWALLET',
   'POS_GIFT_CARD',
   'POS_BANK_TRANSFER',
   'POS_LOYALTY_POINTS',
