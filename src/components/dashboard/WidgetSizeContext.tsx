@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 
 // ── Widget config context ─────────────────────────────────────────────────────
 // Provided by DashboardWidgetWrapper so any widget can read its own settings.
@@ -34,6 +34,21 @@ export const WidgetSizeContext = createContext<WidgetSizeContextValue>({
 
 export function useWidgetSize(): WidgetSizeContextValue {
   return useContext(WidgetSizeContext)
+}
+
+// ── Widget header extras context ──────────────────────────────────────────────
+// Lets a widget render content into its own wrapper's title bar.
+
+export type WidgetHeaderContextValue = {
+  setHeaderExtra: (node: ReactNode) => void
+}
+
+export const WidgetHeaderContext = createContext<WidgetHeaderContextValue>({
+  setHeaderExtra: () => {},
+})
+
+export function useWidgetHeader(): WidgetHeaderContextValue {
+  return useContext(WidgetHeaderContext)
 }
 
 // Derives a named size variant from the content area's pixel width.

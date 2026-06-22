@@ -97,8 +97,8 @@ export function hasModuleAccess(session: SessionUser | null, moduleKey: string):
   if (
     session.primaryRole === 'Business Owner' ||
     session.roles.includes('Business Owner') ||
-    session.primaryRole === 'branch-manager' ||
-    session.roles.includes('branch-manager')
+    session.primaryRole === 'Branch Manager' ||
+    session.roles.includes('Branch Manager')
   )
     return true
 

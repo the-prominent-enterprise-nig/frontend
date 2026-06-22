@@ -1,11 +1,11 @@
 import { useWidgetSize } from '../WidgetSizeContext'
 
 const TASKS = [
-  { label: 'Employee Onboarding', completed: 7, total: 10, color: 'bg-purple-500' },
-  { label: 'Payroll Processing', completed: 5, total: 5, color: 'bg-emerald-500' },
-  { label: 'Inventory Audit', completed: 3, total: 8, color: 'bg-amber-500' },
-  { label: 'Financial Reports', completed: 2, total: 6, color: 'bg-blue-500' },
-  { label: 'Policy Updates', completed: 1, total: 4, color: 'bg-pink-500' },
+  { label: 'CRM Follow-ups', completed: 6, total: 10, color: 'bg-purple-500' },
+  { label: 'Lead Qualification', completed: 3, total: 5, color: 'bg-emerald-500' },
+  { label: 'Stock Replenishment', completed: 2, total: 8, color: 'bg-amber-500' },
+  { label: 'Invoice Collections', completed: 4, total: 6, color: 'bg-blue-500' },
+  { label: 'Pending Deliveries', completed: 3, total: 4, color: 'bg-pink-500' },
 ]
 
 export default function TaskOverviewWidget() {

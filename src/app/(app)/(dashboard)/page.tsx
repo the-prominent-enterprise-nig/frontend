@@ -24,7 +24,7 @@ export default async function RootPage() {
   }
 
   // Branch managers land on the main dashboard (same as owner)
-  if (session.primaryRole === 'branch-manager') {
+  if (session.primaryRole === 'Branch Manager') {
     redirect('/dashboard')
   }
 

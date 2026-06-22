@@ -1,7 +1,7 @@
+'use client'
+
 import { UserRound } from 'lucide-react'
 import { type SessionUser } from '@/src/libs/guards/permission'
-import { type BusinessProfile } from '@/src/libs/actions/enterprise.actions'
-import CompanyProfileSection from './CompanyProfileSection'
 
 function titleCase(value?: string | null): string | null {
   if (!value) return null
@@ -22,20 +22,24 @@ function Field({ label, value }: { label: string; value?: string | number | null
   )
 }
 
-type Props = { session: SessionUser; profile: BusinessProfile | null }
-
-export default function OwnerProfileView({ session, profile }: Props) {
-  const ownerName =
+export default function EmployeeProfileView({ session }: { session: SessionUser }) {
+  const displayName =
     session.fullName ||
     [session.firstName, session.lastName].filter(Boolean).join(' ') ||
     session.name ||
-    'Business Owner'
+    session.email
+
+  const branch = session.branchId ? session.branches.find((b) => b.id === session.branchId) : null
+
+  const employeeCode = session.employee?.employeeCode ?? null
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-6">
         <p className="text-sm font-medium text-prominent-purple-700">My Profile</p>
-        <h1 className="mt-1 text-2xl font-semibold text-zinc-950">Business Owner</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-zinc-950">
+          {titleCase(session.primaryRole) ?? 'Employee'}
+        </h1>
       </div>
 
       <div className="space-y-4">
@@ -46,19 +50,22 @@ export default function OwnerProfileView({ session, profile }: Props) {
             </div>
             <div>
               <h2 className="text-base font-semibold text-zinc-950">Account Information</h2>
-              <p className="text-sm text-zinc-500">Owner login and access details</p>
+              <p className="text-sm text-zinc-500">Your login and access details</p>
             </div>
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Name" value={ownerName} />
+            <Field label="Name" value={displayName} />
             <Field label="Email" value={session.email} />
-            <Field label="Role" value="Business Owner" />
+            <Field label="Role" value={titleCase(session.primaryRole)} />
             <Field label="Account status" value={titleCase(session.status)} />
+            {employeeCode && <Field label="Employee code" value={employeeCode} />}
+            {branch && <Field label="Branch" value={branch.name} />}
+            {session.enterpriseOwnerName && (
+              <Field label="Organization" value={session.enterpriseOwnerName} />
+            )}
           </div>
         </section>
-
-        <CompanyProfileSection profile={profile} />
       </div>
     </main>
   )

@@ -66,7 +66,7 @@ export default function DashboardWidgetSelector({
                     : 'border-zinc-200 bg-white text-zinc-600 hover:border-purple-300 hover:text-purple-700'
                 }`}
             >
-              <span>{widget.emoji}</span>
+              <widget.icon className="h-3.5 w-3.5 shrink-0" />
               <span>{widget.label}</span>
               {isSelected && <Check className="h-3 w-3" />}
             </button>
