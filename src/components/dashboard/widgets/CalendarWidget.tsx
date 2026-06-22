@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays, List } from 'lucide-react'
-import { useWidgetSize } from '../WidgetSizeContext'
+import { useWidgetSize, useWidgetHeader } from '../WidgetSizeContext'
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 export const CALENDAR_EVENTS: Record<number, string> = {
@@ -18,11 +18,42 @@ type View = 'calendar' | 'events'
 
 export default function CalendarWidget() {
   const { variant } = useWidgetSize()
+  const { setHeaderExtra } = useWidgetHeader()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear] = useState(now.getFullYear())
   const [view, setView] = useState<View>('calendar')
   const today = now.getDate()
+
+  useEffect(() => {
+    setHeaderExtra(
+      <div className="flex shrink-0 items-center rounded-full bg-zinc-100 p-0.5">
+        <button
+          onClick={() => setView('calendar')}
+          title="Calendar view"
+          className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+            view === 'calendar'
+              ? 'bg-white shadow-sm text-purple-600'
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
+        >
+          <CalendarDays className="h-3 w-3" />
+        </button>
+        <button
+          onClick={() => setView('events')}
+          title="Events view"
+          className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+            view === 'events'
+              ? 'bg-white shadow-sm text-purple-600'
+              : 'text-zinc-400 hover:text-zinc-600'
+          }`}
+        >
+          <List className="h-3 w-3" />
+        </button>
+      </div>
+    )
+    return () => setHeaderExtra(null)
+  }, [view, setHeaderExtra])
   const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
 
   const firstDay = new Date(year, month, 1).getDay()
@@ -60,66 +91,38 @@ export default function CalendarWidget() {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Header: nav (calendar view only) + view toggle */}
-      <div className="flex items-center gap-2">
-        {view === 'calendar' ? (
-          <div className="flex flex-1 items-center justify-between">
-            <button
-              className="rounded p-0.5 hover:bg-zinc-100 transition"
-              onClick={() => {
-                const d = new Date(year, month - 1)
-                setMonth(d.getMonth())
-                setYear(d.getFullYear())
-              }}
-            >
-              <ChevronLeft className="h-3.5 w-3.5 text-zinc-500" />
-            </button>
-            <p className="text-xs font-semibold text-zinc-900">
-              {monthName} {year}
-            </p>
-            <button
-              className="rounded p-0.5 hover:bg-zinc-100 transition"
-              onClick={() => {
-                const d = new Date(year, month + 1)
-                setMonth(d.getMonth())
-                setYear(d.getFullYear())
-              }}
-            >
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
-            </button>
-          </div>
-        ) : (
-          <p className="flex-1 text-xs font-semibold text-zinc-900">
+      {/* Month nav (calendar view only) */}
+      {view === 'calendar' ? (
+        <div className="flex items-center justify-between">
+          <button
+            className="rounded p-0.5 hover:bg-zinc-100 transition"
+            onClick={() => {
+              const d = new Date(year, month - 1)
+              setMonth(d.getMonth())
+              setYear(d.getFullYear())
+            }}
+          >
+            <ChevronLeft className="h-3.5 w-3.5 text-zinc-500" />
+          </button>
+          <p className="text-xs font-semibold text-zinc-900">
             {monthName} {year}
           </p>
-        )}
-
-        {/* Segmented toggle */}
-        <div className="flex shrink-0 items-center rounded-full bg-zinc-100 p-0.5">
           <button
-            onClick={() => setView('calendar')}
-            title="Calendar view"
-            className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
-              view === 'calendar'
-                ? 'bg-white shadow-sm text-purple-600'
-                : 'text-zinc-400 hover:text-zinc-600'
-            }`}
+            className="rounded p-0.5 hover:bg-zinc-100 transition"
+            onClick={() => {
+              const d = new Date(year, month + 1)
+              setMonth(d.getMonth())
+              setYear(d.getFullYear())
+            }}
           >
-            <CalendarDays className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => setView('events')}
-            title="Events view"
-            className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
-              view === 'events'
-                ? 'bg-white shadow-sm text-purple-600'
-                : 'text-zinc-400 hover:text-zinc-600'
-            }`}
-          >
-            <List className="h-3 w-3" />
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
           </button>
         </div>
-      </div>
+      ) : (
+        <p className="text-xs font-semibold text-zinc-900">
+          {monthName} {year}
+        </p>
+      )}
 
       {/* Calendar grid view */}
       {view === 'calendar' && (

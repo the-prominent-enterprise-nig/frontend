@@ -1,9 +1,14 @@
 'use client'
 
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, type ReactNode } from 'react'
 import { X, GripHorizontal, SlidersHorizontal } from 'lucide-react'
 import { widgetById, CONFIGURABLE_WIDGET_IDS } from '@/src/libs/dashboardWidgets'
-import { WidgetSizeContext, WidgetConfigContext, getWidgetVariant } from './WidgetSizeContext'
+import {
+  WidgetSizeContext,
+  WidgetConfigContext,
+  WidgetHeaderContext,
+  getWidgetVariant,
+} from './WidgetSizeContext'
 import WidgetSettingsPanel from './WidgetSettingsPanel'
 
 type Props = {
@@ -37,6 +42,7 @@ export default function DashboardWidgetWrapper({
   const innerRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 600, height: 400 })
   const [showSettings, setShowSettings] = useState(false)
+  const [headerExtra, setHeaderExtra] = useState<ReactNode>(null)
 
   // Close settings panel when editing mode ends.
   useEffect(() => {
@@ -101,6 +107,7 @@ export default function DashboardWidgetWrapper({
         <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 select-none">
           {label}
         </p>
+        {!isEditing && headerExtra}
         {isEditing && isConfigurable && (
           <button
             type="button"
@@ -137,24 +144,26 @@ export default function DashboardWidgetWrapper({
         ref={contentRef}
         className={isEditing ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'min-w-0'}
       >
-        <WidgetSizeContext.Provider value={sizeContextValue}>
-          <WidgetConfigContext.Provider value={configContextValue}>
-            <div className={isEditing ? 'absolute inset-0 overflow-auto p-3' : 'p-3'}>
-              {/* innerRef measures the natural content height for auto-fit calculations */}
-              <div ref={innerRef}>
-                {isEditing && showSettings ? (
-                  <WidgetSettingsPanel
-                    widgetId={id}
-                    settings={settings}
-                    onChange={onSettingsChange}
-                  />
-                ) : (
-                  children
-                )}
+        <WidgetHeaderContext.Provider value={{ setHeaderExtra }}>
+          <WidgetSizeContext.Provider value={sizeContextValue}>
+            <WidgetConfigContext.Provider value={configContextValue}>
+              <div className={isEditing ? 'absolute inset-0 overflow-auto p-3' : 'p-3'}>
+                {/* innerRef measures the natural content height for auto-fit calculations */}
+                <div ref={innerRef}>
+                  {isEditing && showSettings ? (
+                    <WidgetSettingsPanel
+                      widgetId={id}
+                      settings={settings}
+                      onChange={onSettingsChange}
+                    />
+                  ) : (
+                    children
+                  )}
+                </div>
               </div>
-            </div>
-          </WidgetConfigContext.Provider>
-        </WidgetSizeContext.Provider>
+            </WidgetConfigContext.Provider>
+          </WidgetSizeContext.Provider>
+        </WidgetHeaderContext.Provider>
       </div>
     </div>
   )
