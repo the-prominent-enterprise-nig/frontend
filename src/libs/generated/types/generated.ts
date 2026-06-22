@@ -71,6 +71,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/auth/password/reset/confirm': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Confirm password reset with token and new password */
+    post: operations['AuthController_confirmPasswordReset']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/auth/invite/{token}': {
     parameters: {
       query?: never
@@ -153,7 +170,8 @@ export interface paths {
     delete: operations['UsersController_remove']
     options?: never
     head?: never
-    patch?: never
+    /** Update a user profile */
+    patch: operations['UsersController_update']
     trace?: never
   }
   '/users/{id}/roles': {
@@ -240,6 +258,23 @@ export interface paths {
     head?: never
     /** Activate or deactivate a user */
     patch: operations['UsersController_setStatus']
+    trace?: never
+  }
+  '/users/{id}/password/reset': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Admin: send a password reset email to a user */
+    post: operations['UsersController_adminResetUserPassword']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/users/{id}/assign-employee': {
@@ -4942,6 +4977,40 @@ export interface paths {
     patch: operations['BranchesController_update']
     trace?: never
   }
+  '/branches/{id}/deactivate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Deactivate a branch */
+    patch: operations['BranchesController_deactivate']
+    trace?: never
+  }
+  '/branches/{id}/reactivate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Reactivate a branch */
+    patch: operations['BranchesController_reactivate']
+    trace?: never
+  }
   '/enterprise/branches': {
     parameters: {
       query?: never
@@ -4972,6 +5041,22 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/enterprise/profile': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['EnterpriseController_getProfile']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch: operations['EnterpriseController_updateProfile']
     trace?: never
   }
   '/super-admin/dashboard': {
@@ -5371,6 +5456,12 @@ export interface components {
       /** @example employee@tpe-nig.com */
       email: string
     }
+    ConfirmResetPasswordDto: {
+      /** @example abc123... */
+      token: string
+      /** @example NewSecurePassword123! */
+      newPassword: string
+    }
     ClaimInviteDto: Record<string, never>
     EmployeeSummaryDto: {
       /** @example uuid */
@@ -5475,12 +5566,16 @@ export interface components {
        *     ]
        */
       roleIds: string[]
-      /** @description Department for the matching employee profile */
-      departmentId?: string
-      /** @description Position for the matching employee profile */
-      positionId?: string
       /** @description Branch for the matching employee profile */
       branchId?: string
+      middleName?: string
+      contactNumber?: string
+      /** @example 1990-01-15 */
+      dateOfBirth?: string
+      /** @enum {string} */
+      maritalStatus?: 'Single' | 'Married' | 'Widowed' | 'Separated'
+      /** @example 2024-01-01 */
+      hireDate?: string
     }
     PermissionDto: {
       /** @example uuid */
@@ -5545,6 +5640,24 @@ export interface components {
       createdAt: string
       /** Format: date-time */
       updatedAt: string
+    }
+    UpdateUserDto: {
+      /** @example John */
+      firstName?: string
+      /** @example Doe */
+      lastName?: string
+      /** @example Santos */
+      middleName?: string
+      /** @example +63 912 345 6789 */
+      contactNumber?: string
+      /** @example 1990-01-15 */
+      dateOfBirth?: string
+      /** @enum {string} */
+      maritalStatus?: 'Single' | 'Married' | 'Widowed' | 'Separated'
+      /** @example 2023-06-01 */
+      hireDate?: string
+      /** @example uuid-of-branch */
+      branchId?: string
     }
     AssignRoleDto: {
       /** @description Role UUID to assign to user */
@@ -8183,8 +8296,10 @@ export interface components {
       name?: string
       /** @enum {string} */
       type?: 'retail' | 'warehouse' | 'office' | 'mixed'
-      /** @example 88 Ayala Ave, Makati, Manila */
+      /** @example 88 Ayala Ave */
       address?: string
+      /** @example Makati */
+      city?: string
     }
     CreateBranchDto: {
       /** @example Manila HQ */
@@ -8197,6 +8312,7 @@ export interface components {
       /** @example 123 Main St, Manila */
       address?: string
     }
+    UpdateBusinessProfileDto: Record<string, never>
     CreateEnterpriseDto: Record<string, never>
     UpdateEnterpriseDto: Record<string, never>
     UpdateEnterpriseStatusDto: Record<string, never>
@@ -8322,6 +8438,35 @@ export interface operations {
       }
     }
   }
+  AuthController_confirmPasswordReset: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmResetPasswordDto']
+      }
+    }
+    responses: {
+      /** @description Password reset successfully */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Invalid or expired token */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   AuthController_validateInvite: {
     parameters: {
       query?: never
@@ -8393,7 +8538,13 @@ export interface operations {
   }
   UsersController_findAll: {
     parameters: {
-      query?: never
+      query: {
+        search: string
+        status: string
+        branchId: string
+        page: string
+        limit: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -8480,6 +8631,32 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  UsersController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateUserDto']
+      }
+    }
+    responses: {
+      /** @description Updated user */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponseDto']
+        }
       }
     }
   }
@@ -8606,6 +8783,33 @@ export interface operations {
     requestBody?: never
     responses: {
       200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UsersController_adminResetUserPassword: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Reset email sent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Only Business Owners can reset user passwords */
+      403: {
         headers: {
           [name: string]: unknown
         }
@@ -17524,6 +17728,44 @@ export interface operations {
       }
     }
   }
+  BranchesController_deactivate: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchesController_reactivate: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   EnterpriseController_getBranches: {
     parameters: {
       query?: never
@@ -17549,6 +17791,44 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EnterpriseController_getProfile: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EnterpriseController_updateProfile: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBusinessProfileDto']
+      }
+    }
     responses: {
       200: {
         headers: {
