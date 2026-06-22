@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
   MoreHorizontal,
   Pencil,
@@ -65,24 +65,21 @@ export default function UsersSection({
     setSearch(currentSearch)
   }, [currentSearch])
 
-  const buildHref = useCallback(
-    (overrides: Record<string, string | number | undefined>) => {
-      const params = new URLSearchParams()
-      const merged: Record<string, string | number | undefined> = {
-        ...(currentSearch && { search: currentSearch }),
-        ...(currentStatus && { status: currentStatus }),
-        ...(currentBranchId && { branchId: currentBranchId }),
-        ...(meta?.page && meta.page > 1 && { page: meta.page }),
-        ...overrides,
-      }
-      Object.entries(merged).forEach(([k, v]) => {
-        if (v !== undefined && v !== '' && String(v) !== '1') params.set(k, String(v))
-      })
-      const qs = params.toString()
-      return qs ? `${pathname}?${qs}` : pathname
-    },
-    [pathname, currentSearch, currentStatus, currentBranchId, meta?.page]
-  )
+  const buildHref = (overrides: Record<string, string | number | undefined>) => {
+    const params = new URLSearchParams()
+    const merged: Record<string, string | number | undefined> = {
+      ...(currentSearch && { search: currentSearch }),
+      ...(currentStatus && { status: currentStatus }),
+      ...(currentBranchId && { branchId: currentBranchId }),
+      ...(meta?.page && meta.page > 1 && { page: meta.page }),
+      ...overrides,
+    }
+    Object.entries(merged).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && String(v) !== '1') params.set(k, String(v))
+    })
+    const qs = params.toString()
+    return qs ? `${pathname}?${qs}` : pathname
+  }
 
   const buildFilterHref = (overrides: Record<string, string>) => {
     const params = new URLSearchParams()
