@@ -745,7 +745,14 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   )
 
   // Always prepend Dashboard item so it's visible on every route
-  const main = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
+  const rawMain = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  const seen = new Set<string>()
+  const main = rawMain.filter((item) => {
+    if (seen.has(item.href)) return false
+    seen.add(item.href)
+    return true
+  })
   const finalBottom = config.bottom.filter(filterItem)
   const allItems = [...main, ...finalBottom]
 
