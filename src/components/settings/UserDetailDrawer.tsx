@@ -11,12 +11,17 @@ import {
   Calendar,
   Hash,
   User as UserIcon,
+  Power,
+  Phone,
+  Heart,
+  Briefcase,
 } from 'lucide-react'
 import { type User } from '@/src/schema/settings/list'
 
 type UserDetailDrawerProps = {
   user: User | null
   onClose: () => void
+  onEdit: (user: User) => void
   onAssignRole: (user: User) => void
   onToggleActive: (user: User) => void
   onDelete: (user: User) => void
@@ -26,6 +31,7 @@ type UserDetailDrawerProps = {
 export default function UserDetailDrawer({
   user,
   onClose,
+  onEdit,
   onAssignRole,
   onToggleActive,
   onDelete,
@@ -130,9 +136,51 @@ export default function UserDetailDrawer({
               />
               <Field
                 icon={<UserIcon className="h-4 w-4" />}
-                label="Name"
-                value={`${user.employee.firstName} ${user.employee.lastName}`}
+                label="Full Name"
+                value={[
+                  user.employee.firstName,
+                  user.employee.middleName ?? undefined,
+                  user.employee.lastName,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
               />
+              {user.employee.contactNumber && (
+                <Field
+                  icon={<Phone className="h-4 w-4" />}
+                  label="Contact"
+                  value={user.employee.contactNumber}
+                />
+              )}
+              {user.employee.dateOfBirth && (
+                <Field
+                  icon={<Calendar className="h-4 w-4" />}
+                  label="Date of Birth"
+                  value={new Date(user.employee.dateOfBirth).toLocaleDateString('en-PH', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                />
+              )}
+              {user.employee.maritalStatus && (
+                <Field
+                  icon={<Heart className="h-4 w-4" />}
+                  label="Marital Status"
+                  value={user.employee.maritalStatus}
+                />
+              )}
+              {user.employee.hireDate && (
+                <Field
+                  icon={<Briefcase className="h-4 w-4" />}
+                  label="Hire Date"
+                  value={new Date(user.employee.hireDate).toLocaleDateString('en-PH', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                />
+              )}
             </Section>
           )}
 
@@ -173,23 +221,6 @@ export default function UserDetailDrawer({
                     {role.description && (
                       <p className="mt-1 pl-6 text-xs text-zinc-500">{role.description}</p>
                     )}
-                    {role.permissions.length > 0 && (
-                      <div className="mt-2 pl-6 flex flex-wrap gap-1">
-                        {role.permissions.slice(0, 8).map((rp) => (
-                          <span
-                            key={rp.id}
-                            className="rounded-md bg-white border border-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600"
-                          >
-                            {rp.permission.resource}:{rp.permission.action}
-                          </span>
-                        ))}
-                        {role.permissions.length > 8 && (
-                          <span className="text-xs text-zinc-400">
-                            +{role.permissions.length - 8} more
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -200,6 +231,14 @@ export default function UserDetailDrawer({
         {/* Footer actions */}
         {!isSelf && (
           <div className="border-t border-zinc-200 px-6 py-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onEdit(user)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit
+            </button>
             <button
               type="button"
               onClick={() => onAssignRole(user)}
@@ -213,7 +252,7 @@ export default function UserDetailDrawer({
               onClick={() => onToggleActive(user)}
               className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
             >
-              <Pencil className="h-4 w-4" />
+              <Power className="h-4 w-4" />
               {user.isActive ? 'Deactivate' : 'Activate'}
             </button>
             <button

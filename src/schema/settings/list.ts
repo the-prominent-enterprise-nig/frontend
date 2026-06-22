@@ -36,6 +36,12 @@ export const SessionEmployeeSchema = z.object({
   employeeCode: z.string(),
   firstName: z.string(),
   lastName: z.string(),
+  middleName: z.string().nullable().optional(),
+  contactNumber: z.string().nullable().optional(),
+  dateOfBirth: z.string().nullable().optional(),
+  maritalStatus: z.string().nullable().optional(),
+  hireDate: z.string().nullable().optional(),
+  branchId: z.string().nullable().optional(),
 })
 
 // Session Branch Schema

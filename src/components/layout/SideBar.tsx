@@ -621,7 +621,7 @@ function resolvePrimarySidebarSegment(session: SessionUser | null): string {
   switch (session?.primaryRole) {
     case 'Business Owner':
       return 'Business Owner'
-    case 'branch-manager':
+    case 'Branch Manager':
       return 'Business Owner'
     case 'accounting':
       return 'accounting'
@@ -680,7 +680,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const isOwner =
     session?.primaryRole === 'Business Owner' || session?.roles.includes('Business Owner') || false
 
-  const isBranchManager = session?.primaryRole === 'branch-manager'
+  const isBranchManager = session?.primaryRole === 'Branch Manager'
 
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
   const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
