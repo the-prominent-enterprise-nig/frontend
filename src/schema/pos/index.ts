@@ -86,12 +86,25 @@ export type PosTransactionStatus = 'completed' | 'voided'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
+  | 'gcash'
+  | 'maya'
   | 'gift_card'
   | 'store_credit'
   | 'loyalty_points'
   | 'bank_transfer'
-  | 'gcash'
-  | 'paymaya'
+
+export interface BranchPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+  isOverridden: boolean
+  tenantDefault: boolean
+}
+
+export interface BranchPaymentMethodsResponse {
+  data: BranchPaymentMethod[]
+  meta: { branchId: string; branchName: string }
+}
 
 export interface PosTransactionLine {
   id: string

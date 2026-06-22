@@ -29,6 +29,8 @@ import { assignBranchManager } from '../../../_actions/assign-branch-manager'
 import { removeBranchManager } from '../../../_actions/remove-branch-manager'
 import { setBranchStatus } from '../../../_actions/set-branch-status'
 import { BRANCH_TYPES } from '@/src/schema/settings/create-branch'
+import { BranchPaymentMethod } from '@/src/schema/pos'
+import { BranchPaymentMethodsSection } from '@/src/components/settings/BranchPaymentMethodsSection'
 import AssignManagerModal from './AssignManagerModal'
 
 const BRANCH_TYPE_LABELS: Record<string, string> = {
@@ -64,6 +66,8 @@ type Props = {
   branch: BranchFull
   summary: BranchSummary | null
   canManageManagers?: boolean
+  isBranchManager?: boolean
+  initialPaymentMethods?: BranchPaymentMethod[]
 }
 
 function StatCard({
@@ -91,7 +95,13 @@ function StatCard({
   )
 }
 
-export default function BranchDetailClient({ branch, summary, canManageManagers = false }: Props) {
+export default function BranchDetailClient({
+  branch,
+  summary,
+  canManageManagers = false,
+  isBranchManager = false,
+  initialPaymentMethods = [],
+}: Props) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -539,6 +549,22 @@ export default function BranchDetailClient({ branch, summary, canManageManagers 
           </div>
         </div>
       </div>
+
+      {/* Payment Methods */}
+      {(canManageManagers || isBranchManager) && (
+        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+            <ShoppingCart className="h-3.5 w-3.5" />
+            Payment Methods
+          </div>
+          <BranchPaymentMethodsSection
+            branchId={branch.id}
+            branchName={branch.name}
+            initialMethods={initialPaymentMethods}
+            readOnly={false}
+          />
+        </div>
+      )}
 
       {/* Deactivate / Reactivate confirmation */}
       {confirmStatusChange && (
