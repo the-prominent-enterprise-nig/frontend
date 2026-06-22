@@ -35,7 +35,7 @@ export default function DashboardWidgetWrapper({
 }: Props) {
   const widget = widgetById[id]
   const label = widget?.label ?? id
-  const emoji = widget?.emoji ?? '📦'
+  const WidgetIcon = widget?.icon ?? null
 
   const contentRef = useRef<HTMLDivElement>(null)
   // innerRef wraps children so we can measure their natural (unconstrained) height.
@@ -103,7 +103,7 @@ export default function DashboardWidgetWrapper({
           ${isEditing ? 'cursor-grab active:cursor-grabbing bg-purple-50 widget-drag-handle' : 'bg-white'}`}
       >
         {isEditing && <GripHorizontal className="h-4 w-4 shrink-0 text-purple-400" />}
-        <span className="text-sm leading-none">{emoji}</span>
+        {WidgetIcon && <WidgetIcon className="h-4 w-4 shrink-0 text-zinc-400" />}
         <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 select-none">
           {label}
         </p>
