@@ -142,7 +142,11 @@ export default function DashboardWidgetWrapper({
           View mode: natural height so the card shrinks to its content with no blank space. */}
       <div
         ref={contentRef}
-        className={isEditing ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden' : 'min-w-0'}
+        className={
+          isEditing
+            ? 'relative min-h-0 min-w-0 flex-1 overflow-hidden'
+            : 'min-h-0 min-w-0 flex-1 overflow-y-auto'
+        }
       >
         <WidgetHeaderContext.Provider value={{ setHeaderExtra }}>
           <WidgetSizeContext.Provider value={sizeContextValue}>
