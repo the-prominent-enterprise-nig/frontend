@@ -51,6 +51,7 @@ import {
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
+  PosInvoiceType,
   PromoValidationResult,
   PosCustomer,
   LoyaltyAccount,
@@ -205,6 +206,10 @@ export default function CheckoutPage() {
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
 
+  // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
+  const [invoiceType, setInvoiceType] = useState<PosInvoiceType>('cash')
+  const [chargeDueDays, setChargeDueDays] = useState(30)
+
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
@@ -245,9 +250,11 @@ export default function CheckoutPage() {
     transactionNumber: string
     change: number
     journalEntryId?: string | null
+    arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     queueTicketNumber?: number | null
+    invoiceType?: PosInvoiceType
   } | null>(null)
 
   // Offline mode
@@ -722,26 +729,36 @@ export default function CheckoutPage() {
       setError('Enter a certificate or exemption reference for tax-exempt sales.')
       return
     }
-    if (payments.length === 0) {
-      setError('Add at least one payment method.')
-      return
-    }
-    if (balance > 0.009) {
-      setError(`Underpaid by ${fmt(balance)}.`)
-      return
-    }
 
-    if (isOffline && payments.some((p) => p.amount > 0 && p.method !== 'cash')) {
-      setError('Only cash payments are accepted while offline.')
-      return
-    }
-
-    const missingRef = payments.find(
-      (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
-    )
-    if (missingRef) {
-      setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
-      return
+    if (invoiceType === 'charge') {
+      if (!selectedCustomer) {
+        setError('A customer must be selected to issue a charge invoice.')
+        return
+      }
+      if (isOffline) {
+        setError('Charge invoices require an active network connection.')
+        return
+      }
+    } else {
+      if (payments.length === 0) {
+        setError('Add at least one payment method.')
+        return
+      }
+      if (balance > 0.009) {
+        setError(`Underpaid by ${fmt(balance)}.`)
+        return
+      }
+      if (isOffline && payments.some((p) => p.amount > 0 && p.method !== 'cash')) {
+        setError('Only cash payments are accepted while offline.')
+        return
+      }
+      const missingRef = payments.find(
+        (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
+      )
+      if (missingRef) {
+        setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+        return
+      }
     }
 
     if (loyaltyOverBalance && loyaltyAccount) {
@@ -806,6 +823,8 @@ export default function CheckoutPage() {
         const txRes = await createTransaction({
           sessionId,
           transactionType: 'sale',
+          invoiceType,
+          chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -849,22 +868,24 @@ export default function CheckoutPage() {
         txData = txRes.data
       }
 
-      let remaining = totalAmount
-      for (const p of payments.filter((p) => p.amount > 0)) {
-        const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
-        if (actualAmount <= 0) break
-        const payRes = await addPayment(txId, {
-          paymentMethod: p.method,
-          amount: actualAmount,
-          referenceNumber: p.referenceNumber || undefined,
-        })
-        if (!payRes.success) {
-          setError(`Transaction created but payment failed: ${payRes.error}`)
-          setSubmitting(false)
-          return
+      if (invoiceType === 'cash') {
+        let remaining = totalAmount
+        for (const p of payments.filter((p) => p.amount > 0)) {
+          const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
+          if (actualAmount <= 0) break
+          const payRes = await addPayment(txId, {
+            paymentMethod: p.method,
+            amount: actualAmount,
+            referenceNumber: p.referenceNumber || undefined,
+          })
+          if (!payRes.success) {
+            setError(`Transaction created but payment failed: ${payRes.error}`)
+            setSubmitting(false)
+            return
+          }
+          remaining = parseFloat((remaining - actualAmount).toFixed(2))
+          if (remaining <= 0) break
         }
-        remaining = parseFloat((remaining - actualAmount).toFixed(2))
-        if (remaining <= 0) break
       }
 
       // Redeem loyalty points if that method was used
@@ -922,8 +943,10 @@ export default function CheckoutPage() {
         transactionNumber: txData?.transactionNumber ?? txId,
         change,
         journalEntryId: txData?.journalEntryId,
+        arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
         queueTicketNumber: txData?.queueTicketNumber ?? null,
+        invoiceType,
       })
     } catch (err) {
       console.error('[POS] handleConfirm error:', err)
@@ -954,6 +977,8 @@ export default function CheckoutPage() {
     setOverrideManagerName('')
     setScPwdData(null)
     setFromTab(null)
+    setInvoiceType('cash')
+    setChargeDueDays(30)
     localStorage.removeItem(POS_FROM_TAB_KEY)
   }
 
@@ -1661,21 +1686,94 @@ export default function CheckoutPage() {
             )}
           </div>
 
+          {/* Invoice Type */}
+          <div className="border-t border-gray-100 px-5 py-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Invoice Type
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setInvoiceType('cash')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'cash'
+                    ? 'border-purple-500 bg-purple-50 text-purple-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Cash Invoice
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Pay now at checkout
+                </span>
+              </button>
+              <button
+                onClick={() => setInvoiceType('charge')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'charge'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Charge Invoice
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Bill to customer account
+                </span>
+              </button>
+            </div>
+            {invoiceType === 'charge' && (
+              <div className="mt-2.5 space-y-2">
+                {!selectedCustomer && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    A customer must be selected to issue a charge invoice.
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500 whitespace-nowrap">Due in</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={chargeDueDays}
+                    onChange={(e) => setChargeDueDays(Math.max(1, parseInt(e.target.value) || 30))}
+                    className="w-20 rounded-lg border border-gray-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <label className="text-xs text-gray-500">days</label>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Payment */}
           <div className="flex-1 p-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Payment
               </p>
-              <button
-                onClick={addPaymentRow}
-                className="flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
-              >
-                <Plus size={11} /> Add
-              </button>
+              {invoiceType === 'cash' && (
+                <button
+                  onClick={addPaymentRow}
+                  className="flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
+                >
+                  <Plus size={11} /> Add
+                </button>
+              )}
             </div>
 
-            {payments.length === 0 ? (
+            {invoiceType === 'charge' ? (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-5 text-center">
+                <Receipt size={20} className="mx-auto mb-2 text-blue-400" />
+                <p className="text-xs font-medium text-blue-700">Charge invoice will be created</p>
+                <p className="mt-1 text-[11px] text-blue-500">
+                  An AR invoice will be posted to the customer&apos;s account. Payment is collected
+                  through Accounts Receivable.
+                </p>
+                {selectedCustomer && (
+                  <p className="mt-2 rounded-lg bg-blue-100 px-3 py-1.5 text-[11px] font-medium text-blue-700">
+                    {customerDisplayName(selectedCustomer)} · Due in {chargeDueDays} day
+                    {chargeDueDays !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            ) : payments.length === 0 ? (
               <button
                 onClick={addPaymentRow}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 py-5 text-sm text-gray-400 hover:border-purple-300 hover:text-purple-500"
@@ -1834,23 +1932,31 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
-                balance > 0.009 ||
-                loyaltyOverBalance ||
+                (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
+                (invoiceType === 'charge' && !selectedCustomer) ||
                 (needsManagerOverride && !managerOverrideApproved)
               }
-              className="w-full rounded-xl bg-purple-700 py-4 text-sm font-bold text-white transition-colors hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99]"
+              className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
+                invoiceType === 'charge'
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-purple-700 hover:bg-purple-800'
+              }`}
             >
               {submitting
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : balance > 0.009
-                    ? `Underpaid by ${fmt(balance)}`
-                    : loyaltyOverBalance
-                      ? 'Insufficient loyalty points'
-                      : needsManagerOverride && !managerOverrideApproved
-                        ? 'Manager override required'
-                        : `Confirm Sale — ${fmt(totalAmount)}`}
+                  : invoiceType === 'charge' && !selectedCustomer
+                    ? 'Select a customer to charge'
+                    : invoiceType === 'cash' && balance > 0.009
+                      ? `Underpaid by ${fmt(balance)}`
+                      : invoiceType === 'cash' && loyaltyOverBalance
+                        ? 'Insufficient loyalty points'
+                        : needsManagerOverride && !managerOverrideApproved
+                          ? 'Manager override required'
+                          : invoiceType === 'charge'
+                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                            : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -2249,9 +2355,11 @@ function SuccessScreen({
     transactionNumber: string
     change: number
     journalEntryId?: string | null
+    arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     queueTicketNumber?: number | null
+    invoiceType?: PosInvoiceType
   }
   totalAmount: number
   queueEnabled: boolean
@@ -2294,13 +2402,15 @@ function SuccessScreen({
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-6 bg-zinc-50 p-10">
       <div
-        className={`flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border p-8 shadow-sm bg-white ${success.offlineBuffered ? 'border-amber-200' : 'border-green-100'}`}
+        className={`flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border p-8 shadow-sm bg-white ${success.offlineBuffered ? 'border-amber-200' : success.invoiceType === 'charge' ? 'border-blue-100' : 'border-green-100'}`}
       >
         <div
-          className={`flex h-16 w-16 items-center justify-center rounded-full ${success.offlineBuffered ? 'bg-amber-100' : 'bg-green-100'}`}
+          className={`flex h-16 w-16 items-center justify-center rounded-full ${success.offlineBuffered ? 'bg-amber-100' : success.invoiceType === 'charge' ? 'bg-blue-100' : 'bg-green-100'}`}
         >
           {success.offlineBuffered ? (
             <WifiOff size={32} className="text-amber-600" />
+          ) : success.invoiceType === 'charge' ? (
+            <Receipt size={32} className="text-blue-600" />
           ) : (
             <CheckCircle2 size={32} className="text-green-600" />
           )}
@@ -2308,10 +2418,18 @@ function SuccessScreen({
 
         <div className="text-center">
           <p className="text-2xl font-bold text-gray-900">
-            {success.offlineBuffered ? 'Sale Buffered (Offline)' : 'Sale Complete'}
+            {success.offlineBuffered
+              ? 'Sale Buffered (Offline)'
+              : success.invoiceType === 'charge'
+                ? 'Charge Invoice Issued'
+                : 'Sale Complete'}
           </p>
           {success.offlineBuffered ? (
             <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
+          ) : success.invoiceType === 'charge' ? (
+            <p className="mt-1 text-sm text-blue-500">
+              AR invoice posted — payment due from customer.
+            </p>
           ) : (
             <p className="mt-1 font-mono text-sm text-gray-500">{success.transactionNumber}</p>
           )}
