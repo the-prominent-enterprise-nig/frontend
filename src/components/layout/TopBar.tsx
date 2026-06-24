@@ -6,8 +6,10 @@ import { useState } from 'react'
 import { Button, Header } from 'react-aria-components'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { cn } from '@/src/libs/tailwind-merge/utils'
-import { Key, LogOut, Settings, ShieldCheck, Users } from 'lucide-react'
+
+import { Key, Lock, LogOut, Settings, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
+import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
 
 interface SessionUser {
   id: string
@@ -26,6 +28,8 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
 
   const [notificationCount] = useState(6)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
 
   const showAdminDropdown =
     hasPermission(session, 'admin:roles:manage') && session?.primaryRole !== 'Business Owner'
@@ -144,13 +148,55 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
               )}
             </Button>
 
-            {/* Avatar — gradient */}
-            <Button className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[12px] font-bold tracking-wide text-white shadow-sm transition-opacity hover:opacity-90 prominent-gradient">
-              {initials}
-            </Button>
+            {/* Avatar — gradient with profile dropdown */}
+            {session && (
+              <div className="relative">
+                <Button
+                  onPress={() => setProfileOpen((v) => !v)}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[12px] font-bold tracking-wide text-white shadow-sm transition-opacity hover:opacity-90 prominent-gradient"
+                >
+                  {initials}
+                </Button>
+                {profileOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
+                    <div className="absolute right-0 top-full z-50 mt-1 min-w-48 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
+                      <div className="border-b border-zinc-100 px-3 py-2.5">
+                        <p className="text-sm font-semibold text-zinc-900">{displayName}</p>
+                        {session.email && <p className="text-xs text-zinc-400">{session.email}</p>}
+                      </div>
+                      <Link
+                        href="/workspace/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
+                      >
+                        <UserCircle className="h-4 w-4 shrink-0" />
+                        View Profile
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileOpen(false)
+                          setChangePasswordOpen(true)
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 cursor-pointer"
+                      >
+                        <Lock className="h-4 w-4 shrink-0" />
+                        Change Password
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </Header>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </div>
   )
 }

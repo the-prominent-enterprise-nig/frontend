@@ -15,6 +15,7 @@ import {
   Phone,
   Heart,
   Briefcase,
+  KeyRound,
 } from 'lucide-react'
 import { type User } from '@/src/schema/settings/list'
 
@@ -25,6 +26,7 @@ type UserDetailDrawerProps = {
   onAssignRole: (user: User) => void
   onToggleActive: (user: User) => void
   onDelete: (user: User) => void
+  onResetPassword: (user: User) => void
   isSelf: boolean
 }
 
@@ -35,6 +37,7 @@ export default function UserDetailDrawer({
   onAssignRole,
   onToggleActive,
   onDelete,
+  onResetPassword,
   isSelf,
 }: UserDetailDrawerProps) {
   if (!user) return null
@@ -244,6 +247,14 @@ export default function UserDetailDrawer({
             >
               <Power className="h-4 w-4" />
               {user.isActive ? 'Deactivate' : 'Activate'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onResetPassword(user)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <KeyRound className="h-4 w-4" />
+              Reset Password
             </button>
             <button
               type="button"
