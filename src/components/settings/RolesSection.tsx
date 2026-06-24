@@ -18,7 +18,7 @@ import {
 // Default roles — cannot be deleted
 const PROTECTED_ROLE_NAMES = new Set([
   'Business Owner',
-  'branch-manager',
+  'Branch Manager',
   'Accountant',
   'Stock Controller',
   'Cashier',

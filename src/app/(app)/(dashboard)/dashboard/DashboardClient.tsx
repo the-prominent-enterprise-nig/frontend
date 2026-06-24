@@ -30,7 +30,7 @@ type DashboardClientProps = {
 
 function resolveDashboardRole(roles: string[], primaryRole?: string): DashboardRole {
   if (primaryRole === 'Business Owner' || roles.includes('Business Owner')) return 'admin'
-  if (primaryRole === 'branch-manager' || roles.includes('branch-manager')) return 'admin'
+  if (primaryRole === 'Branch Manager' || roles.includes('Branch Manager')) return 'admin'
   if (roles.some((r) => r === 'Superadmin')) return 'admin'
   if (primaryRole === 'Accountant' || roles.includes('Accountant')) return 'accounting'
   if (primaryRole === 'Stock Controller' || roles.includes('Stock Controller')) return 'inventory'

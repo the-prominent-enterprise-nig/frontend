@@ -3,6 +3,7 @@ import { isAdmin } from '@/src/libs/guards/permission'
 import { redirect, notFound } from 'next/navigation'
 import { getBranch } from '../../_actions/get-branch'
 import { getBranchSummary } from '../../_actions/get-branch-summary'
+import { getBranchPaymentMethods } from './_actions/branch-payment-methods'
 import BranchDetailClient from './_components/BranchDetailClient'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -19,11 +20,15 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
 
-  const isBranchManager = session.primaryRole === 'branch-manager'
+  const isBranchManager = session.primaryRole === 'Branch Manager'
   if (!isAdmin(session) && !isBranchManager) redirect('/403')
   if (isBranchManager && session.branchId !== id) redirect('/403')
 
-  const [branchResult, summaryResult] = await Promise.all([getBranch(id), getBranchSummary(id)])
+  const [branchResult, summaryResult, paymentMethodsResult] = await Promise.all([
+    getBranch(id),
+    getBranchSummary(id),
+    getBranchPaymentMethods(id),
+  ])
 
   if (!branchResult.success || !branchResult.data) notFound()
 
@@ -32,6 +37,8 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
       branch={branchResult.data}
       summary={summaryResult.data ?? null}
       canManageManagers={isAdmin(session)}
+      isBranchManager={isBranchManager}
+      initialPaymentMethods={paymentMethodsResult.data?.data ?? []}
     />
   )
 }

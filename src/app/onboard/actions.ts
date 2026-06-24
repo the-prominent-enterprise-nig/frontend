@@ -6,7 +6,7 @@ const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, 
 
 export async function claimInvite(
   token: string,
-  dto: { firstName: string; lastName: string }
+  dto: { firstName: string; lastName: string; password: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await fetch(`${API_URL}/auth/invite/${token}/claim`, {

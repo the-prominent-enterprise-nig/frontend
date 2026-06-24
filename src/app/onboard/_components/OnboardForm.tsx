@@ -81,6 +81,7 @@ export function OnboardForm({ token }: Props) {
     const result = await claimInvite(token, {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
+      password,
     })
 
     if (!result.success) {

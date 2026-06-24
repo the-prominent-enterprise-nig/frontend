@@ -52,6 +52,7 @@ import type {
   GiftCardHistoryEntry,
   SessionDisplay,
 } from '@/src/schema/pos'
+import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
 
 // â”€â”€â”€ Cache Tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1429,5 +1430,22 @@ export async function getGLAccounts(): Promise<ApiResponse<GLAccount[]>> {
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch accounts' }
+  }
+}
+
+export async function getEnabledBranchPaymentMethods(
+  branchId: string
+): Promise<ApiResponse<PosPaymentMethod[]>> {
+  try {
+    const result = await api.get<{ data: BranchPaymentMethod[] }>(
+      `/pos/branches/${branchId}/payment-methods`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch payment methods' }
+    }
+    const enabled = result.data.data.filter((m) => m.isEnabled).map((m) => m.method)
+    return { success: true, data: enabled }
+  } catch {
+    return { success: false, error: 'Failed to fetch payment methods' }
   }
 }

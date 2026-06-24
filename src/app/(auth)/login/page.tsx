@@ -6,6 +6,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { login } from '@/src/libs/auth/actions/login'
 import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
+import Link from 'next/link'
 import {
   AlertCircle,
   Briefcase,
@@ -227,9 +228,17 @@ export default function LoginPage() {
               control={control}
               render={({ field }) => (
                 <div className="space-y-1.5">
-                  <label htmlFor="password" className="block text-xs font-semibold text-gray-700">
-                    Password
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="password" className="block text-xs font-semibold text-gray-700">
+                      Password
+                    </label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs font-medium text-violet-600 hover:text-violet-700 transition-colors"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <input

@@ -3,9 +3,14 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can, isAdmin } from '@/src/libs/guards/permission'
 import { getUsers } from '../_actions/get-users'
 import { getRoles } from '../_actions/get-roles'
+import { getBranches } from '../_actions/get-branches'
 import { redirect } from 'next/navigation'
 
-export default async function UsersPage() {
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string; status?: string; branchId?: string; page?: string }>
+}) {
   const session = await getSessionOrNull()
 
   if (!session) {
@@ -17,10 +22,24 @@ export default async function UsersPage() {
     redirect('/403')
   }
 
-  // Fetch users and roles server-side
-  const [usersResult, rolesResult] = await Promise.all([getUsers(), getRoles()])
+  const sp = await searchParams
+  const currentSearch = sp.search ?? ''
+  const currentStatus = sp.status ?? ''
+  const currentBranchId = sp.branchId ?? ''
+  const currentPage = sp.page ? Math.max(1, parseInt(sp.page, 10)) : 1
 
-  // Handle error case
+  const [usersResult, rolesResult, branchesResult] = await Promise.all([
+    getUsers({
+      search: currentSearch || undefined,
+      status: currentStatus || undefined,
+      branchId: currentBranchId || undefined,
+      page: currentPage,
+      limit: 20,
+    }),
+    getRoles(),
+    getBranches(),
+  ])
+
   if (!usersResult.success || !usersResult.data) {
     return (
       <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -35,26 +54,26 @@ export default async function UsersPage() {
     )
   }
 
-  // Normalize response: handle both array and paginated response
   const users = Array.isArray(usersResult.data) ? usersResult.data : usersResult.data.data
+  const meta = Array.isArray(usersResult.data) ? undefined : usersResult.data.meta
   const roles =
     rolesResult.success && rolesResult.data
       ? Array.isArray(rolesResult.data)
         ? rolesResult.data
         : rolesResult.data.data
       : []
+  const branches = branchesResult.success && branchesResult.data ? branchesResult.data : []
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h1 className="text-3xl font-semibold text-zinc-900">Users</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
-            Create and manage user accounts and assign roles.
-          </p>
-        </div>
+      <div className="mx-auto max-w-7xl">
         <UsersSection
-          initialUsers={users}
+          users={users}
+          meta={meta}
+          currentSearch={currentSearch}
+          currentStatus={currentStatus}
+          currentBranchId={currentBranchId}
+          branches={branches}
           availableRoles={roles}
           currentUserId={session.id}
           canAddUser={isAdmin(session) || can(session, 'admin:users:create')}
