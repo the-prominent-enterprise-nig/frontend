@@ -26,6 +26,7 @@ import {
   Users,
 } from 'lucide-react'
 import { computePricingTotals } from './_utils/calculations'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
@@ -48,6 +49,7 @@ import {
   updateSessionDisplay,
   addToOrderQueue,
   getDefaultAccountingTaxRate,
+  getEnabledBranchPaymentMethods,
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
@@ -101,15 +103,15 @@ interface PaymentRow {
 const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   cash: 'Cash',
   card: 'Card',
+  gcash: 'GCash',
+  maya: 'Maya',
   gift_card: 'Gift Card',
   store_credit: 'Store Credit',
   loyalty_points: 'Loyalty Points',
   bank_transfer: 'Bank Transfer',
-  gcash: 'GCash',
-  paymaya: 'PayMaya',
 }
 
-const REF_METHODS: PosPaymentMethod[] = ['card', 'bank_transfer', 'gift_card', 'gcash', 'paymaya']
+const REF_METHODS: PosPaymentMethod[] = ['card', 'bank_transfer', 'gift_card', 'gcash', 'maya']
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000]
 
@@ -166,6 +168,31 @@ export default function CheckoutPage() {
   const [catalogItems, setCatalogItems] = useState<LookupItem[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState('')
+
+  // Enabled payment methods for the active branch
+  const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<PosPaymentMethod[]>(
+    Object.keys(PAYMENT_LABELS) as PosPaymentMethod[]
+  )
+
+  // Auth session branchId — Branch Managers are scoped to their assigned branch,
+  // which is the same branch they can configure via "My Branch" settings.
+  const [authBranchId, setAuthBranchId] = useState<string | null>(null)
+  const [isBranchManager, setIsBranchManager] = useState(false)
+  useEffect(() => {
+    getSessionOrNull().then((s) => {
+      if (!s) return
+      setIsBranchManager(s.primaryRole === 'Branch Manager')
+      setAuthBranchId(s.branchId ?? null)
+    })
+  }, [])
+
+  const activeBranchId = useMemo(() => {
+    // Branch Managers: use their assigned branch (matches "My Branch" settings)
+    if (isBranchManager && authBranchId) return authBranchId
+    // Everyone else: use the terminal's branch
+    const session = openSessions.find((s) => s.id === sessionId)
+    return session?.terminal?.branchId ?? (session?.terminal as any)?.branch?.id ?? null
+  }, [openSessions, sessionId, isBranchManager, authBranchId])
 
   // Menu items catalog (loaded separately — bundle items are excluded from pos/catalog)
   const [menuItems, setMenuItems] = useState<LookupItem[]>([])
@@ -316,6 +343,21 @@ export default function CheckoutPage() {
       .catch(() => setCatalogError('Failed to load items'))
       .finally(() => setCatalogLoading(false))
   }, [sessionId, openSessions, sessionsData])
+
+  // Fetch enabled payment methods whenever the active branch changes
+  useEffect(() => {
+    if (!activeBranchId) {
+      setEnabledPaymentMethods(Object.keys(PAYMENT_LABELS) as PosPaymentMethod[])
+      return
+    }
+    getEnabledBranchPaymentMethods(activeBranchId).then((res) => {
+      if (res.success && res.data && res.data.length > 0) {
+        setEnabledPaymentMethods(res.data)
+      } else {
+        setEnabledPaymentMethods(Object.keys(PAYMENT_LABELS) as PosPaymentMethod[])
+      }
+    })
+  }, [activeBranchId])
 
   // Load POS config for discount override threshold, stock settings, and pricing mode
   useEffect(() => {
@@ -1695,7 +1737,10 @@ export default function CheckoutPage() {
                         }
                       >
                         {Object.entries(PAYMENT_LABELS)
-                          .filter(([v]) => !isOffline || v === 'cash')
+                          .filter(([v]) => {
+                            if (isOffline) return v === 'cash'
+                            return enabledPaymentMethods.includes(v as PosPaymentMethod)
+                          })
                           .map(([v, l]) => (
                             <option key={v} value={v}>
                               {l}
