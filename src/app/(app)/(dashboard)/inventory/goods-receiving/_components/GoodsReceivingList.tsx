@@ -29,7 +29,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
     page,
     setPage,
     warehouseOptions,
-    itemOptions,
+    purchaseOrderOptions,
     receiveStock,
     isReceiving,
     ledgerEntries,
@@ -377,7 +377,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
         onSubmit={receiveStock}
         isSubmitting={isReceiving}
         warehouses={warehouseOptions}
-        items={itemOptions}
+        purchaseOrders={purchaseOrderOptions}
       />
     </div>
   )
