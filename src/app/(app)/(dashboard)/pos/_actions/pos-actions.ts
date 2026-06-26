@@ -1430,7 +1430,7 @@ export async function getPaymentMethods(): Promise<
 > {
   try {
     const result = await api.get<{ data: PaymentMethodConfig[]; meta: { total: number } }>(
-      '/pos/payment-methods',
+      '/pos/payment-method-configs',
       undefined,
       { tags: ['pos-payment-methods'] }
     )
@@ -1448,7 +1448,7 @@ export async function updatePaymentMethod(
   input: Partial<{ isEnabled: boolean; name: string; glAccountId: string | null }>
 ): Promise<ApiResponse<PaymentMethodConfig>> {
   try {
-    const result = await api.patch<PaymentMethodConfig>(`/pos/payment-methods/${id}`, input)
+    const result = await api.patch<PaymentMethodConfig>(`/pos/payment-method-configs/${id}`, input)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to update payment method' }
     }
@@ -1463,7 +1463,7 @@ export async function createCustomPaymentMethod(
   input: CreateCustomPaymentMethodInput
 ): Promise<ApiResponse<PaymentMethodConfig>> {
   try {
-    const result = await api.post<PaymentMethodConfig>('/pos/payment-methods/custom', input)
+    const result = await api.post<PaymentMethodConfig>('/pos/payment-method-configs/custom', input)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to create payment method' }
     }
@@ -1476,7 +1476,7 @@ export async function createCustomPaymentMethod(
 
 export async function deletePaymentMethod(id: string): Promise<ApiResponse<void>> {
   try {
-    const result = await api.delete(`/pos/payment-methods/${id}`)
+    const result = await api.delete(`/pos/payment-method-configs/${id}`)
     if (!result.success) {
       return { success: false, error: result.error || 'Failed to delete payment method' }
     }
@@ -1489,7 +1489,7 @@ export async function deletePaymentMethod(id: string): Promise<ApiResponse<void>
 
 export async function reorderPaymentMethods(orderedIds: string[]): Promise<ApiResponse<void>> {
   try {
-    const result = await api.patch('/pos/payment-methods/reorder', { orderedIds })
+    const result = await api.patch('/pos/payment-method-configs/reorder', { orderedIds })
     if (!result.success) {
       return { success: false, error: result.error || 'Failed to save order' }
     }
