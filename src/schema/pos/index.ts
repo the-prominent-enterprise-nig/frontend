@@ -121,6 +121,8 @@ export type PosTransactionStatus = 'completed' | 'voided'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
+  | 'gcash'
+  | 'maya'
   | 'gift_card'
   | 'store_credit'
   | 'loyalty_points'
@@ -128,6 +130,29 @@ export type PosPaymentMethod =
   | 'gcash'
   | 'paymaya'
   | 'custom'
+
+export interface OwnerPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+}
+
+export interface OwnerPaymentMethodsResponse {
+  data: OwnerPaymentMethod[]
+}
+
+export interface BranchPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+  isOverridden: boolean
+  ownerDefault: boolean
+}
+
+export interface BranchPaymentMethodsResponse {
+  data: BranchPaymentMethod[]
+  meta: { branchId: string; branchName: string }
+}
 
 export interface PosTransactionLine {
   id: string
