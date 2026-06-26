@@ -119,7 +119,6 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   store_credit: 'Store Credit',
   loyalty_points: 'Loyalty Points',
   bank_transfer: 'Bank Transfer',
-  gcash: 'GCash',
   paymaya: 'PayMaya',
   custom: 'Custom',
 }
