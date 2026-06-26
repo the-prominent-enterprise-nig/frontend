@@ -127,8 +127,6 @@ export type PosPaymentMethod =
   | 'store_credit'
   | 'loyalty_points'
   | 'bank_transfer'
-  | 'gcash'
-  | 'paymaya'
   | 'custom'
 
 export interface OwnerPaymentMethod {
