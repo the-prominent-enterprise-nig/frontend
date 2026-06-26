@@ -6,7 +6,6 @@ import { useState } from 'react'
 import { Button, Header } from 'react-aria-components'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { cn } from '@/src/libs/tailwind-merge/utils'
-
 import { Key, Lock, LogOut, Settings, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'

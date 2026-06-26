@@ -14,6 +14,7 @@ import {
   Tv2,
   Settings,
   Palette,
+  CreditCard,
 } from 'lucide-react'
 
 export const metadata = { title: 'POS Settings' }
@@ -36,6 +37,12 @@ const sections = [
     description: 'Add, edit, and deactivate POS terminals.',
     href: '/pos/terminals',
     icon: Monitor,
+  },
+  {
+    label: 'Payment Methods',
+    description: 'Enable, reorder, and configure GL mapping for payment methods.',
+    href: '/pos/payment-methods',
+    icon: CreditCard,
   },
   {
     label: 'GL Account Mapping',
