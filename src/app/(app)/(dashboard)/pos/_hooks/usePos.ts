@@ -6,6 +6,14 @@ import {
   createTerminal,
   updateTerminal,
   deleteTerminal,
+  getTerminalCashiers,
+  assignCashierToTerminal,
+  removeCashierFromTerminal,
+  getPaymentMethods,
+  updatePaymentMethod,
+  createCustomPaymentMethod,
+  deletePaymentMethod,
+  reorderPaymentMethods,
   getSessions,
   openSession,
   closeSession,
@@ -46,6 +54,11 @@ import {
   getParkedSales,
   resumeParkedSale,
   cancelParkedSale,
+  submitVoidRequest,
+  getVoidRequests,
+  getPendingVoidRequests,
+  approveVoidRequest,
+  rejectVoidRequest,
 } from '../_actions/pos-actions'
 import type {
   CreateTerminalInput,
@@ -67,6 +80,8 @@ import type {
   CreateCashDrawerEventInput,
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
+  SubmitVoidRequestInput,
+  ReviewVoidRequestInput,
 } from '@/src/schema/pos'
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
@@ -105,6 +120,35 @@ export function useDeleteTerminal() {
   return useMutation({
     mutationFn: (id: string) => deleteTerminal(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-terminals'] }),
+  })
+}
+
+export function useTerminalCashiers(terminalId: string) {
+  return useQuery({
+    queryKey: ['pos-terminal-cashiers', terminalId],
+    queryFn: () => getTerminalCashiers(terminalId),
+    enabled: !!terminalId,
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useAssignCashier() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ terminalId, userId }: { terminalId: string; userId: string }) =>
+      assignCashierToTerminal(terminalId, userId),
+    onSuccess: (_, { terminalId }) =>
+      qc.invalidateQueries({ queryKey: ['pos-terminal-cashiers', terminalId] }),
+  })
+}
+
+export function useRemoveCashier() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ terminalId, userId }: { terminalId: string; userId: string }) =>
+      removeCashierFromTerminal(terminalId, userId),
+    onSuccess: (_, { terminalId }) =>
+      qc.invalidateQueries({ queryKey: ['pos-terminal-cashiers', terminalId] }),
   })
 }
 
@@ -463,5 +507,114 @@ export function useUpdatePosConfig() {
     mutationFn: ({ id, input }: { id: string; input: UpdatePosConfigInput }) =>
       updatePosConfig(id, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-config'] }),
+  })
+}
+
+// ─── Payment Methods ──────────────────────────────────────────────────────────
+
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: ['pos-payment-methods'],
+    queryFn: getPaymentMethods,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useUpdatePaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string
+      input: Partial<{ isEnabled: boolean; name: string; glAccountId: string | null }>
+    }) => updatePaymentMethod(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useCreateCustomPaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: import('@/src/schema/pos').CreateCustomPaymentMethodInput) =>
+      createCustomPaymentMethod(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useDeletePaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deletePaymentMethod(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useReorderPaymentMethods() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => reorderPaymentMethods(orderedIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+// ─── Void Requests ────────────────────────────────────────────────────────────
+
+export function useSubmitVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      transactionId,
+      input,
+    }: {
+      transactionId: string
+      input: SubmitVoidRequestInput
+    }) => submitVoidRequest(transactionId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+    },
+  })
+}
+
+export function useVoidRequests(transactionId: string) {
+  return useQuery({
+    queryKey: ['pos-void-requests', transactionId],
+    queryFn: () => getVoidRequests(transactionId),
+    enabled: !!transactionId,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function usePendingVoidRequests() {
+  return useQuery({
+    queryKey: ['pos-void-requests-pending'],
+    queryFn: getPendingVoidRequests,
+    staleTime: 30 * 1000,
+  })
+}
+
+export function useApproveVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ requestId, input }: { requestId: string; input: ReviewVoidRequestInput }) =>
+      approveVoidRequest(requestId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+      qc.invalidateQueries({ queryKey: ['pos-void-requests-pending'] })
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+    },
+  })
+}
+
+export function useRejectVoidRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ requestId, input }: { requestId: string; input: ReviewVoidRequestInput }) =>
+      rejectVoidRequest(requestId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-void-requests'] })
+      qc.invalidateQueries({ queryKey: ['pos-void-requests-pending'] })
+    },
   })
 }
