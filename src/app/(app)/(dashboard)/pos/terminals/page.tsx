@@ -7,9 +7,30 @@ import {
   useUpdateTerminal,
   useDeleteTerminal,
   useBranches,
+  useTerminalCashiers,
+  useAssignCashier,
+  useRemoveCashier,
 } from '../_hooks/usePos'
-import { RefreshCw, Plus, ClipboardList, Pencil, Trash2, X, ChevronDown } from 'lucide-react'
-import type { PosTerminal, CreateTerminalInput, UpdateTerminalInput } from '@/src/schema/pos'
+import { getUsers } from '../_actions/pos-actions'
+import {
+  RefreshCw,
+  Plus,
+  ClipboardList,
+  Pencil,
+  Trash2,
+  X,
+  ChevronDown,
+  Users,
+  UserPlus,
+  AlertTriangle,
+  Loader2,
+} from 'lucide-react'
+import type {
+  PosTerminal,
+  CashierTerminalAccess,
+  CreateTerminalInput,
+  UpdateTerminalInput,
+} from '@/src/schema/pos'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -21,6 +42,7 @@ type ModalState =
   | { type: 'create' }
   | { type: 'edit'; terminal: PosTerminal }
   | { type: 'delete'; terminal: PosTerminal }
+  | { type: 'cashiers'; terminal: PosTerminal }
 
 export default function TerminalsPage() {
   const { data, isLoading, isFetching, refetch } = useTerminals()
@@ -135,6 +157,17 @@ export default function TerminalsPage() {
                         <button
                           onClick={() => {
                             setError('')
+                            setModal({ type: 'cashiers', terminal: t })
+                          }}
+                          className="flex items-center gap-1 rounded px-2 py-1.5 text-xs text-purple-600 hover:bg-purple-50"
+                          title="Manage cashiers"
+                        >
+                          <Users size={13} />
+                          Cashiers
+                        </button>
+                        <button
+                          onClick={() => {
+                            setError('')
                             setModal({ type: 'edit', terminal: t })
                           }}
                           className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
@@ -192,6 +225,11 @@ export default function TerminalsPage() {
           onClose={() => setModal({ type: 'none' })}
           onConfirm={() => handleDelete(modal.terminal.id)}
         />
+      )}
+
+      {/* Cashier Management Modal */}
+      {modal.type === 'cashiers' && (
+        <CashiersModal terminal={modal.terminal} onClose={() => setModal({ type: 'none' })} />
       )}
     </div>
   )
@@ -345,6 +383,177 @@ function ConfirmModal({
           {isLoading ? 'Deleting…' : 'Delete'}
         </button>
       </div>
+    </Overlay>
+  )
+}
+
+function CashiersModal({ terminal, onClose }: { terminal: PosTerminal; onClose: () => void }) {
+  const { data, isLoading, isFetching } = useTerminalCashiers(terminal.id)
+  const assignMutation = useAssignCashier()
+  const removeMutation = useRemoveCashier()
+
+  const cashiers: CashierTerminalAccess[] = data?.data ?? []
+
+  const [showPicker, setShowPicker] = useState(false)
+  const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [search, setSearch] = useState('')
+  const [pickerError, setPickerError] = useState('')
+  const [removeError, setRemoveError] = useState('')
+
+  const assignedIds = new Set(cashiers.map((c) => c.userId))
+
+  async function openPicker() {
+    setShowPicker(true)
+    setPickerError('')
+    setSearch('')
+    setUsersLoading(true)
+    const res = await getUsers()
+    setUsersLoading(false)
+    if (!res.success) {
+      setPickerError(res.error ?? 'Failed to load users')
+      return
+    }
+    setUsers(res.data ?? [])
+  }
+
+  async function handleAssign(userId: string): Promise<void> {
+    setPickerError('')
+    const res = await assignMutation.mutateAsync({ terminalId: terminal.id, userId })
+    if (!res.success) {
+      setPickerError(res.error ?? 'Failed to assign cashier')
+      return
+    }
+    setShowPicker(false)
+  }
+
+  async function handleRemove(userId: string): Promise<void> {
+    setRemoveError('')
+    const res = await removeMutation.mutateAsync({ terminalId: terminal.id, userId })
+    if (!res.success) {
+      setRemoveError(res.error ?? 'Failed to remove cashier')
+    }
+  }
+
+  const filteredUsers = users.filter(
+    (u) =>
+      !assignedIds.has(u.id) &&
+      (u.name?.toLowerCase().includes(search.toLowerCase()) ||
+        u.email?.toLowerCase().includes(search.toLowerCase()))
+  )
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="mb-1 flex items-center gap-2">
+        <Users size={16} className="text-purple-600" />
+        <h2 className="text-lg font-bold text-gray-900">Assigned Cashiers</h2>
+      </div>
+      <p className="mb-4 text-xs text-gray-500">
+        Terminal: <span className="font-medium text-gray-700">{terminal.name}</span>
+      </p>
+
+      {removeError && (
+        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{removeError}</p>
+      )}
+
+      {isLoading || isFetching ? (
+        <div className="space-y-2 py-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="flex animate-pulse items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-gray-200" />
+              <div className="flex-1 space-y-1">
+                <div className="h-3 w-1/2 rounded bg-gray-200" />
+                <div className="h-3 w-1/3 rounded bg-gray-100" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : cashiers.length === 0 ? (
+        <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+          <p className="text-sm text-amber-700">
+            No restrictions — all cashiers can use this terminal.
+          </p>
+        </div>
+      ) : (
+        <ul className="mb-4 divide-y divide-gray-100 rounded-xl border border-gray-200">
+          {cashiers.map((c) => (
+            <li key={c.id} className="flex items-center justify-between px-4 py-2.5">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{c.user.name ?? '—'}</p>
+                <p className="text-xs text-gray-400">{c.user.email ?? ''}</p>
+              </div>
+              <button
+                onClick={() => handleRemove(c.userId)}
+                disabled={removeMutation.isPending}
+                className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+                title="Remove"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!showPicker ? (
+        <button
+          onClick={openPicker}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 hover:border-purple-400 hover:bg-purple-50 transition-colors"
+        >
+          <UserPlus size={14} />
+          Add Cashier
+        </button>
+      ) : (
+        <div className="rounded-xl border border-purple-200 bg-purple-50/40 p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
+            Select a cashier
+          </p>
+          <input
+            autoFocus
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {pickerError && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{pickerError}</p>
+          )}
+          {usersLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 size={18} className="animate-spin text-purple-500" />
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <p className="py-2 text-center text-xs text-gray-400">No users found</p>
+          ) : (
+            <ul className="max-h-48 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
+              {filteredUsers.map((u) => (
+                <li key={u.id}>
+                  <button
+                    onClick={() => handleAssign(u.id)}
+                    disabled={assignMutation.isPending}
+                    className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-purple-50 disabled:opacity-50 transition-colors"
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100 text-xs font-bold text-purple-700">
+                      {(u.name ?? u.email ?? '?')[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{u.name ?? '—'}</p>
+                      <p className="text-xs text-gray-400">{u.email}</p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            onClick={() => setShowPicker(false)}
+            className="w-full rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </Overlay>
   )
 }
