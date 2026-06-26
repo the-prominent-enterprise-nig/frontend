@@ -158,7 +158,7 @@ export default function LoginPage() {
           </div>
 
           {/* Footer */}
-          <p className="relative text-[10px] text-violet-400/50">
+          <p className="relative text-[10px] text-violet-400/50" suppressHydrationWarning>
             © {new Date().getFullYear()} Prominent Enterprise
           </p>
         </div>

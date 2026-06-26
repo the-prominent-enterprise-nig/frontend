@@ -81,7 +81,10 @@ export default function StockTab({
             <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               {label}
             </p>
-            <p className="mt-0.5 break-all text-base font-bold tabular-nums text-zinc-900 leading-tight">
+            <p
+              className="mt-0.5 break-all text-base font-bold tabular-nums text-zinc-900 leading-tight"
+              suppressHydrationWarning
+            >
               {value.toLocaleString()}
             </p>
           </div>
@@ -113,7 +116,10 @@ export default function StockTab({
                 </div>
                 <div className="ml-4 flex items-center gap-3">
                   <div className="text-right">
-                    <p className="text-sm font-bold tabular-nums text-zinc-900">
+                    <p
+                      className="text-sm font-bold tabular-nums text-zinc-900"
+                      suppressHydrationWarning
+                    >
                       {Number(balance.onHandQty ?? 0).toLocaleString()}
                     </p>
                     <p className="text-[10px] text-zinc-400">on hand</p>

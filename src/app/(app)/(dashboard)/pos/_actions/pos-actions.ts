@@ -7,6 +7,9 @@ import type {
   PosCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
+  CashierTerminalAccess,
+  PaymentMethodConfig,
+  CreateCustomPaymentMethodInput,
   CreateTerminalInput,
   UpdateTerminalInput,
   PosSession,
@@ -1369,6 +1372,131 @@ export async function validateManagerOverride(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to validate manager override' }
+  }
+}
+
+// ─── Cashier Terminal Access ──────────────────────────────────────────────────
+
+export async function getTerminalCashiers(
+  terminalId: string
+): Promise<ApiResponse<CashierTerminalAccess[]>> {
+  try {
+    const result = await api.get<CashierTerminalAccess[]>(`/pos/terminals/${terminalId}/cashiers`)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch cashiers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch cashiers' }
+  }
+}
+
+export async function assignCashierToTerminal(
+  terminalId: string,
+  userId: string
+): Promise<ApiResponse<CashierTerminalAccess>> {
+  try {
+    const result = await api.post<CashierTerminalAccess>(`/pos/terminals/${terminalId}/cashiers`, {
+      userId,
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to assign cashier' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to assign cashier' }
+  }
+}
+
+export async function removeCashierFromTerminal(
+  terminalId: string,
+  userId: string
+): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/terminals/${terminalId}/cashiers/${userId}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to remove cashier' }
+    }
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to remove cashier' }
+  }
+}
+
+// ─── Payment Methods ──────────────────────────────────────────────────────────
+
+export async function getPaymentMethods(): Promise<
+  ApiResponse<{ data: PaymentMethodConfig[]; meta: { total: number } }>
+> {
+  try {
+    const result = await api.get<{ data: PaymentMethodConfig[]; meta: { total: number } }>(
+      '/pos/payment-method-configs',
+      undefined,
+      { tags: ['pos-payment-methods'] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch payment methods' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch payment methods' }
+  }
+}
+
+export async function updatePaymentMethod(
+  id: string,
+  input: Partial<{ isEnabled: boolean; name: string; glAccountId: string | null }>
+): Promise<ApiResponse<PaymentMethodConfig>> {
+  try {
+    const result = await api.patch<PaymentMethodConfig>(`/pos/payment-method-configs/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update payment method' }
+  }
+}
+
+export async function createCustomPaymentMethod(
+  input: CreateCustomPaymentMethodInput
+): Promise<ApiResponse<PaymentMethodConfig>> {
+  try {
+    const result = await api.post<PaymentMethodConfig>('/pos/payment-method-configs/custom', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create payment method' }
+  }
+}
+
+export async function deletePaymentMethod(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/payment-method-configs/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete payment method' }
+  }
+}
+
+export async function reorderPaymentMethods(orderedIds: string[]): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.patch('/pos/payment-method-configs/reorder', { orderedIds })
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to save order' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to save order' }
   }
 }
 
