@@ -72,6 +72,7 @@ const TAGS = {
   branchPricing: 'pos-branch-pricing',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
+  receiptBranding: 'pos-receipt-branding',
 }
 
 // â”€â”€â”€ Terminals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1447,5 +1448,77 @@ export async function getEnabledBranchPaymentMethods(
     return { success: true, data: enabled }
   } catch {
     return { success: false, error: 'Failed to fetch payment methods' }
+  }
+}
+
+// ─── Receipt Branding ────────────────────────────────────────────────────────
+
+export interface ReceiptBranding {
+  receiptLogoUrl: string | null
+  receiptPrimaryColor: string | null
+  receiptAccentColor: string | null
+}
+
+export async function getReceiptBranding(): Promise<ApiResponse<ReceiptBranding>> {
+  try {
+    const result = await api.get<{ data: ReceiptBranding }>(
+      '/pos/receipt-config/branding',
+      undefined,
+      { tags: [TAGS.receiptBranding] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch branding' }
+    }
+    return { success: true, data: result.data.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch branding' }
+  }
+}
+
+export async function uploadReceiptLogo(
+  formData: FormData
+): Promise<ApiResponse<{ logoUrl: string }>> {
+  try {
+    const { cookies } = await import('next/headers')
+    const cookieStore = await cookies()
+    const authToken = cookieStore.get('authToken')?.value
+    const apiBase = (process.env.API_URL || 'http://localhost:3001').replace(/\/$/, '')
+
+    const response = await fetch(`${apiBase}/pos/receipt-config/branding/logo`, {
+      method: 'POST',
+      headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      return {
+        success: false,
+        error: err.errorCode ?? err.message ?? `Upload failed (${response.status})`,
+      }
+    }
+
+    const json = await response.json()
+    revalidateTag(TAGS.receiptBranding, 'max')
+    return { success: true, data: json.data }
+  } catch {
+    return { success: false, error: 'Upload failed' }
+  }
+}
+
+export async function updateReceiptBranding(input: {
+  logoUrl?: string | null
+  primaryColor?: string
+  accentColor?: string
+}): Promise<ApiResponse<ReceiptBranding>> {
+  try {
+    const result = await api.patch<{ data: ReceiptBranding }>('/pos/receipt-config/branding', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update branding' }
+    }
+    revalidateTag(TAGS.receiptBranding, 'max')
+    return { success: true, data: result.data.data }
+  } catch {
+    return { success: false, error: 'Failed to update branding' }
   }
 }
