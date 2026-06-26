@@ -727,24 +727,32 @@ export default function CheckoutPage() {
 
   function addPaymentRow() {
     if (configuredMethods.length > 0) {
-      const first =
-        configuredMethods.find((m) => !isOffline || m.key === 'cash') ?? configuredMethods[0]
-      setPayments((prev) => [
-        ...prev,
-        {
-          method:
-            first.type === 'custom' ? 'custom' : ((first.key as PosPaymentMethod) ?? 'custom'),
-          amount: 0,
-          referenceNumber: '',
-          configId: first.id,
-          refFieldLabel: first.referenceFieldLabel ?? undefined,
-          refRequired: first.referenceIsRequired,
-          refRegex: first.referenceFieldRegex ?? undefined,
-        },
-      ])
-    } else {
-      setPayments((prev) => [...prev, { method: 'cash', amount: 0, referenceNumber: '' }])
+      const eligible = configuredMethods.filter((m) => {
+        if (isOffline) return m.key === 'cash'
+        return m.key === null
+          ? enabledPaymentMethods.includes('custom')
+          : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
+      })
+      const first = eligible[0]
+      if (first) {
+        setPayments((prev) => [
+          ...prev,
+          {
+            method:
+              first.type === 'custom' ? 'custom' : ((first.key as PosPaymentMethod) ?? 'custom'),
+            amount: 0,
+            referenceNumber: '',
+            configId: first.id,
+            refFieldLabel: first.referenceFieldLabel ?? undefined,
+            refRequired: first.referenceIsRequired,
+            refRegex: first.referenceFieldRegex ?? undefined,
+          },
+        ])
+        return
+      }
     }
+    const defaultMethod = isOffline ? 'cash' : (enabledPaymentMethods[0] ?? 'cash')
+    setPayments((prev) => [...prev, { method: defaultMethod, amount: 0, referenceNumber: '' }])
   }
 
   function updatePayment(idx: number, patch: Partial<PaymentRow>) {
@@ -1809,14 +1817,22 @@ export default function CheckoutPage() {
                       >
                         {configuredMethods.length > 0
                           ? configuredMethods
-                              .filter((m) => !isOffline || m.key === 'cash')
+                              .filter((m) => {
+                                if (isOffline) return m.key === 'cash'
+                                return m.key === null
+                                  ? enabledPaymentMethods.includes('custom')
+                                  : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
+                              })
                               .map((m) => (
                                 <option key={m.id} value={m.id}>
                                   {m.name}
                                 </option>
                               ))
                           : Object.entries(PAYMENT_LABELS)
-                              .filter(([v]) => !isOffline || v === 'cash')
+                              .filter(([v]) => {
+                                if (isOffline) return v === 'cash'
+                                return enabledPaymentMethods.includes(v as PosPaymentMethod)
+                              })
                               .map(([v, l]) => (
                                 <option key={v} value={v}>
                                   {l}
