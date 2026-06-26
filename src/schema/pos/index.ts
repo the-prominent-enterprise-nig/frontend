@@ -612,3 +612,35 @@ export interface UpdateBranchPricingInput {
   effectiveTo?: string
   notes?: string
 }
+
+// Void Requests
+export type PosVoidRequestStatus = 'pending' | 'approved' | 'rejected'
+export type PosVoidRequestType = 'void' | 'edit'
+
+export interface PosVoidRequest {
+  id: string
+  tenantId?: string | null
+  transactionId: string
+  requestType: PosVoidRequestType
+  requestedById: string
+  reason: string
+  status: PosVoidRequestStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  transaction?: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  }
+}
+
+export interface SubmitVoidRequestInput {
+  reason: string
+  requestType?: PosVoidRequestType
+}
+
+export interface ReviewVoidRequestInput {
+  reviewNotes?: string
+}
