@@ -6,6 +6,14 @@ import {
   createTerminal,
   updateTerminal,
   deleteTerminal,
+  getTerminalCashiers,
+  assignCashierToTerminal,
+  removeCashierFromTerminal,
+  getPaymentMethods,
+  updatePaymentMethod,
+  createCustomPaymentMethod,
+  deletePaymentMethod,
+  reorderPaymentMethods,
   getSessions,
   openSession,
   closeSession,
@@ -112,6 +120,35 @@ export function useDeleteTerminal() {
   return useMutation({
     mutationFn: (id: string) => deleteTerminal(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-terminals'] }),
+  })
+}
+
+export function useTerminalCashiers(terminalId: string) {
+  return useQuery({
+    queryKey: ['pos-terminal-cashiers', terminalId],
+    queryFn: () => getTerminalCashiers(terminalId),
+    enabled: !!terminalId,
+    staleTime: 60 * 1000,
+  })
+}
+
+export function useAssignCashier() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ terminalId, userId }: { terminalId: string; userId: string }) =>
+      assignCashierToTerminal(terminalId, userId),
+    onSuccess: (_, { terminalId }) =>
+      qc.invalidateQueries({ queryKey: ['pos-terminal-cashiers', terminalId] }),
+  })
+}
+
+export function useRemoveCashier() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ terminalId, userId }: { terminalId: string; userId: string }) =>
+      removeCashierFromTerminal(terminalId, userId),
+    onSuccess: (_, { terminalId }) =>
+      qc.invalidateQueries({ queryKey: ['pos-terminal-cashiers', terminalId] }),
   })
 }
 
@@ -470,6 +507,55 @@ export function useUpdatePosConfig() {
     mutationFn: ({ id, input }: { id: string; input: UpdatePosConfigInput }) =>
       updatePosConfig(id, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-config'] }),
+  })
+}
+
+// ─── Payment Methods ──────────────────────────────────────────────────────────
+
+export function usePaymentMethods() {
+  return useQuery({
+    queryKey: ['pos-payment-methods'],
+    queryFn: getPaymentMethods,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+export function useUpdatePaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string
+      input: Partial<{ isEnabled: boolean; name: string; glAccountId: string | null }>
+    }) => updatePaymentMethod(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useCreateCustomPaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: import('@/src/schema/pos').CreateCustomPaymentMethodInput) =>
+      createCustomPaymentMethod(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useDeletePaymentMethod() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deletePaymentMethod(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
+  })
+}
+
+export function useReorderPaymentMethods() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (orderedIds: string[]) => reorderPaymentMethods(orderedIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-payment-methods'] }),
   })
 }
 

@@ -11,6 +11,7 @@ interface SessionUser {
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
   cashier: ['pos'],
   'pos-manager': ['pos'],
+  pos: ['pos'],
 }
 
 /**

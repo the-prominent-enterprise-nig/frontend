@@ -251,7 +251,7 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                       <ScopeBadge log={log} />
                     </td>
                     <td className="px-4 py-3 text-zinc-500">{log.ipAddress || '—'}</td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-4 py-3 text-zinc-500" suppressHydrationWarning>
                       {new Date(log.createdAt).toLocaleString()}
                     </td>
                   </tr>

@@ -105,6 +105,7 @@ export function can(user: SessionUser, permission: Permission): boolean {
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
   cashier: ['pos'],
   'pos-manager': ['pos'],
+  pos: ['pos'],
 }
 
 export function canAccessModule(user: SessionUser, module: string): boolean {
@@ -116,11 +117,15 @@ export function canAccessModule(user: SessionUser, module: string): boolean {
     r.toLowerCase()
   )
 
+  // Roles with a fixed allowlist take precedence over moduleAccess — checked first
+  // so stray permissions (e.g. inventory:items:read on a cashier) don't bleed into
+  // modules the role isn't meant to access.
   const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
   if (restrictedRoles.length > 0) {
     return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(module))
   }
 
+  if (user.moduleAccess?.includes(module)) return true
   return user.permissions.some((p) => p === `${module}:*` || p.startsWith(`${module}:`))
 }
 
