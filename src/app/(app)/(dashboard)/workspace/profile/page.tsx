@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import ComingSoon from '@/src/components/common/ComingSoon'
 import { redirect } from 'next/navigation'
 import OwnerProfileView from '@/src/components/workspace/OwnerProfileView'
+import EmployeeProfileView from '@/src/components/workspace/EmployeeProfileView'
 import { getBusinessProfile } from '@/src/libs/actions/enterprise.actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 
@@ -24,10 +24,5 @@ export default async function WorkspaceProfilePage() {
     )
   }
 
-  return (
-    <ComingSoon
-      title="Profile"
-      description="Your profile view is being set up. Contact your administrator for account details."
-    />
-  )
+  return <EmployeeProfileView session={session} />
 }

@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Button } from 'react-aria-components'
-import { hasPermission } from '@/src/hooks/usePermission'
+import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
+import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
   ArrowLeftRight,
@@ -59,6 +59,7 @@ type NavItem = {
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   section?: string
   activeWhen?: string[]
+  usePrefix?: boolean
 }
 
 type NavGroup = {
@@ -81,6 +82,13 @@ type NavConfig = {
   main: NavItem[]
   groups?: NavGroup[]
   bottom: NavItem[]
+}
+
+const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
+  'chart-bar': BarChart3,
+  package: Package,
+  'shopping-cart': ShoppingCart,
+  'users-round': UsersRound,
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
@@ -343,7 +351,11 @@ function NavLink({
   onClick?: () => void
   isMobile?: boolean
 }) {
-  const isActive = item.activeWhen ? item.activeWhen.includes(pathname) : pathname === item.href
+  const isActive = item.activeWhen
+    ? item.activeWhen.includes(pathname)
+    : item.usePrefix
+      ? pathname === item.href || pathname.startsWith(item.href + '/')
+      : pathname === item.href
   return (
     <div className="relative group">
       <Link
@@ -585,6 +597,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requiredPermission: 'admin:audit-logs:read',
   },
+  {
+    section: 'My Workspace',
+    label: 'Configuration',
+    href: '/settings/configuration',
+    icon: Settings,
+  },
 ]
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
@@ -687,9 +705,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item, idx) =>
-        idx === 0 ? { ...item, section: moduleLabel } : item
-      )
+      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
       mainItems = [...OWNER_WORKSPACE_ITEMS, ...labeledModuleItems]
     }
   } else if (isBranchManager) {
@@ -698,16 +714,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
-      const labeledModuleItems = moduleItems.map((item, idx) =>
-        idx === 0 ? { ...item, section: moduleLabel } : item
-      )
+      const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
       mainItems = [...bmWorkspaceItems, ...labeledModuleItems]
     }
   } else if (moduleWithWorkspace) {
     const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
-    const labeledModuleItems = config.main.map((item, idx) =>
-      idx === 0 ? { ...item, section: moduleLabel } : item
-    )
+    const labeledModuleItems = config.main.map((item) => ({ ...item, section: moduleLabel }))
     mainItems = [...MY_WORKSPACE_ITEMS, ...labeledModuleItems]
   } else {
     mainItems = config.main
@@ -720,8 +732,26 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     return true
   }
 
+  // Module nav items — filtered by the user's moduleAccess
+  const moduleNavItems: NavItem[] = MODULES.filter((m) => hasModuleAccess(session, m.key)).map(
+    (m, idx) => ({
+      label: m.label,
+      href: m.href,
+      icon: MODULE_ICON_MAP[m.icon] ?? Package,
+      section: idx === 0 ? 'Modules' : undefined,
+      usePrefix: true,
+    })
+  )
+
   // Always prepend Dashboard item so it's visible on every route
-  const main = [DASHBOARD_ITEM, ...mainItems.filter(filterItem)]
+  // Deduplicate by href — moduleNavItems and config.main can both contain the same module root href
+  const rawMain = [DASHBOARD_ITEM, ...moduleNavItems, ...mainItems.filter(filterItem)]
+  const seen = new Set<string>()
+  const main = rawMain.filter((item) => {
+    if (seen.has(item.href)) return false
+    seen.add(item.href)
+    return true
+  })
   const finalBottom = config.bottom.filter(filterItem)
   const allItems = [...main, ...finalBottom]
 
@@ -734,7 +764,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         }`}
       >
         {/* Floating collapse/expand button — edge of sidebar */}
-        <Button
+        <button
           onClick={() => setCollapsed((v) => !v)}
           className="absolute -right-3.5 top-5.5 z-50 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full bg-prominent-purple-600 shadow-md ring-2 ring-white/20 transition-colors hover:bg-prominent-purple-700"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -742,7 +772,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
           <ChevronLeft
             className={`h-3.5 w-3.5 text-white transition-transform duration-200 ${collapsed ? 'rotate-180' : ''}`}
           />
-        </Button>
+        </button>
 
         <nav className="flex flex-1 flex-col gap-1 min-h-0">
           <div className="flex-1 overflow-y-auto flex flex-col gap-1 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
@@ -775,15 +805,15 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
         })}
 
         {allItems.length > 4 && (
-          <Button
-            onPress={() => setDrawerOpen(true)}
+          <button
+            onClick={() => setDrawerOpen(true)}
             className="flex flex-col items-center gap-0.5"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-base">
               <MoreHorizontal className="h-4 w-4 text-white" />
             </span>
             <span className="text-[10px] font-medium text-white">More</span>
-          </Button>
+          </button>
         )}
       </nav>
 
@@ -799,12 +829,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
               <span className="text-[14px] ml-2.5 font-semibold uppercase tracking-widest text-gray-700">
                 Menu
               </span>
-              <Button
-                onPress={() => setDrawerOpen(false)}
+              <button
+                onClick={() => setDrawerOpen(false)}
                 className="rounded-full p-1 hover:bg-gray-100"
               >
                 <X className="h-5 w-5 text-gray-700" />
-              </Button>
+              </button>
             </div>
             <nav className="flex flex-col gap-1">
               <NavItems
