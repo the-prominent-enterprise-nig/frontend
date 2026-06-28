@@ -7,6 +7,9 @@ import type {
   PosCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
+  CashierTerminalAccess,
+  PaymentMethodConfig,
+  CreateCustomPaymentMethodInput,
   CreateTerminalInput,
   UpdateTerminalInput,
   PosSession,
@@ -51,9 +54,11 @@ import type {
   CrossBranchStockResult,
   GiftCardHistoryEntry,
   SessionDisplay,
+  PosVoidRequest,
+  SubmitVoidRequestInput,
+  ReviewVoidRequestInput,
 } from '@/src/schema/pos'
-
-// â”€â”€â”€ Cache Tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
 
 const TAGS = {
   terminals: 'pos-terminals',
@@ -71,9 +76,9 @@ const TAGS = {
   branchPricing: 'pos-branch-pricing',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
+  voidRequests: 'pos-void-requests',
+  voidRequest: (txId: string) => `pos-void-requests-${txId}`,
 }
-
-// â”€â”€â”€ Terminals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getTerminals(): Promise<ApiResponse<PosTerminal[]>> {
   try {
@@ -145,8 +150,6 @@ export async function deleteTerminal(id: string): Promise<ApiResponse<void>> {
     return { success: false, error: 'Failed to delete terminal' }
   }
 }
-
-// â”€â”€â”€ Sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getSessions(filters?: {
   terminalId?: string
@@ -244,8 +247,6 @@ export async function getSalesSummary(filters?: {
     return { success: false, error: 'Failed to fetch sales summary' }
   }
 }
-
-// â”€â”€â”€ Transactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getTransactions(filters?: {
   sessionId?: string
@@ -1130,8 +1131,6 @@ export async function updateLoyaltyProgram(
   }
 }
 
-// â”€â”€â”€ POS Config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export async function getPosConfig(tenantId: string): Promise<ApiResponse<PosConfig>> {
   try {
     const result = await api.get<PosConfig>(`/pos/config/tenant/${tenantId}`, undefined, {
@@ -1371,6 +1370,131 @@ export async function validateManagerOverride(
   }
 }
 
+// ─── Cashier Terminal Access ──────────────────────────────────────────────────
+
+export async function getTerminalCashiers(
+  terminalId: string
+): Promise<ApiResponse<CashierTerminalAccess[]>> {
+  try {
+    const result = await api.get<CashierTerminalAccess[]>(`/pos/terminals/${terminalId}/cashiers`)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch cashiers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch cashiers' }
+  }
+}
+
+export async function assignCashierToTerminal(
+  terminalId: string,
+  userId: string
+): Promise<ApiResponse<CashierTerminalAccess>> {
+  try {
+    const result = await api.post<CashierTerminalAccess>(`/pos/terminals/${terminalId}/cashiers`, {
+      userId,
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to assign cashier' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to assign cashier' }
+  }
+}
+
+export async function removeCashierFromTerminal(
+  terminalId: string,
+  userId: string
+): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/terminals/${terminalId}/cashiers/${userId}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to remove cashier' }
+    }
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to remove cashier' }
+  }
+}
+
+// ─── Payment Methods ──────────────────────────────────────────────────────────
+
+export async function getPaymentMethods(): Promise<
+  ApiResponse<{ data: PaymentMethodConfig[]; meta: { total: number } }>
+> {
+  try {
+    const result = await api.get<{ data: PaymentMethodConfig[]; meta: { total: number } }>(
+      '/pos/payment-method-configs',
+      undefined,
+      { tags: ['pos-payment-methods'] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch payment methods' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch payment methods' }
+  }
+}
+
+export async function updatePaymentMethod(
+  id: string,
+  input: Partial<{ isEnabled: boolean; name: string; glAccountId: string | null }>
+): Promise<ApiResponse<PaymentMethodConfig>> {
+  try {
+    const result = await api.patch<PaymentMethodConfig>(`/pos/payment-method-configs/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update payment method' }
+  }
+}
+
+export async function createCustomPaymentMethod(
+  input: CreateCustomPaymentMethodInput
+): Promise<ApiResponse<PaymentMethodConfig>> {
+  try {
+    const result = await api.post<PaymentMethodConfig>('/pos/payment-method-configs/custom', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create payment method' }
+  }
+}
+
+export async function deletePaymentMethod(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/payment-method-configs/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete payment method' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete payment method' }
+  }
+}
+
+export async function reorderPaymentMethods(orderedIds: string[]): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.patch('/pos/payment-method-configs/reorder', { orderedIds })
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to save order' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to save order' }
+  }
+}
+
 // ─── Account Mapping ──────────────────────────────────────────────────────────
 
 export interface AccountMapping {
@@ -1429,5 +1553,117 @@ export async function getGLAccounts(): Promise<ApiResponse<GLAccount[]>> {
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch accounts' }
+  }
+}
+
+export async function getEnabledBranchPaymentMethods(
+  branchId: string
+): Promise<ApiResponse<PosPaymentMethod[]>> {
+  try {
+    const result = await api.get<{ data: BranchPaymentMethod[] }>(
+      `/pos/branches/${branchId}/payment-methods`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch payment methods' }
+    }
+    const enabled = result.data.data.filter((m) => m.isEnabled).map((m) => m.method)
+    return { success: true, data: enabled }
+  } catch {
+    return { success: false, error: 'Failed to fetch payment methods' }
+  }
+}
+
+// ─── Void Requests ────────────────────────────────────────────────────────────
+
+export async function submitVoidRequest(
+  transactionId: string,
+  input: SubmitVoidRequestInput
+): Promise<ApiResponse<PosVoidRequest>> {
+  try {
+    const result = await api.post<PosVoidRequest>(
+      `/pos/transactions/${transactionId}/void-request`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to submit void request' }
+    }
+    revalidateTag(TAGS.voidRequest(transactionId), 'max')
+    revalidateTag(TAGS.voidRequests, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to submit void request' }
+  }
+}
+
+export async function getVoidRequests(
+  transactionId: string
+): Promise<ApiResponse<PosVoidRequest[]>> {
+  try {
+    const result = await api.get<PosVoidRequest[]>(
+      `/pos/transactions/${transactionId}/void-requests`,
+      undefined,
+      { tags: [TAGS.voidRequest(transactionId)] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch void requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch void requests' }
+  }
+}
+
+export async function getPendingVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
+  try {
+    const result = await api.get<PosVoidRequest[]>(
+      '/pos/transactions/void-requests/pending',
+      undefined,
+      { tags: [TAGS.voidRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch pending void requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch pending void requests' }
+  }
+}
+
+export async function approveVoidRequest(
+  requestId: string,
+  input: ReviewVoidRequestInput
+): Promise<ApiResponse<PosVoidRequest>> {
+  try {
+    const result = await api.post<PosVoidRequest>(
+      `/pos/transactions/void-requests/${requestId}/approve`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve void request' }
+    }
+    revalidateTag(TAGS.voidRequests, 'max')
+    revalidateTag(TAGS.transactions, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve void request' }
+  }
+}
+
+export async function rejectVoidRequest(
+  requestId: string,
+  input: ReviewVoidRequestInput
+): Promise<ApiResponse<PosVoidRequest>> {
+  try {
+    const result = await api.post<PosVoidRequest>(
+      `/pos/transactions/void-requests/${requestId}/reject`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to reject void request' }
+    }
+    revalidateTag(TAGS.voidRequests, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to reject void request' }
   }
 }

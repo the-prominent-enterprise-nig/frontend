@@ -137,25 +137,29 @@ export default function PipelineView() {
             <div className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
               Net outlook
             </div>
-            <div className="text-2xl font-semibold text-gray-900">₱{net.toLocaleString()}</div>
+            <div className="text-2xl font-semibold text-gray-900" suppressHydrationWarning>
+              ₱{net.toLocaleString()}
+            </div>
             <div className="mt-1 flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5 text-[12px]">
               <span className="text-gray-500">
                 Forecast{' '}
-                <span className="font-semibold text-gray-800">
+                <span className="font-semibold text-gray-800" suppressHydrationWarning>
                   ₱{totals.forecast.toLocaleString()}
                 </span>
                 <span className="ml-1 text-gray-400">({totals.forecastCount})</span>
               </span>
               <span className="text-gray-500">
                 Wins{' '}
-                <span className="font-semibold text-green-600">
+                <span className="font-semibold text-green-600" suppressHydrationWarning>
                   +₱{totals.won.toLocaleString()}
                 </span>
                 <span className="ml-1 text-gray-400">({totals.wonCount})</span>
               </span>
               <span className="text-gray-500">
                 Lost{' '}
-                <span className="font-semibold text-red-600">−₱{totals.lost.toLocaleString()}</span>
+                <span className="font-semibold text-red-600" suppressHydrationWarning>
+                  −₱{totals.lost.toLocaleString()}
+                </span>
                 <span className="ml-1 text-gray-400">({totals.lostCount})</span>
               </span>
             </div>

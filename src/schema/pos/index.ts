@@ -13,6 +13,15 @@ export interface PosTerminal {
   branch?: { id: string; name: string }
 }
 
+// Cashier Terminal Access
+export interface CashierTerminalAccess {
+  id: string
+  userId: string
+  terminalId: string
+  createdAt: string
+  user: { id: string; name: string | null; email: string | null }
+}
+
 export interface CreateTerminalInput {
   terminalCode: string
   name: string
@@ -80,18 +89,68 @@ export interface SalesSummary {
   transactionCount: number
 }
 
+// Payment Method Configuration
+export type PaymentMethodType = 'standard' | 'custom'
+
+export interface PaymentMethodConfig {
+  id: string
+  key: string | null
+  name: string
+  label: string
+  type: PaymentMethodType
+  isEnabled: boolean
+  displayOrder: number
+  glAccountId: string | null
+  referenceFieldLabel: string | null
+  referenceFieldRegex: string | null
+  referenceIsRequired: boolean
+}
+
+export interface CreateCustomPaymentMethodInput {
+  name: string
+  label: string
+  referenceFieldLabel?: string
+  referenceFieldRegex?: string
+  referenceIsRequired?: boolean
+  glAccountId?: string
+}
+
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
+  | 'gcash'
+  | 'maya'
   | 'gift_card'
   | 'store_credit'
   | 'loyalty_points'
   | 'bank_transfer'
-  | 'gcash'
-  | 'paymaya'
+  | 'custom'
+
+export interface OwnerPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+}
+
+export interface OwnerPaymentMethodsResponse {
+  data: OwnerPaymentMethod[]
+}
+
+export interface BranchPaymentMethod {
+  method: PosPaymentMethod
+  label: string
+  isEnabled: boolean
+  isOverridden: boolean
+  ownerDefault: boolean
+}
+
+export interface BranchPaymentMethodsResponse {
+  data: BranchPaymentMethod[]
+  meta: { branchId: string; branchName: string }
+}
 
 export interface PosTransactionLine {
   id: string
@@ -203,6 +262,7 @@ export interface AddPaymentInput {
   amount: number
   giftCardId?: string
   referenceNumber?: string
+  paymentMethodConfigId?: string
   currency?: string
   fxRate?: number
   notes?: string
@@ -551,4 +611,36 @@ export interface UpdateBranchPricingInput {
   effectiveFrom?: string
   effectiveTo?: string
   notes?: string
+}
+
+// Void Requests
+export type PosVoidRequestStatus = 'pending' | 'approved' | 'rejected'
+export type PosVoidRequestType = 'void' | 'edit'
+
+export interface PosVoidRequest {
+  id: string
+  tenantId?: string | null
+  transactionId: string
+  requestType: PosVoidRequestType
+  requestedById: string
+  reason: string
+  status: PosVoidRequestStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  transaction?: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  }
+}
+
+export interface SubmitVoidRequestInput {
+  reason: string
+  requestType?: PosVoidRequestType
+}
+
+export interface ReviewVoidRequestInput {
+  reviewNotes?: string
 }
