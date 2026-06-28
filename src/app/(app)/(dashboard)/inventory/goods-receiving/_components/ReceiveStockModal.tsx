@@ -74,6 +74,7 @@ export default function ReceiveStockModal({
   const { fields, replace } = useFieldArray({ control, name: 'lines' })
 
   const purchaseOrderId = watch('purchaseOrderId')
+  const selectedPOOption = purchaseOrders.find((po) => po.id === purchaseOrderId)
 
   // Load PO details and populate lines when PO selection changes
   useEffect(() => {
@@ -205,6 +206,27 @@ export default function ReceiveStockModal({
               {errors.purchaseOrderId && (
                 <p className="mt-1 text-xs text-red-600">{errors.purchaseOrderId.message}</p>
               )}
+            </div>
+
+            {/* PO Number + PO Date */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">PO Number</label>
+                <div className={readOnlyClass}>
+                  {selectedPOOption ? selectedPOOption.code : '—'}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Purchase Order Date
+                </label>
+                <div className={readOnlyClass}>
+                  {selectedPOOption?.orderDate
+                    ? new Date(selectedPOOption.orderDate).toLocaleDateString()
+                    : '—'}
+                </div>
+              </div>
             </div>
 
             {/* Origin (Supplier) + Destination Warehouse */}
