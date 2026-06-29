@@ -7,8 +7,8 @@ import { STALE } from '@/src/libs/query/stale-times'
 import { getStockBalances } from '../_actions/get-stock-balances'
 import { getStockLedger } from '../_actions/get-stock-ledger'
 import { receiveStock } from '../_actions/receive-stock'
-import { getPurchaseOrders } from '../_actions/get-purchase-orders'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { getItems } from '../../items/_actions/get-items'
 import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiving'
 
 export function useGoodsReceiving() {
@@ -46,9 +46,9 @@ export function useGoodsReceiving() {
     staleTime: STALE.LOOKUP,
   })
 
-  const purchaseOrdersQuery = useQuery({
-    queryKey: ['procurement-purchase-orders-lookup'],
-    queryFn: () => getPurchaseOrders(),
+  const itemsQuery = useQuery({
+    queryKey: ['inventory-items-lookup'],
+    queryFn: () => getItems({ limit: 500, lifecycle: 'active' }),
     staleTime: STALE.LOOKUP,
   })
 
@@ -116,7 +116,7 @@ export function useGoodsReceiving() {
     setLedgerItemId,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    purchaseOrderOptions: purchaseOrdersQuery.data?.data?.data ?? [],
+    itemOptions: itemsQuery.data?.data?.data ?? [],
 
     receiveStock: receiveMutation.mutateAsync,
     isReceiving: receiveMutation.isPending,

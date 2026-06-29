@@ -1,24 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Plus, Trash2 } from 'lucide-react'
 import {
   ReceiveStockFormSchema,
   type ReceiveStockFormValues,
 } from '@/src/schema/inventory/goods-receiving'
 import type { ApiResponse } from '@/src/libs/api/client'
-import type { PurchaseOrder } from '@/src/schema/procurement/types'
-import { getPurchaseOrderById } from '../_actions/get-purchase-orders'
+import type { ItemSummary } from '@/src/schema/inventory/items'
 
 type WarehouseOption = { id: string; name: string; code: string }
-type POOption = {
-  id: string
-  code: string
-  orderDate?: string | null
-  supplier?: { id: string; name: string } | null
-}
 
 type Props = {
   isOpen: boolean
@@ -26,19 +19,28 @@ type Props = {
   onSubmit: (data: ReceiveStockFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouses: WarehouseOption[]
-  purchaseOrders: POOption[]
+  items: ItemSummary[]
 }
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
-const readOnlyClass =
-  'w-full rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-sm text-zinc-500'
 const cellInputClass =
   'w-full rounded border border-zinc-200 px-2 py-1 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 
+const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
+  itemId: '',
+  quantityReceived: 1,
+  unitCost: undefined,
+  batchNumber: '',
+  expiryDate: '',
+  qualityHold: false,
+  notes: '',
+})
+
 const defaultValues: ReceiveStockFormValues = {
   code: '',
-  purchaseOrderId: '',
+  purchaseOrderNumber: '',
+  purchaseOrderDate: '',
   warehouseId: '',
   applicationType: 'new_stock',
   modeOfTransfer: '',
@@ -54,80 +56,36 @@ export default function ReceiveStockModal({
   onSubmit,
   isSubmitting,
   warehouses,
-  purchaseOrders,
+  items,
 }: Props) {
-  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null)
-  const [isLoadingPO, setIsLoadingPO] = useState(false)
-
   const {
     control,
     handleSubmit,
     reset,
     setValue,
-    watch,
     formState: { errors },
   } = useForm<ReceiveStockFormValues>({
     resolver: zodResolver(ReceiveStockFormSchema),
     defaultValues,
   })
 
-  const { fields, replace } = useFieldArray({ control, name: 'lines' })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
-  const purchaseOrderId = watch('purchaseOrderId')
-  const selectedPOOption = purchaseOrders.find((po) => po.id === purchaseOrderId)
-
-  // Load PO details and populate lines when PO selection changes
   useEffect(() => {
-    if (!purchaseOrderId) {
-      setSelectedPO(null)
-      replace([])
-      return
-    }
-
-    let cancelled = false
-    setIsLoadingPO(true)
-
-    getPurchaseOrderById(purchaseOrderId).then((result) => {
-      if (cancelled) return
-      setIsLoadingPO(false)
-      if (!result.success || !result.data) return
-
-      const po = result.data as PurchaseOrder
-      setSelectedPO(po)
-
-      replace(
-        po.lines.map((line) => ({
-          purchaseOrderLineId: line.id,
-          quantityReceived: Math.max(0, line.quantity - (line.receivedQuantity ?? 0)),
-          unitCost: line.unitPrice,
-          batchNumber: '',
-          expiryDate: '',
-          qualityHold: false,
-          notes: '',
-        }))
-      )
-
-      if (po.warehouseId) setValue('warehouseId', po.warehouseId)
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [purchaseOrderId, replace, setValue])
-
-  // Reset form when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      reset(defaultValues)
-      setSelectedPO(null)
-    }
+    if (!isOpen) reset(defaultValues)
   }, [isOpen, reset])
 
   if (!isOpen) return null
 
-  async function handleFormSubmit(data: ReceiveStockFormValues) {
+  async function handleFormSubmit(data: ReceiveStockFormValues): Promise<void> {
     const result = await onSubmit(data)
     if (result.success) onClose()
+  }
+
+  function handleItemChange(idx: number, itemId: string): void {
+    setValue(`lines.${idx}.itemId`, itemId)
+    const item = items.find((i) => i.id === itemId)
+    if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
   }
 
   return (
@@ -137,9 +95,7 @@ export default function ReceiveStockModal({
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Receive Stock</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Record incoming stock against a purchase order.
-            </p>
+            <p className="mt-0.5 text-sm text-zinc-500">Record incoming stock into inventory.</p>
           </div>
           <button
             type="button"
@@ -182,90 +138,58 @@ export default function ReceiveStockModal({
               </div>
             </div>
 
-            {/* Purchase Order */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Purchase Order (PO) <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="purchaseOrderId"
-                control={control}
-                render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select purchase order…</option>
-                    {purchaseOrders.map((po) => (
-                      <option key={po.id} value={po.id}>
-                        {po.code}
-                        {po.supplier?.name ? ` — ${po.supplier.name}` : ''}
-                        {po.orderDate ? ` (${new Date(po.orderDate).toLocaleDateString()})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-              {errors.purchaseOrderId && (
-                <p className="mt-1 text-xs text-red-600">{errors.purchaseOrderId.message}</p>
-              )}
-            </div>
-
             {/* PO Number + PO Date */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">PO Number</label>
-                <div className={readOnlyClass}>
-                  {selectedPOOption ? selectedPOOption.code : '—'}
-                </div>
+                <Controller
+                  name="purchaseOrderNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      type="text"
+                      placeholder="e.g. PO-2025-001"
+                      className={fieldClass}
+                    />
+                  )}
+                />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Purchase Order Date
                 </label>
-                <div className={readOnlyClass}>
-                  {selectedPOOption?.orderDate
-                    ? new Date(selectedPOOption.orderDate).toLocaleDateString()
-                    : '—'}
-                </div>
+                <Controller
+                  name="purchaseOrderDate"
+                  control={control}
+                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+                />
               </div>
             </div>
 
-            {/* Origin (Supplier) + Destination Warehouse */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Origin (Supplier)
-                </label>
-                <div className={readOnlyClass}>
-                  {isLoadingPO ? (
-                    <span className="text-zinc-400">Loading…</span>
-                  ) : (
-                    (selectedPO?.supplier?.name ?? '—')
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Destination Warehouse <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="warehouseId"
-                  control={control}
-                  render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select warehouse…</option>
-                      {warehouses.map((wh) => (
-                        <option key={wh.id} value={wh.id}>
-                          {wh.code} — {wh.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                />
-                {errors.warehouseId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+            {/* Destination Warehouse */}
+            <div className="sm:w-1/2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Destination Warehouse <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="warehouseId"
+                control={control}
+                render={({ field }) => (
+                  <select {...field} className={`${fieldClass} bg-white`}>
+                    <option value="">Select warehouse…</option>
+                    {warehouses.map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.code} — {wh.name}
+                      </option>
+                    ))}
+                  </select>
                 )}
-              </div>
+              />
+              {errors.warehouseId && (
+                <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+              )}
             </div>
 
             {/* Application Type + Mode of Transfer */}
@@ -332,145 +256,156 @@ export default function ReceiveStockModal({
               )}
             </div>
 
-            {/* Lines table */}
-            {isLoadingPO && (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
-                <span className="ml-2 text-sm text-zinc-500">Loading PO lines…</span>
+            {/* Items to Receive */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-zinc-800">Items to Receive</h3>
+                <button
+                  type="button"
+                  onClick={() => append(emptyLine())}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Item
+                </button>
               </div>
-            )}
 
-            {!isLoadingPO && purchaseOrderId && fields.length === 0 && (
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 py-6 text-center text-sm text-zinc-400">
-                No open lines found on this purchase order.
-              </div>
-            )}
-
-            {!isLoadingPO && fields.length > 0 && (
-              <div>
-                <h3 className="mb-2 text-sm font-semibold text-zinc-800">Items to Receive</h3>
+              {fields.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-center text-sm text-zinc-400">
+                  No items added yet. Click &ldquo;Add Item&rdquo; to begin.
+                </div>
+              ) : (
                 <div className="overflow-x-auto rounded-lg border border-zinc-200">
                   <table className="w-full text-sm">
                     <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                       <tr>
                         <th className="px-3 py-2">Item</th>
-                        <th className="px-3 py-2 text-center">Ordered / Received</th>
-                        <th className="px-3 py-2">Qty to Receive</th>
+                        <th className="px-3 py-2">Qty</th>
                         <th className="px-3 py-2">Unit Cost</th>
                         <th className="px-3 py-2">Batch No.</th>
                         <th className="px-3 py-2 text-center">QC Hold</th>
+                        <th className="px-3 py-2" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {fields.map((field, idx) => {
-                        const poLine = selectedPO?.lines[idx]
-                        return (
-                          <tr key={field.id} className="hover:bg-zinc-50">
-                            <td className="px-3 py-2">
-                              {poLine?.item ? (
-                                <div>
-                                  <p className="font-medium text-zinc-800">{poLine.item.sku}</p>
-                                  <p className="text-xs text-zinc-500">{poLine.item.name}</p>
-                                </div>
-                              ) : (
-                                <span className="text-zinc-400 text-xs">—</span>
+                      {fields.map((field, idx) => (
+                        <tr key={field.id} className="hover:bg-zinc-50">
+                          <td className="px-3 py-2 min-w-45">
+                            <Controller
+                              name={`lines.${idx}.itemId`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <select
+                                  value={f.value}
+                                  onChange={(e) => handleItemChange(idx, e.target.value)}
+                                  className={`${cellInputClass} bg-white`}
+                                >
+                                  <option value="">Select item…</option>
+                                  {items.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.sku} — {item.name}
+                                    </option>
+                                  ))}
+                                </select>
                               )}
-                            </td>
-                            <td className="px-3 py-2 text-center text-zinc-600">
-                              {poLine ? (
-                                <span>
-                                  {poLine.quantity}{' '}
-                                  <span className="text-zinc-400">
-                                    / {poLine.receivedQuantity ?? 0}
-                                  </span>
-                                </span>
-                              ) : (
-                                '—'
+                            />
+                            {errors.lines?.[idx]?.itemId && (
+                              <p className="mt-0.5 text-xs text-red-600">
+                                {errors.lines[idx]?.itemId?.message}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Controller
+                              name={`lines.${idx}.quantityReceived`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="number"
+                                  min="0.01"
+                                  step="any"
+                                  className={`w-24 ${cellInputClass}`}
+                                  onChange={(e) =>
+                                    f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
+                                  }
+                                />
                               )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <Controller
-                                name={`lines.${idx}.quantityReceived`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    type="number"
-                                    min="0.01"
-                                    step="any"
-                                    className={`w-24 ${cellInputClass}`}
-                                    onChange={(e) =>
-                                      f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
-                                    }
-                                  />
-                                )}
-                              />
-                              {errors.lines?.[idx]?.quantityReceived && (
-                                <p className="mt-0.5 text-xs text-red-600">
-                                  {errors.lines[idx]?.quantityReceived?.message}
-                                </p>
+                            />
+                            {errors.lines?.[idx]?.quantityReceived && (
+                              <p className="mt-0.5 text-xs text-red-600">
+                                {errors.lines[idx]?.quantityReceived?.message}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Controller
+                              name={`lines.${idx}.unitCost`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={f.value ?? ''}
+                                  className={`w-28 ${cellInputClass}`}
+                                  onChange={(e) =>
+                                    f.onChange(
+                                      e.target.value === '' ? undefined : Number(e.target.value)
+                                    )
+                                  }
+                                />
                               )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <Controller
-                                name={`lines.${idx}.unitCost`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={f.value ?? ''}
-                                    className={`w-28 ${cellInputClass}`}
-                                    onChange={(e) =>
-                                      f.onChange(
-                                        e.target.value === '' ? undefined : Number(e.target.value)
-                                      )
-                                    }
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <Controller
-                                name={`lines.${idx}.batchNumber`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    type="text"
-                                    placeholder="Optional"
-                                    className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <Controller
-                                name={`lines.${idx}.qualityHold`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    type="checkbox"
-                                    checked={f.value ?? false}
-                                    onChange={(e) => f.onChange(e.target.checked)}
-                                    className="h-4 w-4 rounded border-zinc-300"
-                                  />
-                                )}
-                              />
-                            </td>
-                          </tr>
-                        )
-                      })}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Controller
+                              name={`lines.${idx}.batchNumber`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="text"
+                                  placeholder="Optional"
+                                  className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <Controller
+                              name={`lines.${idx}.qualityHold`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  type="checkbox"
+                                  checked={f.value ?? false}
+                                  onChange={(e) => f.onChange(e.target.checked)}
+                                  className="h-4 w-4 rounded border-zinc-300"
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => remove(idx)}
+                              className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
-                {errors.lines && !Array.isArray(errors.lines) && (
-                  <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
-                )}
-              </div>
-            )}
+              )}
+              {errors.lines && !Array.isArray(errors.lines) && (
+                <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
+              )}
+            </div>
 
             {/* Notes */}
             <div>
