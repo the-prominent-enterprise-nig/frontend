@@ -1578,8 +1578,7 @@ export async function getEnabledBranchPaymentMethods(
 
 export interface ReceiptBranding {
   receiptLogoUrl: string | null
-  receiptPrimaryColor: string | null
-  receiptAccentColor: string | null
+  receiptHeaderText: string | null
 }
 
 export async function getReceiptBranding(): Promise<ApiResponse<ReceiptBranding>> {
@@ -1631,8 +1630,7 @@ export async function uploadReceiptLogo(
 
 export async function updateReceiptBranding(input: {
   logoUrl?: string | null
-  primaryColor?: string
-  accentColor?: string
+  headerText?: string
 }): Promise<ApiResponse<ReceiptBranding>> {
   try {
     const result = await api.patch<{ data: ReceiptBranding }>('/pos/receipt-config/branding', input)
