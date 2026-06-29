@@ -118,6 +118,7 @@ export interface CreateCustomPaymentMethodInput {
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
+export type PosInvoiceType = 'cash' | 'charge'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
@@ -179,6 +180,7 @@ export interface PosTransaction {
   transactionNumber: string
   sessionId: string
   transactionType: PosTransactionType
+  invoiceType?: PosInvoiceType
   customerId?: string | null
   promoCodeId?: string | null
   subtotal: number
@@ -193,6 +195,7 @@ export interface PosTransaction {
   occurredAt: string
   createdAt: string
   journalEntryId?: string | null
+  arInvoiceId?: string | null
   queueTicketNumber?: number | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -222,6 +225,8 @@ export interface ScPwdDiscountInput {
 export interface CreateTransactionInput {
   sessionId: string
   transactionType?: PosTransactionType
+  invoiceType?: PosInvoiceType
+  chargeDueDays?: number
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -611,4 +616,36 @@ export interface UpdateBranchPricingInput {
   effectiveFrom?: string
   effectiveTo?: string
   notes?: string
+}
+
+// Void Requests
+export type PosVoidRequestStatus = 'pending' | 'approved' | 'rejected'
+export type PosVoidRequestType = 'void' | 'edit'
+
+export interface PosVoidRequest {
+  id: string
+  tenantId?: string | null
+  transactionId: string
+  requestType: PosVoidRequestType
+  requestedById: string
+  reason: string
+  status: PosVoidRequestStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  transaction?: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  }
+}
+
+export interface SubmitVoidRequestInput {
+  reason: string
+  requestType?: PosVoidRequestType
+}
+
+export interface ReviewVoidRequestInput {
+  reviewNotes?: string
 }
