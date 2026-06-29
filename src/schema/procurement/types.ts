@@ -90,7 +90,7 @@ export interface GoodsReceipt {
   notes?: string | null
   lines: Array<{
     id: string
-    purchaseOrderLineId: string
+    itemId: string
     quantityReceived: number
     batchNumber?: string | null
     expiryDate?: string | null

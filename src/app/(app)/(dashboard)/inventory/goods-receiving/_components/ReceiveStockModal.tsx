@@ -29,7 +29,7 @@ const cellInputClass =
 
 const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
   itemId: '',
-  quantityReceived: 1,
+  quantityReceived: 0,
   unitCost: undefined,
   batchNumber: '',
   expiryDate: '',
@@ -325,6 +325,8 @@ export default function ReceiveStockModal({
                                   type="number"
                                   min="0.01"
                                   step="any"
+                                  value={f.value === 0 ? '' : f.value}
+                                  placeholder="0"
                                   className={`w-24 ${cellInputClass}`}
                                   onChange={(e) =>
                                     f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
