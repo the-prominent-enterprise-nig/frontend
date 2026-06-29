@@ -6,6 +6,9 @@ import {
   CategoryListResponseSchema,
   UomOption,
   UomListResponseSchema,
+  ItemGroupOption,
+  ItemSubgroupOption,
+  ClassificationOption,
 } from '@/src/schema/inventory/items'
 
 export async function getCategories(params?: {
@@ -83,6 +86,108 @@ export async function getUnitsOfMeasure(params?: {
     return {
       success: false,
       error: 'Failed to fetch units of measure',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+export async function getItemGroups(): Promise<ApiResponse<ItemGroupOption[]>> {
+  try {
+    const result = await api.get(
+      '/inventory/classification/groups',
+      {},
+      { tags: ['inventory-item-groups'] }
+    )
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch item groups',
+        message: result.message,
+      }
+    }
+    return { success: true, data: result.data as ItemGroupOption[] }
+  } catch (error) {
+    console.error('Error fetching item groups:', error)
+    return {
+      success: false,
+      error: 'Failed to fetch item groups',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+export async function getItemSubgroups(
+  groupId?: string
+): Promise<ApiResponse<ItemSubgroupOption[]>> {
+  try {
+    const result = await api.get(
+      '/inventory/classification/subgroups',
+      groupId ? { groupId } : {},
+      { tags: ['inventory-item-subgroups'] }
+    )
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch item subgroups',
+        message: result.message,
+      }
+    }
+    return { success: true, data: result.data as ItemSubgroupOption[] }
+  } catch (error) {
+    console.error('Error fetching item subgroups:', error)
+    return {
+      success: false,
+      error: 'Failed to fetch item subgroups',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+export async function getItemBrands(): Promise<ApiResponse<ClassificationOption[]>> {
+  try {
+    const result = await api.get(
+      '/inventory/classification/brands',
+      {},
+      { tags: ['inventory-item-brands'] }
+    )
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch item brands',
+        message: result.message,
+      }
+    }
+    return { success: true, data: result.data as ClassificationOption[] }
+  } catch (error) {
+    console.error('Error fetching item brands:', error)
+    return {
+      success: false,
+      error: 'Failed to fetch item brands',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+export async function getItemTypes(): Promise<ApiResponse<ClassificationOption[]>> {
+  try {
+    const result = await api.get(
+      '/inventory/classification/types',
+      {},
+      { tags: ['inventory-item-types'] }
+    )
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: result.error || 'Failed to fetch item types',
+        message: result.message,
+      }
+    }
+    return { success: true, data: result.data as ClassificationOption[] }
+  } catch (error) {
+    console.error('Error fetching item types:', error)
+    return {
+      success: false,
+      error: 'Failed to fetch item types',
       message: error instanceof Error ? error.message : 'Unknown error',
     }
   }

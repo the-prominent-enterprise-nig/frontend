@@ -1,11 +1,16 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Upload, ImageOff, Images } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
-import type { ItemTagLabel } from '@/src/schema/inventory/items'
+import type {
+  ItemTagLabel,
+  ItemGroupOption,
+  ItemSubgroupOption,
+  ClassificationOption,
+} from '@/src/schema/inventory/items'
 import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -28,6 +33,10 @@ type Props = {
   isSubmitting: boolean
   categories: CategorySelectOption[]
   uomOptions: UomOption[]
+  groupOptions: ItemGroupOption[]
+  subgroupOptions: ItemSubgroupOption[]
+  brandOptions: ClassificationOption[]
+  typeOptions: ClassificationOption[]
 }
 
 export default function CreateItemModal({
@@ -37,6 +46,10 @@ export default function CreateItemModal({
   isSubmitting,
   categories,
   uomOptions,
+  groupOptions,
+  subgroupOptions,
+  brandOptions,
+  typeOptions,
 }: Props) {
   const {
     control,
@@ -44,6 +57,7 @@ export default function CreateItemModal({
     reset,
     setError,
     setValue,
+    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<CreateItemFormValues>({
@@ -72,6 +86,18 @@ export default function CreateItemModal({
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const hasUnsavedChanges = isDirty || pendingImages.length > 0 || selectedTags.length > 0
+
+  const selectedGroupId = useWatch({ control, name: 'groupId' })
+  const filteredSubgroups = subgroupOptions.filter(
+    (s) => !selectedGroupId || s.groupId === selectedGroupId
+  )
+
+  useEffect(() => {
+    const currentSub = getValues('subgroupId')
+    if (!currentSub) return
+    const valid = filteredSubgroups.some((s) => s.id === currentSub)
+    if (!valid) setValue('subgroupId', undefined)
+  }, [selectedGroupId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleRequestClose() {
     if (hasUnsavedChanges) {
@@ -562,6 +588,108 @@ export default function CreateItemModal({
                   </label>
                 ))}
               </div>
+            </div>
+          </FormSection>
+
+          {/* Classification */}
+          <FormSection title="Classification" defaultOpen={false}>
+            {/* Group */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Group</label>
+              <Controller
+                name="groupId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {groupOptions.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Subgroup */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Subgroup</label>
+              <Controller
+                name="subgroupId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    disabled={!selectedGroupId}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    <option value="">
+                      {selectedGroupId ? '— None —' : '— Select group first —'}
+                    </option>
+                    {filteredSubgroups.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Brand */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
+              <Controller
+                name="brandId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {brandOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Item Type */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
+              <Controller
+                name="typeId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {typeOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
             </div>
           </FormSection>
 

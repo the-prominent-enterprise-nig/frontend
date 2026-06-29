@@ -27,6 +27,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     pagination,
     categories,
     uomOptions,
+    groupOptions,
+    subgroupOptions,
+    brandOptions,
+    typeOptions,
     isLoading,
     isFetching,
     error,
@@ -240,6 +244,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         isSubmitting={isCreating}
         categories={categories}
         uomOptions={uomOptions}
+        groupOptions={groupOptions}
+        subgroupOptions={subgroupOptions}
+        brandOptions={brandOptions}
+        typeOptions={typeOptions}
       />
 
       {/* Edit Modal */}
@@ -253,6 +261,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         uomOptions={uomOptions}
         onAttributeSubmit={(attrs) => updateItemAttributes(editTarget!.id, attrs)}
         isAttributeSubmitting={isUpdatingAttributes}
+        groupOptions={groupOptions}
+        subgroupOptions={subgroupOptions}
+        brandOptions={brandOptions}
+        typeOptions={typeOptions}
       />
 
       {/* Bundle Create Modal */}
