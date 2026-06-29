@@ -152,7 +152,9 @@ export default function CashierPinPage() {
 
           <button
             onClick={handleRegister}
-            disabled={regLoading || !regPin || !regConfirm}
+            disabled={
+              regLoading || !regPin || !regConfirm || regPin.length < 4 || regConfirm.length < 4
+            }
             className="mt-4 w-full rounded-xl bg-purple-700 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-800 disabled:opacity-40"
           >
             {regLoading ? 'Setting PIN…' : 'Set PIN'}

@@ -33,19 +33,21 @@ export default function PosConfigPage() {
   const [queueCategories, setQueueCategories] = useState<QueueCategory[]>([])
 
   useEffect(() => {
-    Promise.all([getActivePosConfig(), QueueCategories.list()]).then(([configRes, catRes]) => {
-      setLoading(false)
-      if (configRes.success && configRes.data) {
-        const c = configRes.data
-        setConfig(c)
-        setDiscountThreshold(Number(c.discountOverrideThreshold ?? 20))
-        setReceiptlessReturnDays(Number(c.receiptlessReturnDays ?? 7))
-        setAllowNegativeStock(c.allowNegativeStock ?? false)
-        setOrderQueueCategoryId(c.orderQueueCategoryId ?? '')
-        setDefaultPricingMode(c.defaultPricingMode ?? 'exclusive')
-      }
-      setQueueCategories(catRes.data ?? [])
-    })
+    Promise.all([getActivePosConfig(), QueueCategories.list()])
+      .then(([configRes, catRes]) => {
+        setLoading(false)
+        if (configRes.success && configRes.data) {
+          const c = configRes.data
+          setConfig(c)
+          setDiscountThreshold(Number(c.discountOverrideThreshold ?? 20))
+          setReceiptlessReturnDays(Number(c.receiptlessReturnDays ?? 7))
+          setAllowNegativeStock(c.allowNegativeStock ?? false)
+          setOrderQueueCategoryId(c.orderQueueCategoryId ?? '')
+          setDefaultPricingMode(c.defaultPricingMode ?? 'exclusive')
+        }
+        setQueueCategories(catRes.data ?? [])
+      })
+      .catch(() => setLoading(false))
   }, [])
 
   async function handleSave() {

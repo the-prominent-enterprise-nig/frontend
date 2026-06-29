@@ -34,7 +34,11 @@ export default function ParkedSalesPage() {
       setError(res.error ?? 'Failed to resume sale')
       return
     }
-    localStorage.setItem('pos_resumed_cart', JSON.stringify(sale.cartData))
+    try {
+      localStorage.setItem('pos_resumed_cart', JSON.stringify(sale.cartData))
+    } catch {
+      // localStorage full or unavailable — checkout will start with an empty cart
+    }
     router.push('/pos/checkout')
   }
 

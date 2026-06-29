@@ -316,6 +316,13 @@ function PricingModal({
   const [itemResults, setItemResults] = useState<LookupItem[]>([])
   const [itemSearchOpen, setItemSearchOpen] = useState(false)
   const itemTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const itemBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (itemBlurTimer.current) clearTimeout(itemBlurTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!itemQuery.trim()) {
@@ -405,7 +412,9 @@ function PricingModal({
                     placeholder="Search item by name or SKU…"
                     value={itemQuery}
                     onChange={(e) => setItemQuery(e.target.value)}
-                    onBlur={() => setTimeout(() => setItemSearchOpen(false), 150)}
+                    onBlur={() => {
+                      itemBlurTimer.current = setTimeout(() => setItemSearchOpen(false), 150)
+                    }}
                   />
                   {itemSearchOpen && itemResults.length > 0 && (
                     <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">

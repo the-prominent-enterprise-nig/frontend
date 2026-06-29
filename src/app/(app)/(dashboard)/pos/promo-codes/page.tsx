@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   usePromoCodes,
   useCreatePromoCode,
@@ -262,6 +262,24 @@ function PromoModal({
     validUntil: initial?.validUntil?.slice(0, 10) ?? '',
     status: (initial?.status ?? 'active') as 'active' | 'paused' | 'expired',
   })
+
+  useEffect(() => {
+    setForm({
+      code: initial?.code ?? '',
+      name: initial?.name ?? '',
+      description: initial?.description ?? '',
+      discountType: (initial?.discountType ?? 'percentage') as
+        | 'percentage'
+        | 'fixed_amount'
+        | 'bogo',
+      discountValue: initial?.discountValue ?? 0,
+      minPurchaseAmount: initial?.minPurchaseAmount ?? '',
+      maxUsesTotal: initial?.maxUsesTotal ?? '',
+      validFrom: initial?.validFrom?.slice(0, 10) ?? '',
+      validUntil: initial?.validUntil?.slice(0, 10) ?? '',
+      status: (initial?.status ?? 'active') as 'active' | 'paused' | 'expired',
+    })
+  }, [initial])
 
   return (
     <Overlay onClose={onClose}>

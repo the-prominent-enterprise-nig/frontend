@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTransactions, useVoidTransaction, useSendReceipt } from '../../_hooks/usePos'
 import { RefreshCw, ShoppingCart, X, Search, ChevronDown, Mail, Printer } from 'lucide-react'
 import { getReceipt, logReprintEvent } from '../../_actions/pos-actions'
@@ -44,6 +44,10 @@ export default function TransactionsList({ session }: Props) {
   const [detail, setDetail] = useState<DetailModal>({ type: 'none' })
   const [voidTarget, setVoidTarget] = useState<PosTransaction | null>(null)
   const [voidError, setVoidError] = useState('')
+
+  useEffect(() => {
+    if (!voidTarget) setVoidError('')
+  }, [voidTarget])
 
   const { data, isLoading, isFetching, refetch } = useTransactions(
     Object.fromEntries(Object.entries(applied).filter(([, v]) => v !== '')) as Record<
@@ -379,6 +383,24 @@ function TransactionDetail({
 
     const date = new Date(tx.occurredAt ?? tx.createdAt).toLocaleString('en-PH')
 
+    const hasVatBreakdown =
+      tx.vatableAmount != null || tx.vatExemptAmount != null || tx.zeroRatedAmount != null
+    const vatBreakdownRows = hasVatBreakdown
+      ? `
+  <tr><td colspan="2"><hr style="border:none;border-top:1px dashed #ccc;margin:4px 0"></td></tr>
+  ${(tx.vatableAmount ?? 0) > 0 ? `<tr><td style="color:#555">VATable Sales (12%)</td><td style="text-align:right;color:#555">&#8369;${(tx.vatableAmount ?? 0).toFixed(2)}</td></tr>` : ''}
+  ${(tx.vatExemptAmount ?? 0) > 0 ? `<tr><td style="color:#555">VAT-Exempt Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.vatExemptAmount ?? 0).toFixed(2)}</td></tr>` : ''}
+  ${(tx.zeroRatedAmount ?? 0) > 0 ? `<tr><td style="color:#555">Zero-Rated Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.zeroRatedAmount ?? 0).toFixed(2)}</td></tr>` : ''}
+  ${tx.taxTotal > 0 ? `<tr><td style="color:#555">VAT Amount (12%)</td><td style="text-align:right;color:#555">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>` : ''}`
+      : tx.taxTotal > 0
+        ? `<tr><td>Tax</td><td style="text-align:right">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>`
+        : ''
+
+    const scPwdRow =
+      tx.scPwdDiscountType && tx.scPwdIdNumber
+        ? `<tr><td style="color:#2563eb">${tx.scPwdDiscountType === 'PWD' ? 'PWD' : 'SC'} Discount (${tx.scPwdName ?? ''} / ${tx.scPwdIdNumber})</td><td style="text-align:right;color:#2563eb">-&#8369;${(tx.scPwdDiscountTotal ?? 0).toFixed(2)}</td></tr>`
+        : ''
+
     const html = `<!DOCTYPE html><html><head><title>REPRINT — ${tx.transactionNumber}</title>
 <style>
   body{font-family:monospace;font-size:12px;max-width:360px;margin:0 auto;padding:16px}
@@ -401,7 +423,8 @@ function TransactionDetail({
 <table>
   <tr><td>Subtotal</td><td style="text-align:right">&#8369;${tx.subtotal.toFixed(2)}</td></tr>
   ${tx.discountTotal > 0 ? `<tr><td>Discount</td><td style="text-align:right">-&#8369;${tx.discountTotal.toFixed(2)}</td></tr>` : ''}
-  ${tx.taxTotal > 0 ? `<tr><td>Tax</td><td style="text-align:right">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>` : ''}
+  ${scPwdRow}
+  ${vatBreakdownRows}
   <tr class="total-row"><td>TOTAL</td><td style="text-align:right">&#8369;${tx.totalAmount.toFixed(2)}</td></tr>
 </table>
 <hr>

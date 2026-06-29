@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   ShoppingBag,
@@ -15,35 +15,27 @@ import {
   X,
   Plus,
 } from 'lucide-react'
-import {
-  getActivePosConfig,
-  getTransaction,
-  getTransactions,
-  addToOrderQueue,
-} from '../_actions/pos-actions'
-import { QueueTickets, type QueueTicket } from '@/src/libs/data/QueueData'
-import type { PosTransactionLine } from '@/src/schema/pos'
+import { getActivePosConfig, getTransactions, addToOrderQueue } from '../_actions/pos-actions'
+import { KdsApi, type KdsOrder, type KdsLine } from '@/src/libs/data/KdsData'
 import { useQueueSocket } from '@/src/libs/hooks/useQueueSocket'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 }
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
 }
 
 // ─── Order Card ───────────────────────────────────────────────────────────────
 
 interface OrderCardProps {
-  ticket: QueueTicket
-  lines: PosTransactionLine[] | null
-  loadingLines: boolean
+  order: KdsOrder
   onToPrepare?: () => Promise<void>
   onServe?: () => Promise<void>
   onErase?: () => Promise<void>
 }
 
-function OrderCard({ ticket, lines, loadingLines, onToPrepare, onServe, onErase }: OrderCardProps) {
+function OrderCard({ order, onToPrepare, onServe, onErase }: OrderCardProps) {
   const [actioning, setActioning] = useState(false)
 
   const handle = (fn?: () => Promise<void>) => async () => {
@@ -53,11 +45,11 @@ function OrderCard({ ticket, lines, loadingLines, onToPrepare, onServe, onErase 
     setActioning(false)
   }
 
-  const total =
-    lines?.reduce((sum, l) => sum + Number(l.lineTotal) + Number(l.taxAmount ?? 0), 0) ?? null
+  const lines: KdsLine[] = order.transaction?.lines ?? []
+  const total = order.transaction ? Number(order.transaction.totalAmount) : null
 
-  const isWaiting = ticket.status === 'WAITING'
-  const isCalled = ticket.status === 'CALLED'
+  const isWaiting = order.status === 'WAITING'
+  const isCalled = order.status === 'CALLED'
 
   const borderClass = isWaiting
     ? 'border-gray-200'
@@ -82,18 +74,18 @@ function OrderCard({ ticket, lines, loadingLines, onToPrepare, onServe, onErase 
         <div
           className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-black text-base ${numBg}`}
         >
-          #{ticket.number}
+          #{order.number}
         </div>
         <div className="flex-1 min-w-0">
-          {ticket.customerName && (
-            <p className="text-sm font-semibold text-gray-900 truncate">{ticket.customerName}</p>
+          {order.customerName && (
+            <p className="text-sm font-semibold text-gray-900 truncate">{order.customerName}</p>
           )}
-          {ticket.salesOrderId && (
-            <p className="text-xs font-mono text-gray-400 truncate">{ticket.salesOrderId}</p>
+          {order.salesOrderId && (
+            <p className="text-xs font-mono text-gray-400 truncate">{order.salesOrderId}</p>
           )}
           <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
             <Clock className="w-3 h-3" />
-            {formatTime(ticket.issuedAt)}
+            {formatTime(order.issuedAt)}
           </p>
         </div>
         {onErase && (
@@ -110,22 +102,20 @@ function OrderCard({ ticket, lines, loadingLines, onToPrepare, onServe, onErase 
 
       {/* Line items */}
       <div className={`border-t px-4 py-2.5 ${bodyBg}`}>
-        {loadingLines ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-1">
-            <Loader2 className="w-3 h-3 animate-spin" /> Loading items…
-          </div>
-        ) : lines && lines.length > 0 ? (
+        {lines.length > 0 ? (
           <div className="space-y-1">
-            {lines.map((line, i) => {
+            {lines.map((line) => {
               const qty = Number(line.quantity)
-              const ti = Number(line.lineTotal) + Number(line.taxAmount ?? 0)
+              const ti = Number(line.lineTotal)
               return (
-                <div key={i} className="flex items-center justify-between gap-2">
+                <div key={line.id} className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className={`font-mono font-bold text-xs shrink-0 ${qtyColor}`}>
                       ×{qty}
                     </span>
-                    <span className="text-xs text-gray-700 truncate">{line.itemName}</span>
+                    <span className="text-xs text-gray-700 truncate">
+                      {line.itemName ?? line.itemId}
+                    </span>
                   </div>
                   <span className="text-xs text-gray-500 shrink-0 font-medium">{fmt(ti)}</span>
                 </div>
@@ -228,16 +218,13 @@ function BoardColumn({
 
 export default function PosOrderQueuePage() {
   const [categoryId, setCategoryId] = useState<string | null | undefined>(undefined)
-  const [waiting, setWaiting] = useState<QueueTicket[]>([])
-  const [preparing, setPreparing] = useState<QueueTicket[]>([])
-  const [completed, setCompleted] = useState<QueueTicket[]>([])
-  const [txLines, setTxLines] = useState<Record<string, PosTransactionLine[] | null>>({})
-  const [loadingTx, setLoadingTx] = useState<Record<string, boolean>>({})
+  const [waiting, setWaiting] = useState<KdsOrder[]>([])
+  const [preparing, setPreparing] = useState<KdsOrder[]>([])
+  const [completed, setCompleted] = useState<KdsOrder[]>([])
   const [fetching, setFetching] = useState(false)
   const [txInput, setTxInput] = useState('')
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
-  const fetchedIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     getActivePosConfig().then((res) => {
@@ -245,82 +232,52 @@ export default function PosOrderQueuePage() {
     })
   }, [])
 
-  const fetchTxDetails = useCallback(async (tickets: QueueTicket[]) => {
-    const toFetch = tickets.filter(
-      (t) => t.posTransactionId && !fetchedIds.current.has(t.posTransactionId)
-    )
-    if (!toFetch.length) return
-    toFetch.forEach((t) => {
-      if (t.posTransactionId) fetchedIds.current.add(t.posTransactionId)
+  const loadOrders = useCallback(async (catId: string) => {
+    const res = await KdsApi.listOrders({
+      categoryId: catId,
+      statuses: ['WAITING', 'CALLED', 'SERVED'],
     })
-    setLoadingTx((prev) => {
-      const next = { ...prev }
-      toFetch.forEach((t) => {
-        if (t.posTransactionId) next[t.posTransactionId] = true
-      })
-      return next
-    })
-    await Promise.all(
-      toFetch.map(async (t) => {
-        if (!t.posTransactionId) return
-        const res = await getTransaction(t.posTransactionId)
-        setTxLines((prev) => ({ ...prev, [t.posTransactionId!]: res.data?.lines ?? null }))
-        setLoadingTx((prev) => {
-          const n = { ...prev }
-          delete n[t.posTransactionId!]
-          return n
-        })
-      })
-    )
-  }, [])
-
-  const loadTickets = useCallback(
-    async (catId: string) => {
-      const res = await QueueTickets.list(catId)
-      if (res.success && res.data) {
-        const w = res.data.filter((t) => t.status === 'WAITING')
-        const p = res.data.filter((t) => t.status === 'CALLED')
-        const c = res.data
-          .filter((t) => t.status === 'SERVED')
+    if (res.success && res.data) {
+      const orders = res.data.data
+      setWaiting(orders.filter((o) => o.status === 'WAITING'))
+      setPreparing(orders.filter((o) => o.status === 'CALLED'))
+      setCompleted(
+        orders
+          .filter((o) => o.status === 'SERVED')
           .sort(
             (a, b) =>
               new Date(b.servedAt ?? b.issuedAt).getTime() -
               new Date(a.servedAt ?? a.issuedAt).getTime()
           )
           .slice(0, 20)
-        setWaiting(w)
-        setPreparing(p)
-        setCompleted(c)
-        fetchTxDetails([...w, ...p, ...c])
-      }
-      setFetching(false)
-    },
-    [fetchTxDetails]
-  )
+      )
+    }
+    setFetching(false)
+  }, [])
 
   useEffect(() => {
     if (!categoryId) return
     setFetching(true)
-    loadTickets(categoryId)
-  }, [categoryId, loadTickets])
+    loadOrders(categoryId)
+  }, [categoryId, loadOrders])
 
   useQueueSocket(() => {
-    if (categoryId) loadTickets(categoryId)
+    if (categoryId) loadOrders(categoryId)
   })
 
-  const toPrepare = async (ticket: QueueTicket) => {
-    await QueueTickets.call(ticket.id)
-    if (categoryId) loadTickets(categoryId)
+  const toPrepare = async (order: KdsOrder) => {
+    await KdsApi.callOrder(order.id)
+    if (categoryId) loadOrders(categoryId)
   }
 
-  const serve = async (ticket: QueueTicket) => {
-    await QueueTickets.serve(ticket.id)
-    if (categoryId) loadTickets(categoryId)
+  const serve = async (order: KdsOrder) => {
+    await KdsApi.serveOrder(order.id)
+    if (categoryId) loadOrders(categoryId)
   }
 
-  const erase = async (ticket: QueueTicket) => {
-    await QueueTickets.cancel(ticket.id)
-    if (categoryId) loadTickets(categoryId)
+  const erase = async (order: KdsOrder) => {
+    await KdsApi.cancelOrder(order.id)
+    if (categoryId) loadOrders(categoryId)
   }
 
   const [clearingAll, setClearingAll] = useState(false)
@@ -329,15 +286,11 @@ export default function PosOrderQueuePage() {
   const eraseAll = async () => {
     if (completed.length === 0) return
     setClearingAll(true)
-    await Promise.all(completed.map((t) => QueueTickets.cancel(t.id)))
+    await Promise.all(completed.map((o) => KdsApi.cancelOrder(o.id)))
     setConfirmClear(false)
     setClearingAll(false)
-    if (categoryId) loadTickets(categoryId)
+    if (categoryId) loadOrders(categoryId)
   }
-
-  const getLines = (t: QueueTicket) =>
-    t.posTransactionId ? (txLines[t.posTransactionId] ?? null) : null
-  const isLoading = (t: QueueTicket) => !!(t.posTransactionId && loadingTx[t.posTransactionId])
 
   const handleAddToQueue = async (e: React.SyntheticEvent) => {
     e.preventDefault()
@@ -357,7 +310,7 @@ export default function PosOrderQueuePage() {
       setAddError(qRes.error ?? 'Failed to add to queue')
     } else {
       setTxInput('')
-      loadTickets(categoryId)
+      loadOrders(categoryId)
     }
     setAdding(false)
   }
@@ -443,14 +396,8 @@ export default function PosOrderQueuePage() {
             headerClass="bg-slate-600 text-white"
             emptyText="No orders waiting"
           >
-            {waiting.map((ticket) => (
-              <OrderCard
-                key={ticket.id}
-                ticket={ticket}
-                lines={getLines(ticket)}
-                loadingLines={isLoading(ticket)}
-                onToPrepare={() => toPrepare(ticket)}
-              />
+            {waiting.map((order) => (
+              <OrderCard key={order.id} order={order} onToPrepare={() => toPrepare(order)} />
             ))}
           </BoardColumn>
 
@@ -462,14 +409,8 @@ export default function PosOrderQueuePage() {
             headerClass="bg-amber-500 text-white"
             emptyText="Nothing being prepared"
           >
-            {preparing.map((ticket) => (
-              <OrderCard
-                key={ticket.id}
-                ticket={ticket}
-                lines={getLines(ticket)}
-                loadingLines={isLoading(ticket)}
-                onServe={() => serve(ticket)}
-              />
+            {preparing.map((order) => (
+              <OrderCard key={order.id} order={order} onServe={() => serve(order)} />
             ))}
           </BoardColumn>
 
@@ -508,14 +449,8 @@ export default function PosOrderQueuePage() {
               ))
             }
           >
-            {completed.map((ticket) => (
-              <OrderCard
-                key={ticket.id}
-                ticket={ticket}
-                lines={getLines(ticket)}
-                loadingLines={isLoading(ticket)}
-                onErase={() => erase(ticket)}
-              />
+            {completed.map((order) => (
+              <OrderCard key={order.id} order={order} onErase={() => erase(order)} />
             ))}
           </BoardColumn>
         </div>

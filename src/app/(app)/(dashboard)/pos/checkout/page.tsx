@@ -544,16 +544,18 @@ export default function CheckoutPage() {
   // Display subtotal: inclusive mode shows tag prices as-is; exclusive adds tax
   const subtotal = inclusivePricing ? rawSubtotal : rawSubtotal + taxTotal
 
-  // SC/PWD estimated discount (20% of subtotal — exact amount computed server-side)
-  const scPwdEstimatedDiscount = scPwdData ? Math.round(subtotal * 0.2 * 100) / 100 : 0
+  // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
+  const scPwdEstimatedDiscount = scPwdData
+    ? Math.round(vatExclSubtotalForBackend * 0.2 * 100) / 100
+    : 0
 
   const totalAmount = Math.max(
     0,
     Math.round((subtotal - promoDiscount - scPwdEstimatedDiscount) * 100) / 100
   )
-  const totalPaid = payments.reduce((s, p) => s + (p.amount || 0), 0)
-  const balance = Math.max(0, totalAmount - totalPaid)
-  const change = totalPaid > totalAmount ? totalPaid - totalAmount : 0
+  const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
+  const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
+  const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
 
   // Loyalty balance check
   const loyaltyPointsValue = loyaltyProgram?.pointsValue || 1
@@ -591,7 +593,7 @@ export default function CheckoutPage() {
         })),
         subtotal,
         discountTotal: promoDiscount,
-        taxTotal: 0,
+        taxTotal,
         totalAmount,
         currency: 'PHP',
       })
@@ -875,7 +877,7 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: rawSubtotal,
         totalAmount,
-        isTaxExempt,
+        isTaxExempt: isTaxExempt || !!scPwdData,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
         scPwdDiscount: scPwdData ?? undefined,
@@ -925,7 +927,7 @@ export default function CheckoutPage() {
           taxAmount: taxTotal,
           subtotal: rawSubtotal,
           totalAmount,
-          isTaxExempt,
+          isTaxExempt: isTaxExempt || !!scPwdData,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           overrideManagerId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
@@ -1623,7 +1625,7 @@ export default function CheckoutPage() {
                   <span>−{fmt(scPwdEstimatedDiscount)}</span>
                 </div>
               )}
-              {taxTotal > 0 && !isTaxExempt && (
+              {taxTotal > 0 && !isTaxExempt && !scPwdData && (
                 <>
                   {inclusivePricing && (
                     <div className="flex justify-between text-gray-400 text-xs">
@@ -1949,9 +1951,10 @@ export default function CheckoutPage() {
                       className="w-28 rounded-lg border border-gray-200 px-2 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                       placeholder="0.00"
                       value={p.amount === 0 ? '' : p.amount}
-                      onChange={(e) =>
-                        updatePayment(i, { amount: parseFloat(e.target.value) || 0 })
-                      }
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                      }}
                     />
                     <button
                       onClick={() => removePaymentRow(i)}

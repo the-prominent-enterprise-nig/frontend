@@ -193,7 +193,10 @@ export default function GiftCardsPage() {
         <IssueModal
           error={error}
           isLoading={issueMutation.isPending}
-          onClose={() => setShowIssue(false)}
+          onClose={() => {
+            setShowIssue(false)
+            setError('')
+          }}
           onSubmit={handleIssue}
         />
       )}
@@ -361,7 +364,7 @@ function IssueModal({
                   expiresAt: form.expiresAt || undefined,
                 })
               }
-              disabled={isLoading}
+              disabled={isLoading || !form.cardNumber.trim() || form.initialValue <= 0}
               className="btn-primary"
             >
               {isLoading ? 'Issuing…' : 'Issue Card'}

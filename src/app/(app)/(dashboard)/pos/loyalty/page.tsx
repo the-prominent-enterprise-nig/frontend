@@ -174,7 +174,7 @@ export default function LoyaltyPage() {
         )}
 
         {/* Empty state when no search yet */}
-        {!account && !error && !loading && (
+        {!account && !loading && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-300 py-16 text-gray-400">
             <Star size={40} />
             <p className="text-sm">Search for a customer to view their loyalty account.</p>

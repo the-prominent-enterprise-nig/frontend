@@ -480,8 +480,8 @@ function CashiersModal({ terminal, onClose }: { terminal: PosTerminal; onClose: 
           {cashiers.map((c) => (
             <li key={c.id} className="flex items-center justify-between px-4 py-2.5">
               <div>
-                <p className="text-sm font-medium text-gray-800">{c.user.name ?? '—'}</p>
-                <p className="text-xs text-gray-400">{c.user.email ?? ''}</p>
+                <p className="text-sm font-medium text-gray-800">{c.user?.name ?? '—'}</p>
+                <p className="text-xs text-gray-400">{c.user?.email ?? ''}</p>
               </div>
               <button
                 onClick={() => handleRemove(c.userId)}

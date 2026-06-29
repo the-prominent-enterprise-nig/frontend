@@ -421,7 +421,7 @@ function EditModal({
     onSaved(`${method.name} updated`)
   }
 
-  const sortedAccounts = [...glAccounts].sort((a, b) =>
+  const sortedAccounts = [...(glAccounts ?? [])].sort((a, b) =>
     (a.number ?? a.code ?? '').localeCompare(b.number ?? b.code ?? '')
   )
 
@@ -567,7 +567,7 @@ function CreateModal({
     onCreated(`${form.name} created`)
   }
 
-  const sortedAccounts = [...glAccounts].sort((a, b) =>
+  const sortedAccounts = [...(glAccounts ?? [])].sort((a, b) =>
     (a.number ?? a.code ?? '').localeCompare(b.number ?? b.code ?? '')
   )
 
