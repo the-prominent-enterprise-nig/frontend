@@ -10,7 +10,6 @@ import {
   ArrowLeftRight,
   BarChart2,
   BarChart3,
-  Bell,
   BellRing,
   BookOpen,
   CalendarDays,
@@ -21,7 +20,6 @@ import {
   Contact,
   FileBarChart,
   FileSpreadsheet,
-  FolderOpen,
   Funnel,
   HandCoins,
   House,
@@ -148,8 +146,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
       },
+      {
+        label: 'Settings',
+        href: '/inventory/settings',
+        icon: Settings,
+      },
     ],
-    bottom: [{ label: 'Settings', href: '/inventory/settings', icon: Settings }],
+    bottom: [],
   },
   accounting: {
     main: [
@@ -287,13 +290,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
       },
     ],
-    bottom: [
-      {
-        label: 'Settings',
-        href: '/pos/settings',
-        icon: Settings,
-      },
-    ],
+    bottom: [],
   },
   crm: {
     main: [
@@ -333,8 +330,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
       },
+      {
+        label: 'Settings',
+        href: '/crm/settings',
+        icon: Settings,
+      },
     ],
-    bottom: [{ label: 'Settings', href: '/crm/settings', icon: Settings }],
+    bottom: [],
   },
 }
 
@@ -599,7 +601,7 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   {
     section: 'My Workspace',
-    label: 'Configuration',
+    label: 'Payment Config',
     href: '/settings/configuration',
     icon: Settings,
   },
@@ -715,7 +717,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...OWNER_WORKSPACE_ITEMS, ...labeledModuleItems]
+      mainItems = [...labeledModuleItems, ...OWNER_WORKSPACE_ITEMS]
     }
   } else if (isBranchManager) {
     if (resolvedSegment === 'Business Owner') {
@@ -724,12 +726,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...bmWorkspaceItems, ...labeledModuleItems]
+      mainItems = [...labeledModuleItems, ...bmWorkspaceItems]
     }
   } else if (moduleWithWorkspace) {
     const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
     const labeledModuleItems = config.main.map((item) => ({ ...item, section: moduleLabel }))
-    mainItems = [...MY_WORKSPACE_ITEMS, ...labeledModuleItems]
+    mainItems = [...labeledModuleItems, ...MY_WORKSPACE_ITEMS]
   } else {
     mainItems = config.main
   }
@@ -787,9 +789,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
           <div className="flex-1 overflow-y-auto flex flex-col gap-1 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
             <NavItems items={main} pathname={pathname} collapsed={collapsed} />
           </div>
-          <div className="shrink-0 pt-1 border-t border-white/10">
-            <NavItems items={finalBottom} pathname={pathname} collapsed={collapsed} />
-          </div>
+          {finalBottom.length > 0 && (
+            <div className="shrink-0 pt-1 border-t border-white/10">
+              <NavItems items={finalBottom} pathname={pathname} collapsed={collapsed} />
+            </div>
+          )}
         </nav>
       </aside>
 

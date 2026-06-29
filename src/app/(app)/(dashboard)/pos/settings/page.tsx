@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Tv2,
   Settings,
+  Palette,
   CreditCard,
 } from 'lucide-react'
 
@@ -24,6 +25,12 @@ const sections = [
     description: 'Discount thresholds, return windows, and stock check behaviour.',
     href: '/pos/config',
     icon: Settings,
+  },
+  {
+    label: 'Receipt Branding',
+    description: 'Upload your business logo and set brand colors on receipts.',
+    href: '/pos/receipt-branding',
+    icon: Palette,
   },
   {
     label: 'Terminals',
