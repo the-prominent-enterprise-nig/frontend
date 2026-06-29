@@ -52,8 +52,10 @@ export interface PurchaseOrder {
   tenantId: string
   code: string
   supplierId: string
+  supplier?: { id: string; name: string } | null
   branchId?: string | null
   warehouseId?: string | null
+  orderDate?: string | null
   expectedDeliveryDate?: string | null
   currency?: string | null
   paymentTerms?: string | null
@@ -63,7 +65,9 @@ export interface PurchaseOrder {
   lines: Array<{
     id: string
     itemId: string
+    item?: { id: string; name: string; sku: string } | null
     quantity: number
+    receivedQuantity?: number | null
     unitPrice: number
     notes?: string | null
   }>
@@ -78,11 +82,15 @@ export interface GoodsReceipt {
   purchaseOrderId: string
   warehouseId: string
   receivedById: string
+  applicationType: 'new_stock' | 'revert'
+  modeOfTransfer?: string | null
+  nndpCost?: number | null
+  receivedAt: string
   status: GoodsReceiptStatus
   notes?: string | null
   lines: Array<{
     id: string
-    purchaseOrderLineId: string
+    itemId: string
     quantityReceived: number
     batchNumber?: string | null
     expiryDate?: string | null

@@ -1,28 +1,27 @@
 import { z } from 'zod'
 
-export const ReceiveStockFormSchema = z
-  .object({
-    itemId: z.string().min(1, 'Item is required'),
-    warehouseId: z.string().min(1, 'Warehouse is required'),
-    quantity: z.number().positive('Quantity must be greater than 0'),
-    unitCost: z.number().min(0).optional(),
-    locationId: z.string().optional(),
-    variantId: z.string().optional(),
-    batchId: z.string().optional(),
-    expiryDate: z.string().optional(),
-    referenceType: z.string().optional(),
-    referenceId: z.string().optional(),
-    notes: z.string().max(1000).optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.batchId && data.batchId.trim().length > 0) {
-        return !!data.expiryDate && data.expiryDate.trim().length > 0
-      }
-      return true
-    },
-    { message: 'Expiry date is required when a batch ID is provided', path: ['expiryDate'] }
-  )
+const ReceiveStockLineSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  quantityReceived: z.number().positive('Quantity must be greater than 0'),
+  unitCost: z.number().min(0).optional(),
+  batchNumber: z.string().optional(),
+  expiryDate: z.string().optional(),
+  qualityHold: z.boolean().optional(),
+  notes: z.string().optional(),
+})
+
+export const ReceiveStockFormSchema = z.object({
+  code: z.string().min(1, 'Reference number is required'),
+  purchaseOrderNumber: z.string().optional(),
+  purchaseOrderDate: z.string().optional(),
+  warehouseId: z.string().min(1, 'Destination warehouse is required'),
+  applicationType: z.enum(['new_stock', 'revert']),
+  modeOfTransfer: z.string().optional(),
+  nndpCost: z.number().positive().optional(),
+  receivedAt: z.string().optional(),
+  notes: z.string().max(1000).optional(),
+  lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
+})
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

@@ -125,7 +125,7 @@ export type CreateGrInput = {
   status?: GoodsReceiptStatus
   notes?: string
   lines: Array<{
-    purchaseOrderLineId: string
+    itemId: string
     quantityReceived: number
     batchNumber?: string
     expiryDate?: string
