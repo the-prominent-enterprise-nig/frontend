@@ -2,8 +2,8 @@ import { z } from 'zod'
 
 export const ConvertPrToPoLineSchema = z.object({
   prLineId: z.string().min(1, 'PR line is required'),
-  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
-  unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+  quantity: z.number().positive('Quantity must be greater than 0'),
+  unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
   description: z.string().max(500).optional(),
   notes: z.string().max(500).optional(),
 })
@@ -17,6 +17,15 @@ export const ConvertPrToPoFormSchema = z.object({
   shippingAddress: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   lines: z.array(ConvertPrToPoLineSchema).min(1, 'At least one line item is required'),
+})
+
+const ConvertPrToPoLineServerSchema = ConvertPrToPoLineSchema.extend({
+  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
+  unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+})
+
+export const ConvertPrToPoServerSchema = ConvertPrToPoFormSchema.extend({
+  lines: z.array(ConvertPrToPoLineServerSchema).min(1, 'At least one line item is required'),
 })
 
 const PoSupplierSchema = z.object({

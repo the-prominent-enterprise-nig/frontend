@@ -57,8 +57,8 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
         notes: '',
         lines: pr.lines.map((line) => ({
           prLineId: line.id,
-          quantity: line.quantity,
-          unitPrice: line.estimatedUnitPrice ?? 0,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.estimatedUnitPrice ?? 0),
           description: '',
           notes: '',
         })),

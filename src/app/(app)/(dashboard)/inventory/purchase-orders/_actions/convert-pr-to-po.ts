@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import { ConvertPrToPoFormSchema } from '@/src/schema/inventory/purchase-orders'
+import { ConvertPrToPoServerSchema } from '@/src/schema/inventory/purchase-orders'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
@@ -23,7 +23,7 @@ export async function convertPrToPo(
     }
   }
 
-  const parsed = ConvertPrToPoFormSchema.safeParse(input)
+  const parsed = ConvertPrToPoServerSchema.safeParse(input)
   if (!parsed.success) {
     return {
       success: false,
