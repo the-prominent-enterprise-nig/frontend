@@ -26,7 +26,8 @@ const statusColor: Record<string, string> = {
 }
 
 function formatCurrency(n: number) {
-  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
+  const safe = n == null || isNaN(n) ? 0 : n
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(safe)
 }
 
 type ModalState =
@@ -67,7 +68,23 @@ export default function SessionsPage() {
     const rec = await getSessionReconciliation(id)
     setModal((prev) => {
       if (rec.success && rec.data && prev.type === 'close') {
-        return { type: 'reconciliation', session: prev.session, data: rec.data }
+        // Backend may omit cash summary fields — compute fallbacks from what we know
+        const openingCash = rec.data.openingCash ?? prev.session.openingCash ?? 0
+        const declaredClosingCash = rec.data.declaredClosingCash ?? form.declaredClosingCash ?? 0
+        const cashCollected = rec.data.paymentBreakdown?.cash ?? 0
+        const expectedClosingCash = rec.data.expectedClosingCash ?? openingCash + cashCollected
+        const cashVariance = rec.data.cashVariance ?? declaredClosingCash - expectedClosingCash
+        return {
+          type: 'reconciliation',
+          session: prev.session,
+          data: {
+            ...rec.data,
+            openingCash,
+            declaredClosingCash,
+            expectedClosingCash,
+            cashVariance,
+          },
+        }
       }
       return { type: 'none' }
     })
