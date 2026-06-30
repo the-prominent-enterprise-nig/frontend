@@ -2,8 +2,9 @@ import { z } from 'zod'
 
 export const ConvertPrToPoLineSchema = z.object({
   prLineId: z.string().min(1, 'PR line is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
+  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
+  unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+  description: z.string().max(500).optional(),
   notes: z.string().max(500).optional(),
 })
 
@@ -11,6 +12,7 @@ export const ConvertPrToPoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
   warehouseId: z.string().optional(),
   expectedDeliveryDate: z.string().optional(),
+  deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
   shippingAddress: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
@@ -20,6 +22,8 @@ export const ConvertPrToPoFormSchema = z.object({
 const PoSupplierSchema = z.object({
   id: z.string(),
   name: z.string(),
+  taxId: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
 })
 
 const PoWarehouseSchema = z.object({
@@ -37,6 +41,7 @@ const PoLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   item: PoItemSchema,
+  description: z.string().optional().nullable(),
   quantity: z.number(),
   unitPrice: z.coerce.number(),
   lineTotal: z.number().optional().nullable(),
@@ -48,10 +53,10 @@ export const PurchaseOrderSummarySchema = z.object({
   code: z.string(),
   status: z.enum([
     'draft',
+    'approved',
     'sent',
-    'acknowledged',
     'partially_received',
-    'received',
+    'fully_received',
     'closed',
     'cancelled',
   ]),
@@ -60,9 +65,18 @@ export const PurchaseOrderSummarySchema = z.object({
   branchId: z.string().optional().nullable(),
   warehouseId: z.string().optional().nullable(),
   warehouse: PoWarehouseSchema.optional().nullable(),
+  orderDate: z.string().optional().nullable(),
   expectedDeliveryDate: z.string().optional().nullable(),
+  deliveryInstructions: z.string().optional().nullable(),
   paymentTerms: z.string().optional().nullable(),
+  shippingAddress: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  subtotalAmount: z.coerce.number().optional().nullable(),
   totalAmount: z.coerce.number(),
+  preparedById: z.string().optional().nullable(),
+  approvedById: z.string().optional().nullable(),
+  approvedAt: z.string().optional().nullable(),
+  sentAt: z.string().optional().nullable(),
   fromPr: z
     .object({
       id: z.string(),

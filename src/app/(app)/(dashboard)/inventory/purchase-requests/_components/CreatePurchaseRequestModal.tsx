@@ -8,6 +8,8 @@ import {
   CreatePurchaseRequestFormSchema,
   type CreatePurchaseRequestFormValues,
 } from '@/src/schema/inventory/purchase-requests'
+import { ItemSearchCombobox } from './ItemSearchCombobox'
+import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 
 type Props = {
   open: boolean
@@ -41,7 +43,15 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
       reset({
         reason: '',
         notes: '',
-        lines: [{ itemId: '', quantity: 1, suggestedSupplierId: '', notes: '' }],
+        lines: [
+          {
+            itemId: '',
+            quantity: 1,
+            estimatedUnitPrice: undefined,
+            suggestedSupplierId: '',
+            notes: '',
+          },
+        ],
       })
     }
   }, [open, reset])
@@ -127,7 +137,13 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
                 <button
                   type="button"
                   onClick={() =>
-                    append({ itemId: '', quantity: 1, suggestedSupplierId: '', notes: '' })
+                    append({
+                      itemId: '',
+                      quantity: 1,
+                      estimatedUnitPrice: undefined,
+                      suggestedSupplierId: '',
+                      notes: '',
+                    })
                   }
                   className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
                 >
@@ -162,25 +178,24 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      {/* Item ID */}
-                      <div className="col-span-2 sm:col-span-1">
+                      {/* Item Search */}
+                      <div className="col-span-2">
                         <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Item ID <span className="text-red-500">*</span>
+                          Item <span className="text-red-500">*</span>
                         </label>
                         <Controller
                           name={`lines.${index}.itemId`}
                           control={control}
                           render={({ field: f }) => (
-                            <input
-                              {...f}
-                              type="text"
-                              placeholder="e.g. item-uuid"
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            <ItemSearchCombobox
+                              value={f.value}
+                              onChange={f.onChange}
+                              error={errors.lines?.[index]?.itemId?.message}
                             />
                           )}
                         />
                         {errors.lines?.[index]?.itemId && (
-                          <p className="mt-1 text-xs text-red-600">
+                          <p className="mt-1 text-xs text-red-500">
                             {errors.lines[index]?.itemId?.message}
                           </p>
                         )}
@@ -195,22 +210,41 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
                           name={`lines.${index}.quantity`}
                           control={control}
                           render={({ field: f }) => (
-                            <input
-                              type="number"
-                              min={1}
-                              step={1}
+                            <NumericInput
+                              integer
                               value={f.value}
-                              onChange={(e) => f.onChange(Number(e.target.value))}
+                              onChange={(v) => f.onChange(v ?? 0)}
                               onBlur={f.onBlur}
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              placeholder="0"
+                              className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.quantity ? 'border-red-400' : 'border-zinc-200'}`}
                             />
                           )}
                         />
                         {errors.lines?.[index]?.quantity && (
-                          <p className="mt-1 text-xs text-red-600">
+                          <p className="mt-1 text-xs text-red-500">
                             {errors.lines[index]?.quantity?.message}
                           </p>
                         )}
+                      </div>
+
+                      {/* Estimated Unit Price */}
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-600">
+                          Estimated Unit Price
+                        </label>
+                        <Controller
+                          name={`lines.${index}.estimatedUnitPrice`}
+                          control={control}
+                          render={({ field: f }) => (
+                            <NumericInput
+                              value={f.value ?? undefined}
+                              onChange={f.onChange}
+                              onBlur={f.onBlur}
+                              placeholder="0.00"
+                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )}
+                        />
                       </div>
 
                       {/* Suggested Supplier */}

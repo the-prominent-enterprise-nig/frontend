@@ -9,6 +9,8 @@ import {
   type ConvertPrToPoFormValues,
 } from '@/src/schema/inventory/purchase-orders'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
+import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
+import { SupplierSearchCombobox } from './SupplierSearchCombobox'
 
 type Props = {
   open: boolean
@@ -30,6 +32,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
       supplierId: '',
       warehouseId: '',
       expectedDeliveryDate: '',
+      deliveryInstructions: '',
       paymentTerms: '',
       shippingAddress: '',
       notes: '',
@@ -48,13 +51,15 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
         supplierId: '',
         warehouseId: '',
         expectedDeliveryDate: '',
+        deliveryInstructions: '',
         paymentTerms: '',
         shippingAddress: '',
         notes: '',
         lines: pr.lines.map((line) => ({
           prLineId: line.id,
           quantity: line.quantity,
-          unitPrice: 0,
+          unitPrice: line.estimatedUnitPrice ?? 0,
+          description: '',
           notes: '',
         })),
       })
@@ -63,6 +68,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
         supplierId: '',
         warehouseId: '',
         expectedDeliveryDate: '',
+        deliveryInstructions: '',
         paymentTerms: '',
         shippingAddress: '',
         notes: '',
@@ -108,22 +114,21 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
             {/* Supplier */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Supplier ID <span className="text-red-500">*</span>
+                Supplier <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="supplierId"
                 control={control}
                 render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="Enter supplier ID"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  <SupplierSearchCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.supplierId?.message}
                   />
                 )}
               />
               {errors.supplierId && (
-                <p className="mt-1 text-xs text-red-600">{errors.supplierId.message}</p>
+                <p className="mt-1 text-xs text-red-500">{errors.supplierId.message}</p>
               )}
             </div>
 
@@ -162,6 +167,29 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                   )}
                 />
               </div>
+            </div>
+
+            {/* Delivery Instructions */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Delivery Instructions
+              </label>
+              <Controller
+                name="deliveryInstructions"
+                control={control}
+                render={({ field }) => (
+                  <textarea
+                    {...field}
+                    value={field.value ?? ''}
+                    rows={2}
+                    placeholder='e.g. "Please deliver to Brgy. Igang, Pototan Covered Gym on June 19, 2026 @ Afternoon"'
+                    className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+              {errors.deliveryInstructions && (
+                <p className="mt-1 text-xs text-red-600">{errors.deliveryInstructions.message}</p>
+              )}
             </div>
 
             {/* Payment Terms */}
@@ -247,6 +275,9 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                           {prLine && (
                             <p className="text-xs text-zinc-500">
                               SKU: {prLine.item.sku} &middot; Requested qty: {prLine.quantity}
+                              {prLine.estimatedUnitPrice
+                                ? ` · Est. price: ₱${Number(prLine.estimatedUnitPrice).toLocaleString()}`
+                                : null}
                             </p>
                           )}
                         </div>
@@ -262,19 +293,18 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                             name={`lines.${index}.quantity`}
                             control={control}
                             render={({ field: f }) => (
-                              <input
-                                type="number"
-                                min={1}
-                                step={1}
+                              <NumericInput
+                                integer
                                 value={f.value}
-                                onChange={(e) => f.onChange(Number(e.target.value))}
+                                onChange={(v) => f.onChange(v ?? 0)}
                                 onBlur={f.onBlur}
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                placeholder="0"
+                                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.quantity ? 'border-red-400' : 'border-zinc-200'}`}
                               />
                             )}
                           />
                           {errors.lines?.[index]?.quantity && (
-                            <p className="mt-1 text-xs text-red-600">
+                            <p className="mt-1 text-xs text-red-500">
                               {errors.lines[index]?.quantity?.message}
                             </p>
                           )}
@@ -289,23 +319,43 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                             name={`lines.${index}.unitPrice`}
                             control={control}
                             render={({ field: f }) => (
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
+                              <NumericInput
                                 value={f.value}
-                                onChange={(e) => f.onChange(Number(e.target.value))}
+                                onChange={(v) => f.onChange(v ?? 0)}
                                 onBlur={f.onBlur}
                                 placeholder="0.00"
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.unitPrice ? 'border-red-400' : 'border-zinc-200'}`}
                               />
                             )}
                           />
                           {errors.lines?.[index]?.unitPrice && (
-                            <p className="mt-1 text-xs text-red-600">
+                            <p className="mt-1 text-xs text-red-500">
                               {errors.lines[index]?.unitPrice?.message}
                             </p>
                           )}
+                        </div>
+
+                        {/* Description (pricing breakdown) */}
+                        <div className="col-span-2">
+                          <label className="mb-1 block text-xs font-medium text-zinc-600">
+                            Description
+                            <span className="ml-1 font-normal text-zinc-400">
+                              (pricing breakdown)
+                            </span>
+                          </label>
+                          <Controller
+                            name={`lines.${index}.description`}
+                            control={control}
+                            render={({ field: f }) => (
+                              <input
+                                {...f}
+                                value={f.value ?? ''}
+                                type="text"
+                                placeholder='e.g. "(3,649 - 30% - 20%)"'
+                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            )}
+                          />
                         </div>
 
                         {/* Line Notes */}

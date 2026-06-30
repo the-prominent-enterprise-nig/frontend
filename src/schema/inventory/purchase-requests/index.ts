@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const CreatePrLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
+  estimatedUnitPrice: z.number().min(0).optional(),
   suggestedSupplierId: z.string().optional(),
   notes: z.string().max(500).optional(),
 })
@@ -41,7 +42,8 @@ const PrItemSchema = z.object({
 const PrLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
-  quantity: z.number(),
+  quantity: z.coerce.number(),
+  estimatedUnitPrice: z.coerce.number().optional().nullable(),
   item: PrItemSchema,
   suggestedSupplierId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),

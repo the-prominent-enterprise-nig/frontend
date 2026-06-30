@@ -7,26 +7,28 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 const STATUS_TABS = [
   { label: 'All', value: undefined },
   { label: 'Draft', value: 'draft' },
+  { label: 'Approved', value: 'approved' },
   { label: 'Sent', value: 'sent' },
-  { label: 'Received', value: 'received' },
+  { label: 'Partially Received', value: 'partially_received' },
+  { label: 'Fully Received', value: 'fully_received' },
 ] as const
 
 function PoStatusBadge({ status }: { status: PurchaseOrderSummary['status'] }) {
   const styles: Record<string, string> = {
     draft: 'bg-zinc-100 text-zinc-600',
+    approved: 'bg-emerald-100 text-emerald-700',
     sent: 'bg-blue-100 text-blue-700',
-    acknowledged: 'bg-indigo-100 text-indigo-700',
     partially_received: 'bg-yellow-100 text-yellow-700',
-    received: 'bg-green-100 text-green-700',
+    fully_received: 'bg-green-100 text-green-700',
     closed: 'bg-zinc-100 text-zinc-500',
     cancelled: 'bg-red-100 text-red-700',
   }
   const labels: Record<string, string> = {
     draft: 'Draft',
+    approved: 'Approved',
     sent: 'Sent',
-    acknowledged: 'Acknowledged',
     partially_received: 'Partially Received',
-    received: 'Received',
+    fully_received: 'Fully Received',
     closed: 'Closed',
     cancelled: 'Cancelled',
   }
@@ -48,9 +50,15 @@ export function PurchaseOrderList() {
     setStatusFilter,
     page,
     setPage,
+    approvePO,
+    isApproving,
     sendPO,
     isSending,
+    cancelPO,
+    isCancelling,
   } = usePurchaseOrders()
+
+  const isActing = isApproving || isSending || isCancelling
 
   return (
     <div className="p-6">
@@ -109,6 +117,9 @@ export function PurchaseOrderList() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Status
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Expected Delivery
+                  </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Total Amount
                   </th>
@@ -129,9 +140,21 @@ export function PurchaseOrderList() {
                     <td className="px-4 py-3">
                       <span className="font-mono text-sm font-medium text-zinc-900">{po.code}</span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-700">{po.supplier.name}</td>
+                    <td className="px-4 py-3">
+                      <p className="text-zinc-700">{po.supplier.name}</p>
+                      {po.supplier.taxId && (
+                        <p className="text-xs text-zinc-400">TIN: {po.supplier.taxId}</p>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <PoStatusBadge status={po.status} />
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {po.expectedDeliveryDate ? (
+                        new Date(po.expectedDeliveryDate).toLocaleDateString()
+                      ) : (
+                        <span className="text-zinc-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-zinc-900">
                       {Number(po.totalAmount).toLocaleString('en-PH', {
@@ -152,14 +175,44 @@ export function PurchaseOrderList() {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         {po.status === 'draft' && (
-                          <button
-                            type="button"
-                            onClick={() => sendPO(po.id)}
-                            disabled={isSending}
-                            className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            Send
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => approvePO(po.id)}
+                              disabled={isActing}
+                              className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => cancelPO(po.id)}
+                              disabled={isActing}
+                              className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                        {po.status === 'approved' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => sendPO(po.id)}
+                              disabled={isActing}
+                              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              Send
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => cancelPO(po.id)}
+                              disabled={isActing}
+                              className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
