@@ -1326,11 +1326,15 @@ export async function getUsers(): Promise<
   ApiResponse<{ id: string; name: string; email: string }[]>
 > {
   try {
-    const result = await api.get<{ id: string; name: string; email: string }[]>('/users')
+    type UserRow = { id: string; name: string; email: string }
+    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
-    return { success: true, data: result.data }
+    const users = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: UserRow[] }).data ?? [])
+    return { success: true, data: users }
   } catch {
     return { success: false, error: 'Failed to fetch users' }
   }

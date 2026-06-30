@@ -95,15 +95,16 @@ export default function TransactionsList({ session }: Props) {
 
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="flex-1 min-w-40">
+          <div className="flex-1 min-w-48">
             <label className="mb-1 block text-xs font-semibold text-gray-600">Transaction #</label>
             <div className="relative">
               <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
               <input
-                className="input pl-8"
+                className="input"
+                style={{ paddingLeft: '2.25rem' }}
                 placeholder="Search…"
                 value={filters.transactionNumber}
                 onChange={(e) => setFilters((p) => ({ ...p, transactionNumber: e.target.value }))}

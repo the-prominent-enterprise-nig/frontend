@@ -404,11 +404,12 @@ function PricingModal({
               ) : (
                 <div className="relative">
                   <Search
-                    size={13}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   />
                   <input
-                    className="input pl-8"
+                    className="input"
+                    style={{ paddingLeft: '2.25rem' }}
                     placeholder="Search item by name or SKU…"
                     value={itemQuery}
                     onChange={(e) => setItemQuery(e.target.value)}

@@ -414,7 +414,7 @@ function CashiersModal({ terminal, onClose }: { terminal: PosTerminal; onClose: 
       setPickerError(res.error ?? 'Failed to load users')
       return
     }
-    setUsers(res.data ?? [])
+    setUsers(Array.isArray(res.data) ? res.data : [])
   }
 
   async function handleAssign(userId: string): Promise<void> {
