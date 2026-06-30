@@ -65,11 +65,12 @@ export default function SessionsPage() {
       return
     }
     const rec = await getSessionReconciliation(id)
-    if (rec.success && rec.data && modal.type === 'close') {
-      setModal({ type: 'reconciliation', session: modal.session, data: rec.data })
-    } else {
-      setModal({ type: 'none' })
-    }
+    setModal((prev) => {
+      if (rec.success && rec.data && prev.type === 'close') {
+        return { type: 'reconciliation', session: prev.session, data: rec.data }
+      }
+      return { type: 'none' }
+    })
   }
 
   async function handleHandover(id: string, form: HandoverSessionInput) {
@@ -284,7 +285,7 @@ function OpenSessionModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && res.data) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) setUsers(res.data)
     })
   }, [])
 
@@ -583,7 +584,7 @@ function HandoverModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && res.data) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) setUsers(res.data)
     })
   }, [])
 

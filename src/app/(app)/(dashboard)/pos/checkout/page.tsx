@@ -332,12 +332,16 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Auto-select the only open session
+  // Auto-select the only open session; clear stale sessionId when session is no longer open
   useEffect(() => {
-    if (openSessions.length === 1 && !sessionId) {
+    if (!sessionsData) return
+    const isStale = sessionId && !openSessions.some((s) => s.id === sessionId)
+    if (isStale) {
+      setSessionId(openSessions.length === 1 ? openSessions[0].id : '')
+    } else if (openSessions.length === 1 && !sessionId) {
       setSessionId(openSessions[0].id)
     }
-  }, [openSessions, sessionId])
+  }, [openSessions, sessionsData, sessionId])
 
   // Load catalog when session is selected, then enrich with UOM data
   useEffect(() => {

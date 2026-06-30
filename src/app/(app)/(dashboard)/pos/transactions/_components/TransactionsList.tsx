@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTransactions, useVoidTransaction, useSendReceipt } from '../../_hooks/usePos'
 import { RefreshCw, ShoppingCart, X, Search, ChevronDown, Mail, Printer } from 'lucide-react'
-import { getReceipt, logReprintEvent } from '../../_actions/pos-actions'
+import { getReceipt, logReprintEvent, getTransaction } from '../../_actions/pos-actions'
 import type { PosTransaction } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { type SessionUser, can } from '@/src/libs/guards/permission'
@@ -330,12 +331,19 @@ export default function TransactionsList({ session }: Props) {
 }
 
 function TransactionDetail({
-  transaction: tx,
+  transaction: summary,
   onClose,
 }: {
   transaction: PosTransaction
   onClose: () => void
 }) {
+  const { data: detailRes, isLoading: detailLoading } = useQuery({
+    queryKey: ['pos-transaction', summary.id],
+    queryFn: () => getTransaction(summary.id),
+    staleTime: 60 * 1000,
+  })
+  const tx: PosTransaction = detailRes?.data ?? summary
+
   const sendReceiptMutation = useSendReceipt()
   const [showSendReceipt, setShowSendReceipt] = useState(false)
   const [receiptForm, setReceiptForm] = useState({ email: '', phone: '' })
@@ -459,9 +467,19 @@ function TransactionDetail({
             {tx.transactionType} · {tx.status}
           </p>
 
-          {tx.lines && tx.lines.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items</p>
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items</p>
+            {detailLoading ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="flex animate-pulse gap-3">
+                    <div className="h-3.5 w-1/2 rounded bg-gray-200" />
+                    <div className="h-3.5 w-8 rounded bg-gray-200" />
+                    <div className="ml-auto h-3.5 w-16 rounded bg-gray-200" />
+                  </div>
+                ))}
+              </div>
+            ) : tx.lines && tx.lines.length > 0 ? (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-gray-500">
@@ -486,15 +504,50 @@ function TransactionDetail({
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-gray-400">No items found.</p>
+            )}
+          </div>
 
           <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
             <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />
-            {tx.discountTotal > 0 && (
-              <Row label="Discount" value={`-${formatCurrency(tx.discountTotal)}`} />
+            {(() => {
+              const scPwd = tx.scPwdDiscountTotal ?? 0
+              const otherDiscount = tx.discountTotal - scPwd
+              return (
+                <>
+                  {otherDiscount > 0 && (
+                    <Row label="Discount" value={`-${formatCurrency(otherDiscount)}`} />
+                  )}
+                  {tx.scPwdDiscountType && scPwd > 0 && (
+                    <Row
+                      label={`${tx.scPwdDiscountType} Discount (${tx.scPwdName ?? ''} / ${tx.scPwdIdNumber ?? ''})`}
+                      value={`-${formatCurrency(scPwd)}`}
+                    />
+                  )}
+                </>
+              )
+            })()}
+            {(tx.vatableAmount ?? 0) > 0 && (
+              <Row
+                label="VATable Sales (12%)"
+                value={formatCurrency(tx.vatableAmount ?? 0)}
+                muted
+              />
             )}
-            {tx.taxTotal > 0 && <Row label="Tax" value={formatCurrency(tx.taxTotal)} />}
+            {(tx.vatExemptAmount ?? 0) > 0 && (
+              <Row label="VAT-Exempt Sales" value={formatCurrency(tx.vatExemptAmount ?? 0)} muted />
+            )}
+            {(tx.zeroRatedAmount ?? 0) > 0 && (
+              <Row label="Zero-Rated Sales" value={formatCurrency(tx.zeroRatedAmount ?? 0)} muted />
+            )}
+            {tx.taxTotal > 0 && (
+              <Row
+                label={(tx.vatableAmount ?? 0) > 0 ? 'VAT Amount (12%)' : 'Tax'}
+                value={formatCurrency(tx.taxTotal)}
+                muted={(tx.vatableAmount ?? 0) > 0}
+              />
+            )}
             <div className="border-t border-gray-200 pt-2">
               <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
             </div>
@@ -581,9 +634,21 @@ function TransactionDetail({
   )
 }
 
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function Row({
+  label,
+  value,
+  bold,
+  muted,
+}: {
+  label: string
+  value: string
+  bold?: boolean
+  muted?: boolean
+}) {
   return (
-    <div className={`flex justify-between ${bold ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
+    <div
+      className={`flex justify-between ${bold ? 'font-bold text-gray-900' : muted ? 'text-gray-400 text-xs' : 'text-gray-600'}`}
+    >
       <span>{label}</span>
       <span>{value}</span>
     </div>
