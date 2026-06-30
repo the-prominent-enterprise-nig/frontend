@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardX,
   Coins,
   Contact,
   FileBarChart,
@@ -274,6 +275,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
         activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+      },
+      {
+        label: 'Cancellations',
+        href: '/pos/cancellation-requests',
+        icon: ClipboardX,
+        requiredPermission: 'pos:sessions:read',
+      },
+      {
+        label: 'Void Requests',
+        href: '/pos/void-requests',
+        icon: ShieldCheck,
+        requiredPermission: 'pos:transactions:read',
       },
       {
         label: 'Promotions',
