@@ -454,13 +454,14 @@ function TransactionDetail({
 
     const hasVatBreakdown =
       tx.vatableAmount != null || tx.vatExemptAmount != null || tx.zeroRatedAmount != null
+    // BIR CAS requires all 4 VAT breakdown labels always present, even at ₱0.00
     const vatBreakdownRows = hasVatBreakdown
       ? `
   <tr><td colspan="2"><hr style="border:none;border-top:1px dashed #ccc;margin:4px 0"></td></tr>
-  ${(tx.vatableAmount ?? 0) > 0 ? `<tr><td style="color:#555">VATable Sales (12%)</td><td style="text-align:right;color:#555">&#8369;${(tx.vatableAmount ?? 0).toFixed(2)}</td></tr>` : ''}
-  ${(tx.vatExemptAmount ?? 0) > 0 ? `<tr><td style="color:#555">VAT-Exempt Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.vatExemptAmount ?? 0).toFixed(2)}</td></tr>` : ''}
-  ${(tx.zeroRatedAmount ?? 0) > 0 ? `<tr><td style="color:#555">Zero-Rated Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.zeroRatedAmount ?? 0).toFixed(2)}</td></tr>` : ''}
-  ${tx.taxTotal > 0 ? `<tr><td style="color:#555">VAT Amount (12%)</td><td style="text-align:right;color:#555">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>` : ''}`
+  <tr><td style="color:#555">VATable Sales (12%)</td><td style="text-align:right;color:#555">&#8369;${(tx.vatableAmount ?? 0).toFixed(2)}</td></tr>
+  <tr><td style="color:#555">VAT-Exempt Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.vatExemptAmount ?? 0).toFixed(2)}</td></tr>
+  <tr><td style="color:#555">Zero-Rated Sales</td><td style="text-align:right;color:#555">&#8369;${(tx.zeroRatedAmount ?? 0).toFixed(2)}</td></tr>
+  <tr><td style="color:#555">VAT Amount (12%)</td><td style="text-align:right;color:#555">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>`
       : tx.taxTotal > 0
         ? `<tr><td>Tax</td><td style="text-align:right">&#8369;${tx.taxTotal.toFixed(2)}</td></tr>`
         : ''
@@ -619,34 +620,31 @@ function TransactionDetail({
                     </>
                   )
                 })()}
-                {(tx.vatableAmount ?? 0) > 0 && (
-                  <Row
-                    label="VATable Sales (12%)"
-                    value={formatCurrency(tx.vatableAmount ?? 0)}
-                    muted
-                  />
-                )}
-                {(tx.vatExemptAmount ?? 0) > 0 && (
-                  <Row
-                    label="VAT-Exempt Sales"
-                    value={formatCurrency(tx.vatExemptAmount ?? 0)}
-                    muted
-                  />
-                )}
-                {(tx.zeroRatedAmount ?? 0) > 0 && (
-                  <Row
-                    label="Zero-Rated Sales"
-                    value={formatCurrency(tx.zeroRatedAmount ?? 0)}
-                    muted
-                  />
-                )}
-                {tx.taxTotal > 0 && (
-                  <Row
-                    label={(tx.vatableAmount ?? 0) > 0 ? 'VAT Amount (12%)' : 'Tax'}
-                    value={formatCurrency(tx.taxTotal)}
-                    muted={(tx.vatableAmount ?? 0) > 0}
-                  />
-                )}
+                {/* BIR CAS: all 4 VAT labels always shown when breakdown exists, even at ₱0.00 */}
+                {tx.vatableAmount != null ||
+                tx.vatExemptAmount != null ||
+                tx.zeroRatedAmount != null ? (
+                  <>
+                    <Row
+                      label="VATable Sales (12%)"
+                      value={formatCurrency(tx.vatableAmount ?? 0)}
+                      muted
+                    />
+                    <Row
+                      label="VAT-Exempt Sales"
+                      value={formatCurrency(tx.vatExemptAmount ?? 0)}
+                      muted
+                    />
+                    <Row
+                      label="Zero-Rated Sales"
+                      value={formatCurrency(tx.zeroRatedAmount ?? 0)}
+                      muted
+                    />
+                    <Row label="VAT Amount (12%)" value={formatCurrency(tx.taxTotal)} muted />
+                  </>
+                ) : tx.taxTotal > 0 ? (
+                  <Row label="Tax" value={formatCurrency(tx.taxTotal)} />
+                ) : null}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
                 </div>
