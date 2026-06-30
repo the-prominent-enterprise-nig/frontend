@@ -25,6 +25,8 @@ export const ReceiveStockFormSchema = z.object({
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
+// ─── Stock Balances ───────────────────────────────────────────────────────────
+
 const StockBalanceItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -59,18 +61,33 @@ export const StockBalanceListResponseSchema = z.object({
 export type StockBalance = z.infer<typeof StockBalanceSchema>
 export type StockBalanceListResponse = z.infer<typeof StockBalanceListResponseSchema>
 
+// ─── Stock Ledger ─────────────────────────────────────────────────────────────
+
+const BranchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string().optional().nullable(),
+})
+
+const LedgerWarehouseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  branchId: z.string().optional().nullable(),
+  branch: BranchSchema.optional().nullable(),
+})
+
 export const StockLedgerEntrySchema = z.object({
   id: z.string(),
-  item: StockBalanceItemSchema.optional().nullable(),
-  warehouse: StockBalanceWarehouseSchema.optional().nullable(),
-  movementType: z.string(),
+  transactionType: z.string(),
   quantity: z.number(),
-  unitCost: z.number().optional().nullable(),
-  referenceType: z.string().optional().nullable(),
-  referenceId: z.string().optional().nullable(),
+  condition: z.string().optional().nullable(),
+  originalSaleId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  item: StockBalanceItemSchema.optional().nullable(),
+  warehouse: LedgerWarehouseSchema.optional().nullable(),
+  occurredAt: z.string().optional(),
   createdAt: z.string().optional(),
-  createdBy: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
 })
 
 export const StockLedgerListResponseSchema = z.object({
@@ -82,3 +99,62 @@ export const StockLedgerListResponseSchema = z.object({
 
 export type StockLedgerEntry = z.infer<typeof StockLedgerEntrySchema>
 export type StockLedgerListResponse = z.infer<typeof StockLedgerListResponseSchema>
+
+// ─── Receiving Reports ────────────────────────────────────────────────────────
+
+const DiscrepancySchema = z.object({
+  purchaseOrderId: z.string(),
+  qtyOrdered: z.number(),
+  qtyReceived: z.number(),
+  qtyVariance: z.number(),
+  hasQtyDiscrepancy: z.boolean(),
+  hasConditionIssue: z.boolean(),
+})
+
+const ReceivingReportLineSchema = z.object({
+  id: z.string(),
+  goodsReceiptId: z.string(),
+  itemId: z.string(),
+  item: StockBalanceItemSchema.optional().nullable(),
+  purchaseOrderLineId: z.string().optional().nullable(),
+  quantityReceived: z.number(),
+  batchNumber: z.string().optional().nullable(),
+  serialNumbers: z.array(z.string()).optional(),
+  qualityHold: z.boolean(),
+  notes: z.string().optional().nullable(),
+  discrepancy: DiscrepancySchema.nullable(),
+})
+
+const ReceivingReportWarehouseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string(),
+  branchId: z.string().optional().nullable(),
+  branch: BranchSchema.optional().nullable(),
+})
+
+export const ReceivingReportSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  status: z.string(),
+  applicationType: z.string(),
+  modeOfTransfer: z.string().optional().nullable(),
+  receivedAt: z.string(),
+  notes: z.string().optional().nullable(),
+  warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
+  lines: z.array(ReceivingReportLineSchema),
+  hasAnyDiscrepancy: z.boolean(),
+})
+
+export const ReceivingReportListResponseSchema = z.object({
+  data: z.array(ReceivingReportSchema),
+  meta: z.object({
+    total: z.number(),
+    page: z.number(),
+    limit: z.number(),
+    lastPage: z.number(),
+  }),
+})
+
+export type ReceivingReport = z.infer<typeof ReceivingReportSchema>
+export type ReceivingReportListResponse = z.infer<typeof ReceivingReportListResponseSchema>

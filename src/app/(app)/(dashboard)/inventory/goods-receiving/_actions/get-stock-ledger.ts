@@ -8,7 +8,10 @@ type Params = {
   limit?: number
   itemId?: string
   warehouseId?: string
-  movementType?: string
+  branchId?: string
+  transactionType?: string
+  startDate?: string
+  endDate?: string
 }
 
 export async function getStockLedger(params: Params = {}) {
@@ -17,7 +20,10 @@ export async function getStockLedger(params: Params = {}) {
     limit: params.limit,
     itemId: params.itemId,
     warehouseId: params.warehouseId,
-    movementType: params.movementType,
+    branchId: params.branchId,
+    transactionType: params.transactionType,
+    startDate: params.startDate,
+    endDate: params.endDate,
   }
 
   return api.get<StockLedgerListResponse>('/inventory/stock/ledger', query)
