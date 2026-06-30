@@ -45,6 +45,29 @@ export const ItemChangeLogSchema = z.object({
 })
 export type ItemChangeLog = z.infer<typeof ItemChangeLogSchema>
 
+// ─── Classification option shapes ────────────────────────────────────────────
+
+export const ItemGroupOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  subgroups: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+})
+
+export const ItemSubgroupOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  groupId: z.string(),
+})
+
+export const ClassificationOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+
+export type ItemGroupOption = z.infer<typeof ItemGroupOptionSchema>
+export type ItemSubgroupOption = z.infer<typeof ItemSubgroupOptionSchema>
+export type ClassificationOption = z.infer<typeof ClassificationOptionSchema>
+
 /**
  * Schema for the Create Item form.
  * tenantId is injected server-side and is NOT part of this form schema.
@@ -78,6 +101,10 @@ export const CreateItemFormSchema = z.object({
   heightCm: z.number().min(0).optional(),
   weightKg: z.number().min(0).optional(),
   warrantyPeriodDays: z.number().int().min(0).optional(),
+  groupId: z.string().optional(),
+  subgroupId: z.string().optional(),
+  brandId: z.string().optional(),
+  typeId: z.string().optional(),
 })
 
 export const UpdateItemFormSchema = z.object({
@@ -108,6 +135,10 @@ export const UpdateItemFormSchema = z.object({
   heightCm: z.number().min(0).optional(),
   weightKg: z.number().min(0).optional(),
   warrantyPeriodDays: z.number().int().min(0).optional(),
+  groupId: z.string().optional(),
+  subgroupId: z.string().optional(),
+  brandId: z.string().optional(),
+  typeId: z.string().optional(),
 })
 
 export const UpdateLifecycleFormSchema = z.object({
@@ -117,6 +148,8 @@ export const UpdateLifecycleFormSchema = z.object({
 export type CreateItemFormValues = z.infer<typeof CreateItemFormSchema>
 export type UpdateItemFormValues = z.infer<typeof UpdateItemFormSchema>
 export type UpdateLifecycleFormValues = z.infer<typeof UpdateLifecycleFormSchema>
+
+const classificationRefSchema = z.object({ id: z.string(), name: z.string() }).nullable().optional()
 
 /** Minimal shape returned by the list endpoint (content is untyped in OpenAPI spec) */
 export const ItemSummarySchema = z.object({
@@ -131,6 +164,10 @@ export const ItemSummarySchema = z.object({
   baseUnit: z.object({ id: z.string(), name: z.string(), code: z.string() }).nullable().optional(),
   createdAt: z.string().optional(),
   taxRateId: z.string().nullable().optional(),
+  group: classificationRefSchema,
+  subgroup: classificationRefSchema,
+  brand: classificationRefSchema,
+  type: classificationRefSchema,
   isBundle: z.preprocess((v) => {
     if (v === true || v === 'true' || v === 1) return true
     if (v === false || v === 'false' || v === 0) return false

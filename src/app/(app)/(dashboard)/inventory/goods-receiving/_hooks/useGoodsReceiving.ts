@@ -48,7 +48,7 @@ export function useGoodsReceiving() {
 
   const itemsQuery = useQuery({
     queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
+    queryFn: () => getItems({ limit: 500, lifecycle: 'active' }),
     staleTime: STALE.LOOKUP,
   })
 

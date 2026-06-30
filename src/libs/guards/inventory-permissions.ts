@@ -5,6 +5,7 @@ export const INVENTORY_PERMISSIONS = {
   ITEMS_UPDATE: 'inventory:items:update',
   ITEMS_DELETE: 'inventory:items:delete',
   ITEMS_MANAGE_LIFECYCLE: 'inventory:items:manage_lifecycle',
+  ITEMS_MANAGE_CLASSIFICATION: 'inventory:items:manage_classification',
 
   // ── Categories ─────────────────────────────────────────────────────────────
   CATEGORIES_READ: 'inventory:categories:read',
@@ -149,6 +150,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:items:delete': 'Delete inventory items',
   'inventory:items:manage_lifecycle':
     'Change item lifecycle status (Active / Discontinued / Archived)',
+  'inventory:items:manage_classification':
+    'Manage item classification (groups, subgroups, brands, types)',
   'inventory:categories:read': 'View item categories',
   'inventory:categories:create': 'Create item categories',
   'inventory:categories:update': 'Edit item categories',

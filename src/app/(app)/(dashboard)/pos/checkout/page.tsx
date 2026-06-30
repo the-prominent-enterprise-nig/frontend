@@ -55,6 +55,7 @@ import {
   getPaymentMethods,
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
+  getReceiptBranding,
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
@@ -1103,6 +1104,10 @@ export default function CheckoutPage() {
         onReset={resetSale}
         fmt={fmt}
         customerDisplayName={customerDisplayName}
+        cart={cart}
+        payments={payments}
+        promoDiscount={promoDiscount}
+        effectiveTaxRate={effectiveTaxRate}
       />
     )
   }
@@ -2504,6 +2509,10 @@ function SuccessScreen({
   onReset,
   fmt,
   customerDisplayName,
+  cart,
+  payments,
+  promoDiscount,
+  effectiveTaxRate,
 }: {
   success: {
     transactionId: string
@@ -2522,6 +2531,10 @@ function SuccessScreen({
   onReset: () => void
   fmt: (n: number) => string
   customerDisplayName: (c: PosCustomer) => string
+  cart: CartLine[]
+  payments: PaymentRow[]
+  promoDiscount: number
+  effectiveTaxRate: number | null
 }) {
   const [showQueueForm, setShowQueueForm] = useState(false)
   const [queueCustomerName, setQueueCustomerName] = useState(
@@ -2535,12 +2548,30 @@ function SuccessScreen({
   const [queueError, setQueueError] = useState('')
   const queueInFlight = useRef(false)
 
-  // Send Receipt state
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
   const [receiptSending, setReceiptSending] = useState(false)
   const [receiptSent, setReceiptSent] = useState<string | null>(null)
   const [receiptError, setReceiptError] = useState('')
+
+  const [branding, setBranding] = useState<{
+    receiptLogoUrl: string | null
+    receiptHeaderText: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    getReceiptBranding().then((res) => {
+      if (res.success && res.data) setBranding(res.data)
+    })
+  }, [])
+
+  const headerLines = (branding?.receiptHeaderText ?? '').split('\n').filter(Boolean)
+
+  const receiptDate = new Date().toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 
   async function handleAddToQueue() {
     if (!success.transactionId || queueInFlight.current) return
@@ -2580,225 +2611,349 @@ function SuccessScreen({
     setReceiptSent(email || phone)
   }
 
+  const borderColor = success.offlineBuffered
+    ? 'border-amber-200'
+    : success.invoiceType === 'charge'
+      ? 'border-blue-100'
+      : 'border-green-100'
+
+  const iconBg = success.offlineBuffered
+    ? 'bg-amber-100'
+    : success.invoiceType === 'charge'
+      ? 'bg-blue-100'
+      : 'bg-green-100'
+
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-6 bg-zinc-50 p-10">
-      <div
-        className={`flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border p-8 shadow-sm bg-white ${success.offlineBuffered ? 'border-amber-200' : success.invoiceType === 'charge' ? 'border-blue-100' : 'border-green-100'}`}
-      >
+    <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
+      <div className="flex w-full max-w-4xl flex-col items-stretch gap-6 lg:flex-row lg:items-start">
+        {/* ── Left: Sale info + actions ─────────────────────────────────── */}
         <div
-          className={`flex h-16 w-16 items-center justify-center rounded-full ${success.offlineBuffered ? 'bg-amber-100' : success.invoiceType === 'charge' ? 'bg-blue-100' : 'bg-green-100'}`}
+          className={`flex w-full flex-col gap-4 rounded-2xl border bg-white p-8 shadow-sm lg:w-96 lg:shrink-0 ${borderColor}`}
         >
-          {success.offlineBuffered ? (
-            <WifiOff size={32} className="text-amber-600" />
-          ) : success.invoiceType === 'charge' ? (
-            <Receipt size={32} className="text-blue-600" />
-          ) : (
-            <CheckCircle2 size={32} className="text-green-600" />
-          )}
-        </div>
-
-        <div className="text-center">
-          <p className="text-2xl font-bold text-gray-900">
-            {success.offlineBuffered
-              ? 'Sale Buffered (Offline)'
-              : success.invoiceType === 'charge'
-                ? 'Charge Invoice Issued'
-                : 'Sale Complete'}
-          </p>
-          {success.offlineBuffered ? (
-            <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
-          ) : success.invoiceType === 'charge' ? (
-            <p className="mt-1 text-sm text-blue-500">
-              AR invoice posted — payment due from customer.
-            </p>
-          ) : (
-            <p className="mt-1 font-mono text-sm text-gray-500">{success.transactionNumber}</p>
-          )}
-        </div>
-
-        {/* Queue ticket display */}
-        {success.queueTicketNumber != null || queueResult ? (
-          <div className="w-full rounded-xl bg-purple-50 px-6 py-4 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
-              {queueResult?.categoryName ?? 'Queue Ticket'}
-            </p>
-            <p className="text-6xl font-black text-purple-700">
-              #{success.queueTicketNumber ?? queueResult?.number}
-            </p>
-            <p className="text-xs text-purple-400 mt-1">
-              Show this number when your order is ready
-            </p>
-          </div>
-        ) : null}
-
-        <div className="w-full rounded-xl bg-gray-50 px-6 py-4 text-center">
-          <p className="text-sm text-gray-500">Total Charged</p>
-          <p className="text-3xl font-bold text-gray-900">{fmt(totalAmount)}</p>
-          {success.change > 0 && (
-            <p className="mt-2 text-sm font-medium text-green-600">Change: {fmt(success.change)}</p>
-          )}
-        </div>
-
-        {success.journalEntryId && (
-          <p className="font-mono text-[10px] text-gray-400">JE: {success.journalEntryId}</p>
-        )}
-        {success.loyaltyEarned && selectedCustomer && (
-          <p className="text-xs font-medium text-purple-500">
-            Points earned for {customerDisplayName(selectedCustomer)}
-          </p>
-        )}
-
-        {/* Add to Order Queue — shown when queue is enabled and no ticket issued yet */}
-        {!success.offlineBuffered &&
-          success.transactionId &&
-          queueEnabled &&
-          !queueResult &&
-          success.queueTicketNumber == null && (
-            <div className="w-full">
-              {!showQueueForm ? (
-                <button
-                  onClick={() => setShowQueueForm(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 hover:border-purple-400 hover:bg-purple-50 transition-colors"
-                >
-                  <Bell size={14} /> Add to Order Queue
-                </button>
+          {/* Icon + title */}
+          <div className="flex flex-col items-center gap-3">
+            <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
+              {success.offlineBuffered ? (
+                <WifiOff size={28} className="text-amber-600" />
+              ) : success.invoiceType === 'charge' ? (
+                <Receipt size={28} className="text-blue-600" />
               ) : (
-                <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-purple-700 uppercase tracking-wider">
-                    Add to Order Queue
+                <CheckCircle2 size={28} className="text-green-600" />
+              )}
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-gray-900">
+                {success.offlineBuffered
+                  ? 'Sale Buffered (Offline)'
+                  : success.invoiceType === 'charge'
+                    ? 'Charge Invoice Issued'
+                    : 'Sale Complete'}
+              </p>
+              {success.offlineBuffered ? (
+                <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
+              ) : success.invoiceType === 'charge' ? (
+                <p className="mt-1 text-sm text-blue-500">
+                  AR invoice posted — payment due from customer.
+                </p>
+              ) : (
+                <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Queue ticket */}
+          {(success.queueTicketNumber != null || queueResult) && (
+            <div className="rounded-xl bg-purple-50 px-6 py-4 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
+                {queueResult?.categoryName ?? 'Queue Ticket'}
+              </p>
+              <p className="text-6xl font-black text-purple-700">
+                #{success.queueTicketNumber ?? queueResult?.number}
+              </p>
+              <p className="mt-1 text-xs text-purple-400">
+                Show this number when your order is ready
+              </p>
+            </div>
+          )}
+
+          {/* Total charged */}
+          <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
+            <p className="text-sm text-gray-500">Total Charged</p>
+            <p className="text-3xl font-bold text-gray-900">{fmt(totalAmount)}</p>
+            {success.change > 0 && (
+              <p className="mt-2 text-sm font-medium text-green-600">
+                Change: {fmt(success.change)}
+              </p>
+            )}
+          </div>
+
+          {success.journalEntryId && (
+            <p className="text-center font-mono text-[10px] text-gray-400">
+              JE: {success.journalEntryId}
+            </p>
+          )}
+          {success.loyaltyEarned && selectedCustomer && (
+            <p className="text-center text-xs font-medium text-purple-500">
+              Points earned for {customerDisplayName(selectedCustomer)}
+            </p>
+          )}
+
+          {/* Add to Order Queue */}
+          {!success.offlineBuffered &&
+            success.transactionId &&
+            queueEnabled &&
+            !queueResult &&
+            success.queueTicketNumber == null && (
+              <div>
+                {!showQueueForm ? (
+                  <button
+                    onClick={() => setShowQueueForm(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50"
+                  >
+                    <Bell size={14} /> Add to Order Queue
+                  </button>
+                ) : (
+                  <div className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
+                      Add to Order Queue
+                    </p>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Customer Name (optional)
+                      </label>
+                      <input
+                        autoFocus
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        placeholder="e.g. Juan dela Cruz"
+                        value={queueCustomerName}
+                        onChange={(e) => setQueueCustomerName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Special Instructions (optional)
+                      </label>
+                      <input
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        placeholder="e.g. Extra spicy, no onions"
+                        value={queueNotes}
+                        onChange={(e) => setQueueNotes(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
+                      />
+                    </div>
+                    {queueError && (
+                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                        {queueError}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowQueueForm(false)
+                          setQueueError('')
+                        }}
+                        className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleAddToQueue}
+                        disabled={queueSubmitting}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
+                      >
+                        {queueSubmitting ? (
+                          <>
+                            <Loader2 size={11} className="animate-spin" /> Issuing…
+                          </>
+                        ) : (
+                          <>
+                            <Bell size={11} /> Issue Ticket
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          {/* Send Receipt */}
+          {!success.offlineBuffered && success.transactionId && (
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <Mail size={12} /> Send Receipt
+              </p>
+              {receiptSent ? (
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
+                  <CheckCircle2 size={14} className="shrink-0 text-green-500" />
+                  <p className="text-xs font-medium text-green-700">
+                    Receipt sent to {receiptSent}
                   </p>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Customer Name (optional)
-                    </label>
+                </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Mail
+                      size={13}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
-                      autoFocus
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                      placeholder="e.g. Juan dela Cruz"
-                      value={queueCustomerName}
-                      onChange={(e) => setQueueCustomerName(e.target.value)}
+                      type="email"
+                      placeholder="Email address"
+                      value={receiptEmail}
+                      onChange={(e) => setReceiptEmail(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                     />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Special Instructions (optional)
-                    </label>
+                  <div className="relative">
+                    <Phone
+                      size={13}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                      placeholder="e.g. Extra spicy, no onions"
-                      value={queueNotes}
-                      onChange={(e) => setQueueNotes(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
+                      type="tel"
+                      placeholder="Phone number (SMS not yet active)"
+                      value={receiptPhone}
+                      onChange={(e) => setReceiptPhone(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                     />
                   </div>
-                  {queueError && (
+                  {receiptError && (
                     <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                      {queueError}
+                      {receiptError}
                     </p>
                   )}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setShowQueueForm(false)
-                        setQueueError('')
-                      }}
-                      className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleAddToQueue}
-                      disabled={queueSubmitting}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
-                    >
-                      {queueSubmitting ? (
-                        <>
-                          <Loader2 size={11} className="animate-spin" /> Issuing…
-                        </>
-                      ) : (
-                        <>
-                          <Bell size={11} /> Issue Ticket
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
+                  <button
+                    onClick={handleSendReceipt}
+                    disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-900 disabled:opacity-40"
+                  >
+                    {receiptSending ? (
+                      <>
+                        <Loader2 size={11} className="animate-spin" /> Sending…
+                      </>
+                    ) : (
+                      <>
+                        <Send size={11} /> Send Receipt
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
           )}
 
-        {/* Send Receipt */}
-        {!success.offlineBuffered && success.transactionId && (
-          <div className="w-full rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              <Mail size={12} />
-              Send Receipt
-            </p>
+          <button
+            onClick={onReset}
+            className="w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
+          >
+            New Sale
+          </button>
+        </div>
 
-            {receiptSent ? (
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
-                <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-                <p className="text-xs font-medium text-green-700">Receipt sent to {receiptSent}</p>
+        {/* ── Right: Receipt preview ────────────────────────────────────── */}
+        <div className="w-full lg:w-72 lg:shrink-0">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            {/* Branding header */}
+            <div className="flex flex-col items-center gap-2 border-b border-gray-100 px-6 py-6">
+              {branding?.receiptLogoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={branding.receiptLogoUrl}
+                  alt="logo"
+                  className="h-12 w-auto max-w-32 object-contain"
+                />
+              )}
+              {headerLines.length > 0 ? (
+                <div className="flex flex-col items-center gap-0.5">
+                  {headerLines.map((line, i) => (
+                    <p key={i} className="text-xs font-medium text-gray-700">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ) : !branding?.receiptLogoUrl ? (
+                <p className="text-sm font-semibold text-gray-700">Receipt</p>
+              ) : null}
+            </div>
+
+            {/* Date + TXN */}
+            <div className="space-y-1 border-b border-dashed border-gray-200 px-5 py-3">
+              <div className="flex justify-between text-[11px] text-gray-500">
+                <span>Date</span>
+                <span>{receiptDate}</span>
               </div>
-            ) : (
-              <>
-                <div className="relative">
-                  <Mail
-                    size={13}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email address"
-                    value={receiptEmail}
-                    onChange={(e) => setReceiptEmail(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                  />
-                </div>
-                <div className="relative">
-                  <Phone
-                    size={13}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone number (SMS not yet active)"
-                    value={receiptPhone}
-                    onChange={(e) => setReceiptPhone(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                  />
-                </div>
-                {receiptError && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                    {receiptError}
-                  </p>
-                )}
-                <button
-                  onClick={handleSendReceipt}
-                  disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white hover:bg-gray-900 disabled:opacity-40 transition-colors"
-                >
-                  {receiptSending ? (
-                    <>
-                      <Loader2 size={11} className="animate-spin" /> Sending…
-                    </>
-                  ) : (
-                    <>
-                      <Send size={11} /> Send Receipt
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-          </div>
-        )}
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">TXN #</span>
+                <span className="break-all text-right font-mono text-[10px]">
+                  {success.transactionNumber}
+                </span>
+              </div>
+            </div>
 
-        <button
-          onClick={onReset}
-          className="w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
-        >
-          New Sale
-        </button>
+            {/* Items */}
+            <div className="space-y-2.5 border-b border-dashed border-gray-200 px-5 py-3">
+              {cart.map((line) => {
+                const displayUnitPrice =
+                  effectiveTaxRate != null
+                    ? line.unitPrice * (1 + effectiveTaxRate / 100)
+                    : line.unitPrice
+                const displayLineTotal =
+                  effectiveTaxRate != null
+                    ? lineTotal(line) * (1 + effectiveTaxRate / 100)
+                    : lineTotal(line)
+                return (
+                  <div key={line.itemId} className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[11px] font-medium text-gray-800">
+                        {line.itemName}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {line.quantity} × {fmt(displayUnitPrice)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-[11px] font-semibold text-gray-900">
+                      {fmt(displayLineTotal)}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Totals + payments */}
+            <div className="space-y-1 border-b border-gray-100 px-5 py-3">
+              {payments
+                .filter((p) => p.amount > 0)
+                .map((p, i) => (
+                  <div key={i} className="flex justify-between text-[11px] text-gray-500">
+                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>{fmt(p.amount)}</span>
+                  </div>
+                ))}
+              {promoDiscount > 0 && (
+                <div className="flex justify-between text-[11px] text-green-600">
+                  <span>Discount</span>
+                  <span>−{fmt(promoDiscount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-gray-100 pt-1.5 text-sm font-bold text-gray-900">
+                <span>Total</span>
+                <span>{fmt(totalAmount)}</span>
+              </div>
+              {success.change > 0 && (
+                <div className="flex justify-between text-[11px] font-medium text-green-600">
+                  <span>Change</span>
+                  <span>{fmt(success.change)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 text-center">
+              <p className="text-[10px] text-gray-400">Thank you for your purchase!</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
