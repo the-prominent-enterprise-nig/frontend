@@ -984,7 +984,7 @@ export default function InventoryPage() {
                               {alert.currentOnHand} on hand
                             </p>
                             <Link
-                              href="/inventory/goods-receiving"
+                              href="/inventory/operations?tab=receiving"
                               className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 hover:bg-red-200"
                             >
                               Receive
@@ -1065,7 +1065,7 @@ export default function InventoryPage() {
                           </span>
                           <p className="text-[10px] text-gray-400">reorder: {alert.reorderPoint}</p>
                           <Link
-                            href="/inventory/goods-receiving"
+                            href="/inventory/operations?tab=receiving"
                             className="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
                           >
                             Receive
@@ -1433,7 +1433,11 @@ export default function InventoryPage() {
             {(
               [
                 { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
-                { label: 'Goods Receiving', href: '/inventory/goods-receiving', icon: Package },
+                {
+                  label: 'Goods Receiving',
+                  href: '/inventory/operations?tab=receiving',
+                  icon: Package,
+                },
                 { label: 'Stock Counts', href: '/inventory/stock-counts', icon: Layers },
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
