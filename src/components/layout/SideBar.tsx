@@ -48,6 +48,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
 type NavItem = {
   label: string
@@ -114,6 +115,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/operations',
         icon: ArrowLeftRight,
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
+      },
+      {
+        label: 'Purchase Requests',
+        href: '/inventory/purchase-requests',
+        icon: ClipboardList,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PR_READ,
+      },
+      {
+        label: 'Purchase Orders',
+        href: '/inventory/purchase-orders',
+        icon: ShoppingCart,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
       },
       {
         label: 'Counting',

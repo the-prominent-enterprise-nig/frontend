@@ -648,6 +648,8 @@ export async function updateSessionDisplay(
 ): Promise<ApiResponse<SessionDisplay>> {
   try {
     const result = await api.post<SessionDisplay>(`/pos/sessions/${id}/display`, body)
+    if (!result.success)
+      return { success: false, error: result.error ?? 'Failed to update display' }
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to update session display' }
@@ -1342,11 +1344,15 @@ export async function getUsers(): Promise<
   ApiResponse<{ id: string; name: string; email: string }[]>
 > {
   try {
-    const result = await api.get<{ id: string; name: string; email: string }[]>('/users')
+    type UserRow = { id: string; name: string; email: string }
+    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
-    return { success: true, data: result.data }
+    const users = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: UserRow[] }).data ?? [])
+    return { success: true, data: users }
   } catch {
     return { success: false, error: 'Failed to fetch users' }
   }

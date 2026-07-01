@@ -28,6 +28,9 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
   const [notificationCount] = useState(6)
   const [profileOpen, setProfileOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const navItems = MODULES.filter((mod) => hasPermission(session, mod.requiredPermission))
 
   const showAdminDropdown =
     hasPermission(session, 'admin:roles:manage') && session?.primaryRole !== 'Business Owner'
@@ -168,9 +171,51 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                 )}
               </div>
             )}
+
+            {/* Hamburger — mobile only, shown when 2+ modules accessible */}
+            {navItems.length > 1 && (
+              <Button
+                onPress={() => setMobileMenuOpen((prev) => !prev)}
+                className="ml-1 flex cursor-pointer items-center justify-center rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800 md:hidden"
+                aria-label="Toggle navigation menu"
+              >
+                {mobileMenuOpen ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </svg>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </Header>
+
+      {/* Backdrop */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[-1] md:hidden" onClick={() => setMobileMenuOpen(false)} />
+      )}
 
       <ChangePasswordModal
         isOpen={changePasswordOpen}

@@ -37,10 +37,11 @@ const GROUPS = [
   },
   {
     label: 'Configuration',
-    paths: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
+    paths: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config', '/pos/queue-categories'],
     items: [
       { label: 'GL Mapping', href: '/pos/gl-mapping' },
       { label: 'Cashier PIN', href: '/pos/pin' },
+      { label: 'Queue Categories', href: '/pos/queue-categories' },
       { label: 'Settings', href: '/pos/settings' },
     ],
   },

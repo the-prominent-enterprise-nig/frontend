@@ -12,6 +12,7 @@ export const PROCUREMENT_PERMISSIONS = {
   PO_READ: 'procurement:purchase-orders:read',
   PO_CREATE: 'procurement:purchase-orders:create',
   PO_UPDATE: 'procurement:purchase-orders:update',
+  PO_APPROVE: 'procurement:purchase-orders:approve',
   PO_SEND: 'procurement:purchase-orders:send',
   PO_CLOSE: 'procurement:purchase-orders:close',
   PO_CANCEL: 'procurement:purchase-orders:cancel',

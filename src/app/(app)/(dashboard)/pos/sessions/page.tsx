@@ -26,7 +26,8 @@ const statusColor: Record<string, string> = {
 }
 
 function formatCurrency(n: number) {
-  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
+  const safe = n == null || isNaN(n) ? 0 : n
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(safe)
 }
 
 type ModalState =
@@ -65,11 +66,28 @@ export default function SessionsPage() {
       return
     }
     const rec = await getSessionReconciliation(id)
-    if (rec.success && rec.data && modal.type === 'close') {
-      setModal({ type: 'reconciliation', session: modal.session, data: rec.data })
-    } else {
-      setModal({ type: 'none' })
-    }
+    setModal((prev) => {
+      if (rec.success && rec.data && prev.type === 'close') {
+        // Backend may omit cash summary fields — compute fallbacks from what we know
+        const openingCash = rec.data.openingCash ?? prev.session.openingCash ?? 0
+        const declaredClosingCash = rec.data.declaredClosingCash ?? form.declaredClosingCash ?? 0
+        const cashCollected = rec.data.paymentBreakdown?.cash ?? 0
+        const expectedClosingCash = rec.data.expectedClosingCash ?? openingCash + cashCollected
+        const cashVariance = rec.data.cashVariance ?? declaredClosingCash - expectedClosingCash
+        return {
+          type: 'reconciliation',
+          session: prev.session,
+          data: {
+            ...rec.data,
+            openingCash,
+            declaredClosingCash,
+            expectedClosingCash,
+            cashVariance,
+          },
+        }
+      }
+      return { type: 'none' }
+    })
   }
 
   async function handleHandover(id: string, form: HandoverSessionInput) {
@@ -83,9 +101,9 @@ export default function SessionsPage() {
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Sessions</h1>
             <p className="mt-1 text-sm text-gray-500">Monitor and manage cashier sessions.</p>
@@ -112,7 +130,7 @@ export default function SessionsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="space-y-3 p-6">
               {[...Array(5)].map((_, i) => (
@@ -284,7 +302,7 @@ function OpenSessionModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && res.data) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) setUsers(res.data)
     })
   }, [])
 
@@ -583,7 +601,7 @@ function HandoverModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && res.data) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) setUsers(res.data)
     })
   }, [])
 

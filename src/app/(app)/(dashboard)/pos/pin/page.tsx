@@ -115,8 +115,8 @@ export default function CashierPinPage() {
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-2xl space-y-6">
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-2xl space-y-4 sm:space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Cashier PIN</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -152,7 +152,9 @@ export default function CashierPinPage() {
 
           <button
             onClick={handleRegister}
-            disabled={regLoading || !regPin || !regConfirm}
+            disabled={
+              regLoading || !regPin || !regConfirm || regPin.length < 4 || regConfirm.length < 4
+            }
             className="mt-4 w-full rounded-xl bg-purple-700 py-2.5 text-sm font-bold text-white transition-colors hover:bg-purple-800 disabled:opacity-40"
           >
             {regLoading ? 'Setting PIN…' : 'Set PIN'}

@@ -316,6 +316,13 @@ function PricingModal({
   const [itemResults, setItemResults] = useState<LookupItem[]>([])
   const [itemSearchOpen, setItemSearchOpen] = useState(false)
   const itemTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const itemBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (itemBlurTimer.current) clearTimeout(itemBlurTimer.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!itemQuery.trim()) {
@@ -397,15 +404,18 @@ function PricingModal({
               ) : (
                 <div className="relative">
                   <Search
-                    size={13}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={15}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                   />
                   <input
-                    className="input pl-8"
+                    className="input"
+                    style={{ paddingLeft: '2.25rem' }}
                     placeholder="Search item by name or SKU…"
                     value={itemQuery}
                     onChange={(e) => setItemQuery(e.target.value)}
-                    onBlur={() => setTimeout(() => setItemSearchOpen(false), 150)}
+                    onBlur={() => {
+                      itemBlurTimer.current = setTimeout(() => setItemSearchOpen(false), 150)
+                    }}
                   />
                   {itemSearchOpen && itemResults.length > 0 && (
                     <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
