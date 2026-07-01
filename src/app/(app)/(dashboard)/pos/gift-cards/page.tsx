@@ -69,9 +69,9 @@ export default function GiftCardsPage() {
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Gift Cards</h1>
             <p className="mt-1 text-sm text-gray-500">Issue and manage gift cards.</p>
@@ -98,7 +98,7 @@ export default function GiftCardsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="space-y-3 p-6">
               {[...Array(4)].map((_, i) => (
@@ -193,7 +193,10 @@ export default function GiftCardsPage() {
         <IssueModal
           error={error}
           isLoading={issueMutation.isPending}
-          onClose={() => setShowIssue(false)}
+          onClose={() => {
+            setShowIssue(false)
+            setError('')
+          }}
           onSubmit={handleIssue}
         />
       )}
@@ -361,7 +364,7 @@ function IssueModal({
                   expiresAt: form.expiresAt || undefined,
                 })
               }
-              disabled={isLoading}
+              disabled={isLoading || !form.cardNumber.trim() || form.initialValue <= 0}
               className="btn-primary"
             >
               {isLoading ? 'Issuing…' : 'Issue Card'}

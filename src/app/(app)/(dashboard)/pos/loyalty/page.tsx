@@ -45,8 +45,8 @@ export default function LoyaltyPage() {
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-4xl space-y-4 sm:space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Loyalty</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -60,11 +60,12 @@ export default function LoyaltyPage() {
           <div className="flex gap-3">
             <div className="relative flex-1">
               <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
               <input
-                className="input pl-8"
+                className="input"
+                style={{ paddingLeft: '2.25rem' }}
                 placeholder="Enter Customer ID…"
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
@@ -116,7 +117,7 @@ export default function LoyaltyPage() {
 
         {/* History */}
         {account && (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-5 py-4">
               <p className="text-sm font-semibold text-gray-700">Point History</p>
             </div>
@@ -174,7 +175,7 @@ export default function LoyaltyPage() {
         )}
 
         {/* Empty state when no search yet */}
-        {!account && !error && !loading && (
+        {!account && !loading && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-300 py-16 text-gray-400">
             <Star size={40} />
             <p className="text-sm">Search for a customer to view their loyalty account.</p>

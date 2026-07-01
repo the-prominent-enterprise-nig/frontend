@@ -187,6 +187,14 @@ export interface PosTransaction {
   discountTotal: number
   taxTotal: number
   totalAmount: number
+  vatableAmount?: number | null
+  vatExemptAmount?: number | null
+  zeroRatedAmount?: number | null
+  taxRoundingAdjustment?: number | null
+  scPwdDiscountType?: 'SC' | 'PWD' | null
+  scPwdIdNumber?: string | null
+  scPwdName?: string | null
+  scPwdDiscountTotal?: number | null
   currency: string
   fxRate?: number | null
   isTaxExempt: boolean

@@ -585,7 +585,7 @@ export default function MenuItemsPage() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="border-b border-gray-200 bg-white px-3 py-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <UtensilsCrossed className="w-5 h-5 text-purple-600" /> Menu Items
@@ -635,7 +635,7 @@ export default function MenuItemsPage() {
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
