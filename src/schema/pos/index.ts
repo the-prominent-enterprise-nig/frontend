@@ -643,6 +643,10 @@ export interface PosVoidRequest {
     name: string | null
     employee?: { employeeCode: string } | null
   } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
 }
 
 export interface SubmitVoidRequestInput {

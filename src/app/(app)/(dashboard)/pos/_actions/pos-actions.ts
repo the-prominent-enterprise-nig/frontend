@@ -1299,6 +1299,18 @@ export async function addToOrderQueue(
 
 // ─── Cashier PIN ──────────────────────────────────────────────────────────────
 
+export async function getCashierPinStatus(): Promise<ApiResponse<{ hasPin: boolean }>> {
+  try {
+    const result = await api.get<{ hasPin: boolean }>('/pos/cashier/pin/status')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch PIN status' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch PIN status' }
+  }
+}
+
 export async function registerCashierPin(pin: string): Promise<ApiResponse<void>> {
   try {
     const result = await api.post('/pos/cashier/pin/register', { pin })
@@ -1703,6 +1715,18 @@ export async function getVoidRequests(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch void requests' }
+  }
+}
+
+export async function getVoidRequestHistory(): Promise<ApiResponse<PosVoidRequest[]>> {
+  try {
+    const result = await api.get<PosVoidRequest[]>('/pos/transactions/void-requests/history')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load void request history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load void request history' }
   }
 }
 

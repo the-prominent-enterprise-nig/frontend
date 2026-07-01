@@ -10,10 +10,13 @@ import {
   Loader2,
   KeyRound,
   X,
+  History,
+  ArrowLeft,
 } from 'lucide-react'
 import {
   getPendingVoidRequests,
   getBranchVoidRequests,
+  getVoidRequestHistory,
   approveVoidRequest,
   rejectVoidRequest,
   validateManagerByPin,
@@ -52,6 +55,12 @@ export default function VoidRequestsList({ isManager }: Props) {
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState('')
 
+  // History view
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyRequests, setHistoryRequests] = useState<PosVoidRequest[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+
   async function load() {
     const res = isManager ? await getPendingVoidRequests() : await getBranchVoidRequests()
     if (res.success && res.data) {
@@ -61,6 +70,39 @@ export default function VoidRequestsList({ isManager }: Props) {
       setLoadError(res.error ?? 'Failed to load void requests.')
     }
     setLoading(false)
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true)
+    setHistoryError('')
+    if (isManager) {
+      const res = await getVoidRequestHistory()
+      if (res.success && res.data) {
+        setHistoryRequests(res.data)
+      } else {
+        setHistoryError(res.error ?? 'Failed to load history.')
+      }
+    } else {
+      // Cashiers: filter their own requests to non-pending
+      const res = await getBranchVoidRequests()
+      if (res.success && res.data) {
+        setHistoryRequests(res.data.filter((r) => r.status !== 'pending'))
+      } else {
+        setHistoryError(res.error ?? 'Failed to load history.')
+      }
+    }
+    setHistoryLoading(false)
+  }
+
+  function openHistory() {
+    setShowHistory(true)
+    loadHistory()
+  }
+
+  function closeHistory() {
+    setShowHistory(false)
+    setHistoryRequests([])
+    setHistoryError('')
   }
 
   useEffect(() => {
@@ -149,116 +191,248 @@ export default function VoidRequestsList({ isManager }: Props) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Void Requests</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          {isManager
-            ? 'Pending cashier void requests awaiting manager approval.'
-            : 'Void requests in this branch and their current status.'}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          {showHistory ? (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={closeHistory}
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+                >
+                  <ArrowLeft size={15} />
+                  Back to Queue
+                </button>
+              </div>
+              <h1 className="mt-1 text-xl font-bold text-gray-900">Void Request History</h1>
+              <p className="mt-0.5 text-sm text-gray-500">Approved and rejected void requests.</p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-gray-900">Void Requests</h1>
+              <p className="mt-0.5 text-sm text-gray-500">
+                {isManager
+                  ? 'Pending cashier void requests awaiting manager approval.'
+                  : 'Void requests in this branch and their current status.'}
+              </p>
+            </>
+          )}
+        </div>
+        {!showHistory && (
+          <button
+            onClick={openHistory}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <History size={13} />
+            History
+          </button>
+        )}
       </div>
 
-      {loadError && (
+      {/* ── History view ─────────────────────────────────────────────────── */}
+      {showHistory && (
+        <>
+          {historyError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {historyError}
+            </div>
+          )}
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-20 text-gray-400">
+              <Loader2 size={20} className="animate-spin mr-2" /> Loading history…
+            </div>
+          ) : historyRequests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
+              <History size={32} className="mb-3 text-gray-300" />
+              <p className="font-medium text-gray-700">No history yet</p>
+              <p className="mt-1 text-sm text-gray-400">
+                Approved and rejected void requests will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Transaction
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Cashier
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Amount
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Reason
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Status
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Reviewed By
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Reviewed At
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {historyRequests.map((req) => (
+                    <tr
+                      key={req.id}
+                      onClick={() => setDetailTarget(req)}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
+                      <td className="px-5 py-3">
+                        <span className="text-xs text-purple-700">
+                          {req.transaction?.transactionNumber ?? '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="text-sm text-gray-800">
+                          {req.requestedBy?.name ?? '—'}
+                        </span>
+                        {req.requestedBy?.employee?.employeeCode && (
+                          <span className="ml-1.5 text-xs text-gray-400">
+                            #{req.requestedBy.employee.employeeCode}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-gray-600">
+                        {req.transaction ? formatCurrency(req.transaction.totalAmount) : '—'}
+                      </td>
+                      <td className="px-5 py-3 max-w-36">
+                        <p className="truncate text-gray-600 text-sm">{req.reason}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                        >
+                          {statusIcon[req.status]}
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 text-sm">
+                        {req.reviewedBy?.name ?? '—'}
+                      </td>
+                      <td className="px-5 py-3 text-gray-500 text-sm">
+                        {req.reviewedAt ? <PosDateTime iso={req.reviewedAt} /> : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Pending view ─────────────────────────────────────────────────── */}
+      {!showHistory && loadError && (
         <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
           {loadError}
         </div>
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-400">
-          <Loader2 size={20} className="animate-spin mr-2" /> Loading…
-        </div>
-      ) : requests.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
-          <CheckCircle2 size={32} className="mb-3 text-green-400" />
-          <p className="font-medium text-gray-700">{emptyLabel}</p>
-          <p className="mt-1 text-sm text-gray-400">{emptySubLabel}</p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Transaction
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Cashier
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Amount
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Reason
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Requested
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Status
-                </th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {requests.map((req) => (
-                <tr
-                  key={req.id}
-                  onClick={() => setDetailTarget(req)}
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  <td className="px-5 py-3">
-                    <span className="text-xs text-purple-700">
-                      {req.transaction?.transactionNumber ?? '—'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="text-sm text-gray-800">{req.requestedBy?.name ?? '—'}</span>
-                    {req.requestedBy?.employee?.employeeCode && (
-                      <span className="ml-1.5 text-xs text-gray-400">
-                        #{req.requestedBy.employee.employeeCode}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">
-                    {req.transaction ? formatCurrency(req.transaction.totalAmount) : '—'}
-                  </td>
-                  <td className="px-5 py-3 max-w-45">
-                    <p className="truncate text-gray-600 text-sm">{req.reason}</p>
-                  </td>
-                  <td className="px-5 py-3 text-gray-500">
-                    <PosDateTime iso={req.createdAt} />
-                  </td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
-                    >
-                      {statusIcon[req.status]}
-                      {req.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    {isManager && req.status === 'pending' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openReview(req)
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
-                      >
-                        <ShieldCheck size={11} /> Review
-                      </button>
-                    )}
-                    {!isManager && req.status === 'pending' && (
-                      <span className="text-xs text-amber-600 font-medium">Awaiting approval</span>
-                    )}
-                  </td>
+      {!showHistory &&
+        (loading ? (
+          <div className="flex items-center justify-center py-20 text-gray-400">
+            <Loader2 size={20} className="animate-spin mr-2" /> Loading…
+          </div>
+        ) : requests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
+            <CheckCircle2 size={32} className="mb-3 text-green-400" />
+            <p className="font-medium text-gray-700">{emptyLabel}</p>
+            <p className="mt-1 text-sm text-gray-400">{emptySubLabel}</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Transaction
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Cashier
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Amount
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Reason
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Requested
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-5 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {requests.map((req) => (
+                  <tr
+                    key={req.id}
+                    onClick={() => setDetailTarget(req)}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-5 py-3">
+                      <span className="text-xs text-purple-700">
+                        {req.transaction?.transactionNumber ?? '—'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="text-sm text-gray-800">{req.requestedBy?.name ?? '—'}</span>
+                      {req.requestedBy?.employee?.employeeCode && (
+                        <span className="ml-1.5 text-xs text-gray-400">
+                          #{req.requestedBy.employee.employeeCode}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {req.transaction ? formatCurrency(req.transaction.totalAmount) : '—'}
+                    </td>
+                    <td className="px-5 py-3 max-w-45">
+                      <p className="truncate text-gray-600 text-sm">{req.reason}</p>
+                    </td>
+                    <td className="px-5 py-3 text-gray-500">
+                      <PosDateTime iso={req.createdAt} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                      >
+                        {statusIcon[req.status]}
+                        {req.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {isManager && req.status === 'pending' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openReview(req)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
+                        >
+                          <ShieldCheck size={11} /> Review
+                        </button>
+                      )}
+                      {!isManager && req.status === 'pending' && (
+                        <span className="text-xs text-amber-600 font-medium">
+                          Awaiting approval
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
 
       {/* Detail modal */}
       {detailTarget && (

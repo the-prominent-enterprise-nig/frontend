@@ -614,7 +614,7 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   {
     section: 'My Workspace',
-    label: 'Payment Config',
+    label: 'Configuration',
     href: '/settings/configuration',
     icon: Settings,
   },
