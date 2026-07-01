@@ -151,9 +151,6 @@ export default function SessionsPage() {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Session ID
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Branch
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
@@ -180,9 +177,6 @@ export default function SessionsPage() {
               <tbody className="divide-y divide-gray-100">
                 {sessions.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3">
-                      <span className="font-mono text-xs text-gray-500 select-all">{s.id}</span>
-                    </td>
                     <td className="px-5 py-3 text-gray-700">{s.terminal?.branch?.name ?? '—'}</td>
                     <td className="px-5 py-3 font-medium text-gray-800">
                       {s.terminal?.name ?? s.terminalId}
