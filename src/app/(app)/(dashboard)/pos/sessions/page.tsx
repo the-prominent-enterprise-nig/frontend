@@ -293,6 +293,7 @@ function OpenSessionModal({
   const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })
 
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -302,7 +303,11 @@ function OpenSessionModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
@@ -399,7 +404,9 @@ function OpenSessionModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (
@@ -590,6 +597,7 @@ function HandoverModal({
   onSubmit: (f: HandoverSessionInput) => void
 }) {
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -601,7 +609,11 @@ function HandoverModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
@@ -700,7 +712,9 @@ function HandoverModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (
