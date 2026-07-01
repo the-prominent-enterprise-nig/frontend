@@ -92,9 +92,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
 
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
-    main: [
-      { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-    ],
+    main: [],
     bottom: [],
   },
   inventory: {
@@ -585,12 +583,9 @@ function NavItems({
 
 const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: House }
 
-const MY_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-]
+const MY_WORKSPACE_ITEMS: NavItem[] = []
 
 const OWNER_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
   {
     section: 'My Workspace',
     label: 'Users',
@@ -622,7 +617,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
   return [
-    { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ...(branchId
       ? [
           {
