@@ -308,8 +308,8 @@ function OpenSessionModal({
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
@@ -614,8 +614,8 @@ function HandoverModal({
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
