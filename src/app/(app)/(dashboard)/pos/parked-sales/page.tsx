@@ -1,10 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { PauseCircle, RefreshCw, RotateCcw, X } from 'lucide-react'
-import { useParkedSales, useResumeParkedSale, useCancelParkedSale } from '../_hooks/usePos'
+import {
+  useParkedSales,
+  useResumeParkedSale,
+  useCancelParkedSale,
+  useTerminals,
+} from '../_hooks/usePos'
 import type { ParkedSale } from '@/src/schema/pos'
+import { usePosSocket, toParkedSale } from '@/src/libs/hooks/usePosSocket'
 
 import { PosDateTime } from '../_components/PosDate'
 
@@ -19,13 +25,42 @@ function itemCount(cartData: Record<string, unknown>): number {
 
 export default function ParkedSalesPage() {
   const router = useRouter()
+  const { data: terminalsData } = useTerminals()
   const { data, isLoading, isFetching, refetch } = useParkedSales()
   const resumeMutation = useResumeParkedSale()
   const cancelMutation = useCancelParkedSale()
   const [error, setError] = useState('')
   const [cancelTarget, setCancelTarget] = useState<ParkedSale | null>(null)
+  const [realtimeSales, setRealtimeSales] = useState<ParkedSale[] | null>(null)
 
-  const sales: ParkedSale[] = (data?.data ?? []).filter((s) => s.status === 'parked')
+  // Sync TanStack Query data into real-time state (REST is source of truth on load/refetch)
+  useEffect(() => {
+    if (data?.data) {
+      setRealtimeSales(data.data.filter((s) => s.status === 'parked'))
+    }
+  }, [data])
+
+  // Terminal ID needed only to join the branch room — any terminal in the branch works
+  const socketTerminalId = terminalsData?.data?.[0]?.id
+
+  usePosSocket(socketTerminalId, {
+    onParkedSaleCreated: (payload) => {
+      setRealtimeSales((prev) => {
+        const sale = toParkedSale(payload)
+        if (!prev) return [sale]
+        // Deduplicate in case REST refetch already added it
+        return [sale, ...prev.filter((s) => s.id !== sale.id)]
+      })
+    },
+    onParkedSaleResumed: ({ id }) => {
+      setRealtimeSales((prev) => prev?.filter((s) => s.id !== id) ?? null)
+    },
+    onParkedSaleCancelled: ({ id }) => {
+      setRealtimeSales((prev) => prev?.filter((s) => s.id !== id) ?? null)
+    },
+  })
+
+  const sales = realtimeSales ?? (data?.data ?? []).filter((s) => s.status === 'parked')
 
   async function handleResume(sale: ParkedSale) {
     setError('')
@@ -34,7 +69,11 @@ export default function ParkedSalesPage() {
       setError(res.error ?? 'Failed to resume sale')
       return
     }
-    localStorage.setItem('pos_resumed_cart', JSON.stringify(sale.cartData))
+    try {
+      localStorage.setItem('pos_resumed_cart', JSON.stringify(sale.cartData))
+    } catch {
+      // localStorage full or unavailable — checkout will start with an empty cart
+    }
     router.push('/pos/checkout')
   }
 
@@ -49,9 +88,9 @@ export default function ParkedSalesPage() {
   }
 
   return (
-    <div className="min-h-full bg-zinc-50 px-6 py-6">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Parked Sales</h1>
             <p className="mt-1 text-sm text-gray-500">
@@ -70,7 +109,7 @@ export default function ParkedSalesPage() {
 
         {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="space-y-3 p-6">
               {[...Array(4)].map((_, i) => (

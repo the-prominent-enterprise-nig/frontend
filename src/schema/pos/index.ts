@@ -118,6 +118,7 @@ export interface CreateCustomPaymentMethodInput {
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
+export type PosInvoiceType = 'cash' | 'charge'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
@@ -179,12 +180,21 @@ export interface PosTransaction {
   transactionNumber: string
   sessionId: string
   transactionType: PosTransactionType
+  invoiceType?: PosInvoiceType
   customerId?: string | null
   promoCodeId?: string | null
   subtotal: number
   discountTotal: number
   taxTotal: number
   totalAmount: number
+  vatableAmount?: number | null
+  vatExemptAmount?: number | null
+  zeroRatedAmount?: number | null
+  taxRoundingAdjustment?: number | null
+  scPwdDiscountType?: 'SC' | 'PWD' | null
+  scPwdIdNumber?: string | null
+  scPwdName?: string | null
+  scPwdDiscountTotal?: number | null
   currency: string
   fxRate?: number | null
   isTaxExempt: boolean
@@ -193,6 +203,7 @@ export interface PosTransaction {
   occurredAt: string
   createdAt: string
   journalEntryId?: string | null
+  arInvoiceId?: string | null
   queueTicketNumber?: number | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -222,6 +233,8 @@ export interface ScPwdDiscountInput {
 export interface CreateTransactionInput {
   sessionId: string
   transactionType?: PosTransactionType
+  invoiceType?: PosInvoiceType
+  chargeDueDays?: number
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -634,6 +647,14 @@ export interface PosVoidRequest {
     totalAmount: number
     occurredAt: string
   }
+  requestedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
 }
 
 export interface SubmitVoidRequestInput {
@@ -642,5 +663,36 @@ export interface SubmitVoidRequestInput {
 }
 
 export interface ReviewVoidRequestInput {
+  reviewNotes?: string
+}
+
+// ─── Cancellation Requests ────────────────────────────────────────────────────
+
+export type PosCancellationStatus = 'pending' | 'approved' | 'rejected'
+
+export interface PosCancellationRequest {
+  id: string
+  tenantId?: string | null
+  sessionId: string
+  requestedById: string
+  reason: string
+  cartSnapshot?: Record<string, unknown>[] | null
+  status: PosCancellationStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  session?: {
+    cashier?: { id: string; name: string } | null
+    terminal?: { terminalCode: string; branch?: { name: string } | null } | null
+  }
+}
+
+export interface SubmitCancellationInput {
+  reason: string
+  cartSnapshot?: Record<string, unknown>[]
+}
+
+export interface ReviewCancellationInput {
   reviewNotes?: string
 }

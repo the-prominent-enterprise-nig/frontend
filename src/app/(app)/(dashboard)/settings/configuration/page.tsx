@@ -1,29 +1,43 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin } from '@/src/libs/guards/permission'
+import type { SessionUser } from '@/src/libs/guards/permission'
 import { getOwnerPaymentMethods } from './_actions/owner-payment-methods'
-import { OwnerPaymentMethodsSection } from '@/src/components/settings/OwnerPaymentMethodsSection'
+import { getCashierPinStatus } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { ConfigurationTabs } from './_components/ConfigurationTabs'
 
 export const metadata = { title: 'Configuration | Prominent Enterprise' }
+
+function canAccess(user: SessionUser): boolean {
+  if (isAdmin(user)) return true
+  const allRoles = [user.primaryRole ?? '', ...user.roles]
+  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
+}
 
 export default async function ConfigurationPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!isAdmin(session)) redirect('/403')
+  if (!canAccess(session)) redirect('/403')
 
-  const paymentMethodsResult = await getOwnerPaymentMethods()
+  const [paymentMethodsResult, pinStatusResult] = await Promise.all([
+    getOwnerPaymentMethods(),
+    getCashierPinStatus(),
+  ])
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8 px-4 py-8">
+    <div className="px-6 py-8 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Configuration</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Global settings that apply across all branches.
+        <p className="mt-1 text-sm text-gray-500">
+          Global settings that apply across your business.
         </p>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <OwnerPaymentMethodsSection initialMethods={paymentMethodsResult.data ?? []} />
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <ConfigurationTabs
+          initialPaymentMethods={paymentMethodsResult.data ?? []}
+          initialHasPin={pinStatusResult.data?.hasPin ?? false}
+        />
       </div>
     </div>
   )

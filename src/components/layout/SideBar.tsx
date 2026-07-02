@@ -10,18 +10,17 @@ import {
   ArrowLeftRight,
   BarChart2,
   BarChart3,
-  Bell,
   BellRing,
   BookOpen,
   CalendarDays,
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardX,
   Coins,
   Contact,
   FileBarChart,
   FileSpreadsheet,
-  FolderOpen,
   Funnel,
   HandCoins,
   House,
@@ -49,6 +48,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
 type NavItem = {
   label: string
@@ -93,9 +93,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
 
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
-    main: [
-      { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-    ],
+    main: [],
     bottom: [],
   },
   inventory: {
@@ -117,6 +115,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/operations',
         icon: ArrowLeftRight,
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
+      },
+      {
+        label: 'Purchase Requests',
+        href: '/inventory/purchase-requests',
+        icon: ClipboardList,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PR_READ,
+      },
+      {
+        label: 'Purchase Orders',
+        href: '/inventory/purchase-orders',
+        icon: ShoppingCart,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
       },
       {
         label: 'Counting',
@@ -148,8 +158,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: FileBarChart,
         requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
       },
+      {
+        label: 'Settings',
+        href: '/inventory/settings',
+        icon: Settings,
+      },
     ],
-    bottom: [{ label: 'Settings', href: '/inventory/settings', icon: Settings }],
+    bottom: [],
   },
   accounting: {
     main: [
@@ -273,6 +288,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
       },
       {
+        label: 'Cancellations',
+        href: '/pos/cancellation-requests',
+        icon: ClipboardX,
+        requiredPermission: 'pos:sessions:read',
+      },
+      {
+        label: 'Void Requests',
+        href: '/pos/void-requests',
+        icon: ShieldCheck,
+        requiredPermission: 'pos:transactions:read',
+      },
+      {
         label: 'Promotions',
         href: '/pos/promo-codes',
         icon: Tag,
@@ -287,13 +314,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
       },
     ],
-    bottom: [
-      {
-        label: 'Settings',
-        href: '/pos/settings',
-        icon: Settings,
-      },
-    ],
+    bottom: [],
   },
   crm: {
     main: [
@@ -333,8 +354,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
       },
+      {
+        label: 'Settings',
+        href: '/crm/settings',
+        icon: Settings,
+      },
     ],
-    bottom: [{ label: 'Settings', href: '/crm/settings', icon: Settings }],
+    bottom: [],
   },
 }
 
@@ -570,12 +596,9 @@ function NavItems({
 
 const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: House }
 
-const MY_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-]
+const MY_WORKSPACE_ITEMS: NavItem[] = []
 
 const OWNER_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
   {
     section: 'My Workspace',
     label: 'Users',
@@ -607,7 +630,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
   return [
-    { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ...(branchId
       ? [
           {
@@ -715,7 +737,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...OWNER_WORKSPACE_ITEMS, ...labeledModuleItems]
+      mainItems = [...labeledModuleItems, ...OWNER_WORKSPACE_ITEMS]
     }
   } else if (isBranchManager) {
     if (resolvedSegment === 'Business Owner') {
@@ -724,12 +746,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...bmWorkspaceItems, ...labeledModuleItems]
+      mainItems = [...labeledModuleItems, ...bmWorkspaceItems]
     }
   } else if (moduleWithWorkspace) {
     const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
     const labeledModuleItems = config.main.map((item) => ({ ...item, section: moduleLabel }))
-    mainItems = [...MY_WORKSPACE_ITEMS, ...labeledModuleItems]
+    mainItems = [...labeledModuleItems, ...MY_WORKSPACE_ITEMS]
   } else {
     mainItems = config.main
   }
@@ -787,9 +809,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
           <div className="flex-1 overflow-y-auto flex flex-col gap-1 py-5 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:transparent">
             <NavItems items={main} pathname={pathname} collapsed={collapsed} />
           </div>
-          <div className="shrink-0 pt-1 border-t border-white/10">
-            <NavItems items={finalBottom} pathname={pathname} collapsed={collapsed} />
-          </div>
+          {finalBottom.length > 0 && (
+            <div className="shrink-0 pt-1 border-t border-white/10">
+              <NavItems items={finalBottom} pathname={pathname} collapsed={collapsed} />
+            </div>
+          )}
         </nav>
       </aside>
 

@@ -11,6 +11,9 @@ import {
   UpdateItemFormValues,
   UomOption,
   ItemSummary,
+  ItemGroupOption,
+  ItemSubgroupOption,
+  ClassificationOption,
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -38,6 +41,10 @@ type Props = {
   uomOptions: UomOption[]
   onAttributeSubmit: (attributes: Record<string, string>) => Promise<ApiResponse<unknown>>
   isAttributeSubmitting: boolean
+  groupOptions: ItemGroupOption[]
+  subgroupOptions: ItemSubgroupOption[]
+  brandOptions: ClassificationOption[]
+  typeOptions: ClassificationOption[]
 }
 
 export default function EditItemModal({
@@ -50,6 +57,10 @@ export default function EditItemModal({
   uomOptions,
   onAttributeSubmit,
   isAttributeSubmitting,
+  groupOptions,
+  subgroupOptions,
+  brandOptions,
+  typeOptions,
 }: Props) {
   const [taxRates, setTaxRates] = useState<TaxRate[]>([])
   const [attrValues, setAttrValues] = useState<Record<string, string>>({})
@@ -67,6 +78,8 @@ export default function EditItemModal({
     handleSubmit,
     reset,
     setError,
+    setValue,
+    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<UpdateItemFormValues>({
@@ -91,6 +104,10 @@ export default function EditItemModal({
       heightCm: undefined,
       weightKg: undefined,
       warrantyPeriodDays: undefined,
+      groupId: undefined,
+      subgroupId: undefined,
+      brandId: undefined,
+      typeId: undefined,
     },
   })
 
@@ -117,6 +134,10 @@ export default function EditItemModal({
         weightKg: item.weightKg != null ? Number(item.weightKg) : undefined,
         warrantyPeriodDays:
           item.warrantyPeriodDays != null ? Number(item.warrantyPeriodDays) : undefined,
+        groupId: item.group?.id ?? undefined,
+        subgroupId: item.subgroup?.id ?? undefined,
+        brandId: item.brand?.id ?? undefined,
+        typeId: item.type?.id ?? undefined,
       })
     } else if (!isOpen) {
       reset()
@@ -127,6 +148,17 @@ export default function EditItemModal({
   }, [item?.id, isOpen, reset])
 
   const selectedCategoryId = useWatch({ control, name: 'primaryCategoryId' })
+  const selectedGroupId = useWatch({ control, name: 'groupId' })
+  const filteredSubgroups = subgroupOptions.filter(
+    (s) => !selectedGroupId || s.groupId === selectedGroupId
+  )
+
+  useEffect(() => {
+    const currentSub = getValues('subgroupId')
+    if (!currentSub) return
+    const valid = filteredSubgroups.some((s) => s.id === currentSub)
+    if (!valid) setValue('subgroupId', undefined)
+  }, [selectedGroupId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: attrDefsData } = useQuery({
     queryKey: ['inventory-attribute-definitions', selectedCategoryId],
@@ -580,6 +612,108 @@ export default function EditItemModal({
                   </label>
                 ))}
               </div>
+            </div>
+          </FormSection>
+
+          {/* Classification */}
+          <FormSection title="Classification" defaultOpen={false}>
+            {/* Group */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Group</label>
+              <Controller
+                name="groupId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {groupOptions.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Subgroup */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Subgroup</label>
+              <Controller
+                name="subgroupId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    disabled={!selectedGroupId}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
+                  >
+                    <option value="">
+                      {selectedGroupId ? '— None —' : '— Select group first —'}
+                    </option>
+                    {filteredSubgroups.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Brand */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
+              <Controller
+                name="brandId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {brandOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Item Type */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
+              <Controller
+                name="typeId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {typeOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
             </div>
           </FormSection>
 

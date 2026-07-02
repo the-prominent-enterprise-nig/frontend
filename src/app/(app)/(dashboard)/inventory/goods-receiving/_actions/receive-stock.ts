@@ -32,7 +32,24 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
     }
   }
 
-  const result = await api.post<{ id: string }>('/inventory/stock/receive', parsed.data)
+  const {
+    purchaseOrderNumber: _purchaseOrderNumber,
+    purchaseOrderDate: _purchaseOrderDate,
+    lines,
+    ...rest
+  } = parsed.data
+
+  const backendPayload = {
+    ...rest,
+    lines: lines.map(({ itemId, expiryDate, batchNumber, ...lineRest }) => ({
+      ...lineRest,
+      itemId,
+      ...(expiryDate ? { expiryDate } : {}),
+      ...(batchNumber ? { batchNumber } : {}),
+    })),
+  }
+
+  const result = await api.post<{ id: string }>('/inventory/stock/receive', backendPayload)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')

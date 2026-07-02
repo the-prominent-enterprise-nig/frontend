@@ -61,7 +61,7 @@ export default function MovementsTab({ entries, isLoading }: Props) {
   return (
     <div className="divide-y divide-zinc-100">
       {entries.map((entry) => {
-        const cfg = getMovementConfig(entry.movementType)
+        const cfg = getMovementConfig(entry.transactionType)
         const qty = entry.quantity
         const signed =
           cfg.sign === '+'
@@ -87,10 +87,8 @@ export default function MovementsTab({ entries, isLoading }: Props) {
               <p className="text-sm text-zinc-700">
                 {entry.warehouse?.name ?? entry.warehouse?.code ?? 'Unknown warehouse'}
               </p>
-              {(entry.referenceType || entry.referenceId) && (
-                <p className="text-[11px] text-zinc-400">
-                  {[entry.referenceType, entry.referenceId].filter(Boolean).join(' ')}
-                </p>
+              {entry.originalSaleId && (
+                <p className="text-[11px] text-zinc-400">ref: {entry.originalSaleId}</p>
               )}
               {entry.notes && <p className="text-[11px] text-zinc-400 italic">{entry.notes}</p>}
             </div>
@@ -107,9 +105,6 @@ export default function MovementsTab({ entries, isLoading }: Props) {
                     })
                   : '—'}
               </p>
-              {entry.createdBy?.name && (
-                <p className="text-[10px] text-zinc-300">{entry.createdBy.name}</p>
-              )}
             </div>
           </div>
         )

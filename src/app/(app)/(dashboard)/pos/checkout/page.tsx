@@ -15,6 +15,7 @@ import {
   User,
   UserPlus,
   PauseCircle,
+  XCircle,
   ShieldCheck,
   Loader2,
   ChevronDown,
@@ -55,9 +56,13 @@ import {
   getPaymentMethods,
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
+  getReceiptBranding,
+  submitCancellationRequest,
+  getCancellationRequestStatus,
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
+  PosInvoiceType,
   PromoValidationResult,
   PosCustomer,
   LoyaltyAccount,
@@ -247,10 +252,22 @@ export default function CheckoutPage() {
     import('@/src/schema/pos').PaymentMethodConfig[]
   >([])
 
+  // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
+  const [invoiceType, setInvoiceType] = useState<PosInvoiceType>('cash')
+  const [chargeDueDays, setChargeDueDays] = useState(30)
+
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
   const [parking, setParking] = useState(false)
+
+  // Cancellation request
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+  const [cancellationReqId, setCancellationReqId] = useState<string | null>(null)
+  const cancellationPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // POS config
   const [discountThreshold, setDiscountThreshold] = useState(20)
@@ -287,9 +304,11 @@ export default function CheckoutPage() {
     transactionNumber: string
     change: number
     journalEntryId?: string | null
+    arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     queueTicketNumber?: number | null
+    invoiceType?: PosInvoiceType
   } | null>(null)
 
   // Offline mode
@@ -325,12 +344,16 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Auto-select the only open session
+  // Auto-select the only open session; clear stale sessionId when session is no longer open
   useEffect(() => {
-    if (openSessions.length === 1 && !sessionId) {
+    if (!sessionsData) return
+    const isStale = sessionId && !openSessions.some((s) => s.id === sessionId)
+    if (isStale) {
+      setSessionId(openSessions.length === 1 ? openSessions[0].id : '')
+    } else if (openSessions.length === 1 && !sessionId) {
       setSessionId(openSessions[0].id)
     }
-  }, [openSessions, sessionId])
+  }, [openSessions, sessionsData, sessionId])
 
   // Load catalog when session is selected, then enrich with UOM data
   useEffect(() => {
@@ -537,16 +560,18 @@ export default function CheckoutPage() {
   // Display subtotal: inclusive mode shows tag prices as-is; exclusive adds tax
   const subtotal = inclusivePricing ? rawSubtotal : rawSubtotal + taxTotal
 
-  // SC/PWD estimated discount (20% of subtotal — exact amount computed server-side)
-  const scPwdEstimatedDiscount = scPwdData ? Math.round(subtotal * 0.2 * 100) / 100 : 0
+  // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
+  const scPwdEstimatedDiscount = scPwdData
+    ? Math.round(vatExclSubtotalForBackend * 0.2 * 100) / 100
+    : 0
 
   const totalAmount = Math.max(
     0,
     Math.round((subtotal - promoDiscount - scPwdEstimatedDiscount) * 100) / 100
   )
-  const totalPaid = payments.reduce((s, p) => s + (p.amount || 0), 0)
-  const balance = Math.max(0, totalAmount - totalPaid)
-  const change = totalPaid > totalAmount ? totalPaid - totalAmount : 0
+  const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
+  const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
+  const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
 
   // Loyalty balance check
   const loyaltyPointsValue = loyaltyProgram?.pointsValue || 1
@@ -584,7 +609,7 @@ export default function CheckoutPage() {
         })),
         subtotal,
         discountTotal: promoDiscount,
-        taxTotal: 0,
+        taxTotal,
         totalAmount,
         currency: 'PHP',
       })
@@ -816,26 +841,36 @@ export default function CheckoutPage() {
       setError('Enter a certificate or exemption reference for tax-exempt sales.')
       return
     }
-    if (payments.length === 0) {
-      setError('Add at least one payment method.')
-      return
-    }
-    if (balance > 0.009) {
-      setError(`Underpaid by ${fmt(balance)}.`)
-      return
-    }
 
-    if (isOffline && payments.some((p) => p.amount > 0 && p.method !== 'cash')) {
-      setError('Only cash payments are accepted while offline.')
-      return
-    }
-
-    const missingRef = payments.find(
-      (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
-    )
-    if (missingRef) {
-      setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
-      return
+    if (invoiceType === 'charge') {
+      if (!selectedCustomer) {
+        setError('A customer must be selected to issue a charge invoice.')
+        return
+      }
+      if (isOffline) {
+        setError('Charge invoices require an active network connection.')
+        return
+      }
+    } else {
+      if (payments.length === 0) {
+        setError('Add at least one payment method.')
+        return
+      }
+      if (balance > 0.009) {
+        setError(`Underpaid by ${fmt(balance)}.`)
+        return
+      }
+      if (isOffline && payments.some((p) => p.amount > 0 && p.method !== 'cash')) {
+        setError('Only cash payments are accepted while offline.')
+        return
+      }
+      const missingRef = payments.find(
+        (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
+      )
+      if (missingRef) {
+        setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+        return
+      }
     }
 
     if (loyaltyOverBalance && loyaltyAccount) {
@@ -858,7 +893,7 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: rawSubtotal,
         totalAmount,
-        isTaxExempt,
+        isTaxExempt: isTaxExempt || !!scPwdData,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
         scPwdDiscount: scPwdData ?? undefined,
@@ -900,13 +935,15 @@ export default function CheckoutPage() {
         const txRes = await createTransaction({
           sessionId,
           transactionType: 'sale',
+          invoiceType,
+          chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
           taxAmount: taxTotal,
           subtotal: rawSubtotal,
           totalAmount,
-          isTaxExempt,
+          isTaxExempt: isTaxExempt || !!scPwdData,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           overrideManagerId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
@@ -943,31 +980,33 @@ export default function CheckoutPage() {
         txData = txRes.data
       }
 
-      let remaining = totalAmount
-      for (const p of payments.filter((p) => p.amount > 0)) {
-        const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
-        if (actualAmount <= 0) break
-        const payRes = await addPayment(txId, {
-          paymentMethod: p.method,
-          amount: actualAmount,
-          referenceNumber: p.referenceNumber || undefined,
-          paymentMethodConfigId: p.configId,
-        })
-        if (!payRes.success) {
-          const isRefFail =
-            payRes.error?.includes('REFERENCE_VALIDATION_FAILED') ||
-            payRes.error?.toLowerCase().includes('reference validation')
-          const label = p.refFieldLabel ?? PAYMENT_LABELS[p.method] ?? 'Reference'
-          setError(
-            isRefFail
-              ? `Invalid ${label} format — please check the value and try again.`
-              : `Transaction created but payment failed: ${payRes.error}`
-          )
-          setSubmitting(false)
-          return
+      if (invoiceType === 'cash') {
+        let remaining = totalAmount
+        for (const p of payments.filter((p) => p.amount > 0)) {
+          const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
+          if (actualAmount <= 0) break
+          const payRes = await addPayment(txId, {
+            paymentMethod: p.method,
+            amount: actualAmount,
+            referenceNumber: p.referenceNumber || undefined,
+            paymentMethodConfigId: p.configId,
+          })
+          if (!payRes.success) {
+            const isRefFail =
+              payRes.error?.includes('REFERENCE_VALIDATION_FAILED') ||
+              payRes.error?.toLowerCase().includes('reference validation')
+            const label = p.refFieldLabel ?? PAYMENT_LABELS[p.method] ?? 'Reference'
+            setError(
+              isRefFail
+                ? `Invalid ${label} format — please check the value and try again.`
+                : `Transaction created but payment failed: ${payRes.error}`
+            )
+            setSubmitting(false)
+            return
+          }
+          remaining = parseFloat((remaining - actualAmount).toFixed(2))
+          if (remaining <= 0) break
         }
-        remaining = parseFloat((remaining - actualAmount).toFixed(2))
-        if (remaining <= 0) break
       }
 
       // Redeem loyalty points if that method was used
@@ -1025,8 +1064,10 @@ export default function CheckoutPage() {
         transactionNumber: txData?.transactionNumber ?? txId,
         change,
         journalEntryId: txData?.journalEntryId,
+        arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
         queueTicketNumber: txData?.queueTicketNumber ?? null,
+        invoiceType,
       })
     } catch (err) {
       console.error('[POS] handleConfirm error:', err)
@@ -1057,8 +1098,64 @@ export default function CheckoutPage() {
     setOverrideManagerName('')
     setScPwdData(null)
     setFromTab(null)
+    setInvoiceType('cash')
+    setChargeDueDays(30)
     localStorage.removeItem(POS_FROM_TAB_KEY)
+    setCancellationReqId(null)
+    if (cancellationPollRef.current) {
+      clearInterval(cancellationPollRef.current)
+      cancellationPollRef.current = null
+    }
   }
+
+  async function handleRequestCancellation() {
+    if (!cancelReason.trim()) {
+      setCancelError('Grounds for cancellation are required.')
+      return
+    }
+    setCancelSubmitting(true)
+    setCancelError('')
+    const snapshot = cart.map((l) => ({
+      itemId: l.itemId,
+      itemName: l.itemName,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+    }))
+    const res = await submitCancellationRequest(sessionId, {
+      reason: cancelReason.trim(),
+      cartSnapshot: snapshot,
+    })
+    setCancelSubmitting(false)
+    if (!res.success || !res.data) {
+      setCancelError(res.error ?? 'Failed to submit cancellation request.')
+      return
+    }
+    setCancellationReqId(res.data.id)
+    setShowCancelModal(false)
+    setCancelReason('')
+  }
+
+  useEffect(() => {
+    if (!cancellationReqId) return
+    cancellationPollRef.current = setInterval(async () => {
+      const res = await getCancellationRequestStatus(cancellationReqId)
+      if (!res.success || !res.data) return
+      if (res.data.status === 'approved') {
+        clearInterval(cancellationPollRef.current!)
+        cancellationPollRef.current = null
+        resetSale()
+      } else if (res.data.status === 'rejected') {
+        clearInterval(cancellationPollRef.current!)
+        cancellationPollRef.current = null
+        setCancellationReqId(null)
+        setError('Cancellation was rejected by the manager. You may continue the sale.')
+      }
+    }, 5000)
+    return () => {
+      if (cancellationPollRef.current) clearInterval(cancellationPollRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancellationReqId])
 
   // ─── Success screen ────────────────────────────────────────────────────────
 
@@ -1072,6 +1169,10 @@ export default function CheckoutPage() {
         onReset={resetSale}
         fmt={fmt}
         customerDisplayName={customerDisplayName}
+        cart={cart}
+        payments={payments}
+        promoDiscount={promoDiscount}
+        effectiveTaxRate={effectiveTaxRate}
       />
     )
   }
@@ -1166,17 +1267,40 @@ export default function CheckoutPage() {
         ) : null}
 
         {cart.length > 0 && (
-          <button
-            onClick={() => {
-              setShowParkModal(true)
-              setParkLabel('')
-            }}
-            className="ml-auto flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
-          >
-            <PauseCircle size={13} /> Park Sale
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => {
+                setShowParkModal(true)
+                setParkLabel('')
+              }}
+              disabled={!!cancellationReqId}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-40"
+            >
+              <PauseCircle size={13} /> Park Sale
+            </button>
+            <button
+              onClick={() => {
+                setShowCancelModal(true)
+                setCancelError('')
+              }}
+              disabled={!!cancellationReqId}
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+            >
+              <XCircle size={13} /> Cancel Sale
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Cancellation pending banner */}
+      {cancellationReqId && (
+        <div className="flex items-center gap-3 border-b border-orange-200 bg-orange-50 px-5 py-3">
+          <Loader2 size={14} className="animate-spin shrink-0 text-orange-500" />
+          <p className="text-sm font-medium text-orange-700">
+            Cancellation request pending manager approval — cart is locked.
+          </p>
+        </div>
+      )}
 
       {/* Mobile panel tabs — hidden on md+ */}
       <div className="flex md:hidden border-b border-gray-200 bg-white shrink-0">
@@ -1292,8 +1416,8 @@ export default function CheckoutPage() {
                     key={item.id}
                     item={item}
                     qty={cartQtyMap[item.id] ?? 0}
-                    onAdd={addToCart}
-                    onAddMeasured={setMeasuredItem}
+                    onAdd={!!cancellationReqId ? () => {} : addToCart}
+                    onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
                     effectiveTaxRate={effectiveTaxRate}
                   />
                 ))}
@@ -1338,7 +1462,8 @@ export default function CheckoutPage() {
                                 ? removeFromCart(line.itemId)
                                 : setQty(line.itemId, line.quantity - 1)
                             }
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            disabled={!!cancellationReqId}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
                           >
                             <Minus size={10} />
                           </button>
@@ -1598,7 +1723,7 @@ export default function CheckoutPage() {
                   <span>−{fmt(scPwdEstimatedDiscount)}</span>
                 </div>
               )}
-              {taxTotal > 0 && !isTaxExempt && (
+              {taxTotal > 0 && !isTaxExempt && !scPwdData && (
                 <>
                   {inclusivePricing && (
                     <div className="flex justify-between text-gray-400 text-xs">
@@ -1764,21 +1889,94 @@ export default function CheckoutPage() {
             )}
           </div>
 
+          {/* Invoice Type */}
+          <div className="border-t border-gray-100 px-5 py-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Invoice Type
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setInvoiceType('cash')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'cash'
+                    ? 'border-purple-500 bg-purple-50 text-purple-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Cash Invoice
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Pay now at checkout
+                </span>
+              </button>
+              <button
+                onClick={() => setInvoiceType('charge')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'charge'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Charge Invoice
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Bill to customer account
+                </span>
+              </button>
+            </div>
+            {invoiceType === 'charge' && (
+              <div className="mt-2.5 space-y-2">
+                {!selectedCustomer && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    A customer must be selected to issue a charge invoice.
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500 whitespace-nowrap">Due in</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={chargeDueDays}
+                    onChange={(e) => setChargeDueDays(Math.max(1, parseInt(e.target.value) || 30))}
+                    className="w-20 rounded-lg border border-gray-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <label className="text-xs text-gray-500">days</label>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Payment */}
           <div className="flex-1 p-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Payment
               </p>
-              <button
-                onClick={addPaymentRow}
-                className="flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
-              >
-                <Plus size={11} /> Add
-              </button>
+              {invoiceType === 'cash' && (
+                <button
+                  onClick={addPaymentRow}
+                  className="flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
+                >
+                  <Plus size={11} /> Add
+                </button>
+              )}
             </div>
 
-            {payments.length === 0 ? (
+            {invoiceType === 'charge' ? (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-5 text-center">
+                <Receipt size={20} className="mx-auto mb-2 text-blue-400" />
+                <p className="text-xs font-medium text-blue-700">Charge invoice will be created</p>
+                <p className="mt-1 text-[11px] text-blue-500">
+                  An AR invoice will be posted to the customer&apos;s account. Payment is collected
+                  through Accounts Receivable.
+                </p>
+                {selectedCustomer && (
+                  <p className="mt-2 rounded-lg bg-blue-100 px-3 py-1.5 text-[11px] font-medium text-blue-700">
+                    {customerDisplayName(selectedCustomer)} · Due in {chargeDueDays} day
+                    {chargeDueDays !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            ) : payments.length === 0 ? (
               <button
                 onClick={addPaymentRow}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 py-5 text-sm text-gray-400 hover:border-purple-300 hover:text-purple-500"
@@ -1851,9 +2049,10 @@ export default function CheckoutPage() {
                       className="w-28 rounded-lg border border-gray-200 px-2 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                       placeholder="0.00"
                       value={p.amount === 0 ? '' : p.amount}
-                      onChange={(e) =>
-                        updatePayment(i, { amount: parseFloat(e.target.value) || 0 })
-                      }
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                      }}
                     />
                     <button
                       onClick={() => removePaymentRow(i)}
@@ -1982,23 +2181,31 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
-                balance > 0.009 ||
-                loyaltyOverBalance ||
+                (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
+                (invoiceType === 'charge' && !selectedCustomer) ||
                 (needsManagerOverride && !managerOverrideApproved)
               }
-              className="w-full rounded-xl bg-purple-700 py-4 text-sm font-bold text-white transition-colors hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99]"
+              className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
+                invoiceType === 'charge'
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-purple-700 hover:bg-purple-800'
+              }`}
             >
               {submitting
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : balance > 0.009
-                    ? `Underpaid by ${fmt(balance)}`
-                    : loyaltyOverBalance
-                      ? 'Insufficient loyalty points'
-                      : needsManagerOverride && !managerOverrideApproved
-                        ? 'Manager override required'
-                        : `Confirm Sale — ${fmt(totalAmount)}`}
+                  : invoiceType === 'charge' && !selectedCustomer
+                    ? 'Select a customer to charge'
+                    : invoiceType === 'cash' && balance > 0.009
+                      ? `Underpaid by ${fmt(balance)}`
+                      : invoiceType === 'cash' && loyaltyOverBalance
+                        ? 'Insufficient loyalty points'
+                        : needsManagerOverride && !managerOverrideApproved
+                          ? 'Manager override required'
+                          : invoiceType === 'charge'
+                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                            : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -2035,6 +2242,64 @@ export default function CheckoutPage() {
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {parking ? 'Parking…' : 'Park Sale'}
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Cancel Sale Modal */}
+      {showCancelModal && (
+        <Overlay
+          onClose={() => {
+            setShowCancelModal(false)
+            setCancelError('')
+          }}
+        >
+          <h2 className="mb-1 text-lg font-bold text-gray-900">Cancel Sale</h2>
+          <p className="mb-4 text-sm text-gray-500">
+            State your grounds for cancellation. A manager must approve before the cart is cleared.
+          </p>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">
+              Grounds for Cancellation <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              autoFocus
+              rows={3}
+              className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+              placeholder="e.g. Customer changed their mind before payment"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
+          {cancelError && (
+            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              {cancelError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setShowCancelModal(false)
+                setCancelError('')
+              }}
+              disabled={cancelSubmitting}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={handleRequestCancellation}
+              disabled={!cancelReason.trim() || cancelSubmitting}
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {cancelSubmitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Submitting…
+                </>
+              ) : (
+                'Request Cancellation'
+              )}
             </button>
           </div>
         </Overlay>
@@ -2391,15 +2656,21 @@ function SuccessScreen({
   onReset,
   fmt,
   customerDisplayName,
+  cart,
+  payments,
+  promoDiscount,
+  effectiveTaxRate,
 }: {
   success: {
     transactionId: string
     transactionNumber: string
     change: number
     journalEntryId?: string | null
+    arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     queueTicketNumber?: number | null
+    invoiceType?: PosInvoiceType
   }
   totalAmount: number
   queueEnabled: boolean
@@ -2407,6 +2678,10 @@ function SuccessScreen({
   onReset: () => void
   fmt: (n: number) => string
   customerDisplayName: (c: PosCustomer) => string
+  cart: CartLine[]
+  payments: PaymentRow[]
+  promoDiscount: number
+  effectiveTaxRate: number | null
 }) {
   const [showQueueForm, setShowQueueForm] = useState(false)
   const [queueCustomerName, setQueueCustomerName] = useState(
@@ -2420,12 +2695,30 @@ function SuccessScreen({
   const [queueError, setQueueError] = useState('')
   const queueInFlight = useRef(false)
 
-  // Send Receipt state
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
   const [receiptSending, setReceiptSending] = useState(false)
   const [receiptSent, setReceiptSent] = useState<string | null>(null)
   const [receiptError, setReceiptError] = useState('')
+
+  const [branding, setBranding] = useState<{
+    receiptLogoUrl: string | null
+    receiptHeaderText: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    getReceiptBranding().then((res) => {
+      if (res.success && res.data) setBranding(res.data)
+    })
+  }, [])
+
+  const headerLines = (branding?.receiptHeaderText ?? '').split('\n').filter(Boolean)
+
+  const receiptDate = new Date().toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 
   async function handleAddToQueue() {
     if (!success.transactionId || queueInFlight.current) return
@@ -2465,215 +2758,349 @@ function SuccessScreen({
     setReceiptSent(email || phone)
   }
 
+  const borderColor = success.offlineBuffered
+    ? 'border-amber-200'
+    : success.invoiceType === 'charge'
+      ? 'border-blue-100'
+      : 'border-green-100'
+
+  const iconBg = success.offlineBuffered
+    ? 'bg-amber-100'
+    : success.invoiceType === 'charge'
+      ? 'bg-blue-100'
+      : 'bg-green-100'
+
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-6 bg-zinc-50 p-10">
-      <div
-        className={`flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border p-8 shadow-sm bg-white ${success.offlineBuffered ? 'border-amber-200' : 'border-green-100'}`}
-      >
+    <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
+      <div className="flex w-full max-w-4xl flex-col items-stretch gap-6 lg:flex-row lg:items-start">
+        {/* ── Left: Sale info + actions ─────────────────────────────────── */}
         <div
-          className={`flex h-16 w-16 items-center justify-center rounded-full ${success.offlineBuffered ? 'bg-amber-100' : 'bg-green-100'}`}
+          className={`flex w-full flex-col gap-4 rounded-2xl border bg-white p-8 shadow-sm lg:w-96 lg:shrink-0 ${borderColor}`}
         >
-          {success.offlineBuffered ? (
-            <WifiOff size={32} className="text-amber-600" />
-          ) : (
-            <CheckCircle2 size={32} className="text-green-600" />
-          )}
-        </div>
-
-        <div className="text-center">
-          <p className="text-2xl font-bold text-gray-900">
-            {success.offlineBuffered ? 'Sale Buffered (Offline)' : 'Sale Complete'}
-          </p>
-          {success.offlineBuffered ? (
-            <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
-          ) : (
-            <p className="mt-1 font-mono text-sm text-gray-500">{success.transactionNumber}</p>
-          )}
-        </div>
-
-        {/* Queue ticket display */}
-        {success.queueTicketNumber != null || queueResult ? (
-          <div className="w-full rounded-xl bg-purple-50 px-6 py-4 text-center">
-            <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
-              {queueResult?.categoryName ?? 'Queue Ticket'}
-            </p>
-            <p className="text-6xl font-black text-purple-700">
-              #{success.queueTicketNumber ?? queueResult?.number}
-            </p>
-            <p className="text-xs text-purple-400 mt-1">
-              Show this number when your order is ready
-            </p>
-          </div>
-        ) : null}
-
-        <div className="w-full rounded-xl bg-gray-50 px-6 py-4 text-center">
-          <p className="text-sm text-gray-500">Total Charged</p>
-          <p className="text-3xl font-bold text-gray-900">{fmt(totalAmount)}</p>
-          {success.change > 0 && (
-            <p className="mt-2 text-sm font-medium text-green-600">Change: {fmt(success.change)}</p>
-          )}
-        </div>
-
-        {success.journalEntryId && (
-          <p className="font-mono text-[10px] text-gray-400">JE: {success.journalEntryId}</p>
-        )}
-        {success.loyaltyEarned && selectedCustomer && (
-          <p className="text-xs font-medium text-purple-500">
-            Points earned for {customerDisplayName(selectedCustomer)}
-          </p>
-        )}
-
-        {/* Add to Order Queue — shown when queue is enabled and no ticket issued yet */}
-        {!success.offlineBuffered &&
-          success.transactionId &&
-          queueEnabled &&
-          !queueResult &&
-          success.queueTicketNumber == null && (
-            <div className="w-full">
-              {!showQueueForm ? (
-                <button
-                  onClick={() => setShowQueueForm(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 hover:border-purple-400 hover:bg-purple-50 transition-colors"
-                >
-                  <Bell size={14} /> Add to Order Queue
-                </button>
+          {/* Icon + title */}
+          <div className="flex flex-col items-center gap-3">
+            <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
+              {success.offlineBuffered ? (
+                <WifiOff size={28} className="text-amber-600" />
+              ) : success.invoiceType === 'charge' ? (
+                <Receipt size={28} className="text-blue-600" />
               ) : (
-                <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-purple-700 uppercase tracking-wider">
-                    Add to Order Queue
+                <CheckCircle2 size={28} className="text-green-600" />
+              )}
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-gray-900">
+                {success.offlineBuffered
+                  ? 'Sale Buffered (Offline)'
+                  : success.invoiceType === 'charge'
+                    ? 'Charge Invoice Issued'
+                    : 'Sale Complete'}
+              </p>
+              {success.offlineBuffered ? (
+                <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
+              ) : success.invoiceType === 'charge' ? (
+                <p className="mt-1 text-sm text-blue-500">
+                  AR invoice posted — payment due from customer.
+                </p>
+              ) : (
+                <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Queue ticket */}
+          {(success.queueTicketNumber != null || queueResult) && (
+            <div className="rounded-xl bg-purple-50 px-6 py-4 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
+                {queueResult?.categoryName ?? 'Queue Ticket'}
+              </p>
+              <p className="text-6xl font-black text-purple-700">
+                #{success.queueTicketNumber ?? queueResult?.number}
+              </p>
+              <p className="mt-1 text-xs text-purple-400">
+                Show this number when your order is ready
+              </p>
+            </div>
+          )}
+
+          {/* Total charged */}
+          <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
+            <p className="text-sm text-gray-500">Total Charged</p>
+            <p className="text-3xl font-bold text-gray-900">{fmt(totalAmount)}</p>
+            {success.change > 0 && (
+              <p className="mt-2 text-sm font-medium text-green-600">
+                Change: {fmt(success.change)}
+              </p>
+            )}
+          </div>
+
+          {success.journalEntryId && (
+            <p className="text-center font-mono text-[10px] text-gray-400">
+              JE: {success.journalEntryId}
+            </p>
+          )}
+          {success.loyaltyEarned && selectedCustomer && (
+            <p className="text-center text-xs font-medium text-purple-500">
+              Points earned for {customerDisplayName(selectedCustomer)}
+            </p>
+          )}
+
+          {/* Add to Order Queue */}
+          {!success.offlineBuffered &&
+            success.transactionId &&
+            queueEnabled &&
+            !queueResult &&
+            success.queueTicketNumber == null && (
+              <div>
+                {!showQueueForm ? (
+                  <button
+                    onClick={() => setShowQueueForm(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50"
+                  >
+                    <Bell size={14} /> Add to Order Queue
+                  </button>
+                ) : (
+                  <div className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
+                      Add to Order Queue
+                    </p>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Customer Name (optional)
+                      </label>
+                      <input
+                        autoFocus
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        placeholder="e.g. Juan dela Cruz"
+                        value={queueCustomerName}
+                        onChange={(e) => setQueueCustomerName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Special Instructions (optional)
+                      </label>
+                      <input
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        placeholder="e.g. Extra spicy, no onions"
+                        value={queueNotes}
+                        onChange={(e) => setQueueNotes(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
+                      />
+                    </div>
+                    {queueError && (
+                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                        {queueError}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowQueueForm(false)
+                          setQueueError('')
+                        }}
+                        className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleAddToQueue}
+                        disabled={queueSubmitting}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
+                      >
+                        {queueSubmitting ? (
+                          <>
+                            <Loader2 size={11} className="animate-spin" /> Issuing…
+                          </>
+                        ) : (
+                          <>
+                            <Bell size={11} /> Issue Ticket
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          {/* Send Receipt */}
+          {!success.offlineBuffered && success.transactionId && (
+            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <Mail size={12} /> Send Receipt
+              </p>
+              {receiptSent ? (
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
+                  <CheckCircle2 size={14} className="shrink-0 text-green-500" />
+                  <p className="text-xs font-medium text-green-700">
+                    Receipt sent to {receiptSent}
                   </p>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Customer Name (optional)
-                    </label>
+                </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Mail
+                      size={13}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
-                      autoFocus
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                      placeholder="e.g. Juan dela Cruz"
-                      value={queueCustomerName}
-                      onChange={(e) => setQueueCustomerName(e.target.value)}
+                      type="email"
+                      placeholder="Email address"
+                      value={receiptEmail}
+                      onChange={(e) => setReceiptEmail(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                     />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Special Instructions (optional)
-                    </label>
+                  <div className="relative">
+                    <Phone
+                      size={13}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                      placeholder="e.g. Extra spicy, no onions"
-                      value={queueNotes}
-                      onChange={(e) => setQueueNotes(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
+                      type="tel"
+                      placeholder="Phone number (SMS not yet active)"
+                      value={receiptPhone}
+                      onChange={(e) => setReceiptPhone(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                     />
                   </div>
-                  {queueError && (
+                  {receiptError && (
                     <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                      {queueError}
+                      {receiptError}
                     </p>
                   )}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setShowQueueForm(false)
-                        setQueueError('')
-                      }}
-                      className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleAddToQueue}
-                      disabled={queueSubmitting}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
-                    >
-                      {queueSubmitting ? (
-                        <>
-                          <Loader2 size={11} className="animate-spin" /> Issuing…
-                        </>
-                      ) : (
-                        <>
-                          <Bell size={11} /> Issue Ticket
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
+                  <button
+                    onClick={handleSendReceipt}
+                    disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-900 disabled:opacity-40"
+                  >
+                    {receiptSending ? (
+                      <>
+                        <Loader2 size={11} className="animate-spin" /> Sending…
+                      </>
+                    ) : (
+                      <>
+                        <Send size={11} /> Send Receipt
+                      </>
+                    )}
+                  </button>
+                </>
               )}
             </div>
           )}
 
-        {/* Send Receipt */}
-        {!success.offlineBuffered && success.transactionId && (
-          <div className="w-full rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              <Mail size={12} />
-              Send Receipt
-            </p>
+          <button
+            onClick={onReset}
+            className="w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
+          >
+            New Sale
+          </button>
+        </div>
 
-            {receiptSent ? (
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
-                <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-                <p className="text-xs font-medium text-green-700">Receipt sent to {receiptSent}</p>
+        {/* ── Right: Receipt preview ────────────────────────────────────── */}
+        <div className="w-full lg:w-72 lg:shrink-0">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            {/* Branding header */}
+            <div className="flex flex-col items-center gap-2 border-b border-gray-100 px-6 py-6">
+              {branding?.receiptLogoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={branding.receiptLogoUrl}
+                  alt="logo"
+                  className="h-12 w-auto max-w-32 object-contain"
+                />
+              )}
+              {headerLines.length > 0 ? (
+                <div className="flex flex-col items-center gap-0.5">
+                  {headerLines.map((line, i) => (
+                    <p key={i} className="text-xs font-medium text-gray-700">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ) : !branding?.receiptLogoUrl ? (
+                <p className="text-sm font-semibold text-gray-700">Receipt</p>
+              ) : null}
+            </div>
+
+            {/* Date + TXN */}
+            <div className="space-y-1 border-b border-dashed border-gray-200 px-5 py-3">
+              <div className="flex justify-between text-[11px] text-gray-500">
+                <span>Date</span>
+                <span>{receiptDate}</span>
               </div>
-            ) : (
-              <>
-                <div className="relative">
-                  <Mail
-                    size={13}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email address"
-                    value={receiptEmail}
-                    onChange={(e) => setReceiptEmail(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                  />
-                </div>
-                <div className="relative">
-                  <Phone
-                    size={13}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone number (SMS not yet active)"
-                    value={receiptPhone}
-                    onChange={(e) => setReceiptPhone(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                  />
-                </div>
-                {receiptError && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                    {receiptError}
-                  </p>
-                )}
-                <button
-                  onClick={handleSendReceipt}
-                  disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white hover:bg-gray-900 disabled:opacity-40 transition-colors"
-                >
-                  {receiptSending ? (
-                    <>
-                      <Loader2 size={11} className="animate-spin" /> Sending…
-                    </>
-                  ) : (
-                    <>
-                      <Send size={11} /> Send Receipt
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-          </div>
-        )}
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">TXN #</span>
+                <span className="break-all text-right font-mono text-[10px]">
+                  {success.transactionNumber}
+                </span>
+              </div>
+            </div>
 
-        <button
-          onClick={onReset}
-          className="w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
-        >
-          New Sale
-        </button>
+            {/* Items */}
+            <div className="space-y-2.5 border-b border-dashed border-gray-200 px-5 py-3">
+              {cart.map((line) => {
+                const displayUnitPrice =
+                  effectiveTaxRate != null
+                    ? line.unitPrice * (1 + effectiveTaxRate / 100)
+                    : line.unitPrice
+                const displayLineTotal =
+                  effectiveTaxRate != null
+                    ? lineTotal(line) * (1 + effectiveTaxRate / 100)
+                    : lineTotal(line)
+                return (
+                  <div key={line.itemId} className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[11px] font-medium text-gray-800">
+                        {line.itemName}
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        {line.quantity} × {fmt(displayUnitPrice)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-[11px] font-semibold text-gray-900">
+                      {fmt(displayLineTotal)}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Totals + payments */}
+            <div className="space-y-1 border-b border-gray-100 px-5 py-3">
+              {payments
+                .filter((p) => p.amount > 0)
+                .map((p, i) => (
+                  <div key={i} className="flex justify-between text-[11px] text-gray-500">
+                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>{fmt(p.amount)}</span>
+                  </div>
+                ))}
+              {promoDiscount > 0 && (
+                <div className="flex justify-between text-[11px] text-green-600">
+                  <span>Discount</span>
+                  <span>−{fmt(promoDiscount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-gray-100 pt-1.5 text-sm font-bold text-gray-900">
+                <span>Total</span>
+                <span>{fmt(totalAmount)}</span>
+              </div>
+              {success.change > 0 && (
+                <div className="flex justify-between text-[11px] font-medium text-green-600">
+                  <span>Change</span>
+                  <span>{fmt(success.change)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 text-center">
+              <p className="text-[10px] text-gray-400">Thank you for your purchase!</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

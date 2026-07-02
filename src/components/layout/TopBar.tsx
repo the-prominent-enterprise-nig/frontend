@@ -6,7 +6,8 @@ import { useState } from 'react'
 import { Button, Header } from 'react-aria-components'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { cn } from '@/src/libs/tailwind-merge/utils'
-import { Key, Lock, LogOut, Settings, ShieldCheck, Users, UserCircle } from 'lucide-react'
+import { MODULES } from '@/src/libs/guards/modules'
+import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
 
@@ -26,9 +27,11 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
   const pathname = usePathname()
 
   const [notificationCount] = useState(6)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const navItems = MODULES.filter((mod) => hasPermission(session, mod.requiredPermission))
 
   const showAdminDropdown =
     hasPermission(session, 'admin:roles:manage') && session?.primaryRole !== 'Business Owner'
@@ -47,83 +50,6 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
         <div className="flex h-14 items-center justify-end px-4 lg:px-6">
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
-            {/* Settings dropdown */}
-            {session && (
-              <div className="relative">
-                <Button
-                  onPress={() => setSettingsOpen((v) => !v)}
-                  className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50 -mr-3"
-                  aria-label="Settings"
-                >
-                  <Settings className="h-5 w-5 text-gray-500" />
-                </Button>
-                {settingsOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setSettingsOpen(false)} />
-                    <div className="absolute right-0 top-full z-50 mt-1 min-w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-                      {showAdminDropdown && (
-                        <>
-                          <p className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                            Admin Settings
-                          </p>
-                          <Link
-                            href="/settings/users"
-                            onClick={() => setSettingsOpen(false)}
-                            className={cn(
-                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                              pathname === '/settings/users'
-                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                                : 'text-zinc-700 hover:bg-zinc-50'
-                            )}
-                          >
-                            <Users className="h-4 w-4 shrink-0" />
-                            Users
-                          </Link>
-                          <Link
-                            href="/settings/roles"
-                            onClick={() => setSettingsOpen(false)}
-                            className={cn(
-                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                              pathname === '/settings/roles'
-                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                                : 'text-zinc-700 hover:bg-zinc-50'
-                            )}
-                          >
-                            <ShieldCheck className="h-4 w-4 shrink-0" />
-                            Roles
-                          </Link>
-                          <Link
-                            href="/settings/permissions"
-                            onClick={() => setSettingsOpen(false)}
-                            className={cn(
-                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                              pathname === '/settings/permissions'
-                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                                : 'text-zinc-700 hover:bg-zinc-50'
-                            )}
-                          >
-                            <Key className="h-4 w-4 shrink-0" />
-                            Permissions
-                          </Link>
-                        </>
-                      )}
-                      <div className="border-t border-zinc-100" />
-                      <button
-                        onClick={async () => {
-                          setSettingsOpen(false)
-                          await logoutAndRedirect()
-                        }}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
-                      >
-                        <LogOut className="h-4 w-4 shrink-0" />
-                        Logout
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
             {/* Notification Bell */}
             <Button className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50">
               <svg
@@ -183,14 +109,114 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                         <Lock className="h-4 w-4 shrink-0" />
                         Change Password
                       </button>
+                      {showAdminDropdown && (
+                        <>
+                          <div className="border-t border-zinc-100" />
+                          <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                            Admin Settings
+                          </p>
+                          <Link
+                            href="/settings/users"
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                              pathname === '/settings/users'
+                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                                : 'text-zinc-700 hover:bg-zinc-50'
+                            )}
+                          >
+                            <Users className="h-4 w-4 shrink-0" />
+                            Users
+                          </Link>
+                          <Link
+                            href="/settings/roles"
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                              pathname === '/settings/roles'
+                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                                : 'text-zinc-700 hover:bg-zinc-50'
+                            )}
+                          >
+                            <ShieldCheck className="h-4 w-4 shrink-0" />
+                            Roles
+                          </Link>
+                          <Link
+                            href="/settings/permissions"
+                            onClick={() => setProfileOpen(false)}
+                            className={cn(
+                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                              pathname === '/settings/permissions'
+                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                                : 'text-zinc-700 hover:bg-zinc-50'
+                            )}
+                          >
+                            <Key className="h-4 w-4 shrink-0" />
+                            Permissions
+                          </Link>
+                        </>
+                      )}
+                      <div className="border-t border-zinc-100" />
+                      <button
+                        onClick={async () => {
+                          setProfileOpen(false)
+                          await logoutAndRedirect()
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
+                      >
+                        <LogOut className="h-4 w-4 shrink-0" />
+                        Logout
+                      </button>
                     </div>
                   </>
                 )}
               </div>
             )}
+
+            {/* Hamburger — mobile only, shown when 2+ modules accessible */}
+            {navItems.length > 1 && (
+              <Button
+                onPress={() => setMobileMenuOpen((prev) => !prev)}
+                className="ml-1 flex cursor-pointer items-center justify-center rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800 md:hidden"
+                aria-label="Toggle navigation menu"
+              >
+                {mobileMenuOpen ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  </svg>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </Header>
+
+      {/* Backdrop */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[-1] md:hidden" onClick={() => setMobileMenuOpen(false)} />
+      )}
 
       <ChangePasswordModal
         isOpen={changePasswordOpen}
