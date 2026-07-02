@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardX,
   Coins,
   Contact,
   FileBarChart,
@@ -92,9 +93,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
 
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
-    main: [
-      { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-    ],
+    main: [],
     bottom: [],
   },
   inventory: {
@@ -287,6 +286,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
         activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+      },
+      {
+        label: 'Cancellations',
+        href: '/pos/cancellation-requests',
+        icon: ClipboardX,
+        requiredPermission: 'pos:sessions:read',
+      },
+      {
+        label: 'Void Requests',
+        href: '/pos/void-requests',
+        icon: ShieldCheck,
+        requiredPermission: 'pos:transactions:read',
       },
       {
         label: 'Promotions',
@@ -585,12 +596,9 @@ function NavItems({
 
 const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: House }
 
-const MY_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-]
+const MY_WORKSPACE_ITEMS: NavItem[] = []
 
 const OWNER_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
   {
     section: 'My Workspace',
     label: 'Users',
@@ -614,7 +622,7 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   {
     section: 'My Workspace',
-    label: 'Payment Config',
+    label: 'Configuration',
     href: '/settings/configuration',
     icon: Settings,
   },
@@ -622,7 +630,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
   return [
-    { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ...(branchId
       ? [
           {

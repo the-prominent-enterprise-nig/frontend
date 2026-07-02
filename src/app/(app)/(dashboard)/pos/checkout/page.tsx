@@ -15,6 +15,7 @@ import {
   User,
   UserPlus,
   PauseCircle,
+  XCircle,
   ShieldCheck,
   Loader2,
   ChevronDown,
@@ -56,6 +57,8 @@ import {
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
+  submitCancellationRequest,
+  getCancellationRequestStatus,
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
@@ -257,6 +260,14 @@ export default function CheckoutPage() {
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
   const [parking, setParking] = useState(false)
+
+  // Cancellation request
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+  const [cancellationReqId, setCancellationReqId] = useState<string | null>(null)
+  const cancellationPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // POS config
   const [discountThreshold, setDiscountThreshold] = useState(20)
@@ -1090,7 +1101,61 @@ export default function CheckoutPage() {
     setInvoiceType('cash')
     setChargeDueDays(30)
     localStorage.removeItem(POS_FROM_TAB_KEY)
+    setCancellationReqId(null)
+    if (cancellationPollRef.current) {
+      clearInterval(cancellationPollRef.current)
+      cancellationPollRef.current = null
+    }
   }
+
+  async function handleRequestCancellation() {
+    if (!cancelReason.trim()) {
+      setCancelError('Grounds for cancellation are required.')
+      return
+    }
+    setCancelSubmitting(true)
+    setCancelError('')
+    const snapshot = cart.map((l) => ({
+      itemId: l.itemId,
+      itemName: l.itemName,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+    }))
+    const res = await submitCancellationRequest(sessionId, {
+      reason: cancelReason.trim(),
+      cartSnapshot: snapshot,
+    })
+    setCancelSubmitting(false)
+    if (!res.success || !res.data) {
+      setCancelError(res.error ?? 'Failed to submit cancellation request.')
+      return
+    }
+    setCancellationReqId(res.data.id)
+    setShowCancelModal(false)
+    setCancelReason('')
+  }
+
+  useEffect(() => {
+    if (!cancellationReqId) return
+    cancellationPollRef.current = setInterval(async () => {
+      const res = await getCancellationRequestStatus(cancellationReqId)
+      if (!res.success || !res.data) return
+      if (res.data.status === 'approved') {
+        clearInterval(cancellationPollRef.current!)
+        cancellationPollRef.current = null
+        resetSale()
+      } else if (res.data.status === 'rejected') {
+        clearInterval(cancellationPollRef.current!)
+        cancellationPollRef.current = null
+        setCancellationReqId(null)
+        setError('Cancellation was rejected by the manager. You may continue the sale.')
+      }
+    }, 5000)
+    return () => {
+      if (cancellationPollRef.current) clearInterval(cancellationPollRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancellationReqId])
 
   // ─── Success screen ────────────────────────────────────────────────────────
 
@@ -1202,17 +1267,40 @@ export default function CheckoutPage() {
         ) : null}
 
         {cart.length > 0 && (
-          <button
-            onClick={() => {
-              setShowParkModal(true)
-              setParkLabel('')
-            }}
-            className="ml-auto flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700"
-          >
-            <PauseCircle size={13} /> Park Sale
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => {
+                setShowParkModal(true)
+                setParkLabel('')
+              }}
+              disabled={!!cancellationReqId}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-40"
+            >
+              <PauseCircle size={13} /> Park Sale
+            </button>
+            <button
+              onClick={() => {
+                setShowCancelModal(true)
+                setCancelError('')
+              }}
+              disabled={!!cancellationReqId}
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+            >
+              <XCircle size={13} /> Cancel Sale
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Cancellation pending banner */}
+      {cancellationReqId && (
+        <div className="flex items-center gap-3 border-b border-orange-200 bg-orange-50 px-5 py-3">
+          <Loader2 size={14} className="animate-spin shrink-0 text-orange-500" />
+          <p className="text-sm font-medium text-orange-700">
+            Cancellation request pending manager approval — cart is locked.
+          </p>
+        </div>
+      )}
 
       {/* Mobile panel tabs — hidden on md+ */}
       <div className="flex md:hidden border-b border-gray-200 bg-white shrink-0">
@@ -1328,8 +1416,8 @@ export default function CheckoutPage() {
                     key={item.id}
                     item={item}
                     qty={cartQtyMap[item.id] ?? 0}
-                    onAdd={addToCart}
-                    onAddMeasured={setMeasuredItem}
+                    onAdd={!!cancellationReqId ? () => {} : addToCart}
+                    onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
                     effectiveTaxRate={effectiveTaxRate}
                   />
                 ))}
@@ -1374,7 +1462,8 @@ export default function CheckoutPage() {
                                 ? removeFromCart(line.itemId)
                                 : setQty(line.itemId, line.quantity - 1)
                             }
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            disabled={!!cancellationReqId}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
                           >
                             <Minus size={10} />
                           </button>
@@ -2153,6 +2242,64 @@ export default function CheckoutPage() {
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               {parking ? 'Parking…' : 'Park Sale'}
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Cancel Sale Modal */}
+      {showCancelModal && (
+        <Overlay
+          onClose={() => {
+            setShowCancelModal(false)
+            setCancelError('')
+          }}
+        >
+          <h2 className="mb-1 text-lg font-bold text-gray-900">Cancel Sale</h2>
+          <p className="mb-4 text-sm text-gray-500">
+            State your grounds for cancellation. A manager must approve before the cart is cleared.
+          </p>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">
+              Grounds for Cancellation <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              autoFocus
+              rows={3}
+              className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+              placeholder="e.g. Customer changed their mind before payment"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
+          {cancelError && (
+            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              {cancelError}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setShowCancelModal(false)
+                setCancelError('')
+              }}
+              disabled={cancelSubmitting}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={handleRequestCancellation}
+              disabled={!cancelReason.trim() || cancelSubmitting}
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {cancelSubmitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Submitting…
+                </>
+              ) : (
+                'Request Cancellation'
+              )}
             </button>
           </div>
         </Overlay>

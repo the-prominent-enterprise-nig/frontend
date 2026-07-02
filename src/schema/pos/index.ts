@@ -647,6 +647,14 @@ export interface PosVoidRequest {
     totalAmount: number
     occurredAt: string
   }
+  requestedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
 }
 
 export interface SubmitVoidRequestInput {
@@ -655,5 +663,36 @@ export interface SubmitVoidRequestInput {
 }
 
 export interface ReviewVoidRequestInput {
+  reviewNotes?: string
+}
+
+// ─── Cancellation Requests ────────────────────────────────────────────────────
+
+export type PosCancellationStatus = 'pending' | 'approved' | 'rejected'
+
+export interface PosCancellationRequest {
+  id: string
+  tenantId?: string | null
+  sessionId: string
+  requestedById: string
+  reason: string
+  cartSnapshot?: Record<string, unknown>[] | null
+  status: PosCancellationStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  session?: {
+    cashier?: { id: string; name: string } | null
+    terminal?: { terminalCode: string; branch?: { name: string } | null } | null
+  }
+}
+
+export interface SubmitCancellationInput {
+  reason: string
+  cartSnapshot?: Record<string, unknown>[]
+}
+
+export interface ReviewCancellationInput {
   reviewNotes?: string
 }
