@@ -7,6 +7,7 @@ import { getReturns } from '../_actions/get-returns'
 import { createReturn } from '../_actions/create-return'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import type { CreateReturnFormValues } from '@/src/schema/inventory/returns'
 
 export function useReturnsManager() {
@@ -48,6 +49,12 @@ export function useReturnsManager() {
     queryKey: ['inventory-items-lookup'],
     queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
     staleTime: 5 * 60 * 1000,
+  })
+
+  const serialsQuery = useQuery({
+    queryKey: ['inventory-serials-in-stock'],
+    queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
+    staleTime: 60 * 1000,
   })
 
   const createMutation = useMutation({
@@ -115,6 +122,7 @@ export function useReturnsManager() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
+    serialOptions: serialsQuery.data?.data?.data ?? [],
 
     createReturn: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
