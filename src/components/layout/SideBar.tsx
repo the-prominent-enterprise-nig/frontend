@@ -128,6 +128,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/purchase-orders',
         icon: ShoppingCart,
         requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
+        activeWhen: ['/inventory/purchase-orders'],
       },
       {
         label: 'Counting',
