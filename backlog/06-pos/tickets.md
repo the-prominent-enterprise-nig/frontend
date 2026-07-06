@@ -8,10 +8,12 @@ last_synced: '2026-06-10'
 
 ## Summary
 
-| ID     | Title                                                                         | Status | Priority |
-| ------ | ----------------------------------------------------------------------------- | ------ | -------- |
-| POS-55 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner | TO DO  | high     |
-| POS-56 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table       | TO DO  | normal   |
+| ID     | Title                                                                                                         | Status | Priority |
+| ------ | ------------------------------------------------------------------------------------------------------------- | ------ | -------- |
+| POS-55 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner                                 | TO DO  | high     |
+| POS-56 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table                                       | TO DO  | normal   |
+| POS-57 | AA Business Owner, ISBAT manage POS PIN and payment method settings from a centralized configuration page     | for QA | normal   |
+| POS-58 | AA Employee, ISBAT access profile, settings, and account actions from a single dropdown in the top navigation | for QA | low      |
 
 ---
 
@@ -200,3 +202,200 @@ The system should:
 **Acceptance Criteria:**
 
 - `meta.total` MUST reflect the filtered count
+
+---
+
+### [POS-57] — AA Business Owner, ISBAT manage POS PIN and payment method settings from a centralized configuration page
+
+**Status:** for QA
+**Priority:** normal
+**ClickUp:** https://app.clickup.com/t/86d3huchn
+
+---
+
+**Scenario:**
+Business Owners and Branch Managers need a single place to configure PIN access and payment method availability without jumping between pages. The `/settings/configuration` page provides a tabbed view: one tab for the Cashier PIN lifecycle (set / view / change / reset), and one tab for globally enabling or disabling payment methods. POS Managers have read/change access to the PIN tab only.
+
+**Given:**
+
+- The user is logged in as Business Owner, Branch Manager, or POS Manager
+- The `/settings/configuration` route is accessible from the "Configuration" sidebar entry
+
+**When:**
+
+- The user opens `/settings/configuration`
+
+**Then:**
+The system should:
+
+- Display two tabs: **POS PIN** and **Payment Methods**
+- On the POS PIN tab, show the correct mode based on whether a PIN has been set:
+  - **Set mode** — first-time setup form (PIN + confirm)
+  - **View mode** — masked display (`● ● ● ● ●`) with Change and Reset buttons
+  - **Change mode** — current PIN + new PIN + confirm fields; "Forgot PIN?" link switches to Reset
+  - **Reset mode** — amber warning card with confirmation, calls the register endpoint (idempotent)
+- On the Payment Methods tab, show owner-level enable/disable toggles for each method; disabled methods are off globally for all branches
+- Restrict access: cashiers and other roles see a permission error or are redirected
+
+### Tabs
+
+- **POS PIN** — PIN lifecycle management; right column shows contextual hint text per mode
+- **Payment Methods** — global enable/disable toggles; edit mode saves in bulk
+
+### Buttons
+
+- **Change PIN** — switches from View → Change mode
+- **Forgot PIN? / Reset PIN** — switches to Reset mode; on confirm calls register endpoint
+- **Save** (Payment Methods) — saves bulk toggle state
+- **Cancel** — reverts edits without saving
+
+---
+
+#### Empty States
+
+- Payment Methods tab: if no methods configured, shows "No payment methods configured."
+
+---
+
+#### Post-Action Behavior
+
+- After PIN set/change: mode switches to View with success toast
+- After PIN reset: mode switches to View with success toast
+- After saving payment methods: toggles reflect new state; success toast shown
+
+---
+
+#### Figma Reference
+
+- [PLACEHOLDER: add Figma node]
+
+---
+
+### SUBTASK (Frontend) — FE-POS-57
+
+**Title:** FE: /settings/configuration page — PIN lifecycle tabs + payment method toggles
+**Parent:** POS-57
+**Contract:** `contracts/pos/configuration.contract.md`
+
+**Scope:**
+
+- [x] `ConfigurationTabs` client component with `pin | payment` tab state
+- [x] `PinSection` with 4-mode state machine (set / view / change / reset)
+- [x] `OwnerPaymentMethodsSection` with bulk enable/disable toggles
+- [x] `getCashierPinStatus` server action (`GET /pos/cashier/pin/status`)
+- [x] `canAccess()` guard — allows isAdmin, Branch Manager, pos-manager
+- [x] Sidebar entry renamed from "Payment Config" → "Configuration"
+- [x] Handle loading/error states per tab
+
+**Acceptance Criteria:**
+
+- PIN mode MUST be derived from `hasPin` returned by the status endpoint
+- Payment Methods MUST reflect owner-level toggle state
+- Cashiers and unauthorized roles MUST NOT access this page
+
+---
+
+### SUBTASK (Backend) — BE-POS-57-pin-status
+
+**Title:** BE: GET /pos/cashier/pin/status — return whether authenticated user has a PIN set
+**Parent:** POS-57
+**Contract:** `contracts/pos/configuration.contract.md`
+
+**Scope:**
+
+- [x] Implement `GET /pos/cashier/pin/status` — reads `cashierPin` field on `User`, returns `{ hasPin: boolean }`
+- [x] Auth: bearer token (JwtAuthGuard)
+- [x] Response shape: `{ hasPin: boolean }`
+- [x] Error: `404` if user not found
+
+**Acceptance Criteria:**
+
+- Returns `{ hasPin: false }` when `cashierPin` is null
+- Returns `{ hasPin: true }` when `cashierPin` is set
+
+---
+
+### [POS-58] — AA Employee, ISBAT access profile, settings, and account actions from a single dropdown in the top navigation
+
+**Status:** for QA
+**Priority:** low
+**ClickUp:** https://app.clickup.com/t/86d3hudcw
+
+---
+
+**Scenario:**
+The top navigation previously had two separate entry points: a gear icon for admin settings and an avatar dropdown for profile actions. This created unnecessary clutter and an inconsistent UX. The gear icon is removed entirely; the avatar dropdown is extended to include View Profile, Change Password, Admin Settings (Users / Roles / Permissions — shown only for eligible roles), and Logout. The "My Profile" sidebar entry is also removed from all role configs since the profile is now reachable from the dropdown.
+
+**Given:**
+
+- Any authenticated user is logged in
+- The top navigation bar is visible
+
+**When:**
+
+- The user clicks their avatar in the top-right corner
+
+**Then:**
+The system should:
+
+- Show a dropdown with: name + email header, View Profile, Change Password
+- For users with `admin:roles:manage` permission (excluding Business Owner): show an "Admin Settings" section with links to Users, Roles, Permissions
+- Show a Logout button at the bottom, separated by a divider
+- Close the dropdown when clicking outside or after navigating
+- NOT show a gear icon anywhere in the top navigation
+- NOT show "My Profile" in the sidebar for any role
+
+### Dropdown Sections
+
+- **Header** — display name + email (read-only)
+- **Profile** — View Profile, Change Password
+- **Admin Settings** _(conditional)_ — Users, Roles, Permissions links with active-state highlight
+- **Account** — Logout (red)
+
+### Buttons
+
+- **View Profile** — navigates to `/workspace/profile`
+- **Change Password** — opens Change Password modal inline
+- **Users / Roles / Permissions** — navigate to respective settings pages; highlighted when active
+- **Logout** — calls logout action and redirects to login
+
+---
+
+#### Empty States
+
+- N/A — dropdown always has at least the header + profile actions + logout
+
+---
+
+#### Post-Action Behavior
+
+- After clicking a nav link: dropdown closes, user is navigated to target page
+- After logout: redirected to login page
+
+---
+
+#### Figma Reference
+
+- [PLACEHOLDER: add Figma node]
+
+---
+
+### SUBTASK (Frontend) — FE-POS-58
+
+**Title:** FE: Consolidate gear icon + profile actions into single avatar dropdown; remove "My Profile" from sidebar
+**Parent:** POS-58
+
+**Scope:**
+
+- [x] Remove gear icon button and its settings dropdown from `TopBar.tsx`
+- [x] Move Admin Settings links (Users, Roles, Permissions) into profile avatar dropdown
+- [x] Move Logout button into profile avatar dropdown
+- [x] Remove `settingsOpen` state and related logic
+- [x] Remove "My Profile" from `MY_WORKSPACE_ITEMS`, `OWNER_WORKSPACE_ITEMS`, `branchManagerWorkspaceItems`, and `navItemsBySegment['Business Owner']` in `SideBar.tsx`
+
+**Acceptance Criteria:**
+
+- Gear icon MUST NOT appear in the top nav for any role
+- Admin Settings section MUST only appear for users with `admin:roles:manage` and primaryRole !== 'Business Owner'
+- "My Profile" MUST NOT appear in the sidebar for any role
+- Logout MUST be reachable from the avatar dropdown

@@ -24,6 +24,7 @@ type UserDetailDrawerProps = {
   onClose: () => void
   onEdit: (user: User) => void
   onAssignRole: (user: User) => void
+  onAssignBranch: (user: User) => void
   onToggleActive: (user: User) => void
   onDelete: (user: User) => void
   onResetPassword: (user: User) => void
@@ -35,6 +36,7 @@ export default function UserDetailDrawer({
   onClose,
   onEdit,
   onAssignRole,
+  onAssignBranch,
   onToggleActive,
   onDelete,
   onResetPassword,
@@ -48,7 +50,7 @@ export default function UserDetailDrawer({
     (user.employee ? `${user.employee.firstName} ${user.employee.lastName}` : null) ||
     'Unknown User'
 
-  const homeBranch = user.employee?.branch?.name ?? null
+  const branchAccess = user.userBranches.map((ub) => ub.branch)
   const roles = user.userRoles.map((ur) => ur.role)
 
   return (
@@ -188,15 +190,26 @@ export default function UserDetailDrawer({
           )}
 
           {/* Branch Access */}
-          <Section title="Branch Access">
-            <div className="flex items-center gap-2 text-sm text-zinc-700">
-              <Building2 className="h-4 w-4 text-zinc-400" />
-              {homeBranch ? (
-                <span className="rounded-lg bg-zinc-100 px-3 py-1">{homeBranch}</span>
-              ) : (
-                <span className="text-zinc-500">Head Office (all branches)</span>
-              )}
-            </div>
+          <Section
+            title={`Branch Access${branchAccess.length > 0 ? ` (${branchAccess.length})` : ''}`}
+          >
+            {branchAccess.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No branch access assigned — Head Office (all branches).
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {branchAccess.map((branch) => (
+                  <span
+                    key={branch.id}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-1 text-sm text-zinc-700"
+                  >
+                    <Building2 className="h-3.5 w-3.5 text-zinc-400" />
+                    {branch.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </Section>
 
           {/* Roles */}
@@ -239,6 +252,14 @@ export default function UserDetailDrawer({
             >
               <UserCog className="h-4 w-4" />
               Assign Role
+            </button>
+            <button
+              type="button"
+              onClick={() => onAssignBranch(user)}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <Building2 className="h-4 w-4" />
+              Manage Branches
             </button>
             <button
               type="button"
