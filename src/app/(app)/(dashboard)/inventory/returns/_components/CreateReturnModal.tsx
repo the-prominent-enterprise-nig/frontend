@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, PackageCheck, AlertTriangle } from 'lucide-react'
+import { X, Loader2, PackageCheck, AlertTriangle, Wrench } from 'lucide-react'
 import { CreateReturnFormSchema, CreateReturnFormValues } from '@/src/schema/inventory/returns'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 
 type Props = {
   isOpen: boolean
@@ -16,6 +17,7 @@ type Props = {
   isSubmitting: boolean
   itemOptions: ItemSummary[]
   warehouseOptions: WarehouseSummary[]
+  serialOptions: SerialNumberSummary[]
 }
 
 export default function CreateReturnModal({
@@ -25,12 +27,14 @@ export default function CreateReturnModal({
   isSubmitting,
   itemOptions,
   warehouseOptions,
+  serialOptions,
 }: Props) {
   const {
     control,
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<CreateReturnFormValues>({
     resolver: zodResolver(CreateReturnFormSchema),
@@ -41,14 +45,29 @@ export default function CreateReturnModal({
       condition: 'sellable',
       originalSaleId: '',
       notes: '',
+      serialNumberId: '',
+      repairDecision: undefined,
     },
   })
 
   const condition = watch('condition')
+  const repairDecision = watch('repairDecision')
+  const selectedItemId = watch('itemId')
+
+  const itemSerials = useMemo(
+    () => serialOptions.filter((s) => s.item?.id === selectedItemId),
+    [serialOptions, selectedItemId]
+  )
 
   useEffect(() => {
     if (!isOpen) reset()
   }, [isOpen, reset])
+
+  useEffect(() => {
+    if (repairDecision === 'flag_for_repair' && itemSerials.length === 1) {
+      setValue('serialNumberId', itemSerials[0].id)
+    }
+  }, [repairDecision, itemSerials, setValue])
 
   if (!isOpen) return null
 
@@ -240,6 +259,103 @@ export default function CreateReturnModal({
                 <p className="text-xs text-orange-700">
                   Damaged items are added to on-hand quantity only and will <strong>not</strong> be
                   available for sale. Consider creating a write-off to expense the loss.
+                </p>
+              </div>
+            )}
+
+            {/* Repair Decision (for damaged/serial-tracked units) */}
+            {condition === 'damaged' && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-zinc-700">
+                  What should happen to this unit?
+                </label>
+                <Controller
+                  name="repairDecision"
+                  control={control}
+                  render={({ field }) => (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => field.onChange('restock')}
+                        className={`flex flex-col items-center gap-2 rounded-xl border-2 p-3 transition-all ${
+                          field.value === 'restock' || field.value === undefined
+                            ? 'border-zinc-400 bg-zinc-50'
+                            : 'border-zinc-200 hover:border-zinc-300'
+                        }`}
+                      >
+                        <PackageCheck className="h-5 w-5 text-zinc-500" />
+                        <div className="text-center">
+                          <p className="text-sm font-semibold text-zinc-700">Restock</p>
+                          <p className="text-xs text-zinc-500">Keep as on-hand (damaged)</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => field.onChange('flag_for_repair')}
+                        className={`flex flex-col items-center gap-2 rounded-xl border-2 p-3 transition-all ${
+                          field.value === 'flag_for_repair'
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-zinc-200 hover:border-zinc-300'
+                        }`}
+                      >
+                        <Wrench
+                          className={`h-5 w-5 ${field.value === 'flag_for_repair' ? 'text-red-600' : 'text-zinc-400'}`}
+                        />
+                        <div className="text-center">
+                          <p
+                            className={`text-sm font-semibold ${field.value === 'flag_for_repair' ? 'text-red-700' : 'text-zinc-700'}`}
+                          >
+                            Flag for Repair
+                          </p>
+                          <p className="text-xs text-zinc-500">Auto-creates a UDS</p>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Serial Number (required when flagging for repair) */}
+            {repairDecision === 'flag_for_repair' && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Serial Number
+                  <span className="text-red-500">*</span>
+                  <span className="ml-1 text-xs font-normal text-zinc-400">
+                    (required to create UDS)
+                  </span>
+                </label>
+                <Controller
+                  name="serialNumberId"
+                  control={control}
+                  render={({ field }) =>
+                    itemSerials.length > 0 ? (
+                      <select
+                        {...field}
+                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      >
+                        <option value="">Select serial number…</option>
+                        {itemSerials.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.serialNumber}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        {...field}
+                        type="text"
+                        placeholder="Paste the SerialNumber record ID"
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      />
+                    )
+                  }
+                />
+                <p className="mt-1 text-xs text-zinc-400">
+                  {itemSerials.length > 0
+                    ? 'Select the unit to send for repair. A UDS will be auto-created.'
+                    : 'The unit will be marked as "in repair" and a UDS will be auto-created.'}
                 </p>
               </div>
             )}

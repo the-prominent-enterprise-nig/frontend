@@ -57,6 +57,9 @@ import type {
   PosVoidRequest,
   SubmitVoidRequestInput,
   ReviewVoidRequestInput,
+  PosCancellationRequest,
+  SubmitCancellationInput,
+  ReviewCancellationInput,
 } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
 
@@ -79,6 +82,8 @@ const TAGS = {
   receiptBranding: 'pos-receipt-branding',
   voidRequests: 'pos-void-requests',
   voidRequest: (txId: string) => `pos-void-requests-${txId}`,
+  cancellationRequests: 'pos-cancellation-requests',
+  cancellationRequest: (id: string) => `pos-cancellation-request-${id}`,
 }
 
 export async function getTerminals(): Promise<ApiResponse<PosTerminal[]>> {
@@ -1306,6 +1311,18 @@ export async function addToOrderQueue(
 
 // ─── Cashier PIN ──────────────────────────────────────────────────────────────
 
+export async function getCashierPinStatus(): Promise<ApiResponse<{ hasPin: boolean }>> {
+  try {
+    const result = await api.get<{ hasPin: boolean }>('/pos/cashier/pin/status')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch PIN status' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch PIN status' }
+  }
+}
+
 export async function registerCashierPin(pin: string): Promise<ApiResponse<void>> {
   try {
     const result = await api.post('/pos/cashier/pin/register', { pin })
@@ -1384,6 +1401,23 @@ export async function validateManagerOverride(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to validate manager override' }
+  }
+}
+
+export async function validateManagerByPin(
+  pin: string
+): Promise<ApiResponse<{ valid: boolean; managerId: string; managerName: string }>> {
+  try {
+    const result = await api.post<{ valid: boolean; managerId: string; managerName: string }>(
+      '/pos/cashier/manager-override/validate-pin-only',
+      { pin }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Invalid PIN' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to validate PIN' }
   }
 }
 
@@ -1700,6 +1734,34 @@ export async function getVoidRequests(
   }
 }
 
+export async function getVoidRequestHistory(): Promise<ApiResponse<PosVoidRequest[]>> {
+  try {
+    const result = await api.get<PosVoidRequest[]>('/pos/transactions/void-requests/history')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load void request history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load void request history' }
+  }
+}
+
+export async function getBranchVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
+  try {
+    const result = await api.get<PosVoidRequest[]>(
+      '/pos/transactions/void-requests/branch',
+      undefined,
+      { tags: [TAGS.voidRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch void requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch void requests' }
+  }
+}
+
 export async function getPendingVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
     const result = await api.get<PosVoidRequest[]>(
@@ -1778,5 +1840,102 @@ export async function rejectVoidRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject void request' }
+  }
+}
+
+// ─── Cancellation Requests ────────────────────────────────────────────────────
+
+export async function submitCancellationRequest(
+  sessionId: string,
+  input: SubmitCancellationInput
+): Promise<ApiResponse<PosCancellationRequest>> {
+  try {
+    const result = await api.post<PosCancellationRequest>(
+      `/pos/sessions/${sessionId}/cancellation-requests`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to submit cancellation request' }
+    }
+    revalidateTag(TAGS.cancellationRequests, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to submit cancellation request' }
+  }
+}
+
+export async function getPendingCancellationRequests(): Promise<
+  ApiResponse<PosCancellationRequest[]>
+> {
+  try {
+    const result = await api.get<PosCancellationRequest[]>(
+      '/pos/cancellation-requests/pending',
+      undefined,
+      { tags: [TAGS.cancellationRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch cancellation requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch cancellation requests' }
+  }
+}
+
+export async function getCancellationRequestStatus(
+  requestId: string
+): Promise<ApiResponse<PosCancellationRequest>> {
+  try {
+    const result = await api.get<PosCancellationRequest>(
+      `/pos/cancellation-requests/${requestId}/status`,
+      undefined,
+      { tags: [TAGS.cancellationRequest(requestId)] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch status' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch status' }
+  }
+}
+
+export async function approveCancellationRequest(
+  requestId: string,
+  input: ReviewCancellationInput
+): Promise<ApiResponse<PosCancellationRequest>> {
+  try {
+    const result = await api.post<PosCancellationRequest>(
+      `/pos/cancellation-requests/${requestId}/approve`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve cancellation request' }
+    }
+    revalidateTag(TAGS.cancellationRequests, 'max')
+    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve cancellation request' }
+  }
+}
+
+export async function rejectCancellationRequest(
+  requestId: string,
+  input: ReviewCancellationInput
+): Promise<ApiResponse<PosCancellationRequest>> {
+  try {
+    const result = await api.post<PosCancellationRequest>(
+      `/pos/cancellation-requests/${requestId}/reject`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to reject cancellation request' }
+    }
+    revalidateTag(TAGS.cancellationRequests, 'max')
+    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to reject cancellation request' }
   }
 }

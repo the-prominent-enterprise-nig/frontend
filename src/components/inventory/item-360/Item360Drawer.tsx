@@ -113,7 +113,7 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         {itemData && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
-              href={`/inventory/goods-receiving`}
+              href={`/inventory/operations?tab=receiving`}
               className="inline-flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
             >
               <PackageCheck className="h-3.5 w-3.5" />

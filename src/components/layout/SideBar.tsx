@@ -16,10 +16,12 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardX,
   Coins,
   Contact,
   FileBarChart,
   FileSpreadsheet,
+  ClipboardCheck,
   Funnel,
   HandCoins,
   House,
@@ -47,6 +49,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
 type NavItem = {
   label: string
@@ -91,9 +94,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
 
 const navItemsBySegment: Record<string, NavConfig> = {
   'Business Owner': {
-    main: [
-      { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-    ],
+    main: [],
     bottom: [],
   },
   inventory: {
@@ -115,6 +116,19 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/operations',
         icon: ArrowLeftRight,
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
+      },
+      {
+        label: 'Purchase Requests',
+        href: '/inventory/purchase-requests',
+        icon: ClipboardList,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PR_READ,
+      },
+      {
+        label: 'Purchase Orders',
+        href: '/inventory/purchase-orders',
+        icon: ShoppingCart,
+        requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
+        activeWhen: ['/inventory/purchase-orders'],
       },
       {
         label: 'Counting',
@@ -139,6 +153,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/warehouses',
         icon: Warehouse,
         requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+      },
+      {
+        label: 'Unit Documents',
+        href: '/inventory/uds',
+        icon: ClipboardCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
       },
       {
         label: 'Reports',
@@ -274,6 +294,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
         activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+      },
+      {
+        label: 'Cancellations',
+        href: '/pos/cancellation-requests',
+        icon: ClipboardX,
+        requiredPermission: 'pos:sessions:read',
+      },
+      {
+        label: 'Void Requests',
+        href: '/pos/void-requests',
+        icon: ShieldCheck,
+        requiredPermission: 'pos:transactions:read',
       },
       {
         label: 'Promotions',
@@ -572,12 +604,9 @@ function NavItems({
 
 const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: House }
 
-const MY_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
-]
+const MY_WORKSPACE_ITEMS: NavItem[] = []
 
 const OWNER_WORKSPACE_ITEMS: NavItem[] = [
-  { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
   {
     section: 'My Workspace',
     label: 'Users',
@@ -601,7 +630,7 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   {
     section: 'My Workspace',
-    label: 'Payment Config',
+    label: 'Configuration',
     href: '/settings/configuration',
     icon: Settings,
   },
@@ -609,7 +638,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
   return [
-    { section: 'My Workspace', label: 'My Profile', href: '/workspace/profile', icon: Users },
     ...(branchId
       ? [
           {

@@ -268,7 +268,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         onClose={() => setIsRegisterOpen(false)}
         onSubmit={registerSerials}
         isSubmitting={isRegistering}
-        items={itemOptions}
+        items={itemOptions.filter((i) => i.isSerialTracked)}
         warehouses={warehouseOptions}
       />
     </div>

@@ -17,6 +17,9 @@ import {
   ChevronDown,
   Mail,
   Printer,
+  KeyRound,
+  ShieldCheck,
+  Loader2,
   FileText,
   Clock,
   CheckCircle,
@@ -25,6 +28,9 @@ import {
 import {
   getReceipt,
   logReprintEvent,
+  validateManagerOverride,
+  submitVoidRequest,
+  approveVoidRequest,
   getTransaction,
   getCustomerById,
 } from '../../_actions/pos-actions'
@@ -55,7 +61,8 @@ interface Props {
 }
 
 export default function TransactionsList({ session }: Props) {
-  const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+  const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_READ)
+  const canDirectVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
 
   const [filters, setFilters] = useState({
     transactionType: '',
@@ -68,6 +75,15 @@ export default function TransactionsList({ session }: Props) {
   const [detail, setDetail] = useState<DetailModal>({ type: 'none' })
   const [voidTarget, setVoidTarget] = useState<PosTransaction | null>(null)
   const [voidError, setVoidError] = useState('')
+  const [voidReason, setVoidReason] = useState('')
+  const [voidMode, setVoidMode] = useState<'id-and-pin' | 'request'>('id-and-pin')
+  const [voidManagerId, setVoidManagerId] = useState('')
+  const [voidManagerPin, setVoidManagerPin] = useState('')
+  const [voidPending, setVoidPending] = useState(false)
+
+  useEffect(() => {
+    if (!voidTarget) setVoidError('')
+  }, [voidTarget])
 
   useEffect(() => {
     if (!voidTarget) setVoidError('')
@@ -79,23 +95,79 @@ export default function TransactionsList({ session }: Props) {
       string
     >
   )
-  const voidMutation = useVoidTransaction()
 
   const transactions: PosTransaction[] = data?.data ?? []
 
   async function handleVoid() {
     if (!voidTarget) return
+    if (!voidReason.trim()) {
+      setVoidError('A reason for the void is required.')
+      return
+    }
     setVoidError('')
-    try {
-      const res = await voidMutation.mutateAsync(voidTarget.id)
-      if (!res.success) {
-        setVoidError(res.error ?? 'Failed to void transaction')
+    setVoidPending(true)
+
+    if (voidMode === 'request') {
+      const reqRes = await submitVoidRequest(voidTarget.id, { reason: voidReason.trim() })
+      setVoidPending(false)
+      if (!reqRes.success) {
+        setVoidError(reqRes.error ?? 'Failed to submit void request.')
         return
       }
       setVoidTarget(null)
-    } catch (err) {
-      setVoidError(err instanceof Error ? err.message : 'Failed to void transaction')
+      setVoidReason('')
+      return
     }
+
+    // ID + PIN: manager or owner present
+    if (!voidManagerId.trim()) {
+      setVoidError('Manager ID is required.')
+      setVoidPending(false)
+      return
+    }
+    if (!voidManagerPin.trim()) {
+      setVoidError('PIN is required.')
+      setVoidPending(false)
+      return
+    }
+
+    const pinRes = await validateManagerOverride(voidManagerId.trim(), voidManagerPin.trim())
+    if (!pinRes.success || !pinRes.data?.valid) {
+      setVoidError(pinRes.error ?? 'Invalid ID or PIN. Please try again.')
+      setVoidPending(false)
+      return
+    }
+    const managerName = pinRes.data.managerName
+
+    const reqRes = await submitVoidRequest(voidTarget.id, { reason: voidReason.trim() })
+    if (!reqRes.success || !reqRes.data) {
+      setVoidError(reqRes.error ?? 'Failed to submit void request.')
+      setVoidPending(false)
+      return
+    }
+
+    const approveRes = await approveVoidRequest(reqRes.data.id, {
+      reviewNotes: `Authorized by ${managerName}`,
+    })
+    setVoidPending(false)
+    if (!approveRes.success) {
+      setVoidError(approveRes.error ?? 'Failed to void.')
+      return
+    }
+    setVoidTarget(null)
+    setVoidReason('')
+    setVoidManagerId('')
+    setVoidManagerPin('')
+    refetch()
+  }
+
+  function openVoidModal(tx: PosTransaction) {
+    setVoidTarget(tx)
+    setVoidError('')
+    setVoidReason('')
+    setVoidMode('id-and-pin')
+    setVoidManagerId('')
+    setVoidManagerPin('')
   }
 
   return (
@@ -256,7 +328,6 @@ export default function TransactionsList({ session }: Props) {
                   <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
                     Total
                   </th>
-                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -286,21 +357,8 @@ export default function TransactionsList({ session }: Props) {
                     <td className="px-5 py-3 text-gray-600">
                       <PosDateTime iso={tx.occurredAt ?? tx.createdAt} />
                     </td>
-                    <td className="px-5 py-3 text-right font-semibold text-gray-900">
+                    <td className="px-5 py-3 text-right text-gray-600">
                       {formatCurrency(tx.totalAmount)}
-                    </td>
-                    <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      {tx.status === 'completed' && canVoid && (
-                        <button
-                          onClick={() => {
-                            setVoidError('')
-                            setVoidTarget(tx)
-                          }}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Void
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -316,35 +374,159 @@ export default function TransactionsList({ session }: Props) {
           transaction={detail.transaction}
           session={session}
           onClose={() => setDetail({ type: 'none' })}
+          canVoid={canVoid}
+          onVoid={() => {
+            setDetail({ type: 'none' })
+            openVoidModal(detail.transaction)
+          }}
         />
       )}
 
-      {/* Void Confirm — only reachable if canVoid, guard is redundant but explicit */}
+      {/* Void Modal */}
       {voidTarget && canVoid && (
         <>
-          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setVoidTarget(null)} />
+          <div
+            className="fixed inset-0 z-40 bg-black/30"
+            onClick={() => !voidPending && setVoidTarget(null)}
+          />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-              <h2 className="mb-2 text-lg font-bold text-gray-900">Void transaction?</h2>
-              <p className="mb-4 text-sm text-gray-600">
-                Void <span className="font-mono">{voidTarget.transactionNumber}</span>? This cannot
-                be undone.
-              </p>
+              {/* Header */}
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+                  <KeyRound size={18} className="text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Void Transaction</h2>
+                  <p className="font-mono text-xs text-gray-500">{voidTarget.transactionNumber}</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {/* Reason */}
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">
+                    Reason <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    autoFocus
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                    placeholder="e.g. Incorrect item scanned"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    disabled={voidPending}
+                  />
+                </div>
+
+                {/* Mode tabs — always shown so cashiers can offer manager override */}
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVoidMode('request')
+                      setVoidManagerId('')
+                      setVoidManagerPin('')
+                    }}
+                    className={`flex-1 py-2 transition-colors ${voidMode === 'request' ? 'bg-gray-700 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    Request Approval
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVoidMode('id-and-pin')
+                      setVoidManagerId('')
+                      setVoidManagerPin('')
+                    }}
+                    className={`flex-1 py-2 transition-colors ${voidMode === 'id-and-pin' ? 'bg-amber-500 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    Manager Override
+                  </button>
+                </div>
+
+                {voidMode === 'id-and-pin' ? (
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={13} className="text-amber-600" />
+                      <p className="text-xs font-semibold text-amber-700">
+                        Manager / Owner Authorization
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">
+                        Employee ID
+                      </label>
+                      <input
+                        autoFocus
+                        type="text"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                        placeholder="Manager or owner employee ID"
+                        value={voidManagerId}
+                        onChange={(e) => setVoidManagerId(e.target.value)}
+                        disabled={voidPending}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-600">PIN</label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono tracking-widest text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                        placeholder="••••"
+                        value={voidManagerPin}
+                        onChange={(e) =>
+                          setVoidManagerPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                        }
+                        onKeyDown={(e) => e.key === 'Enter' && handleVoid()}
+                        disabled={voidPending}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs text-gray-500">
+                      A void request will be sent for manager approval. The transaction will be
+                      voided once approved from the{' '}
+                      <span className="font-medium text-gray-700">Void Requests</span> page.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {voidError && (
-                <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
                   {voidError}
                 </p>
               )}
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setVoidTarget(null)} className="btn-secondary">
+
+              <div className="mt-5 flex justify-end gap-3">
+                <button
+                  onClick={() => setVoidTarget(null)}
+                  disabled={voidPending}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                >
                   Cancel
                 </button>
                 <button
                   onClick={handleVoid}
-                  disabled={voidMutation.isPending}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  disabled={
+                    voidPending ||
+                    !voidReason.trim() ||
+                    (voidMode === 'id-and-pin' && (!voidManagerId.trim() || !voidManagerPin.trim()))
+                  }
+                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {voidMutation.isPending ? 'Voiding…' : 'Void'}
+                  {voidPending ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />{' '}
+                      {voidMode === 'request' ? 'Submitting…' : 'Voiding…'}
+                    </>
+                  ) : voidMode === 'request' ? (
+                    'Submit Request'
+                  ) : (
+                    'Void Transaction'
+                  )}
                 </button>
               </div>
             </div>
@@ -371,10 +553,14 @@ function TransactionDetail({
   transaction: summary,
   session,
   onClose,
+  canVoid,
+  onVoid,
 }: {
   transaction: PosTransaction
   session: SessionUser
   onClose: () => void
+  canVoid?: boolean
+  onVoid?: () => void
 }) {
   const canRequestVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_VOID)
 

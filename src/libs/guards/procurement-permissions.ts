@@ -12,11 +12,14 @@ export const PROCUREMENT_PERMISSIONS = {
   PO_READ: 'procurement:purchase-orders:read',
   PO_CREATE: 'procurement:purchase-orders:create',
   PO_UPDATE: 'procurement:purchase-orders:update',
+  PO_APPROVE: 'procurement:purchase-orders:approve',
   PO_SEND: 'procurement:purchase-orders:send',
   PO_CLOSE: 'procurement:purchase-orders:close',
   PO_CANCEL: 'procurement:purchase-orders:cancel',
   GR_READ: 'procurement:goods-receipts:read',
   GR_CREATE: 'procurement:goods-receipts:create',
+  QUOTA_READ: 'procurement:quotas:read',
+  QUOTA_MANAGE: 'procurement:quotas:manage',
   WILDCARD: 'procurement:*',
 } as const
 

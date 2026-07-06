@@ -198,6 +198,11 @@ export const ItemSummarySchema = z.object({
   heightCm: z.coerce.number().nullable().optional(),
   weightKg: z.coerce.number().nullable().optional(),
   warrantyPeriodDays: z.coerce.number().nullable().optional(),
+  isSerialTracked: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return false
+  }, z.boolean().optional()),
 })
 
 export const ItemListResponseSchema = z.object({
