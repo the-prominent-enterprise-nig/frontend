@@ -153,6 +153,15 @@ export interface BranchPaymentMethodsResponse {
   meta: { branchId: string; branchName: string }
 }
 
+export interface BranchReceiptFooter {
+  footerText: string | null
+}
+
+export interface BranchReceiptFooterResponse {
+  data: BranchReceiptFooter
+  meta: { branchId: string; branchName: string }
+}
+
 export interface PosTransactionLine {
   id: string
   itemId: string

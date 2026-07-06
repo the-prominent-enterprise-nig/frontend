@@ -21,6 +21,7 @@ import {
   Building2,
   Power,
   CreditCard,
+  Receipt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BranchFull } from '../../../_actions/get-branch'
@@ -32,6 +33,7 @@ import { setBranchStatus } from '../../../_actions/set-branch-status'
 import { BRANCH_TYPES } from '@/src/schema/settings/create-branch'
 import { BranchPaymentMethod } from '@/src/schema/pos'
 import { BranchPaymentMethodsSection } from '@/src/components/settings/BranchPaymentMethodsSection'
+import { BranchReceiptFooterSection } from '@/src/components/settings/BranchReceiptFooterSection'
 import AssignManagerModal from './AssignManagerModal'
 
 const BRANCH_TYPE_LABELS: Record<string, string> = {
@@ -69,6 +71,7 @@ type Props = {
   canManageManagers?: boolean
   isBranchManager?: boolean
   initialPaymentMethods?: BranchPaymentMethod[]
+  initialFooterText?: string | null
 }
 
 function StatCard({
@@ -102,6 +105,7 @@ export default function BranchDetailClient({
   canManageManagers = false,
   isBranchManager = false,
   initialPaymentMethods = [],
+  initialFooterText = null,
 }: Props) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
@@ -201,7 +205,7 @@ export default function BranchDetailClient({
 
   const addressDisplay = [branch.addressLine1, branch.city].filter(Boolean).join(', ')
 
-  const showPaymentMethods = canManageManagers || isBranchManager
+  const canManageBranchSettings = canManageManagers || isBranchManager
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -470,7 +474,9 @@ export default function BranchDetailClient({
         )}
 
         {/* Managers + Payment Methods side by side */}
-        <div className={`grid grid-cols-1 gap-6 ${showPaymentMethods ? 'lg:grid-cols-2' : ''}`}>
+        <div
+          className={`grid grid-cols-1 gap-6 ${canManageBranchSettings ? 'lg:grid-cols-2' : ''}`}
+        >
           {/* Branch Managers */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
@@ -544,7 +550,7 @@ export default function BranchDetailClient({
           </div>
 
           {/* Payment Methods */}
-          {showPaymentMethods && (
+          {canManageBranchSettings && (
             <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
                 <CreditCard className="h-3.5 w-3.5" />
@@ -559,6 +565,22 @@ export default function BranchDetailClient({
             </div>
           )}
         </div>
+
+        {/* Receipt Footer */}
+        {canManageBranchSettings && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+              <Receipt className="h-3.5 w-3.5" />
+              Receipt Footer
+            </div>
+            <BranchReceiptFooterSection
+              branchId={branch.id}
+              branchName={branch.name}
+              initialFooterText={initialFooterText}
+              readOnly={false}
+            />
+          </div>
+        )}
       </div>
 
       {/* Deactivate / Reactivate confirmation */}

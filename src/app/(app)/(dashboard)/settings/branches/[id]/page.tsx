@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import { getBranch } from '../../_actions/get-branch'
 import { getBranchSummary } from '../../_actions/get-branch-summary'
 import { getBranchPaymentMethods } from './_actions/branch-payment-methods'
+import { getBranchReceiptFooter } from './_actions/branch-receipt-footer'
 import BranchDetailClient from './_components/BranchDetailClient'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -24,11 +25,13 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
   if (!isAdmin(session) && !isBranchManager) redirect('/403')
   if (isBranchManager && session.branchId !== id) redirect('/403')
 
-  const [branchResult, summaryResult, paymentMethodsResult] = await Promise.all([
-    getBranch(id),
-    getBranchSummary(id),
-    getBranchPaymentMethods(id),
-  ])
+  const [branchResult, summaryResult, paymentMethodsResult, receiptFooterResult] =
+    await Promise.all([
+      getBranch(id),
+      getBranchSummary(id),
+      getBranchPaymentMethods(id),
+      getBranchReceiptFooter(id),
+    ])
 
   if (!branchResult.success || !branchResult.data) notFound()
 
@@ -39,6 +42,7 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
       canManageManagers={isAdmin(session)}
       isBranchManager={isBranchManager}
       initialPaymentMethods={paymentMethodsResult.data?.data ?? []}
+      initialFooterText={receiptFooterResult.data?.data.footerText ?? null}
     />
   )
 }
