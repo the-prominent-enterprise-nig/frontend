@@ -43,7 +43,7 @@ export async function updateBranchReceiptFooter(
         errorCode: response.errorCode,
       }
     }
-    revalidatePath(`/settings/branches/${branchId}`)
+    revalidatePath('/pos/receipt-footer')
     return response
   } catch {
     return { success: false, error: 'Failed to save receipt footer' }

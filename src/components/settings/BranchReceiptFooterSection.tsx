@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from 'react'
 import { Pencil, X, Save, Eye, EyeOff } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
-import { updateBranchReceiptFooter } from '@/src/app/(app)/(dashboard)/settings/branches/[id]/_actions/branch-receipt-footer'
+import { updateBranchReceiptFooter } from '@/src/app/(app)/(dashboard)/pos/_actions/branch-receipt-footer'
 
 const MAX_LENGTH = 500
 const TOKENS = [
