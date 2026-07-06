@@ -57,8 +57,11 @@ import {
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
+  getAvailableSerialNumbers,
+  getUsers,
   submitCancellationRequest,
   getCancellationRequestStatus,
+  type SerialNumberRecord,
 } from '../_actions/pos-actions'
 import type {
   PosPaymentMethod,
@@ -88,6 +91,7 @@ interface LookupItem {
   allowDecimal?: boolean
   isBundle?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
+  isSerialTracked?: boolean
 }
 
 interface CartLine {
@@ -100,6 +104,9 @@ interface CartLine {
   uomCode?: string
   allowDecimal?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
+  isSerialTracked?: boolean
+  serialNumberId?: string
+  serialNumberLabel?: string
 }
 
 interface PaymentRow {
@@ -221,6 +228,19 @@ export default function CheckoutPage() {
   // Item search + catalog mode toggle
   const [searchQuery, setSearchQuery] = useState('')
   const [catalogMode, setCatalogMode] = useState<'items' | 'menu'>('items')
+
+  // Selling agent
+  const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
+  const [sellingAgentSearch, setSellingAgentSearch] = useState('')
+  const [sellingAgentUsers, setSellingAgentUsers] = useState<
+    { id: string; name: string; email: string }[]
+  >([])
+  const [sellingAgentOpen, setSellingAgentOpen] = useState(false)
+
+  // Serial number picker
+  const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
+  const [serialNumbers, setSerialNumbers] = useState<SerialNumberRecord[]>([])
+  const [serialLoading, setSerialLoading] = useState(false)
 
   // Customer
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
@@ -419,6 +439,24 @@ export default function CheckoutPage() {
       }
     })
   }, [])
+
+  // Load staff list for selling agent typeahead
+  useEffect(() => {
+    getUsers().then((res) => {
+      if (res.success && Array.isArray(res.data)) setSellingAgentUsers(res.data)
+    })
+  }, [])
+
+  // Fetch serial numbers when picker target changes
+  useEffect(() => {
+    if (!serialPickerTarget) return
+    setSerialLoading(true)
+    setSerialNumbers([])
+    getAvailableSerialNumbers(serialPickerTarget.itemId).then((res) => {
+      if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
+      setSerialLoading(false)
+    })
+  }, [serialPickerTarget?.itemId])
 
   // Fetch the active default accounting tax rate — controls global POS tax
   useEffect(() => {
@@ -657,6 +695,7 @@ export default function CheckoutPage() {
     setCart((prev) => {
       const existing = prev.find((l) => l.itemId === item.id)
       if (existing) {
+        if (existing.isSerialTracked) return prev
         return prev.map((l) =>
           l.itemId === item.id ? { ...l, quantity: parseFloat((l.quantity + qty).toFixed(3)) } : l
         )
@@ -668,18 +707,32 @@ export default function CheckoutPage() {
           itemName: item.name,
           sku: item.sku,
           unitPrice: item.price,
-          quantity: qty,
+          quantity: item.isSerialTracked ? 1 : qty,
           taxRate: item.taxRate ?? null,
           uomCode: item.uomCode,
           allowDecimal: item.allowDecimal ?? false,
           pricingMode: item.pricingMode ?? null,
+          isSerialTracked: item.isSerialTracked ?? false,
         },
       ]
     })
+    if (item.isSerialTracked) {
+      setSerialPickerTarget({
+        itemId: item.id,
+        itemName: item.name,
+        unitPrice: item.price,
+        quantity: 1,
+        isSerialTracked: true,
+      })
+    }
   }
 
   function setQty(itemId: string, qty: number) {
     const line = cart.find((l) => l.itemId === itemId)
+    if (line?.isSerialTracked) {
+      if (qty < 1) removeFromCart(itemId)
+      return
+    }
     const min = line?.allowDecimal ? 0.001 : 1
     if (qty < min) {
       removeFromCart(itemId)
@@ -948,6 +1001,7 @@ export default function CheckoutPage() {
           overrideManagerId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
           scPwdDiscount: scPwdData ?? undefined,
+          sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -957,6 +1011,7 @@ export default function CheckoutPage() {
             discountAmount: 0,
             taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
             pricingMode: l.pricingMode ?? undefined,
+            serialNumberId: l.serialNumberId,
           })),
         })
 
@@ -1444,6 +1499,16 @@ export default function CheckoutPage() {
                       <td className="px-4 py-2">
                         <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
                         {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                        {line.isSerialTracked && (
+                          <button
+                            onClick={() => setSerialPickerTarget(line)}
+                            className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                          >
+                            {line.serialNumberId
+                              ? `SN: ${line.serialNumberLabel}`
+                              : '⚠ Select serial'}
+                          </button>
+                        )}
                         {effectiveTaxRate != null ? (
                           <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
                             {activeTaxRate?.name ?? `VAT ${effectiveTaxRate}%`}
@@ -1685,6 +1750,85 @@ export default function CheckoutPage() {
                   <UserPlus size={12} /> New Customer
                 </button>
               </>
+            )}
+          </div>
+
+          {/* Selling Agent */}
+          <div className="border-b border-gray-100 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Selling Agent{' '}
+              <span className="font-normal normal-case tracking-normal text-gray-300">
+                — optional
+              </span>
+            </p>
+            {sellingAgent ? (
+              <div className="flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100">
+                    <User size={13} className="text-purple-600" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900">{sellingAgent.name}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSellingAgent(null)
+                    setSellingAgentSearch('')
+                  }}
+                  className="text-purple-300 hover:text-purple-600"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                  placeholder="Search staff…"
+                  value={sellingAgentSearch}
+                  onChange={(e) => {
+                    setSellingAgentSearch(e.target.value)
+                    setSellingAgentOpen(true)
+                  }}
+                  onBlur={() => setTimeout(() => setSellingAgentOpen(false), 150)}
+                  onFocus={() => sellingAgentSearch && setSellingAgentOpen(true)}
+                />
+                {sellingAgentOpen && sellingAgentSearch && (
+                  <div className="absolute z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                    {(() => {
+                      const filtered = sellingAgentUsers.filter(
+                        (u) =>
+                          u.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
+                          u.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
+                      )
+                      return filtered.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-gray-400">No staff found</p>
+                      ) : (
+                        filtered.slice(0, 8).map((u) => (
+                          <button
+                            key={u.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
+                            onMouseDown={() => {
+                              setSellingAgent({ id: u.id, name: u.name ?? u.email })
+                              setSellingAgentSearch('')
+                              setSellingAgentOpen(false)
+                            }}
+                          >
+                            <User size={11} className="shrink-0 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-gray-900">{u.name}</p>
+                              <p className="text-[10px] text-gray-400">{u.email}</p>
+                            </div>
+                          </button>
+                        ))
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -2181,6 +2325,7 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
+                cart.some((l) => l.isSerialTracked && !l.serialNumberId) ||
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
                 (needsManagerOverride && !managerOverrideApproved)
@@ -2195,17 +2340,19 @@ export default function CheckoutPage() {
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : invoiceType === 'charge' && !selectedCustomer
-                    ? 'Select a customer to charge'
-                    : invoiceType === 'cash' && balance > 0.009
-                      ? `Underpaid by ${fmt(balance)}`
-                      : invoiceType === 'cash' && loyaltyOverBalance
-                        ? 'Insufficient loyalty points'
-                        : needsManagerOverride && !managerOverrideApproved
-                          ? 'Manager override required'
-                          : invoiceType === 'charge'
-                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                            : `Confirm Sale — ${fmt(totalAmount)}`}
+                  : cart.some((l) => l.isSerialTracked && !l.serialNumberId)
+                    ? 'Select serial numbers to continue'
+                    : invoiceType === 'charge' && !selectedCustomer
+                      ? 'Select a customer to charge'
+                      : invoiceType === 'cash' && balance > 0.009
+                        ? `Underpaid by ${fmt(balance)}`
+                        : invoiceType === 'cash' && loyaltyOverBalance
+                          ? 'Insufficient loyalty points'
+                          : needsManagerOverride && !managerOverrideApproved
+                            ? 'Manager override required'
+                            : invoiceType === 'charge'
+                              ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                              : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -2492,6 +2639,72 @@ export default function CheckoutPage() {
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
             >
               <ShieldCheck size={14} /> Apply Discount
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Serial Number Picker */}
+      {serialPickerTarget && (
+        <Overlay onClose={() => setSerialPickerTarget(null)}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
+              <Tag size={18} className="text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Select Serial Number</h2>
+              <p className="text-xs text-gray-500">{serialPickerTarget.itemName}</p>
+            </div>
+          </div>
+          {serialLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={20} className="animate-spin text-purple-400" />
+            </div>
+          ) : serialNumbers.length === 0 ? (
+            <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
+              No available serial numbers in stock for this item.
+            </div>
+          ) : (
+            <div className="max-h-64 space-y-1.5 overflow-y-auto">
+              {serialNumbers.map((sn) => {
+                const isSelected =
+                  cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId === sn.id
+                return (
+                  <button
+                    key={sn.id}
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                    }`}
+                    onClick={() => {
+                      setCart((prev) =>
+                        prev.map((l) =>
+                          l.itemId === serialPickerTarget.itemId
+                            ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
+                            : l
+                        )
+                      )
+                      setSerialPickerTarget(null)
+                    }}
+                  >
+                    <span className="font-mono text-sm font-semibold text-gray-900">
+                      {sn.serialNumber}
+                    </span>
+                    {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setSerialPickerTarget(null)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              {cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId
+                ? 'Done'
+                : 'Skip for now'}
             </button>
           </div>
         </Overlay>
@@ -3182,7 +3395,7 @@ function NewCustomerModal({
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim() || undefined,
-      phone: form.phone.trim() || undefined,
+      phoneNumber: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
     })
     setSubmitting(false)

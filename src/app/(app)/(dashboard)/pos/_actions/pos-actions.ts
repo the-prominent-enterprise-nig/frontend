@@ -450,6 +450,7 @@ export async function itemLookup(
         allowDecimal,
         isBundle: Boolean(item.isBundle),
         pricingMode: (item.pricingMode as 'inclusive' | 'exclusive' | undefined) ?? undefined,
+        isSerialTracked: Boolean(item.isSerialTracked),
       }
     })
 
@@ -1073,14 +1074,23 @@ export async function searchCustomers(q: string): Promise<ApiResponse<PosCustome
   }
 }
 
+export async function getCustomerById(id: string): Promise<ApiResponse<PosCustomer>> {
+  try {
+    const result = await api.get<PosCustomer>(`/crm/customers/${id}`)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Not found' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch customer' }
+  }
+}
+
 export async function createWalkInCustomer(
   input: CreateWalkInCustomerInput
 ): Promise<ApiResponse<PosCustomer>> {
   try {
-    const result = await api.post<PosCustomer>('/crm/customers', {
-      ...input,
-      sourceChannel: 'pos_walkin',
-    })
+    const result = await api.post<PosCustomer>('/pos/customers', input)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to create customer' }
     }
@@ -1765,6 +1775,32 @@ export async function getPendingVoidRequests(): Promise<ApiResponse<PosVoidReque
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch pending void requests' }
+  }
+}
+
+export interface SerialNumberRecord {
+  id: string
+  serialNumber: string
+  currentWarehouseId?: string | null
+}
+
+export async function getAvailableSerialNumbers(
+  itemId: string
+): Promise<ApiResponse<SerialNumberRecord[]>> {
+  try {
+    type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
+    const result = await api.get<Envelope>(
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch serial numbers' }
+    }
+    const rows = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: SerialNumberRecord[] }).data ?? [])
+    return { success: true, data: rows }
+  } catch {
+    return { success: false, error: 'Failed to fetch serial numbers' }
   }
 }
 

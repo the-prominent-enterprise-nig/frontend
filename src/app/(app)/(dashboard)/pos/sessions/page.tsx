@@ -151,9 +151,6 @@ export default function SessionsPage() {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Session ID
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Branch
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
@@ -180,9 +177,6 @@ export default function SessionsPage() {
               <tbody className="divide-y divide-gray-100">
                 {sessions.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3">
-                      <span className="font-mono text-xs text-gray-500 select-all">{s.id}</span>
-                    </td>
                     <td className="px-5 py-3 text-gray-700">{s.terminal?.branch?.name ?? '—'}</td>
                     <td className="px-5 py-3 font-medium text-gray-800">
                       {s.terminal?.name ?? s.terminalId}
@@ -293,6 +287,7 @@ function OpenSessionModal({
   const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })
 
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -302,15 +297,19 @@ function OpenSessionModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
@@ -399,7 +398,9 @@ function OpenSessionModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (
@@ -590,6 +591,7 @@ function HandoverModal({
   onSubmit: (f: HandoverSessionInput) => void
 }) {
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -601,15 +603,19 @@ function HandoverModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
@@ -700,7 +706,9 @@ function HandoverModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (
