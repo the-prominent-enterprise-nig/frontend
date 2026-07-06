@@ -41,11 +41,12 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
 
   const backendPayload = {
     ...rest,
-    lines: lines.map(({ itemId, expiryDate, batchNumber, ...lineRest }) => ({
+    lines: lines.map(({ itemId, expiryDate, batchNumber, autoGenerateSerials, ...lineRest }) => ({
       ...lineRest,
       itemId,
       ...(expiryDate ? { expiryDate } : {}),
       ...(batchNumber ? { batchNumber } : {}),
+      ...(autoGenerateSerials ? { autoGenerateSerials: true } : {}),
     })),
   }
 

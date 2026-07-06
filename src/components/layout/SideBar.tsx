@@ -21,6 +21,7 @@ import {
   Contact,
   FileBarChart,
   FileSpreadsheet,
+  ClipboardCheck,
   Funnel,
   HandCoins,
   House,
@@ -152,6 +153,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/warehouses',
         icon: Warehouse,
         requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+      },
+      {
+        label: 'Unit Documents',
+        href: '/inventory/uds',
+        icon: ClipboardCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
       },
       {
         label: 'Reports',

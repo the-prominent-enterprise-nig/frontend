@@ -7,6 +7,7 @@ const ReceiveStockLineSchema = z.object({
   batchNumber: z.string().optional(),
   expiryDate: z.string().optional(),
   qualityHold: z.boolean().optional(),
+  autoGenerateSerials: z.boolean().optional(),
   notes: z.string().optional(),
 })
 

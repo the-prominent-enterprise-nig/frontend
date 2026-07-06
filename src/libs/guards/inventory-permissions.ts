@@ -66,6 +66,10 @@ export const INVENTORY_PERMISSIONS = {
   SERIAL_READ: 'inventory:serial:read',
   SERIAL_MANAGE: 'inventory:serial:manage',
 
+  // ── Unit Document Sheets (UDS) ─────────────────────────────────────────────
+  UDS_READ: 'inventory:uds:read',
+  UDS_MANAGE: 'inventory:uds:manage',
+
   // ── Expiry (Stock Controller) ──────────────────────────────────────────────
   EXPIRY_READ: 'inventory:expiry:read',
   EXPIRY_MANAGE: 'inventory:expiry:manage',
@@ -185,6 +189,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:batch:manage': 'Assign and manage batch numbers',
   'inventory:serial:read': 'View serial number records',
   'inventory:serial:manage': 'Assign and manage serial numbers',
+  'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
+  'inventory:uds:manage': 'Issue and update Unit Document Sheets',
   'inventory:expiry:read': 'View expiry-tracked stock',
   'inventory:expiry:manage': 'Manage expiry dates and FEFO picking',
   'inventory:cycle-count:read': 'View cycle count schedules',
