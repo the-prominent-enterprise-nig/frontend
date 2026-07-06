@@ -16,6 +16,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import CreateUserModal from './CreateUserModal'
 import AssignRoleModal from './AssignRoleModal'
+import AssignBranchModal from './AssignBranchModal'
 import EditUserModal from './EditUserModal'
 import UserDetailDrawer from './UserDetailDrawer'
 import { type User, type Role } from '@/src/schema/settings/list'
@@ -56,6 +57,7 @@ export default function UsersSection({
   const [search, setSearch] = useState(currentSearch)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [assignTarget, setAssignTarget] = useState<User | null>(null)
+  const [assignBranchTarget, setAssignBranchTarget] = useState<User | null>(null)
   const [editTarget, setEditTarget] = useState<User | null>(null)
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [drawerUser, setDrawerUser] = useState<User | null>(null)
@@ -176,6 +178,12 @@ export default function UsersSection({
 
   const handleAssignRole = (user: User) => {
     setAssignTarget(user)
+    setOpenMenu(null)
+    setDrawerUser(null)
+  }
+
+  const handleAssignBranch = (user: User) => {
+    setAssignBranchTarget(user)
     setOpenMenu(null)
     setDrawerUser(null)
   }
@@ -356,6 +364,14 @@ export default function UsersSection({
                                     </button>
                                     <button
                                       type="button"
+                                      onClick={() => handleAssignBranch(user)}
+                                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
+                                    >
+                                      <Building2 className="h-4 w-4" />
+                                      Manage Branches
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleToggleActive(user)}
                                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-50"
                                     >
@@ -452,6 +468,15 @@ export default function UsersSection({
         />
       )}
 
+      {assignBranchTarget && (
+        <AssignBranchModal
+          user={assignBranchTarget}
+          availableBranches={branches}
+          isOpen={true}
+          onClose={() => setAssignBranchTarget(null)}
+        />
+      )}
+
       {editTarget && (
         <EditUserModal user={editTarget} isOpen={true} onClose={() => setEditTarget(null)} />
       )}
@@ -462,6 +487,7 @@ export default function UsersSection({
         isSelf={drawerUser?.id === currentUserId}
         onEdit={handleEdit}
         onAssignRole={handleAssignRole}
+        onAssignBranch={handleAssignBranch}
         onToggleActive={handleToggleActive}
         onDelete={handleDelete}
         onResetPassword={handleResetPassword}
