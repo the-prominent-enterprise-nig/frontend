@@ -18,6 +18,8 @@ export const PROCUREMENT_PERMISSIONS = {
   PO_CANCEL: 'procurement:purchase-orders:cancel',
   GR_READ: 'procurement:goods-receipts:read',
   GR_CREATE: 'procurement:goods-receipts:create',
+  QUOTA_READ: 'procurement:quotas:read',
+  QUOTA_MANAGE: 'procurement:quotas:manage',
   WILDCARD: 'procurement:*',
 } as const
 
