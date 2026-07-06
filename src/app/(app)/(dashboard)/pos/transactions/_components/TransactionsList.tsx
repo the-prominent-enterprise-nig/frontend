@@ -22,7 +22,12 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react'
-import { getReceipt, logReprintEvent, getTransaction } from '../../_actions/pos-actions'
+import {
+  getReceipt,
+  logReprintEvent,
+  getTransaction,
+  getCustomerById,
+} from '../../_actions/pos-actions'
 import type { PosTransaction, PosVoidRequest } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { type SessionUser, can } from '@/src/libs/guards/permission'
@@ -380,6 +385,18 @@ function TransactionDetail({
   })
   const tx: PosTransaction = detailRes?.data ?? summary
 
+  const { data: customerRes } = useQuery({
+    queryKey: ['pos-transaction-customer', tx.customerId],
+    queryFn: () => getCustomerById(tx.customerId!),
+    enabled: !!tx.customerId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const customerName = customerRes?.data
+    ? customerRes.data.name ||
+      `${customerRes.data.firstName ?? ''} ${customerRes.data.lastName ?? ''}`.trim() ||
+      null
+    : null
+
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
@@ -584,7 +601,14 @@ function TransactionDetail({
                     <tbody className="divide-y divide-gray-100">
                       {tx.lines.map((l) => (
                         <tr key={l.id}>
-                          <td className="py-1.5 text-gray-800">{l.itemName}</td>
+                          <td className="py-1.5 text-gray-800">
+                            {l.itemName}
+                            {l.serialNumber && (
+                              <p className="font-mono text-[10px] text-purple-500">
+                                SN: {l.serialNumber}
+                              </p>
+                            )}
+                          </td>
                           <td className="py-1.5 text-right text-gray-600">{l.quantity}</td>
                           <td className="py-1.5 text-right text-gray-600">
                             {formatCurrency(l.unitPrice)}
@@ -645,6 +669,8 @@ function TransactionDetail({
                 ) : tx.taxTotal > 0 ? (
                   <Row label="Tax" value={formatCurrency(tx.taxTotal)} />
                 ) : null}
+                {customerName && <Row label="Customer" value={customerName} />}
+                {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
                 </div>

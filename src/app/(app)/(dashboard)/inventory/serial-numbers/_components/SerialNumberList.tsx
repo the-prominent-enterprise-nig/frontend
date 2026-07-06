@@ -206,7 +206,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         )}
                       </td>
                       <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                        {serial.warehouse?.code ?? '—'}
+                        {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span

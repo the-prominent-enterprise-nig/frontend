@@ -168,6 +168,21 @@ export const ItemSummarySchema = z.object({
   subgroup: classificationRefSchema,
   brand: classificationRefSchema,
   type: classificationRefSchema,
+  isBatchTracked: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return undefined
+  }, z.boolean().optional()),
+  isSerialTracked: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return undefined
+  }, z.boolean().optional()),
+  isExpiryTracked: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return undefined
+  }, z.boolean().optional()),
   isBundle: z.preprocess((v) => {
     if (v === true || v === 'true' || v === 1) return true
     if (v === false || v === 'false' || v === 0) return false
