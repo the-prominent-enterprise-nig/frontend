@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Pencil,
+  ChevronDown,
 } from 'lucide-react'
 import {
   getReceiptBranding,
@@ -17,8 +18,27 @@ import {
   updateReceiptBranding,
   type ReceiptBranding,
 } from '../_actions/pos-actions'
+import { useBranches } from '../_hooks/usePos'
+import {
+  getBranchReceiptFooter,
+  updateBranchReceiptFooter,
+} from '../_actions/branch-receipt-footer'
+
+const FOOTER_MAX_LENGTH = 500
+const FOOTER_TOKENS = [
+  { token: '{{branch_name}}', label: 'Branch name' },
+  { token: '{{date}}', label: 'Date' },
+]
+
+function resolveFooterTokens(template: string, branchName: string) {
+  const today = new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })
+  return template.replace(/{{\s*branch_name\s*}}/g, branchName).replace(/{{\s*date\s*}}/g, today)
+}
 
 export default function ReceiptBrandingPage() {
+  const { data: branchesData } = useBranches()
+  const branches = branchesData?.data ?? []
+
   const [branding, setBranding] = useState<ReceiptBranding | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -30,7 +50,13 @@ export default function ReceiptBrandingPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [headerText, setHeaderText] = useState('')
 
+  const [branchId, setBranchId] = useState('')
+  const [footerText, setFooterText] = useState('')
+  const [savedFooterText, setSavedFooterText] = useState<string | null>(null)
+  const [footerLoading, setFooterLoading] = useState(false)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const footerTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     getReceiptBranding().then((res) => {
@@ -44,17 +70,55 @@ export default function ReceiptBrandingPage() {
     })
   }, [])
 
+  useEffect(() => {
+    if (!branchId && branches.length > 0) {
+      setBranchId(branches[0].id)
+    }
+  }, [branches, branchId])
+
+  useEffect(() => {
+    if (!branchId) return
+    setFooterLoading(true)
+    getBranchReceiptFooter(branchId).then((res) => {
+      const text = res.success ? (res.data?.data.footerText ?? null) : null
+      setSavedFooterText(text)
+      setFooterText(text ?? '')
+      setFooterLoading(false)
+    })
+  }, [branchId])
+
+  const selectedBranch = branches.find((b) => b.id === branchId)
+
   function handleEdit() {
     setError('')
     setEditing(true)
   }
 
   function handleCancel() {
-    if (!branding) return
-    setLogoUrl(branding.receiptLogoUrl)
-    setHeaderText(branding.receiptHeaderText ?? '')
+    if (branding) {
+      setLogoUrl(branding.receiptLogoUrl)
+      setHeaderText(branding.receiptHeaderText ?? '')
+    }
+    setFooterText(savedFooterText ?? '')
     setError('')
     setEditing(false)
+  }
+
+  function insertFooterToken(token: string) {
+    const el = footerTextareaRef.current
+    if (!el) {
+      setFooterText((prev) => (prev + token).slice(0, FOOTER_MAX_LENGTH))
+      return
+    }
+    const start = el.selectionStart ?? footerText.length
+    const end = el.selectionEnd ?? footerText.length
+    const next = footerText.slice(0, start) + token + footerText.slice(end)
+    setFooterText(next.slice(0, FOOTER_MAX_LENGTH))
+    requestAnimationFrame(() => {
+      el.focus()
+      const cursor = start + token.length
+      el.setSelectionRange(cursor, cursor)
+    })
   }
 
   async function handleLogoUpload(file: File) {
@@ -97,17 +161,29 @@ export default function ReceiptBrandingPage() {
   async function handleSave() {
     setSaving(true)
     setError('')
-    const res = await updateReceiptBranding({
-      headerText: headerText || undefined,
-    })
+
+    const [brandingRes, footerRes] = await Promise.all([
+      updateReceiptBranding({ headerText: headerText || undefined }),
+      branchId
+        ? updateBranchReceiptFooter(branchId, footerText.trim() ? footerText : null)
+        : Promise.resolve({ success: true as const }),
+    ])
+
     setSaving(false)
-    if (!res.success) {
-      setError(res.error ?? 'Failed to save branding.')
+
+    if (!brandingRes.success) {
+      setError(brandingRes.error ?? 'Failed to save branding.')
       return
     }
-    const saved = res.data ?? null
+    if (!footerRes.success) {
+      setError(footerRes.error ?? 'Failed to save receipt footer.')
+      return
+    }
+
+    const saved = brandingRes.data ?? null
     setBranding(saved)
     if (saved) setHeaderText(saved.receiptHeaderText ?? '')
+    setSavedFooterText(footerText.trim() ? footerText : null)
     setEditing(false)
     showSuccess()
   }
@@ -127,6 +203,10 @@ export default function ReceiptBrandingPage() {
 
   const savedLines = (branding?.receiptHeaderText ?? '').split('\n').filter(Boolean)
   const previewLines = headerText.split('\n').filter(Boolean)
+  const displayedFooter = editing ? footerText : (savedFooterText ?? '')
+  const footerPreview = displayedFooter
+    ? resolveFooterTokens(displayedFooter, selectedBranch?.name ?? 'Your Business')
+    : 'Thank you for your purchase!'
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
@@ -140,7 +220,7 @@ export default function ReceiptBrandingPage() {
             <div>
               <h1 className="text-xl font-bold text-gray-900">Receipt Branding</h1>
               <p className="text-sm text-gray-500">
-                Customize the logo and header shown on receipts.
+                Customize the logo, header, and per-branch footer shown on receipts.
               </p>
             </div>
           </div>
@@ -241,6 +321,63 @@ export default function ReceiptBrandingPage() {
                 <p className="mt-1 text-right text-[10px] text-gray-400">{headerText.length}/200</p>
               </div>
 
+              {/* Footer text (per branch) */}
+              <div className="border-t border-gray-100 pt-5">
+                <p className="mb-1 text-sm font-semibold text-gray-700">Receipt Footer</p>
+                <p className="mb-3 text-xs text-gray-500">
+                  Shown at the bottom of every receipt for the selected branch.
+                </p>
+
+                <div className="relative mb-3">
+                  <select
+                    value={branchId}
+                    onChange={(e) => setBranchId(e.target.value)}
+                    className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-300"
+                  >
+                    {branches.length === 0 && <option>No branches found</option>}
+                    {branches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    size={14}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  />
+                </div>
+
+                <textarea
+                  ref={footerTextareaRef}
+                  value={footerText}
+                  maxLength={FOOTER_MAX_LENGTH}
+                  rows={3}
+                  disabled={footerLoading}
+                  placeholder="Thank you for shopping at {{branch_name}}!"
+                  onChange={(e) => setFooterText(e.target.value)}
+                  className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-purple-400 focus:outline-none focus:ring-1 focus:ring-purple-300 disabled:opacity-50"
+                />
+                <div className="mt-1 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    {FOOTER_TOKENS.map((t) => (
+                      <button
+                        key={t.token}
+                        type="button"
+                        onClick={() => insertFooterToken(t.token)}
+                        disabled={footerLoading}
+                        title={`Insert ${t.label.toLowerCase()}`}
+                        className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-200 disabled:opacity-50"
+                      >
+                        {t.token}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    {footerText.length}/{FOOTER_MAX_LENGTH}
+                  </p>
+                </div>
+              </div>
+
               {/* Edit actions */}
               <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
                 <button
@@ -292,6 +429,39 @@ export default function ReceiptBrandingPage() {
                   </div>
                 ) : (
                   <p className="text-sm text-gray-400">No header text set</p>
+                )}
+              </div>
+              <div className="border-t border-gray-100 pt-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Receipt Footer
+                  </p>
+                  {branches.length > 0 && (
+                    <div className="relative">
+                      <select
+                        value={branchId}
+                        onChange={(e) => setBranchId(e.target.value)}
+                        className="appearance-none rounded-lg border border-gray-200 bg-white py-1 pl-2 pr-6 text-xs text-gray-700 focus:border-purple-400 focus:outline-none"
+                      >
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={12}
+                        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400"
+                      />
+                    </div>
+                  )}
+                </div>
+                {footerLoading ? (
+                  <Loader2 size={14} className="animate-spin text-gray-300" />
+                ) : savedFooterText ? (
+                  <p className="whitespace-pre-line text-sm text-gray-700">{savedFooterText}</p>
+                ) : (
+                  <p className="text-sm text-gray-400">No footer text set for this branch</p>
                 )}
               </div>
             </div>
@@ -352,8 +522,8 @@ export default function ReceiptBrandingPage() {
                   <span>Total</span>
                   <span>₱350.00</span>
                 </div>
-                <p className="mt-3 text-center text-[9px] text-gray-400">
-                  Thank you for your purchase!
+                <p className="mt-3 whitespace-pre-line text-center text-[9px] text-gray-400">
+                  {footerPreview}
                 </p>
               </div>
             </div>

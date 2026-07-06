@@ -15,7 +15,6 @@ import {
   Settings,
   Palette,
   CreditCard,
-  Receipt,
 } from 'lucide-react'
 
 export const metadata = { title: 'POS Settings' }
@@ -32,12 +31,6 @@ const sections = [
     description: 'Upload your business logo and set brand colors on receipts.',
     href: '/pos/receipt-branding',
     icon: Palette,
-  },
-  {
-    label: 'Receipt Footer',
-    description: 'Set a custom footer message per branch on printed and digital receipts.',
-    href: '/pos/receipt-footer',
-    icon: Receipt,
   },
   {
     label: 'Terminals',
