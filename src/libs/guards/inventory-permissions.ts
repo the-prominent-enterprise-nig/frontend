@@ -112,6 +112,11 @@ export const INVENTORY_PERMISSIONS = {
   RESERVATIONS_CREATE: 'inventory:reservations:create',
   RESERVATIONS_RELEASE: 'inventory:reservations:release',
 
+  // ── Stock Requisitions ─────────────────────────────────────────────────────
+  STOCK_REQUISITIONS_READ: 'inventory:stock-requisitions:read',
+  STOCK_REQUISITIONS_CREATE: 'inventory:stock-requisitions:create',
+  STOCK_REQUISITIONS_APPROVE: 'inventory:stock-requisitions:approve',
+
   // ── Negative Stock Policy (INV-36) ─────────────────────────────────────────
   NEGATIVE_STOCK_READ: 'inventory:negative-stock:read',
   NEGATIVE_STOCK_CONFIGURE: 'inventory:negative-stock:configure',
@@ -228,6 +233,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:attributes:manage': 'Create and manage custom item attributes',
   'inventory:projection:read': 'View forward stock projection',
   'inventory:*': 'Wildcard full Inventory access',
+  'inventory:stock-requisitions:read': 'View branch stock requisitions',
+  'inventory:stock-requisitions:create': 'Create branch stock requisitions',
+  'inventory:stock-requisitions:approve': 'Approve or reject branch stock requisitions',
 }
 
 export type InventoryPermission = (typeof INVENTORY_PERMISSIONS)[keyof typeof INVENTORY_PERMISSIONS]
