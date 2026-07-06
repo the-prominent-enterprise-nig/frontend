@@ -3,10 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 
-export async function approveBsr(
-  id: string,
-  reservationDays?: number
-): Promise<ApiResponse<void>> {
+export async function approveBsr(id: string, reservationDays?: number): Promise<ApiResponse<void>> {
   if (!id) return { success: false, error: 'Invalid ID', message: 'ID is required' }
 
   const body: Record<string, unknown> = {}

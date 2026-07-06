@@ -4,10 +4,7 @@ import { useEffect } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2 } from 'lucide-react'
-import {
-  CreateBsrFormSchema,
-  CreateBsrFormValues,
-} from '@/src/schema/inventory/stock-requisitions'
+import { CreateBsrFormSchema, CreateBsrFormValues } from '@/src/schema/inventory/stock-requisitions'
 import type { ApiResponse } from '@/src/libs/api/client'
 
 type Branch = { id: string; name: string }

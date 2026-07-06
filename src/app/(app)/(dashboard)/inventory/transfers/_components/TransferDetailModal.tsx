@@ -88,11 +88,16 @@ function printTransferDocument(data: unknown) {
     .join('')
 
   const driverFields: string[] = []
-  if (d.driverName) driverFields.push(`<div><p class="label">Driver</p><p>${d.driverName}</p></div>`)
-  if (d.driverPhone) driverFields.push(`<div><p class="label">Phone</p><p>${d.driverPhone}</p></div>`)
-  if (d.driverLicense) driverFields.push(`<div><p class="label">License</p><p>${d.driverLicense}</p></div>`)
-  if (d.vehiclePlate) driverFields.push(`<div><p class="label">Plate</p><p>${d.vehiclePlate}</p></div>`)
-  if (d.carrierName) driverFields.push(`<div><p class="label">Carrier</p><p>${d.carrierName}</p></div>`)
+  if (d.driverName)
+    driverFields.push(`<div><p class="label">Driver</p><p>${d.driverName}</p></div>`)
+  if (d.driverPhone)
+    driverFields.push(`<div><p class="label">Phone</p><p>${d.driverPhone}</p></div>`)
+  if (d.driverLicense)
+    driverFields.push(`<div><p class="label">License</p><p>${d.driverLicense}</p></div>`)
+  if (d.vehiclePlate)
+    driverFields.push(`<div><p class="label">Plate</p><p>${d.vehiclePlate}</p></div>`)
+  if (d.carrierName)
+    driverFields.push(`<div><p class="label">Carrier</p><p>${d.carrierName}</p></div>`)
 
   win.document.write(`<!DOCTYPE html><html><head><title>${doc.documentNumber}</title><style>
     body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
@@ -109,12 +114,16 @@ function printTransferDocument(data: unknown) {
     <p class="label">Stock Transfer</p>
     <h1>${doc.documentNumber}</h1>
     <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
-    ${doc.enterprise ? `<h2>Enterprise</h2><div class="meta">
+    ${
+      doc.enterprise
+        ? `<h2>Enterprise</h2><div class="meta">
       <div><p class="label">Company</p><p>${doc.enterprise.companyLegalName}</p></div>
       ${doc.enterprise.companyTradingName ? `<div><p class="label">Trading Name</p><p>${doc.enterprise.companyTradingName}</p></div>` : ''}
       ${doc.enterprise.registrationNumber ? `<div><p class="label">Reg. No.</p><p>${doc.enterprise.registrationNumber}</p></div>` : ''}
       ${doc.enterprise.taxId ? `<div><p class="label">Tax ID</p><p>${doc.enterprise.taxId}</p></div>` : ''}
-    </div>` : ''}
+    </div>`
+        : ''
+    }
     ${driverFields.length > 0 ? `<h2>Logistics</h2><div class="meta">${driverFields.join('')}</div>` : ''}
     <h2>Items</h2>
     <table>
@@ -292,12 +301,8 @@ export default function TransferDetailModal({
                 <div>
                   <p className="mb-2 text-sm font-medium text-zinc-700">Logistics</p>
                   <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
-                    {transfer.driverName && (
-                      <InfoRow label="Driver" value={transfer.driverName} />
-                    )}
-                    {transfer.driverPhone && (
-                      <InfoRow label="Phone" value={transfer.driverPhone} />
-                    )}
+                    {transfer.driverName && <InfoRow label="Driver" value={transfer.driverName} />}
+                    {transfer.driverPhone && <InfoRow label="Phone" value={transfer.driverPhone} />}
                     {transfer.driverLicense && (
                       <InfoRow label="License" value={transfer.driverLicense} />
                     )}
@@ -401,9 +406,7 @@ export default function TransferDetailModal({
                   <Controller
                     name="expectedArrival"
                     control={dispatchForm.control}
-                    render={({ field }) => (
-                      <input {...field} type="date" className={fieldClass} />
-                    )}
+                    render={({ field }) => <input {...field} type="date" className={fieldClass} />}
                   />
                 </div>
 
@@ -553,13 +556,7 @@ export default function TransferDetailModal({
                   <Controller
                     name="receivedDate"
                     control={receiveForm.control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        type="date"
-                        className={fieldClass}
-                      />
-                    )}
+                    render={({ field }) => <input {...field} type="date" className={fieldClass} />}
                   />
                   {receiveForm.formState.errors.receivedDate && (
                     <p className="mt-1 text-xs text-red-600">

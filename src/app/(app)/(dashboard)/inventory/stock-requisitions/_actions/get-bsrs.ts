@@ -8,5 +8,8 @@ export async function getBsrs(params?: {
   status?: string
   branchId?: string
 }): Promise<ApiResponse<unknown>> {
-  return api.get('/inventory/stock-requisitions', params as Record<string, string | number | boolean | undefined>)
+  return api.get(
+    '/inventory/stock-requisitions',
+    params as Record<string, string | number | boolean | undefined>
+  )
 }

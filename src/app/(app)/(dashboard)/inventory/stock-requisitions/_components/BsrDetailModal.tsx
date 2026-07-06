@@ -23,17 +23,15 @@ import {
 } from '@/src/schema/inventory/stock-requisitions'
 import type { ApiResponse } from '@/src/libs/api/client'
 
-const STATUS_CONFIG: Record<
-  BsrStatus,
-  { label: string; color: string; icon: React.ElementType }
-> = {
-  draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
-  submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700', icon: ClipboardCheck },
-  approved: { label: 'Approved', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: XCircle },
-  cancelled: { label: 'Cancelled', color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
-  fulfilled: { label: 'Fulfilled', color: 'bg-purple-100 text-purple-700', icon: Package },
-}
+const STATUS_CONFIG: Record<BsrStatus, { label: string; color: string; icon: React.ElementType }> =
+  {
+    draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
+    submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700', icon: ClipboardCheck },
+    approved: { label: 'Approved', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+    rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: XCircle },
+    cancelled: { label: 'Cancelled', color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
+    fulfilled: { label: 'Fulfilled', color: 'bg-purple-100 text-purple-700', icon: Package },
+  }
 
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
@@ -136,9 +134,7 @@ export default function BsrDetailModal({
           <div className="flex items-center gap-3">
             <div>
               <h2 className="text-lg font-semibold text-zinc-900">Requisition Details</h2>
-              {bsr && (
-                <p className="mt-0.5 font-mono text-xs text-zinc-400">{bsr.code}</p>
-              )}
+              {bsr && <p className="mt-0.5 font-mono text-xs text-zinc-400">{bsr.code}</p>}
             </div>
             {bsr && (
               <span

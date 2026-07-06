@@ -1,7 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, X, ClipboardCheck, CheckCircle, Clock, XCircle, Package } from 'lucide-react'
+import {
+  Plus,
+  RefreshCw,
+  X,
+  ClipboardCheck,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Package,
+} from 'lucide-react'
 import { useBsrManager } from '../_hooks/useBsrManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -10,17 +19,15 @@ import type { BsrStatus, BsrSummary } from '@/src/schema/inventory/stock-requisi
 import CreateBsrModal from './CreateBsrModal'
 import BsrDetailModal from './BsrDetailModal'
 
-const STATUS_CONFIG: Record<
-  BsrStatus,
-  { label: string; color: string; icon: React.ElementType }
-> = {
-  draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
-  submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700', icon: ClipboardCheck },
-  approved: { label: 'Approved', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: XCircle },
-  cancelled: { label: 'Cancelled', color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
-  fulfilled: { label: 'Fulfilled', color: 'bg-purple-100 text-purple-700', icon: Package },
-}
+const STATUS_CONFIG: Record<BsrStatus, { label: string; color: string; icon: React.ElementType }> =
+  {
+    draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
+    submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700', icon: ClipboardCheck },
+    approved: { label: 'Approved', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+    rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: XCircle },
+    cancelled: { label: 'Cancelled', color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
+    fulfilled: { label: 'Fulfilled', color: 'bg-purple-100 text-purple-700', icon: Package },
+  }
 
 export default function BsrList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_CREATE)

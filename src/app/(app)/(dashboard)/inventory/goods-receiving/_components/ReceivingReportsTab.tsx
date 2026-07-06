@@ -1,7 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, Loader2, Printer } from 'lucide-react'
+import {
+  X,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  RefreshCw,
+  Loader2,
+  Printer,
+} from 'lucide-react'
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { getReceivingDocument } from '../_actions/get-receiving-document'
@@ -39,13 +47,17 @@ function printDocument(data: unknown) {
     <p class="label">Goods Receipt Note</p>
     <h1>${doc.documentNumber}</h1>
     <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
-    ${doc.enterprise ? `<h2>Enterprise</h2><div class="meta">
+    ${
+      doc.enterprise
+        ? `<h2>Enterprise</h2><div class="meta">
       <div><p class="label">Company</p><p>${doc.enterprise.companyLegalName}</p></div>
       ${doc.enterprise.companyTradingName ? `<div><p class="label">Trading Name</p><p>${doc.enterprise.companyTradingName}</p></div>` : ''}
       ${doc.enterprise.registrationNumber ? `<div><p class="label">Reg. No.</p><p>${doc.enterprise.registrationNumber}</p></div>` : ''}
       ${doc.enterprise.taxId ? `<div><p class="label">Tax ID</p><p>${doc.enterprise.taxId}</p></div>` : ''}
       ${doc.enterprise.contactPerson ? `<div><p class="label">Contact</p><p>${doc.enterprise.contactPerson}</p></div>` : ''}
-    </div>` : ''}
+    </div>`
+        : ''
+    }
     <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`)
   win.document.close()
@@ -104,7 +116,11 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
             disabled={isPrinting}
             className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
           >
-            {isPrinting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+            {isPrinting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Printer className="h-3.5 w-3.5" />
+            )}
             Print
           </button>
           <button

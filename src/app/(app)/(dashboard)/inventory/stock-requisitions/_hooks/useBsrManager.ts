@@ -97,7 +97,11 @@ export function useBsrManager() {
     mutationFn: (id: string) => submitBsr(id),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Requisition submitted', description: result.message, status: 'success' })
+        showToast({
+          title: 'Requisition submitted',
+          description: result.message,
+          status: 'success',
+        })
         queryClient.invalidateQueries({ queryKey: ['inventory-bsrs'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-bsr', selectedBsr?.id] })
         if (selectedBsr) {
@@ -159,7 +163,11 @@ export function useBsrManager() {
     mutationFn: (id: string) => cancelBsr(id),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Requisition cancelled', description: result.message, status: 'success' })
+        showToast({
+          title: 'Requisition cancelled',
+          description: result.message,
+          status: 'success',
+        })
         queryClient.invalidateQueries({ queryKey: ['inventory-bsrs'] })
         setSelectedBsr(null)
       } else {
@@ -176,7 +184,11 @@ export function useBsrManager() {
     mutationFn: (id: string) => fulfillBsr(id),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Requisition fulfilled', description: result.message, status: 'success' })
+        showToast({
+          title: 'Requisition fulfilled',
+          description: result.message,
+          status: 'success',
+        })
         queryClient.invalidateQueries({ queryKey: ['inventory-bsrs'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-bsr', selectedBsr?.id] })
         if (selectedBsr) {
