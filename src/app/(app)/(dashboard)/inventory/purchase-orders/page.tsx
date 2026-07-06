@@ -20,9 +20,13 @@ export default async function PurchaseOrdersPage() {
     redirect('/403')
   }
 
+  const canManageQuotas =
+    can(session, PROCUREMENT_PERMISSIONS.QUOTA_MANAGE) ||
+    can(session, PROCUREMENT_PERMISSIONS.WILDCARD)
+
   return (
     <div className="min-h-screen bg-zinc-50">
-      <PurchaseOrderList />
+      <PurchaseOrderList canManageQuotas={canManageQuotas} />
     </div>
   )
 }
