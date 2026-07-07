@@ -75,7 +75,7 @@ export function PosNav() {
   const activeGroup = GROUPS.find((g) => g.paths.includes(pathname)) ?? GROUPS[0]
 
   return (
-    <nav className="flex items-center overflow-x-auto border-b border-gray-200 bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0">
+    <nav className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {activeGroup.items.map((item) => {
         const { label, href, exact } = item
         const active = exact ? pathname === href : pathname.startsWith(href)
