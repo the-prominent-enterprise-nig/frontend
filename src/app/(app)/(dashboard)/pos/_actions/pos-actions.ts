@@ -86,9 +86,11 @@ const TAGS = {
   cancellationRequest: (id: string) => `pos-cancellation-request-${id}`,
 }
 
-export async function getTerminals(): Promise<ApiResponse<PosTerminal[]>> {
+export async function getTerminals(filters?: {
+  branchId?: string
+}): Promise<ApiResponse<PosTerminal[]>> {
   try {
-    const result = await api.get<PosTerminal[]>('/pos/terminals')
+    const result = await api.get<PosTerminal[]>('/pos/terminals', filters as Record<string, string>)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch terminals' }
     }
@@ -159,6 +161,7 @@ export async function deleteTerminal(id: string): Promise<ApiResponse<void>> {
 
 export async function getSessions(filters?: {
   terminalId?: string
+  branchId?: string
   cashierId?: string
   status?: string
   dateFrom?: string
@@ -256,6 +259,7 @@ export async function getSalesSummary(filters?: {
 
 export async function getTransactions(filters?: {
   sessionId?: string
+  branchId?: string
   transactionType?: string
   customerId?: string
   transactionNumber?: string
@@ -825,11 +829,18 @@ export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>
 
 // â”€â”€â”€ Parked Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export async function getParkedSales(terminalId?: string): Promise<ApiResponse<ParkedSale[]>> {
+export async function getParkedSales(
+  terminalId?: string,
+  branchId?: string
+): Promise<ApiResponse<ParkedSale[]>> {
   try {
+    const params = {
+      ...(terminalId && { terminalId }),
+      ...(branchId && { branchId }),
+    }
     const result = await api.get<ParkedSale[]>(
       '/pos/parked-sales',
-      terminalId ? { terminalId } : undefined,
+      Object.keys(params).length ? params : undefined,
       { tags: [TAGS.parkedSales] }
     )
     if (!result.success || !result.data) {
@@ -1619,6 +1630,7 @@ export async function getEnabledBranchPaymentMethods(
 export interface ReceiptBranding {
   receiptLogoUrl: string | null
   receiptHeaderText: string | null
+  receiptFooterText: string | null
 }
 
 export async function getReceiptBranding(): Promise<ApiResponse<ReceiptBranding>> {
@@ -1671,6 +1683,7 @@ export async function uploadReceiptLogo(
 export async function updateReceiptBranding(input: {
   logoUrl?: string | null
   headerText?: string
+  footerText?: string | null
 }): Promise<ApiResponse<ReceiptBranding>> {
   try {
     const result = await api.patch<{ data: ReceiptBranding }>('/pos/receipt-config/branding', input)
@@ -1724,9 +1737,14 @@ export async function getVoidRequests(
   }
 }
 
-export async function getVoidRequestHistory(): Promise<ApiResponse<PosVoidRequest[]>> {
+export async function getVoidRequestHistory(
+  branchId?: string
+): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>('/pos/transactions/void-requests/history')
+    const result = await api.get<PosVoidRequest[]>(
+      '/pos/transactions/void-requests/history',
+      branchId ? { branchId } : undefined
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to load void request history' }
     }
@@ -1752,11 +1770,13 @@ export async function getBranchVoidRequests(): Promise<ApiResponse<PosVoidReques
   }
 }
 
-export async function getPendingVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
+export async function getPendingVoidRequests(
+  branchId?: string
+): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
     const result = await api.get<PosVoidRequest[]>(
       '/pos/transactions/void-requests/pending',
-      undefined,
+      branchId ? { branchId } : undefined,
       { tags: [TAGS.voidRequests] }
     )
     if (!result.success || !result.data) {
@@ -1828,13 +1848,13 @@ export async function submitCancellationRequest(
   }
 }
 
-export async function getPendingCancellationRequests(): Promise<
-  ApiResponse<PosCancellationRequest[]>
-> {
+export async function getPendingCancellationRequests(
+  branchId?: string
+): Promise<ApiResponse<PosCancellationRequest[]>> {
   try {
     const result = await api.get<PosCancellationRequest[]>(
       '/pos/cancellation-requests/pending',
-      undefined,
+      branchId ? { branchId } : undefined,
       { tags: [TAGS.cancellationRequests] }
     )
     if (!result.success || !result.data) {

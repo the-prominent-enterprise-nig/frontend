@@ -18,6 +18,8 @@ import {
 import { getActivePosConfig, getTransactions, addToOrderQueue } from '../_actions/pos-actions'
 import { KdsApi, type KdsOrder, type KdsLine } from '@/src/libs/data/KdsData'
 import { useQueueSocket } from '@/src/libs/hooks/useQueueSocket'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -170,6 +172,26 @@ function OrderCard({ order, onToPrepare, onServe, onErase }: OrderCardProps) {
   )
 }
 
+// ─── Order Card Skeleton ────────────────────────────────────────────────────
+
+function OrderCardSkeleton() {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Skeleton className="w-11 h-11 rounded-xl shrink-0" />
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <Skeleton className="h-3.5 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+      <div className="border-t border-gray-100 bg-gray-50 px-4 py-2.5 space-y-1.5">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-4/5" />
+      </div>
+    </div>
+  )
+}
+
 // ─── Board Column ─────────────────────────────────────────────────────────────
 
 function BoardColumn({
@@ -179,6 +201,7 @@ function BoardColumn({
   headerClass,
   emptyText,
   action,
+  loading,
   children,
 }: {
   title: string
@@ -187,6 +210,7 @@ function BoardColumn({
   headerClass: string
   emptyText: string
   action?: React.ReactNode
+  loading?: boolean
   children?: React.ReactNode
 }) {
   return (
@@ -202,7 +226,12 @@ function BoardColumn({
         {action}
       </div>
       <div className="flex-1 overflow-y-auto space-y-3">
-        {count === 0 ? (
+        {loading ? (
+          <>
+            <OrderCardSkeleton />
+            <OrderCardSkeleton />
+          </>
+        ) : count === 0 ? (
           <div className="flex h-32 items-center justify-center text-sm italic text-gray-300">
             {emptyText}
           </div>
@@ -232,28 +261,34 @@ export default function PosOrderQueuePage() {
     })
   }, [])
 
-  const loadOrders = useCallback(async (catId: string) => {
-    const res = await KdsApi.listOrders({
-      categoryId: catId,
-      statuses: ['WAITING', 'CALLED', 'SERVED'],
-    })
-    if (res.success && res.data) {
-      const orders = res.data.data
-      setWaiting(orders.filter((o) => o.status === 'WAITING'))
-      setPreparing(orders.filter((o) => o.status === 'CALLED'))
-      setCompleted(
-        orders
-          .filter((o) => o.status === 'SERVED')
-          .sort(
-            (a, b) =>
-              new Date(b.servedAt ?? b.issuedAt).getTime() -
-              new Date(a.servedAt ?? a.issuedAt).getTime()
-          )
-          .slice(0, 20)
-      )
-    }
-    setFetching(false)
-  }, [])
+  const { branchId } = usePosBranchContext()
+
+  const loadOrders = useCallback(
+    async (catId: string) => {
+      const res = await KdsApi.listOrders({
+        categoryId: catId,
+        ...(branchId ? { branchId } : {}),
+        statuses: ['WAITING', 'CALLED', 'SERVED'],
+      })
+      if (res.success && res.data) {
+        const orders = res.data.data
+        setWaiting(orders.filter((o) => o.status === 'WAITING'))
+        setPreparing(orders.filter((o) => o.status === 'CALLED'))
+        setCompleted(
+          orders
+            .filter((o) => o.status === 'SERVED')
+            .sort(
+              (a, b) =>
+                new Date(b.servedAt ?? b.issuedAt).getTime() -
+                new Date(a.servedAt ?? a.issuedAt).getTime()
+            )
+            .slice(0, 20)
+        )
+      }
+      setFetching(false)
+    },
+    [branchId]
+  )
 
   useEffect(() => {
     if (!categoryId) return

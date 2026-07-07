@@ -1,24 +1,29 @@
 'use client'
 
 import { useState } from 'react'
-import { KeyRound, CreditCard } from 'lucide-react'
+import { KeyRound, CreditCard, FileText } from 'lucide-react'
 import { PinSection } from './PinSection'
 import { OwnerPaymentMethodsSection } from '@/src/components/settings/OwnerPaymentMethodsSection'
+import { ReceiptBrandingSection } from './ReceiptBrandingSection'
 import type { OwnerPaymentMethod } from '@/src/schema/pos'
+import type { ReceiptBranding } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 
-type Tab = 'pin' | 'payment'
+type Tab = 'pin' | 'payment' | 'branding'
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'pin', label: 'POS PIN', icon: KeyRound },
   { id: 'payment', label: 'Payment Methods', icon: CreditCard },
+  { id: 'branding', label: 'Receipt Branding', icon: FileText },
 ]
 
 export function ConfigurationTabs({
   initialPaymentMethods,
   initialHasPin,
+  initialBranding,
 }: {
   initialPaymentMethods: OwnerPaymentMethod[]
   initialHasPin: boolean
+  initialBranding: ReceiptBranding
 }) {
   const [active, setActive] = useState<Tab>('pin')
 
@@ -48,6 +53,7 @@ export function ConfigurationTabs({
         {active === 'payment' && (
           <OwnerPaymentMethodsSection initialMethods={initialPaymentMethods} />
         )}
+        {active === 'branding' && <ReceiptBrandingSection initialBranding={initialBranding} />}
       </div>
     </div>
   )

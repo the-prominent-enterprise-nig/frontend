@@ -10,6 +10,8 @@ import {
 } from '../_hooks/usePos'
 import { verifyCashierPin, getUsers, getSessionReconciliation } from '../_actions/pos-actions'
 import { PosDateTime } from '../_components/PosDate'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import { RefreshCw, Monitor, Plus, X, ChevronDown, CheckCircle2 } from 'lucide-react'
 import type {
   PosSession,
@@ -38,7 +40,9 @@ type ModalState =
   | { type: 'reconciliation'; session: PosSession; data: SessionReconciliation }
 
 export default function SessionsPage() {
-  const { data, isLoading, isFetching, refetch } = useSessions()
+  const { branchId } = usePosBranchContext()
+  const branchFilter = branchId ? { branchId } : undefined
+  const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
   const openMutation = useOpenSession()
   const closeMutation = useCloseSession()
   const handoverMutation = useHandoverSession()
@@ -132,15 +136,68 @@ export default function SessionsPage() {
 
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
-            <div className="space-y-3 p-6">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex animate-pulse gap-4">
-                  <div className="h-4 w-1/4 rounded bg-gray-200" />
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                </div>
-              ))}
-            </div>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Session ID
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Branch
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Terminal
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Cashier
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Opened
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Opening Cash
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Transactions
+                  </th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...Array(6)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Skeleton className="ml-auto h-4 w-16" />
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Skeleton className="ml-auto h-4 w-8" />
+                    </td>
+                    <td className="px-5 py-3" />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : sessions.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
               <Monitor size={40} />
@@ -287,7 +344,8 @@ function OpenSessionModal({
   onClose: () => void
   onSubmit: (f: OpenSessionInput) => void
 }) {
-  const { data: terminalsData } = useTerminals()
+  const { branchId } = usePosBranchContext()
+  const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
   const terminals = terminalsData?.data ?? []
 
   const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })

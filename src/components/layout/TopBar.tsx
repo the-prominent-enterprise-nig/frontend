@@ -10,6 +10,7 @@ import { MODULES } from '@/src/libs/guards/modules'
 import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
+import { PosBranchSwitcher } from '@/src/app/(app)/(dashboard)/pos/_components/PosBranchSwitcher'
 
 interface SessionUser {
   id: string
@@ -46,8 +47,13 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="relative">
-      <Header className="w-full border-b border-gray-100 bg-white shadow-sm">
-        <div className="flex h-14 items-center justify-end px-4 lg:px-6">
+      <Header className="w-full border-b border-gray-100 bg-white">
+        <div className="flex h-14 items-center justify-between px-4 lg:px-6">
+          {/* Left: module-specific context (e.g. branch switcher on POS pages) */}
+          <div className="flex items-center gap-3">
+            {pathname.startsWith('/pos') && <PosBranchSwitcher />}
+          </div>
+
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
             {/* Notification Bell */}
