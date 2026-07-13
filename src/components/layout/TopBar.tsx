@@ -46,7 +46,7 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="relative">
-      <Header className="w-full border-b border-gray-100 bg-white shadow-sm">
+      <Header className="w-full border-b border-gray-100 bg-white">
         <div className="flex h-14 items-center justify-end px-4 lg:px-6">
           {/* Right: Actions */}
           <div className="flex items-center gap-3">

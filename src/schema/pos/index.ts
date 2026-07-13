@@ -153,6 +153,18 @@ export interface BranchPaymentMethodsResponse {
   meta: { branchId: string; branchName: string }
 }
 
+export interface BranchReceiptConfig {
+  logoUrl: string | null
+  headerText: string | null
+  footerText: string | null
+  overrides: { logoUrl: boolean; headerText: boolean; footerText: boolean }
+}
+
+export interface BranchReceiptConfigResponse {
+  data: BranchReceiptConfig
+  meta: { branchId: string; branchName: string }
+}
+
 export interface PosTransactionLine {
   id: string
   itemId: string

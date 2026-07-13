@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   getTerminals,
   createTerminal,
@@ -86,14 +86,15 @@ import type {
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
 
-export function useTerminals(options?: {
-  refetchInterval?: number
-  refetchOnWindowFocus?: boolean
-}) {
+export function useTerminals(
+  filters?: Parameters<typeof getTerminals>[0],
+  options?: { refetchInterval?: number; refetchOnWindowFocus?: boolean }
+) {
   return useQuery({
-    queryKey: ['pos-terminals'],
-    queryFn: getTerminals,
+    queryKey: ['pos-terminals', filters],
+    queryFn: () => getTerminals(filters),
     staleTime: 2 * 60 * 1000,
+    placeholderData: keepPreviousData,
     ...options,
   })
 }
@@ -162,6 +163,7 @@ export function useSessions(
     queryKey: ['pos-sessions', filters],
     queryFn: () => getSessions(filters),
     staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
     ...options,
   })
 }
@@ -210,6 +212,7 @@ export function useTransactions(
     queryKey: ['pos-transactions', filters],
     queryFn: () => getTransactions(filters),
     staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
     ...options,
   })
 }
@@ -392,6 +395,7 @@ export function useBranchPricing(branchId?: string, itemId?: string) {
     queryKey: ['pos-branch-pricing', branchId, itemId],
     queryFn: () => getBranchPricing(branchId, itemId),
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -458,11 +462,12 @@ export function useUpdateLoyaltyProgram() {
 
 // ─── Parked Sales ─────────────────────────────────────────────────────────────
 
-export function useParkedSales(terminalId?: string) {
+export function useParkedSales(terminalId?: string, branchId?: string) {
   return useQuery({
-    queryKey: ['pos-parked-sales', terminalId],
-    queryFn: () => getParkedSales(terminalId),
+    queryKey: ['pos-parked-sales', terminalId, branchId],
+    queryFn: () => getParkedSales(terminalId, branchId),
     staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -586,11 +591,12 @@ export function useVoidRequests(transactionId: string) {
   })
 }
 
-export function usePendingVoidRequests() {
+export function usePendingVoidRequests(branchId?: string) {
   return useQuery({
-    queryKey: ['pos-void-requests-pending'],
-    queryFn: getPendingVoidRequests,
+    queryKey: ['pos-void-requests-pending', branchId],
+    queryFn: () => getPendingVoidRequests(branchId),
     staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 

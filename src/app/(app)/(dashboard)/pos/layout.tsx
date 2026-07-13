@@ -1,5 +1,6 @@
 import ModuleGuard from '@/src/components/guards/ModuleGuard'
 import { PosNav } from './_components/PosNav'
+import { PosBranchSwitcher } from './_components/PosBranchSwitcher'
 
 export const metadata = {
   title: 'Point of Sale - Prominent Enterprise',
@@ -10,7 +11,12 @@ export default function PosLayout({ children }: { children: React.ReactNode }) {
   return (
     <ModuleGuard module="pos">
       <div className="flex h-full flex-col">
-        <PosNav />
+        <div className="flex items-center justify-between border-b border-gray-100">
+          <PosNav />
+          <div className="pr-4 lg:pr-6">
+            <PosBranchSwitcher />
+          </div>
+        </div>
         <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </ModuleGuard>

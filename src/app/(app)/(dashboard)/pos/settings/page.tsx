@@ -28,7 +28,7 @@ const sections = [
   },
   {
     label: 'Receipt Branding',
-    description: 'Upload your business logo and set brand colors on receipts.',
+    description: 'Override the company default logo, header, or footer for one branch.',
     href: '/pos/receipt-branding',
     icon: Palette,
   },

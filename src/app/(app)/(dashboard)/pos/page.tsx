@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useTransactions, useSessions, useTerminals } from './_hooks/usePos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import {
   ShoppingCart,
   Monitor,
@@ -23,15 +25,18 @@ function formatCurrency(n: number) {
 export default function PosOverviewPage() {
   const router = useRouter()
 
+  const { branchId } = usePosBranchContext()
+  const branchFilter = branchId ? { branchId } : undefined
+
   const autoRefresh = { refetchInterval: 30_000, refetchOnWindowFocus: true }
   const {
     data: txData,
     isLoading: txLoading,
     refetch,
     isFetching,
-  } = useTransactions(undefined, autoRefresh)
-  const { data: sessData, isLoading: sessLoading } = useSessions(undefined, autoRefresh)
-  const { data: termData, isLoading: termLoading } = useTerminals(autoRefresh)
+  } = useTransactions(branchFilter, autoRefresh)
+  const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
+  const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
 
   type Row = Record<string, unknown>
   const transactions = (() => {
@@ -297,7 +302,7 @@ function StatCard({
         <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${bg}`}>{icon}</span>
       </div>
       {value === null ? (
-        <div className="mt-3 h-8 w-24 animate-pulse rounded bg-gray-200" />
+        <Skeleton className="mt-3 h-8 w-24" />
       ) : (
         <p className="mt-3 text-2xl font-bold text-gray-900">{value}</p>
       )}

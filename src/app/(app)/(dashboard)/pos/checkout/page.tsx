@@ -32,6 +32,8 @@ import {
 import { computePricingTotals } from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
 import {
@@ -177,7 +179,11 @@ const DECIMAL_CODES = new Set([
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
-  const { data: sessionsData } = useSessions({ status: 'open' })
+  const { branchId: switcherBranchId } = usePosBranchContext()
+  const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
+    status: 'open',
+    ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
+  })
   const rawSessions = sessionsData?.data
   const openSessions = useMemo(() => rawSessions ?? [], [rawSessions])
 
@@ -1295,7 +1301,9 @@ export default function CheckoutPage() {
           <span className="font-semibold text-gray-900 hidden sm:inline">New Sale</span>
         </div>
 
-        {openSessions.length > 1 ? (
+        {sessionsLoading ? (
+          <Skeleton className="h-7 w-40 rounded-lg" />
+        ) : openSessions.length > 1 ? (
           <div className="relative">
             <select
               className="appearance-none cursor-pointer rounded-lg border border-gray-200 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"

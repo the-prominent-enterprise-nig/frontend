@@ -11,6 +11,8 @@ import {
 } from '../_hooks/usePos'
 import type { ParkedSale } from '@/src/schema/pos'
 import { usePosSocket, toParkedSale } from '@/src/libs/hooks/usePosSocket'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 import { PosDateTime } from '../_components/PosDate'
 
@@ -25,8 +27,9 @@ function itemCount(cartData: Record<string, unknown>): number {
 
 export default function ParkedSalesPage() {
   const router = useRouter()
-  const { data: terminalsData } = useTerminals()
-  const { data, isLoading, isFetching, refetch } = useParkedSales()
+  const { branchId } = usePosBranchContext()
+  const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
+  const { data, isLoading, isFetching, refetch } = useParkedSales(undefined, branchId ?? undefined)
   const resumeMutation = useResumeParkedSale()
   const cancelMutation = useCancelParkedSale()
   const [error, setError] = useState('')
@@ -109,17 +112,55 @@ export default function ParkedSalesPage() {
 
         {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div
+          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
+            isFetching && !isLoading ? 'opacity-60' : ''
+          }`}
+        >
           {isLoading ? (
-            <div className="space-y-3 p-6">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="flex animate-pulse gap-4">
-                  <div className="h-4 w-1/4 rounded bg-gray-200" />
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                </div>
-              ))}
-            </div>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Label
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Terminal
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Parked
+                  </th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase text-gray-500">
+                    Items
+                  </th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...Array(4)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <Skeleton className="mx-auto h-4 w-8" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <Skeleton className="h-6 w-20 rounded-lg" />
+                        <Skeleton className="h-4 w-12" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : sales.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-20 text-gray-300">
               <PauseCircle size={48} strokeWidth={1} />

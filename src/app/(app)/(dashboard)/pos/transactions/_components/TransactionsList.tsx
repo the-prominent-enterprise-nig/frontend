@@ -35,7 +35,9 @@ import {
   getCustomerById,
 } from '../../_actions/pos-actions'
 import type { PosTransaction, PosVoidRequest } from '@/src/schema/pos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { PosDateTime } from '../../_components/PosDate'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import { type SessionUser, can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
@@ -63,6 +65,7 @@ interface Props {
 export default function TransactionsList({ session }: Props) {
   const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_READ)
   const canDirectVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+  const { branchId } = usePosBranchContext()
 
   const [filters, setFilters] = useState({
     transactionType: '',
@@ -90,10 +93,9 @@ export default function TransactionsList({ session }: Props) {
   }, [voidTarget])
 
   const { data, isLoading, isFetching, refetch } = useTransactions(
-    Object.fromEntries(Object.entries(applied).filter(([, v]) => v !== '')) as Record<
-      string,
-      string
-    >
+    Object.fromEntries(
+      Object.entries({ ...applied, branchId: branchId ?? '' }).filter(([, v]) => v !== '')
+    ) as Record<string, string>
   )
 
   const transactions: PosTransaction[] = data?.data ?? []
@@ -292,18 +294,54 @@ export default function TransactionsList({ session }: Props) {
           </p>
         )}
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div
+          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
+            isFetching && !isLoading ? 'opacity-60' : ''
+          }`}
+        >
           {isLoading ? (
-            <div className="space-y-3 p-6">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex animate-pulse gap-4">
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                </div>
-              ))}
-            </div>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Transaction #
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Type
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Date
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...Array(6)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-5 w-20 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Skeleton className="ml-auto h-4 w-16" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : transactions.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
               <ShoppingCart size={40} />
