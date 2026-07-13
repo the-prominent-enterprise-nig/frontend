@@ -1,8 +1,67 @@
 'use client'
 
-import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import {
+  X,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  RefreshCw,
+  Loader2,
+  Printer,
+} from 'lucide-react'
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
+import { getReceivingDocument } from '../_actions/get-receiving-document'
+
+function printDocument(data: unknown) {
+  const doc = data as {
+    documentType: string
+    documentNumber: string
+    generatedAt: string
+    enterprise: {
+      companyLegalName: string
+      companyTradingName?: string
+      registrationNumber?: string
+      taxId?: string
+      contactPerson?: string
+    } | null
+    document: Record<string, unknown>
+  }
+
+  const win = window.open('', '_blank', 'width=900,height=700')
+  if (!win) return
+
+  win.document.write(`<!DOCTYPE html><html><head><title>${doc.documentNumber}</title><style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; margin-bottom: 12px; }
+    .label { color: #888; font-size: 11px; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 6px 8px; background: #f5f5f5; font-size: 11px; text-transform: uppercase; }
+    td { padding: 6px 8px; border-top: 1px solid #eee; }
+    .footer { margin-top: 32px; font-size: 11px; color: #999; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <p class="label">Goods Receipt Note</p>
+    <h1>${doc.documentNumber}</h1>
+    <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
+    ${
+      doc.enterprise
+        ? `<h2>Enterprise</h2><div class="meta">
+      <div><p class="label">Company</p><p>${doc.enterprise.companyLegalName}</p></div>
+      ${doc.enterprise.companyTradingName ? `<div><p class="label">Trading Name</p><p>${doc.enterprise.companyTradingName}</p></div>` : ''}
+      ${doc.enterprise.registrationNumber ? `<div><p class="label">Reg. No.</p><p>${doc.enterprise.registrationNumber}</p></div>` : ''}
+      ${doc.enterprise.taxId ? `<div><p class="label">Tax ID</p><p>${doc.enterprise.taxId}</p></div>` : ''}
+      ${doc.enterprise.contactPerson ? `<div><p class="label">Contact</p><p>${doc.enterprise.contactPerson}</p></div>` : ''}
+    </div>`
+        : ''
+    }
+    <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`)
+  win.document.close()
+}
 
 function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
   if (!report.hasAnyDiscrepancy) {
@@ -22,6 +81,8 @@ function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
 }
 
 function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: () => void }) {
+  const [isPrinting, setIsPrinting] = useState(false)
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
       {/* Panel header */}
@@ -40,13 +101,36 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
             })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              setIsPrinting(true)
+              try {
+                const res = await getReceivingDocument(report.id)
+                if (res.success && res.data) printDocument(res.data)
+              } finally {
+                setIsPrinting(false)
+              }
+            }}
+            disabled={isPrinting}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+          >
+            {isPrinting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Printer className="h-3.5 w-3.5" />
+            )}
+            Print
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Lines */}

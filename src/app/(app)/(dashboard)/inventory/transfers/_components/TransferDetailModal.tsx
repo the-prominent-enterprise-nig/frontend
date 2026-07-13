@@ -3,13 +3,26 @@
 import { useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, ArrowRight, Package, CheckCircle, Truck, Clock, XCircle } from 'lucide-react'
 import {
+  X,
+  Loader2,
+  ArrowRight,
+  Package,
+  CheckCircle,
+  Truck,
+  Clock,
+  XCircle,
+  Printer,
+} from 'lucide-react'
+import {
+  DispatchTransferFormSchema,
+  DispatchTransferFormValues,
   ReceiveTransferFormSchema,
   ReceiveTransferFormValues,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { getTransferDocument } from '../_actions/get-transfer-document'
 
 const STATUS_CONFIG = {
   draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
@@ -38,6 +51,90 @@ function formatDateOnly(iso?: string | null) {
   })
 }
 
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-zinc-400">{label}</p>
+      <p className="mt-0.5 text-zinc-800">{value}</p>
+    </div>
+  )
+}
+
+function printTransferDocument(data: unknown) {
+  const doc = data as {
+    documentType: string
+    documentNumber: string
+    generatedAt: string
+    enterprise: {
+      companyLegalName: string
+      companyTradingName?: string
+      registrationNumber?: string
+      taxId?: string
+      contactPerson?: string
+    } | null
+    document: Record<string, unknown>
+  }
+
+  const win = window.open('', '_blank', 'width=900,height=700')
+  if (!win) return
+
+  const d = doc.document as Record<string, unknown>
+  const lines = (d.lines as Array<Record<string, unknown>>) ?? []
+  const linesHtml = lines
+    .map(
+      (l) =>
+        `<tr><td style="padding:6px 8px;border-top:1px solid #eee">${(l.item as Record<string, unknown>)?.name ?? l.itemId ?? '—'}</td><td style="padding:6px 8px;border-top:1px solid #eee;text-align:right">${l.quantity}</td></tr>`
+    )
+    .join('')
+
+  const driverFields: string[] = []
+  if (d.driverName)
+    driverFields.push(`<div><p class="label">Driver</p><p>${d.driverName}</p></div>`)
+  if (d.driverPhone)
+    driverFields.push(`<div><p class="label">Phone</p><p>${d.driverPhone}</p></div>`)
+  if (d.driverLicense)
+    driverFields.push(`<div><p class="label">License</p><p>${d.driverLicense}</p></div>`)
+  if (d.vehiclePlate)
+    driverFields.push(`<div><p class="label">Plate</p><p>${d.vehiclePlate}</p></div>`)
+  if (d.carrierName)
+    driverFields.push(`<div><p class="label">Carrier</p><p>${d.carrierName}</p></div>`)
+
+  win.document.write(`<!DOCTYPE html><html><head><title>${doc.documentNumber}</title><style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; margin-bottom: 12px; }
+    .label { color: #888; font-size: 11px; text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 6px 8px; background: #f5f5f5; font-size: 11px; text-transform: uppercase; }
+    td { padding: 6px 8px; border-top: 1px solid #eee; }
+    .footer { margin-top: 32px; font-size: 11px; color: #999; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <p class="label">Stock Transfer</p>
+    <h1>${doc.documentNumber}</h1>
+    <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
+    ${
+      doc.enterprise
+        ? `<h2>Enterprise</h2><div class="meta">
+      <div><p class="label">Company</p><p>${doc.enterprise.companyLegalName}</p></div>
+      ${doc.enterprise.companyTradingName ? `<div><p class="label">Trading Name</p><p>${doc.enterprise.companyTradingName}</p></div>` : ''}
+      ${doc.enterprise.registrationNumber ? `<div><p class="label">Reg. No.</p><p>${doc.enterprise.registrationNumber}</p></div>` : ''}
+      ${doc.enterprise.taxId ? `<div><p class="label">Tax ID</p><p>${doc.enterprise.taxId}</p></div>` : ''}
+    </div>`
+        : ''
+    }
+    ${driverFields.length > 0 ? `<h2>Logistics</h2><div class="meta">${driverFields.join('')}</div>` : ''}
+    <h2>Items</h2>
+    <table>
+      <thead><tr><th>Item</th><th style="text-align:right">Qty</th></tr></thead>
+      <tbody>${linesHtml}</tbody>
+    </table>
+    <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`)
+  win.document.close()
+}
+
 type Props = {
   transfer: TransferSummary | null
   isLoading: boolean
@@ -45,7 +142,7 @@ type Props = {
   onClose: () => void
   canDispatch: boolean
   canReceive: boolean
-  onDispatch: (id: string) => Promise<ApiResponse<unknown>>
+  onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
   onReceive: (id: string, data: ReceiveTransferFormValues) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
   isDispatching: boolean
@@ -67,15 +164,17 @@ export default function TransferDetailModal({
   isReceiving,
   isCancelling,
 }: Props) {
+  const [showDispatchForm, setShowDispatchForm] = useState(false)
   const [showReceiveForm, setShowReceiveForm] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [isPrinting, setIsPrinting] = useState(false)
 
-  const {
-    control,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<ReceiveTransferFormValues>({
+  const dispatchForm = useForm<DispatchTransferFormValues>({
+    resolver: zodResolver(DispatchTransferFormSchema),
+    defaultValues: {},
+  })
+
+  const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
     defaultValues: {
       receivedDate: new Date().toISOString().split('T')[0],
@@ -88,9 +187,13 @@ export default function TransferDetailModal({
   const statusCfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.draft
   const StatusIcon = statusCfg.icon
 
-  async function handleDispatch() {
+  async function handleDispatchSubmit(data: DispatchTransferFormValues) {
     if (!transfer) return
-    await onDispatch(transfer.id)
+    const result = await onDispatch(transfer.id, data)
+    if (result.success) {
+      setShowDispatchForm(false)
+      dispatchForm.reset()
+    }
   }
 
   async function handleReceiveSubmit(data: ReceiveTransferFormValues) {
@@ -98,7 +201,7 @@ export default function TransferDetailModal({
     const result = await onReceive(transfer.id, data)
     if (result.success) {
       setShowReceiveForm(false)
-      reset()
+      receiveForm.reset()
     }
   }
 
@@ -107,6 +210,9 @@ export default function TransferDetailModal({
     await onCancel(transfer.id)
     setConfirmCancel(false)
   }
+
+  const fieldClass =
+    'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -118,7 +224,9 @@ export default function TransferDetailModal({
               <h2 className="text-lg font-semibold text-zinc-900">Transfer Details</h2>
               {transfer && (
                 <p className="mt-0.5 font-mono text-xs text-zinc-400">
-                  #{transfer.id.slice(0, 8).toUpperCase()}
+                  {transfer.transferNumber
+                    ? `${transfer.transferNumber} · #${transfer.id.slice(0, 8).toUpperCase()}`
+                    : `#${transfer.id.slice(0, 8).toUpperCase()}`}
                 </p>
               )}
             </div>
@@ -186,6 +294,27 @@ export default function TransferDetailModal({
                 </div>
               )}
             </div>
+
+            {/* Logistics / Driver info (displayed when in_transit or received) */}
+            {(status === 'in_transit' || status === 'received') &&
+              (transfer.driverName || transfer.vehiclePlate || transfer.carrierName) && (
+                <div>
+                  <p className="mb-2 text-sm font-medium text-zinc-700">Logistics</p>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
+                    {transfer.driverName && <InfoRow label="Driver" value={transfer.driverName} />}
+                    {transfer.driverPhone && <InfoRow label="Phone" value={transfer.driverPhone} />}
+                    {transfer.driverLicense && (
+                      <InfoRow label="License" value={transfer.driverLicense} />
+                    )}
+                    {transfer.vehiclePlate && (
+                      <InfoRow label="Plate" value={transfer.vehiclePlate} />
+                    )}
+                    {transfer.carrierName && (
+                      <InfoRow label="Carrier" value={transfer.carrierName} />
+                    )}
+                  </div>
+                </div>
+              )}
 
             {/* Lines */}
             {transfer.lines && transfer.lines.length > 0 && (
@@ -262,10 +391,161 @@ export default function TransferDetailModal({
               </ol>
             </div>
 
+            {/* Dispatch form (inline) */}
+            {showDispatchForm && (
+              <form
+                onSubmit={dispatchForm.handleSubmit(handleDispatchSubmit)}
+                className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
+              >
+                <p className="text-sm font-medium text-zinc-700">Dispatch Transfer</p>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Expected Arrival
+                  </label>
+                  <Controller
+                    name="expectedArrival"
+                    control={dispatchForm.control}
+                    render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">Notes</label>
+                  <Controller
+                    name="notes"
+                    control={dispatchForm.control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        type="text"
+                        placeholder="Optional dispatch notes…"
+                        className={fieldClass}
+                      />
+                    )}
+                  />
+                </div>
+
+                <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  Logistics / Driver (Optional)
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">
+                      Driver Name
+                    </label>
+                    <Controller
+                      name="driverName"
+                      control={dispatchForm.control}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          type="text"
+                          placeholder="e.g. Juan dela Cruz"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">
+                      Driver Phone
+                    </label>
+                    <Controller
+                      name="driverPhone"
+                      control={dispatchForm.control}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          type="text"
+                          placeholder="e.g. 09171234567"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">
+                      Driver License
+                    </label>
+                    <Controller
+                      name="driverLicense"
+                      control={dispatchForm.control}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          type="text"
+                          placeholder="License number"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-600">
+                      Vehicle Plate
+                    </label>
+                    <Controller
+                      name="vehiclePlate"
+                      control={dispatchForm.control}
+                      render={({ field }) => (
+                        <input
+                          {...field}
+                          type="text"
+                          placeholder="e.g. ABC 1234"
+                          className={fieldClass}
+                        />
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Carrier / Logistics Company
+                  </label>
+                  <Controller
+                    name="carrierName"
+                    control={dispatchForm.control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        type="text"
+                        placeholder="e.g. LBC Express"
+                        className={fieldClass}
+                      />
+                    )}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDispatchForm(false)
+                      dispatchForm.reset()
+                    }}
+                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDispatching}
+                    className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {isDispatching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Confirm Dispatch
+                  </button>
+                </div>
+              </form>
+            )}
+
             {/* Receive form (inline) */}
             {showReceiveForm && (
               <form
-                onSubmit={handleSubmit(handleReceiveSubmit)}
+                onSubmit={receiveForm.handleSubmit(handleReceiveSubmit)}
                 className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
               >
                 <p className="text-sm font-medium text-zinc-700">Confirm Receipt</p>
@@ -275,30 +555,26 @@ export default function TransferDetailModal({
                   </label>
                   <Controller
                     name="receivedDate"
-                    control={control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        type="date"
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                      />
-                    )}
+                    control={receiveForm.control}
+                    render={({ field }) => <input {...field} type="date" className={fieldClass} />}
                   />
-                  {errors.receivedDate && (
-                    <p className="mt-1 text-xs text-red-600">{errors.receivedDate.message}</p>
+                  {receiveForm.formState.errors.receivedDate && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {receiveForm.formState.errors.receivedDate.message}
+                    </p>
                   )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">Notes</label>
                   <Controller
                     name="notes"
-                    control={control}
+                    control={receiveForm.control}
                     render={({ field }) => (
                       <input
                         {...field}
                         type="text"
                         placeholder="Optional receipt notes…"
-                        className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        className={fieldClass}
                       />
                     )}
                   />
@@ -354,7 +630,7 @@ export default function TransferDetailModal({
         )}
 
         {/* Footer actions */}
-        {transfer && !showReceiveForm && !confirmCancel && (
+        {transfer && !showDispatchForm && !showReceiveForm && !confirmCancel && (
           <div className="flex items-center justify-between border-t border-zinc-200 px-6 py-4">
             <div>
               {status === 'draft' && (
@@ -368,6 +644,29 @@ export default function TransferDetailModal({
               )}
             </div>
             <div className="flex gap-3">
+              {(status === 'in_transit' || status === 'received') && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsPrinting(true)
+                    try {
+                      const res = await getTransferDocument(transfer.id)
+                      if (res.success && res.data) printTransferDocument(res.data)
+                    } finally {
+                      setIsPrinting(false)
+                    }
+                  }}
+                  disabled={isPrinting}
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+                >
+                  {isPrinting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Printer className="h-3.5 w-3.5" />
+                  )}
+                  Print
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -378,11 +677,9 @@ export default function TransferDetailModal({
               {status === 'draft' && canDispatch && (
                 <button
                   type="button"
-                  onClick={handleDispatch}
-                  disabled={isDispatching}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                  onClick={() => setShowDispatchForm(true)}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
-                  {isDispatching && <Loader2 className="h-4 w-4 animate-spin" />}
                   <Truck className="h-4 w-4" />
                   Dispatch
                 </button>
