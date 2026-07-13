@@ -137,6 +137,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/inventory/purchase-orders'],
       },
       {
+        label: 'Suppliers',
+        href: '/inventory/suppliers',
+        icon: Truck,
+        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
+      },
+      {
         label: 'Counting',
         href: '/inventory/counting',
         icon: RefreshCcw,
