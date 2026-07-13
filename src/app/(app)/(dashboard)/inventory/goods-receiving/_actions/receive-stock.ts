@@ -70,6 +70,7 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   }
 
   revalidatePath('/inventory/goods-receiving')
+  revalidatePath('/inventory/purchase-orders')
 
   return {
     success: true,

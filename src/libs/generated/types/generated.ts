@@ -155,6 +155,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/users/birthdays': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List employees with their birthday dates */
+    get: operations['UsersController_getBirthdays']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/users/{id}': {
     parameters: {
       query?: never
@@ -425,6 +442,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/terminals/cashier/{userId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List terminals a cashier is allowed to use (POS-52) */
+    get: operations['TerminalsController_getTerminalsForCashier']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/terminals/{id}': {
     parameters: {
       query?: never
@@ -442,6 +476,41 @@ export interface paths {
     head?: never
     /** Update a POS terminal */
     patch: operations['TerminalsController_update']
+    trace?: never
+  }
+  '/pos/terminals/{id}/cashiers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List cashiers assigned to this terminal (POS-52) */
+    get: operations['TerminalsController_getCashiers']
+    put?: never
+    /** Assign a cashier to this terminal (POS-52) */
+    post: operations['TerminalsController_assignCashier']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/terminals/{id}/cashiers/{userId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a cashier from this terminal (POS-52) */
+    delete: operations['TerminalsController_removeCashier']
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/pos/sessions/open': {
@@ -717,7 +786,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/transactions/{id}/send-receipt': {
+  '/pos/transactions/{id}/receipt/send': {
     parameters: {
       query?: never
       header?: never
@@ -728,6 +797,56 @@ export interface paths {
     put?: never
     /** Send digital receipt via email or SMS (POS-17) */
     post: operations['TransactionsController_sendReceipt']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/{id}/receipt/resend': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Resend last failed receipt delivery (POS-17) */
+    post: operations['TransactionsController_resendReceipt']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/{id}/reprint': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Log a receipt reprint event for audit trail (POS-24) */
+    post: operations['TransactionsController_logReprintEvent']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/{id}/send-receipt': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['TransactionsController_sendReceiptLegacy']
     delete?: never
     options?: never
     head?: never
@@ -751,6 +870,125 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/transactions/void-requests/branch': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all void requests for this branch — read-only view for cashiers (POS-05) */
+    get: operations['TransactionsController_getBranchVoidRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/{id}/void-request': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Submit a void or edit request — requires manager approval before the transaction is modified (POS-05) */
+    post: operations['TransactionsController_submitVoidRequest']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/{id}/void-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all void/edit requests for a transaction (POS-05) */
+    get: operations['TransactionsController_listVoidRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/void-requests/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List resolved void requests (approved/rejected) for manager/owner view (POS-05) */
+    get: operations['TransactionsController_getVoidRequestHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/void-requests/pending': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List pending void requests visible to this manager/owner (POS-05) */
+    get: operations['TransactionsController_getPendingVoidRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/void-requests/{requestId}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve a void request — immediately voids the transaction and restocks inventory (POS-05) */
+    post: operations['TransactionsController_approveVoidRequest']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/void-requests/{requestId}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a void request — transaction remains unchanged (POS-05) */
+    post: operations['TransactionsController_rejectVoidRequest']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/parked-sales': {
     parameters: {
       query?: never
@@ -758,7 +996,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List all parked sales, optionally filtered by terminal */
+    /** List all parked sales, optionally filtered by terminal or branch */
     get: operations['ParkedSalesController_findAll']
     put?: never
     /** Park (hold) a sale for later resumption (POS-11) */
@@ -1272,6 +1510,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/cashier/pin/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Check whether the authenticated user has a PIN set */
+    get: operations['CashierPinController_getPinStatus']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/cashier/pin/register': {
     parameters: {
       query?: never
@@ -1334,6 +1589,23 @@ export interface paths {
     put?: never
     /** Validate manager PIN before allowing a discount override (SM-POS-06) */
     post: operations['CashierPinController_validateManagerOverride']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cashier/manager-override/validate-pin-only': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Identify manager by PIN alone — no User ID required (McDonald's-style in-person override) */
+    post: operations['CashierPinController_validateManagerByPinOnly']
     delete?: never
     options?: never
     head?: never
@@ -1426,6 +1698,283 @@ export interface paths {
     post?: never
     /** Remove an ingredient from a menu item */
     delete: operations['PosMenuItemsController_removeIngredient']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/payment-method-configs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all payment methods for the tenant (POS-31) */
+    get: operations['PaymentMethodsController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/payment-method-configs/custom': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Create a custom payment method (POS-32) */
+    post: operations['PaymentMethodsController_createCustom']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/payment-method-configs/reorder': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Save display order for payment methods (POS-35) */
+    patch: operations['PaymentMethodsController_reorder']
+    trace?: never
+  }
+  '/pos/payment-method-configs/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Soft-delete a custom payment method (POS-31) */
+    delete: operations['PaymentMethodsController_remove']
+    options?: never
+    head?: never
+    /** Update a payment method — enable/disable, rename (custom only), GL account (POS-31) */
+    patch: operations['PaymentMethodsController_update']
+    trace?: never
+  }
+  '/pos/branches/{branchId}/payment-methods': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List payment methods for a branch with override state */
+    get: operations['BranchPaymentMethodsController_getForBranch']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Batch-update payment method overrides for a branch */
+    patch: operations['BranchPaymentMethodsController_saveBatch']
+    trace?: never
+  }
+  '/pos/branches/{branchId}/payment-methods/overrides': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Reset branch payment methods to business owner defaults */
+    delete: operations['BranchPaymentMethodsController_resetToDefaults']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/payment-methods': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get all payment methods at the business owner level */
+    get: operations['OwnerPaymentMethodsController_getForOwner']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Batch-update payment methods at the business owner level */
+    patch: operations['OwnerPaymentMethodsController_saveBatch']
+    trace?: never
+  }
+  '/pos/receipt-config/branding': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get receipt branding for the authenticated tenant (POS-43) */
+    get: operations['ReceiptBrandingController_getBranding']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update receipt logo URL and/or header text (POS-43) */
+    patch: operations['ReceiptBrandingController_updateBranding']
+    trace?: never
+  }
+  '/pos/receipt-config/branding/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Upload receipt logo — PNG/JPG/SVG, max 2 MB (POS-43) */
+    post: operations['ReceiptBrandingController_uploadLogo']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/branches/{branchId}/receipt-config': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get effective receipt branding for a branch — own overrides merged with the company default (POS-43/45) */
+    get: operations['BranchReceiptConfigController_getConfig']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Set this branch's receipt branding overrides (POS-43/45) */
+    patch: operations['BranchReceiptConfigController_updateConfig']
+    trace?: never
+  }
+  '/pos/branches/{branchId}/receipt-config/logo': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Upload this branch's own logo, overriding the company default (POS-43) */
+    post: operations['BranchReceiptConfigController_uploadLogo']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/sessions/{sessionId}/cancellation-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Cashier submits a cancellation request with mandatory grounds */
+    post: operations['CancellationRequestsController_submit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cancellation-requests/pending': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Manager fetches all pending cancellation requests for their tenant */
+    get: operations['CancellationRequestsController_getPending']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cancellation-requests/{id}/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cashier polls the status of their cancellation request */
+    get: operations['CancellationRequestsController_getStatus']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cancellation-requests/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Manager approves a cancellation request — cashier cart is then cleared */
+    post: operations['CancellationRequestsController_approve']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cancellation-requests/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Manager rejects a cancellation request — cashier cart is unfrozen */
+    post: operations['CancellationRequestsController_reject']
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -1994,7 +2543,7 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Receive stock into a warehouse (creates ledger entry + updates balance) */
+    /** Receive stock against a PO. Creates a GoodsReceipt document, stock ledger entries, and updates balances for each line. */
     post: operations['StockController_receiveStock']
     delete?: never
     options?: never
@@ -2028,6 +2577,57 @@ export interface paths {
     }
     /** Get stock movement ledger (append-only). Ordered by occurredAt DESC. */
     get: operations['StockController_getLedger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/receiving-reports': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List Goods Receipt Notes with quantity and condition discrepancy flags. Use hasDiscrepancy=true to surface only receipts where delivery did not match the PO. */
+    get: operations['StockController_getReceivingReports']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/receiving-reports/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single Goods Receipt Note with full discrepancy detail per line (qty ordered vs received, condition issues). */
+    get: operations['StockController_getReceivingReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/receiving-reports/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a print-ready document envelope for a Goods Receipt Note, including enterprise info. */
+    get: operations['StockController_getReceivingDocument']
     put?: never
     post?: never
     delete?: never
@@ -2098,6 +2698,23 @@ export interface paths {
     }
     /** Get a single stock transfer with full line details */
     get: operations['TransfersController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/transfers/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a print-ready document envelope for a Stock Transfer, including enterprise info. */
+    get: operations['TransfersController_getTransferDocument']
     put?: never
     post?: never
     delete?: never
@@ -3129,6 +3746,583 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/procurement/purchase-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List purchase requests */
+    get: operations['PurchaseRequestController_findAll']
+    put?: never
+    /** Create a purchase request */
+    post: operations['PurchaseRequestController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-requests/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a purchase request */
+    get: operations['PurchaseRequestController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-requests/{id}/submit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Submit PR for multi-tier approval */
+    post: operations['PurchaseRequestController_submit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-requests/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve the next pending approval tier */
+    post: operations['PurchaseRequestController_approve']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-requests/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject the current pending approval tier */
+    post: operations['PurchaseRequestController_reject']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-requests/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Cancel a draft or submitted PR */
+    post: operations['PurchaseRequestController_cancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-orders': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List purchase orders */
+    get: operations['PurchaseOrderController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-orders/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a purchase order */
+    get: operations['PurchaseOrderController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-orders/from-pr/{prId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Convert an approved PR into a Purchase Order */
+    post: operations['PurchaseOrderController_convertFromPr']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/purchase-orders/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Approve a draft PO (internal sign-off before sending to supplier) */
+    patch: operations['PurchaseOrderController_approve']
+    trace?: never
+  }
+  '/procurement/purchase-orders/{id}/send': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Send PO to supplier */
+    patch: operations['PurchaseOrderController_send']
+    trace?: never
+  }
+  '/procurement/purchase-orders/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Cancel a draft or approved PO */
+    patch: operations['PurchaseOrderController_cancel']
+    trace?: never
+  }
+  '/inventory/uds': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List Unit Document Sheets */
+    get: operations['UdsController_findAll']
+    put?: never
+    /** Issue a Unit Document Sheet for repair or pull-out */
+    post: operations['UdsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/uds/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single Unit Document Sheet */
+    get: operations['UdsController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/uds/{id}/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update UDS status (received / completed / cancelled) */
+    patch: operations['UdsController_updateStatus']
+    trace?: never
+  }
+  '/procurement/quotas': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all procurement spending quotas */
+    get: operations['ProcurementQuotaController_findAll']
+    put?: never
+    /** Create a procurement spending quota */
+    post: operations['ProcurementQuotaController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/quotas/usage': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get current-period spend vs active quota */
+    get: operations['ProcurementQuotaController_getUsage']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/procurement/quotas/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update a procurement quota (limit, active flag, notes) */
+    patch: operations['ProcurementQuotaController_update']
+    trace?: never
+  }
+  '/inventory/stock-requisitions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List branch stock requisitions */
+    get: operations['BranchStockRequisitionController_findAll']
+    put?: never
+    /** Create a branch stock requisition */
+    post: operations['BranchStockRequisitionController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single branch stock requisition */
+    get: operations['BranchStockRequisitionController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}/submit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Submit a draft requisition for approval */
+    post: operations['BranchStockRequisitionController_submit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve a submitted requisition and reserve stock */
+    post: operations['BranchStockRequisitionController_approve']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a submitted requisition */
+    post: operations['BranchStockRequisitionController_reject']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Cancel a draft or submitted requisition */
+    post: operations['BranchStockRequisitionController_cancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock-requisitions/{id}/fulfill': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Mark an approved requisition as fulfilled and release reservations */
+    post: operations['BranchStockRequisitionController_fulfill']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/classification/groups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all item groups */
+    get: operations['ItemClassificationController_findGroups']
+    put?: never
+    /** Create an item group */
+    post: operations['ItemClassificationController_createGroup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/classification/groups/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single item group */
+    get: operations['ItemClassificationController_findGroup']
+    put?: never
+    post?: never
+    /** Delete an item group (cascades to subgroups) */
+    delete: operations['ItemClassificationController_removeGroup']
+    options?: never
+    head?: never
+    /** Update an item group */
+    patch: operations['ItemClassificationController_updateGroup']
+    trace?: never
+  }
+  '/inventory/classification/subgroups': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List item subgroups, optionally filtered by group */
+    get: operations['ItemClassificationController_findSubgroups']
+    put?: never
+    /** Create an item subgroup under a group */
+    post: operations['ItemClassificationController_createSubgroup']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/classification/subgroups/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single item subgroup */
+    get: operations['ItemClassificationController_findSubgroup']
+    put?: never
+    post?: never
+    /** Delete an item subgroup */
+    delete: operations['ItemClassificationController_removeSubgroup']
+    options?: never
+    head?: never
+    /** Update an item subgroup */
+    patch: operations['ItemClassificationController_updateSubgroup']
+    trace?: never
+  }
+  '/inventory/classification/brands': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all item brands */
+    get: operations['ItemClassificationController_findBrands']
+    put?: never
+    /** Create an item brand */
+    post: operations['ItemClassificationController_createBrand']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/classification/brands/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single item brand */
+    get: operations['ItemClassificationController_findBrand']
+    put?: never
+    post?: never
+    /** Delete an item brand */
+    delete: operations['ItemClassificationController_removeBrand']
+    options?: never
+    head?: never
+    /** Update an item brand */
+    patch: operations['ItemClassificationController_updateBrand']
+    trace?: never
+  }
+  '/inventory/classification/types': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all item types */
+    get: operations['ItemClassificationController_findTypes']
+    put?: never
+    /** Create an item type */
+    post: operations['ItemClassificationController_createType']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/classification/types/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single item type */
+    get: operations['ItemClassificationController_findType']
+    put?: never
+    post?: never
+    /** Delete an item type */
+    delete: operations['ItemClassificationController_removeType']
+    options?: never
+    head?: never
+    /** Update an item type */
+    patch: operations['ItemClassificationController_updateType']
+    trace?: never
+  }
   '/accounting/tax-rates': {
     parameters: {
       query?: never
@@ -3195,6 +4389,128 @@ export interface paths {
     /** Remove this rate as the business default */
     post: operations['TaxRatesController_unsetDefault']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/files/upload': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Upload a file to the central document store */
+    post: operations['FilesController_upload']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/files': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List files for the current tenant */
+    get: operations['FilesController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/files/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get file metadata by ID */
+    get: operations['FilesController_findOne']
+    put?: never
+    post?: never
+    /** Delete a file and remove it from storage */
+    delete: operations['FilesController_remove']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/files/{id}/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Stream download a file */
+    get: operations['FilesController_download']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/files/{id}/url': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a presigned/direct download URL for a file */
+    get: operations['FilesController_getUrl']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/file-attachments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List attachments for a specific record */
+    get: operations['FileAttachmentsController_findByEntity']
+    put?: never
+    /** Attach a file to any business record */
+    post: operations['FileAttachmentsController_attach']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/file-attachments/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single attachment by ID */
+    get: operations['FileAttachmentsController_findOne']
+    put?: never
+    post?: never
+    /** Detach a file from a record (file itself is not deleted) */
+    delete: operations['FileAttachmentsController_detach']
     options?: never
     head?: never
     patch?: never
@@ -5299,128 +6615,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/files/upload': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Upload a file to the central document store */
-    post: operations['FilesController_upload']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/files': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List files for the current tenant */
-    get: operations['FilesController_findAll']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/files/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get file metadata by ID */
-    get: operations['FilesController_findOne']
-    put?: never
-    post?: never
-    /** Delete a file and remove it from storage */
-    delete: operations['FilesController_remove']
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/files/{id}/download': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Stream download a file */
-    get: operations['FilesController_download']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/files/{id}/url': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a presigned/direct download URL for a file */
-    get: operations['FilesController_getUrl']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/file-attachments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List attachments for a specific record */
-    get: operations['FileAttachmentsController_findByEntity']
-    put?: never
-    /** Attach a file to any business record */
-    post: operations['FileAttachmentsController_attach']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/file-attachments/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single attachment by ID */
-    get: operations['FileAttachmentsController_findOne']
-    put?: never
-    post?: never
-    /** Detach a file from a record (file itself is not deleted) */
-    delete: operations['FileAttachmentsController_detach']
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
 }
 export type webhooks = Record<string, never>
 export interface components {
@@ -5696,6 +6890,13 @@ export interface components {
       status?: 'active' | 'inactive'
       description?: string
     }
+    AssignCashierDto: {
+      /**
+       * @description User ID to assign to this terminal
+       * @example user-uuid
+       */
+      userId: string
+    }
     OpenSessionDto: {
       /** @example uuid-terminal-id */
       terminalId: string
@@ -5780,6 +6981,11 @@ export interface components {
        * @enum {string}
        */
       pricingMode?: 'inclusive' | 'exclusive' | 'exempt'
+      /**
+       * @description Serial number record ID to assign to this line (required for serialized items)
+       * @example uuid-serial-number-id
+       */
+      serialNumberId?: string
       notes?: string
     }
     CreateTransactionDto: {
@@ -5841,11 +7047,13 @@ export interface components {
       offlinePaymentMethods?: (
         | 'cash'
         | 'card'
-        | 'e_wallet'
+        | 'gcash'
+        | 'maya'
         | 'gift_card'
         | 'store_credit'
         | 'loyalty_points'
         | 'bank_transfer'
+        | 'custom'
       )[]
       /**
        * @description Manager override for receiptless return or high-discount authorization (POS-06, POS-20)
@@ -5863,8 +7071,24 @@ export interface components {
        */
       journalEntryId?: string
       notes?: string
+      /**
+       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId)
+       * @default cash
+       * @enum {string}
+       */
+      invoiceType: 'cash' | 'charge'
+      /**
+       * @description Days until the AR invoice is due (charge invoices only). Defaults to 30.
+       * @example 30
+       */
+      chargeDueDays?: number
       /** @description SC/PWD discount — triggers 20% BIR-compliant discount on VAT-exclusive base with VAT exemption (POS-42/53) */
       scPwdDiscount?: components['schemas']['ScPwdDiscountDto']
+      /**
+       * @description Selling agent to attribute this sale to — distinct from the cashier operating the terminal (POS task 3)
+       * @example uuid-user-id
+       */
+      sellingAgentId?: string
       lines: components['schemas']['CreateTransactionLineDto'][]
     }
     SyncTransactionsDto: {
@@ -5875,11 +7099,13 @@ export interface components {
       paymentMethod:
         | 'cash'
         | 'card'
-        | 'e_wallet'
+        | 'gcash'
+        | 'maya'
         | 'gift_card'
         | 'store_credit'
         | 'loyalty_points'
         | 'bank_transfer'
+        | 'custom'
       /** @example 500 */
       amount: number
       /**
@@ -5897,12 +7123,41 @@ export interface components {
       /** @example 1 */
       fxRate?: number
       notes?: string
+      /** @description ID of custom payment method config (required when paymentMethod=custom) */
+      paymentMethodConfigId?: string
     }
     SendReceiptDto: {
+      /**
+       * @example [
+       *       "email",
+       *       "sms"
+       *     ]
+       */
+      channels?: string[]
       /** @example customer@example.com */
       email?: string
       /** @example +639171234567 */
-      phone?: string
+      mobile?: string
+    }
+    RequestVoidDto: {
+      /**
+       * @description Mandatory reason for the void or edit request (POS-05)
+       * @example Incorrect item scanned — customer requested correction
+       */
+      reason: string
+      /**
+       * @description Whether this is a void or an edit request
+       * @default void
+       * @enum {string}
+       */
+      requestType: 'void' | 'edit'
+    }
+    ReviewVoidRequestDto: {
+      /**
+       * @description Optional notes from the reviewing manager
+       * @example Verified with CCTV footage — approved
+       */
+      reviewNotes?: string
     }
     ParkSaleDto: {
       /** @example uuid-terminal-id */
@@ -6145,16 +7400,6 @@ export interface components {
        */
       receiptlessReturnDays?: number
       /**
-       * @description Queue category to auto-issue a pickup ticket into when a sale completes. Set to null to disable.
-       * @example uuid-queue-category-id
-       */
-      orderQueueCategoryId?: Record<string, never>
-      /**
-       * @description Enable POS order mode — completed sales auto-issue a queue ticket and the order queue display is activated.
-       * @example true
-       */
-      orderMode?: boolean
-      /**
        * @description Tenant-wide default pricing mode for tax calculation (POS-51/52). "inclusive" = VAT is extracted from tag price; "exclusive" = VAT added on top.
        * @default exclusive
        * @enum {string}
@@ -6164,13 +7409,6 @@ export interface components {
     UpdatePosConfigDto: {
       discountOverrideThreshold?: number
       receiptlessReturnDays?: number
-      /** @description Queue category to auto-issue a pickup ticket into when a sale completes. Set to null to disable. */
-      orderQueueCategoryId?: Record<string, never>
-      /**
-       * @description Enable POS order mode — completed sales auto-issue a queue ticket and the order queue display is activated.
-       * @example true
-       */
-      orderMode?: boolean
       /**
        * @description Tenant-wide default pricing mode (POS-51/52).
        * @enum {string}
@@ -6224,6 +7462,10 @@ export interface components {
       /** @example 9999 */
       pin: string
     }
+    ValidateByPinOnlyDto: {
+      /** @example 9999 */
+      pin: string
+    }
     CreatePosMenuItemDto: {
       /** @example Chicken Adobo */
       name: string
@@ -6245,6 +7487,95 @@ export interface components {
       inventoryItemId: string
       /** @example 0.25 */
       quantity: number
+    }
+    CreateCustomPaymentMethodDto: {
+      /** @example Company Charge Account */
+      name: string
+      /** @example Charge */
+      label: string
+      /** @example Voucher Code */
+      referenceFieldLabel?: string
+      /**
+       * @description Validation regex for the reference field
+       * @example ^VCH-\d{6}$
+       */
+      referenceFieldRegex?: string
+      /**
+       * @description Whether the reference field is mandatory at checkout
+       * @default false
+       */
+      referenceIsRequired: boolean
+      /** @description GL account ID */
+      glAccountId?: string
+    }
+    ReorderPaymentMethodsDto: {
+      /** @description Payment method config IDs in desired display order */
+      orderedIds: string[]
+    }
+    UpdatePaymentMethodDto: {
+      /** @description Enable or disable this payment method */
+      isEnabled?: boolean
+      /** @description Display name (custom methods only) */
+      name?: string
+      /** @description GL account ID to map this method to */
+      glAccountId?: string
+      /** @description Display order position */
+      displayOrder?: number
+    }
+    BatchPaymentMethodDto: Record<string, never>
+    UpdateReceiptBrandingDto: {
+      /**
+       * @description Logo URL; pass null to remove the logo
+       * @example https://cdn.example.com/logo.png
+       */
+      logoUrl?: Record<string, never> | null
+      /**
+       * @description Header text shown on the receipt below the logo. Supports newlines for multi-line headers.
+       * @example SM City
+       *     Iloilo City
+       */
+      headerText?: string
+      /**
+       * @description Default footer text shown on every branch receipt unless that branch has its own override. Supports newlines and {{branch_name}}/{{date}} tokens.
+       * @example Thank you for shopping with us!
+       *     Follow us @ourhandle
+       */
+      footerText?: Record<string, never> | null
+    }
+    UpdateBranchReceiptConfigDto: {
+      /**
+       * @description This branch's own logo, overriding the company default. Pass null to clear the override and fall back to the default.
+       * @example https://cdn.example.com/logo.png
+       */
+      logoUrl?: Record<string, never> | null
+      /**
+       * @description This branch's own header text, overriding the company default. Pass null to clear the override.
+       * @example SM City
+       *     Iloilo City
+       */
+      headerText?: Record<string, never> | null
+      /**
+       * @description This branch's own footer text, overriding the company default. Supports newlines and {{branch_name}}/{{date}} tokens. Pass null to clear the override.
+       * @example Thank you for shopping at {{branch_name}}!
+       *     Follow us @ourhandle
+       */
+      footerText?: Record<string, never> | null
+    }
+    RequestCancellationDto: {
+      /**
+       * @description Mandatory grounds for the cancellation request
+       * @example Customer changed their mind before payment
+       */
+      reason: string
+      /** @description Snapshot of cart items at time of request for audit purposes */
+      cartSnapshot?: string[]
+    }
+    ReviewCancellationDto: {
+      /**
+       * @description Optional notes from the reviewing manager
+       * @example Confirmed with cashier — approved
+       */
+      reviewNotes?: string
     }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
@@ -6379,6 +7710,14 @@ export interface components {
        * @example 365
        */
       warrantyPeriodDays?: number
+      /** @description Item group ID */
+      groupId?: string
+      /** @description Item subgroup ID */
+      subgroupId?: string
+      /** @description Item brand ID */
+      brandId?: string
+      /** @description Item type ID */
+      typeId?: string
     }
     UpdateItemDto: {
       /**
@@ -6477,6 +7816,14 @@ export interface components {
        * @example 365
        */
       warrantyPeriodDays?: number
+      /** @description Item group ID */
+      groupId?: string
+      /** @description Item subgroup ID */
+      subgroupId?: string
+      /** @description Item brand ID */
+      brandId?: string
+      /** @description Item type ID */
+      typeId?: string
     }
     UpdateLifecycleDto: {
       /**
@@ -6773,36 +8120,82 @@ export interface components {
        */
       conversionFactor?: number
     }
-    ReceiveStockDto: {
+    ReceiveStockLineDto: {
       /** @description Item ID being received */
       itemId: string
-      /** @description Variant ID (optional, for variant-tracked items) */
+      /** @description Variant ID for variant-tracked items */
       variantId?: string
-      /** @description Destination warehouse ID */
-      warehouseId: string
-      /** @description Specific location within the warehouse (optional) */
+      /** @description Specific bin/location within the warehouse */
       locationId?: string
-      /** @description Batch ID for batch-tracked items (optional) */
+      /** @description Existing batch ID for batch-tracked items */
       batchId?: string
+      /** @description Batch number (creates a new batch if not found) */
+      batchNumber?: string
       /**
-       * @description Quantity received. Must be a positive number.
+       * @description Expiry date for the batch
+       * @example 2027-06-01
+       */
+      expiryDate?: string
+      /** @description Serial numbers for serial-tracked items */
+      serialNumbers?: string[]
+      /**
+       * @description Auto-generate serial numbers and barcodes for each unit received. Count is determined by quantityReceived. Ignored if serialNumbers is provided.
+       * @default false
+       */
+      autoGenerateSerials: boolean
+      /**
+       * @description Quantity received. Must be positive.
        * @example 100
        */
-      quantity: number
+      quantityReceived: number
       /**
        * @description Unit cost at time of receipt
        * @example 25.5
        */
       unitCost?: number
       /**
-       * @description Reference document type (e.g. purchase_order, sale_order)
-       * @example purchase_order
+       * @description Place this line on quality hold
+       * @default false
        */
-      referenceType?: string
-      /** @description Reference document ID */
-      referenceId?: string
-      /** @description Additional notes for this receipt */
+      qualityHold: boolean
+      /** @description PO line ID this receipt line fulfills — enables discrepancy flagging against the ordered quantity */
+      purchaseOrderLineId?: string
+      /** @description Line-level notes */
       notes?: string
+    }
+    ReceiveStockDto: {
+      /**
+       * @description Reference number for this goods receipt
+       * @example GRN-0001
+       */
+      code: string
+      /** @description Destination warehouse ID */
+      warehouseId: string
+      /**
+       * @description Whether this is new incoming stock (new_stock) or a reversal (revert)
+       * @example new_stock
+       * @enum {string}
+       */
+      applicationType: 'new_stock' | 'revert'
+      /**
+       * @description Mode of transfer used to deliver the goods
+       * @example Road
+       */
+      modeOfTransfer?: string
+      /**
+       * @description NNDP cost at the time of receipt
+       * @example 1250
+       */
+      nndpCost?: number
+      /**
+       * @description Date stock was physically received (defaults to now)
+       * @example 2026-06-24T08:00:00.000Z
+       */
+      receivedAt?: string
+      /** @description General notes for this receipt */
+      notes?: string
+      /** @description Items being received */
+      lines: components['schemas']['ReceiveStockLineDto'][]
     }
     ReturnStockDto: {
       /** @description Item ID being returned */
@@ -6829,6 +8222,13 @@ export interface components {
       originalSaleId?: string
       /** @description Additional notes for this return */
       notes?: string
+      /** @description SerialNumber record ID of the unit being returned (for serial-tracked items) */
+      serialNumberId?: string
+      /**
+       * @description "restock" restores the unit to available stock (default). "flag_for_repair" marks it in_repair and auto-creates a UDS.
+       * @enum {string}
+       */
+      repairDecision?: 'restock' | 'flag_for_repair'
     }
     ReorderRuleDto: {
       /** @description Item ID this rule applies to */
@@ -6894,6 +8294,16 @@ export interface components {
       expectedArrival?: string
       /** @description Dispatch notes */
       notes?: string
+      /** @description Driver's full name */
+      driverName?: string
+      /** @description Driver's contact number */
+      driverPhone?: string
+      /** @description Driver's license number */
+      driverLicense?: string
+      /** @description Vehicle plate number */
+      vehiclePlate?: string
+      /** @description Carrier or trucking company name */
+      carrierName?: string
     }
     ReceiveTransferDto: {
       /**
@@ -7080,7 +8490,14 @@ export interface components {
     }
     UpdateSerialStatusDto: {
       /** @enum {string} */
-      status: 'in_stock' | 'sold' | 'returned' | 'defective' | 'scrapped'
+      status:
+        | 'in_stock'
+        | 'sold'
+        | 'returned'
+        | 'defective'
+        | 'scrapped'
+        | 'in_repair'
+        | 'pulled_out'
       /**
        * @description Required when status is sold
        * @example customer-uuid
@@ -7428,6 +8845,160 @@ export interface components {
        */
       attributes: Record<string, never>
     }
+    CreatePurchaseRequestLineDto: {
+      itemId: string
+      quantity: number
+      /** @description Requester's estimated unit price for budget reference */
+      estimatedUnitPrice?: number
+      suggestedSupplierId?: string
+      notes?: string
+    }
+    CreatePurchaseRequestDto: {
+      branchId?: string
+      reason?: string
+      notes?: string
+      lines: components['schemas']['CreatePurchaseRequestLineDto'][]
+    }
+    ApprovePrDto: {
+      remarks?: string
+    }
+    RejectPrDto: {
+      reason: string
+    }
+    ConvertPrToPoLineDto: {
+      prLineId: string
+      quantity: number
+      unitPrice: number
+      /** @description Pricing breakdown, e.g. "(3,649 - 30% - 20%)" */
+      description?: string
+      notes?: string
+    }
+    ConvertPrToPoDto: {
+      supplierId: string
+      warehouseId?: string
+      expectedDeliveryDate?: string
+      /** @description Full delivery note, e.g. "Please deliver to Brgy. Igang, Pototan Covered Gym on June 19, 2026 @ Afternoon" */
+      deliveryInstructions?: string
+      paymentTerms?: string
+      shippingAddress?: string
+      notes?: string
+      lines: components['schemas']['ConvertPrToPoLineDto'][]
+    }
+    UdsLineDto: {
+      /** @description SerialNumber record ID */
+      serialNumberId: string
+      /** @description Short reason for this specific unit */
+      issueReason?: string
+      notes?: string
+    }
+    CreateUdsDto: {
+      /**
+       * @description Unique document code. Generated server-side if omitted.
+       * @example UDS-20260706-A1B2
+       */
+      code: string
+      /** @description Warehouse the units are leaving from */
+      warehouseId?: string
+      /** @enum {string} */
+      reason: 'repair' | 'maintenance' | 'quality_check' | 'pull_out' | 'loan'
+      /** @example 2026-08-01 */
+      expectedReturnDate?: string
+      notes?: string
+      lines: components['schemas']['UdsLineDto'][]
+    }
+    UpdateUdsStatusDto: {
+      /** @enum {string} */
+      status: 'issued' | 'in_transit' | 'received' | 'completed' | 'cancelled'
+      notes?: string
+    }
+    CreateProcurementQuotaDto: {
+      /** @description Leave empty for a tenant-wide quota */
+      branchId?: string
+      /** @enum {string} */
+      grain: 'monthly' | 'quarterly' | 'annual'
+      /** @example 2026 */
+      fiscalYear: number
+      /**
+       * @description Maximum allowed PO spend for the period
+       * @example 500000
+       */
+      limitAmount: number
+      notes?: string
+    }
+    UpdateProcurementQuotaDto: {
+      limitAmount?: number
+      isActive?: boolean
+      notes?: string
+    }
+    CreateBsrLineDto: {
+      itemId: string
+      /** @example 10 */
+      requestedQty: number
+      notes?: string
+    }
+    CreateBsrDto: {
+      branchId: string
+      /** @description Warehouse to request stock from */
+      fromWarehouseId: string
+      notes?: string
+      lines: components['schemas']['CreateBsrLineDto'][]
+    }
+    ApproveBsrDto: {
+      /**
+       * @description Days to hold reservation
+       * @default 7
+       */
+      reservationDays: number
+    }
+    RejectBsrDto: {
+      reason: string
+    }
+    CreateItemGroupDto: {
+      /** @example Mobile Phones */
+      name: string
+      /** @example All mobile phone products */
+      description?: string
+    }
+    UpdateItemGroupDto: {
+      /** @example Mobile Phones */
+      name?: string
+      /** @example All mobile phone products */
+      description?: string
+    }
+    CreateItemSubgroupDto: {
+      /** @description Parent group ID */
+      groupId: string
+      /** @example Android Phones */
+      name: string
+      description?: string
+    }
+    UpdateItemSubgroupDto: {
+      /** @description Parent group ID */
+      groupId?: string
+      /** @example Android Phones */
+      name?: string
+      description?: string
+    }
+    CreateItemBrandDto: {
+      /** @example Samsung */
+      name: string
+      description?: string
+    }
+    UpdateItemBrandDto: {
+      /** @example Samsung */
+      name?: string
+      description?: string
+    }
+    CreateItemTypeDto: {
+      /** @example New Unit */
+      name: string
+      description?: string
+    }
+    UpdateItemTypeDto: {
+      /** @example New Unit */
+      name?: string
+      description?: string
+    }
     CreateTaxRateDto: {
       /** @example VAT 12% */
       name: string
@@ -7454,6 +9025,17 @@ export interface components {
       isActive?: boolean
       effectiveFrom?: string
       effectiveTo?: string
+    }
+    AttachFileDto: {
+      /** @description UUID of the file to attach */
+      fileId: string
+      /**
+       * @description Entity type name
+       * @example SalesOrder
+       */
+      entityType: string
+      /** @description UUID of the target record */
+      entityId: string
     }
     SupplierBankAccountInputDto: {
       /** @example BPI */
@@ -8319,17 +9901,6 @@ export interface components {
     UpdateModulesDto: Record<string, never>
     UpdateSubscriptionDto: Record<string, never>
     CreateTenantAdminDto: Record<string, never>
-    AttachFileDto: {
-      /** @description UUID of the file to attach */
-      fileId: string
-      /**
-       * @description Entity type name
-       * @example SalesOrder
-       */
-      entityType: string
-      /** @description UUID of the target record */
-      entityId: string
-    }
   }
   responses: never
   parameters: never
@@ -8583,6 +10154,23 @@ export interface operations {
         content: {
           'application/json': components['schemas']['UserResponseDto']
         }
+      }
+    }
+  }
+  UsersController_getBirthdays: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -9117,7 +10705,10 @@ export interface operations {
   }
   TerminalsController_findAll: {
     parameters: {
-      query?: never
+      query?: {
+        /** @description Filter terminals to a single branch */
+        branchId?: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -9148,6 +10739,27 @@ export interface operations {
     responses: {
       /** @description Terminal created successfully */
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TerminalsController_getTerminalsForCashier: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description User UUID */
+        userId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Terminals the cashier is restricted to (empty = unrestricted) */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -9222,6 +10834,75 @@ export interface operations {
       }
     }
   }
+  TerminalsController_getCashiers: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Terminal UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Assigned cashiers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TerminalsController_assignCashier: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Terminal UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AssignCashierDto']
+      }
+    }
+    responses: {
+      /** @description Cashier assigned */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TerminalsController_removeCashier: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Terminal UUID */
+        id: string
+        /** @description User UUID */
+        userId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cashier removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SessionsController_open: {
     parameters: {
       query?: never
@@ -9248,6 +10929,8 @@ export interface operations {
     parameters: {
       query?: {
         terminalId?: string
+        /** @description Filter sessions to a single branch (via the terminal it ran on) */
+        branchId?: string
         cashierId?: string
         status?: 'open' | 'closed' | 'handed_over'
         dateFrom?: string
@@ -9409,6 +11092,8 @@ export interface operations {
     parameters: {
       query?: {
         sessionId?: string
+        /** @description Filter transactions to a single branch (via the terminal session) */
+        branchId?: string
         transactionType?: 'sale' | 'refund' | 'exchange'
         customerId?: string
         transactionNumber?: string
@@ -9620,7 +11305,72 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Receipt delivery queued */
+      /** @description Receipt dispatched; returns deliveryId and status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_resendReceipt: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transaction UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Receipt resent */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_logReprintEvent: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transaction UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Reprint event logged; returns reprint record id */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_sendReceiptLegacy: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SendReceiptDto']
+      }
+    }
+    responses: {
       200: {
         headers: {
           [name: string]: unknown
@@ -9650,10 +11400,165 @@ export interface operations {
       }
     }
   }
+  TransactionsController_getBranchVoidRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description All void requests for the branch (all statuses) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_submitVoidRequest: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transaction UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestVoidDto']
+      }
+    }
+    responses: {
+      /** @description Void request created (status: pending) */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_listVoidRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Transaction UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of void requests for this transaction */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_getVoidRequestHistory: {
+    parameters: {
+      query: {
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Approved and rejected void requests, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_getPendingVoidRequests: {
+    parameters: {
+      query: {
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Pending void requests awaiting manager review */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_approveVoidRequest: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Void request UUID */
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewVoidRequestDto']
+      }
+    }
+    responses: {
+      /** @description Void request approved and transaction voided */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_rejectVoidRequest: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Void request UUID */
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewVoidRequestDto']
+      }
+    }
+    responses: {
+      /** @description Void request rejected */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ParkedSalesController_findAll: {
     parameters: {
       query: {
         terminalId: string
+        branchId: string
       }
       header?: never
       path?: never
@@ -10536,6 +12441,24 @@ export interface operations {
       }
     }
   }
+  CashierPinController_getPinStatus: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Returns { hasPin: boolean } */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   CashierPinController_registerPin: {
     parameters: {
       query?: never
@@ -10610,6 +12533,28 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['ValidateManagerOverrideDto']
+      }
+    }
+    responses: {
+      /** @description Returns { valid: true, managerId, managerName } on success */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CashierPinController_validateManagerByPinOnly: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ValidateByPinOnlyDto']
       }
     }
     responses: {
@@ -10798,6 +12743,467 @@ export interface operations {
       }
     }
   }
+  PaymentMethodsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Payment methods list with standard + custom */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PaymentMethodsController_createCustom: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCustomPaymentMethodDto']
+      }
+    }
+    responses: {
+      /** @description Custom payment method created */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PaymentMethodsController_reorder: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReorderPaymentMethodsDto']
+      }
+    }
+    responses: {
+      /** @description Display order saved */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PaymentMethodsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Payment method config ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Payment method removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PaymentMethodsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Payment method config ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePaymentMethodDto']
+      }
+    }
+    responses: {
+      /** @description Payment method updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchPaymentMethodsController_getForBranch: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Payment methods with enabled/override status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchPaymentMethodsController_saveBatch: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BatchPaymentMethodDto']
+      }
+    }
+    responses: {
+      /** @description Updated branch payment methods */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchPaymentMethodsController_resetToDefaults: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description All branch overrides removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  OwnerPaymentMethodsController_getForOwner: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Payment methods with enabled state */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  OwnerPaymentMethodsController_saveBatch: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BatchPaymentMethodDto']
+      }
+    }
+    responses: {
+      /** @description Updated payment methods */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReceiptBrandingController_getBranding: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Current receipt branding settings */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReceiptBrandingController_updateBranding: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateReceiptBrandingDto']
+      }
+    }
+    responses: {
+      /** @description Receipt branding updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReceiptBrandingController_uploadLogo: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file?: string
+        }
+      }
+    }
+    responses: {
+      /** @description Logo uploaded; logoUrl stored on receipt config */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchReceiptConfigController_getConfig: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Effective logo/header/footer plus which fields are overridden */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchReceiptConfigController_updateConfig: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBranchReceiptConfigDto']
+      }
+    }
+    responses: {
+      /** @description Updated effective branding for the branch */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchReceiptConfigController_uploadLogo: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Branch UUID */
+        branchId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file?: string
+        }
+      }
+    }
+    responses: {
+      /** @description Logo uploaded; overrides the company default for this branch */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CancellationRequestsController_submit: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        sessionId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestCancellationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CancellationRequestsController_getPending: {
+    parameters: {
+      query: {
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CancellationRequestsController_getStatus: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CancellationRequestsController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewCancellationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CancellationRequestsController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewCancellationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemImagesController_bulkImport: {
     parameters: {
       query?: never
@@ -10976,6 +13382,14 @@ export interface operations {
         lifecycle?: 'active' | 'discontinued' | 'archived'
         /** @description Filter by primary category ID */
         primaryCategoryId?: string
+        /** @description Filter by group ID */
+        groupId?: string
+        /** @description Filter by subgroup ID */
+        subgroupId?: string
+        /** @description Filter by brand ID */
+        brandId?: string
+        /** @description Filter by type ID */
+        typeId?: string
         page?: number
         limit?: number
       }
@@ -12118,7 +14532,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Stock ledger entry created for the receipt */
+      /** @description GoodsReceipt document with ledger entries created */
       201: {
         headers: {
           [name: string]: unknown
@@ -12156,6 +14570,8 @@ export interface operations {
         itemId?: string
         /** @description Filter to a specific warehouse */
         warehouseId?: string
+        /** @description Filter to a specific branch (consolidates all its warehouses) */
+        branchId?: string
         /** @description Filter by transaction type */
         transactionType?:
           | 'receipt'
@@ -12181,6 +14597,81 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Paginated ledger entries with item and warehouse details */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getReceivingReports: {
+    parameters: {
+      query?: {
+        /** @description Filter to a specific warehouse */
+        warehouseId?: string
+        /** @description Filter to a specific branch (across all its warehouses) */
+        branchId?: string
+        /** @description Filter by receipt status */
+        status?: 'draft' | 'received' | 'quality_hold' | 'rejected'
+        /** @description Start of date range */
+        startDate?: string
+        /** @description End of date range */
+        endDate?: string
+        /** @description When true, only returns receipts with at least one quantity or condition discrepancy */
+        hasDiscrepancy?: boolean
+        /** @description Page number */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated list of GRNs with per-line discrepancy detail and a top-level hasAnyDiscrepancy flag */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getReceivingReport: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description GRN with discrepancy detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  StockController_getReceivingDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description GRN document envelope */
       200: {
         headers: {
           [name: string]: unknown
@@ -12316,6 +14807,27 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock transfer detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_getTransferDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Stock transfer document envelope */
       200: {
         headers: {
           [name: string]: unknown
@@ -12853,7 +15365,14 @@ export interface operations {
       query?: {
         itemId?: string
         warehouseId?: string
-        status?: 'in_stock' | 'sold' | 'returned' | 'defective' | 'scrapped'
+        status?:
+          | 'in_stock'
+          | 'sold'
+          | 'returned'
+          | 'defective'
+          | 'scrapped'
+          | 'in_repair'
+          | 'pulled_out'
         page?: number
         limit?: number
       }
@@ -13974,6 +16493,1010 @@ export interface operations {
       }
     }
   }
+  PurchaseRequestController_findAll: {
+    parameters: {
+      query?: {
+        status?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'converted' | 'cancelled'
+        branchId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreatePurchaseRequestDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_submit: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApprovePrDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectPrDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseRequestController_cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_findAll: {
+    parameters: {
+      query?: {
+        status?:
+          | 'draft'
+          | 'approved'
+          | 'sent'
+          | 'partially_received'
+          | 'fully_received'
+          | 'closed'
+          | 'cancelled'
+        supplierId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_convertFromPr: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        prId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConvertPrToPoDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_send: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UdsController_findAll: {
+    parameters: {
+      query?: {
+        status?: 'issued' | 'in_transit' | 'received' | 'completed' | 'cancelled'
+        reason?: 'repair' | 'maintenance' | 'quality_check' | 'pull_out' | 'loan'
+        warehouseId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UdsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateUdsDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UdsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UdsController_updateStatus: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateUdsStatusDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ProcurementQuotaController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ProcurementQuotaController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateProcurementQuotaDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ProcurementQuotaController_getUsage: {
+    parameters: {
+      query?: {
+        branchId?: unknown
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ProcurementQuotaController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateProcurementQuotaDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_findAll: {
+    parameters: {
+      query?: {
+        status?: string
+        branchId?: string
+        fromWarehouseId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateBsrDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_submit: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveBsrDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectBsrDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BranchStockRequisitionController_fulfill: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findGroups: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_createGroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateItemGroupDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findGroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_removeGroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_updateGroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateItemGroupDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findSubgroups: {
+    parameters: {
+      query?: {
+        groupId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_createSubgroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateItemSubgroupDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findSubgroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_removeSubgroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_updateSubgroup: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateItemSubgroupDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findBrands: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_createBrand: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateItemBrandDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findBrand: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_removeBrand: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_updateBrand: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateItemBrandDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findTypes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_createType: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateItemTypeDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_findType: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_removeType: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemClassificationController_updateType: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateItemTypeDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   TaxRatesController_findAll: {
     parameters: {
       query?: {
@@ -14107,6 +17630,211 @@ export interface operations {
     requestBody?: never
     responses: {
       200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_upload: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string
+        }
+      }
+    }
+    responses: {
+      /** @description File uploaded */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_findAll: {
+    parameters: {
+      query?: {
+        uploaderId?: string
+        enterpriseOwnerId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description File list */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_download: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FilesController_getUrl: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FileAttachmentsController_findByEntity: {
+    parameters: {
+      query: {
+        /** @description Entity type to filter by */
+        entityType: string
+        /** @description Entity record UUID */
+        entityId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Attachment list */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FileAttachmentsController_attach: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AttachFileDto']
+      }
+    }
+    responses: {
+      /** @description Attachment created */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FileAttachmentsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FileAttachmentsController_detach: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
         headers: {
           [name: string]: unknown
         }
@@ -18252,211 +21980,6 @@ export interface operations {
     requestBody?: never
     responses: {
       200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_upload: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'multipart/form-data': {
-          /** Format: binary */
-          file: string
-        }
-      }
-    }
-    responses: {
-      /** @description File uploaded */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_findAll: {
-    parameters: {
-      query?: {
-        uploaderId?: string
-        enterpriseOwnerId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description File list */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      204: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_download: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FilesController_getUrl: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FileAttachmentsController_findByEntity: {
-    parameters: {
-      query: {
-        /** @description Entity type to filter by */
-        entityType: string
-        /** @description Entity record UUID */
-        entityId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Attachment list */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FileAttachmentsController_attach: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AttachFileDto']
-      }
-    }
-    responses: {
-      /** @description Attachment created */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FileAttachmentsController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FileAttachmentsController_detach: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      204: {
         headers: {
           [name: string]: unknown
         }
