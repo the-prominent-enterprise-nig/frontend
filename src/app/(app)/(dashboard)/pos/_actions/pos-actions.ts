@@ -1217,21 +1217,6 @@ export async function upsertPosConfig(
     if (!createResult.success || !createResult.data) {
       return { success: false, error: createResult.error || 'Failed to create POS config' }
     }
-    // The backend only accepts orderQueueCategoryId via PATCH, not POST.
-    // If one was provided, follow up with a PATCH on the newly-created config.
-    if (fields.orderQueueCategoryId !== undefined && fields.orderQueueCategoryId !== null) {
-      const patchResult = await api.patch<PosConfig>(`/pos/config/${createResult.data.id}`, {
-        orderQueueCategoryId: fields.orderQueueCategoryId,
-      })
-      console.log(
-        '[upsertPosConfig] PATCH orderQueueCategoryId result:',
-        JSON.stringify(patchResult)
-      )
-      if (patchResult.success && patchResult.data) {
-        revalidateTag(TAGS.posConfig, 'max')
-        return { success: true, data: patchResult.data }
-      }
-    }
     revalidateTag(TAGS.posConfig, 'max')
     return { success: true, data: createResult.data }
   } catch (e) {
@@ -1280,43 +1265,6 @@ export async function getActivePosConfig(): Promise<ApiResponse<PosConfig | null
   } catch (e) {
     console.error('[getActivePosConfig] threw:', e)
     return { success: true, data: null }
-  }
-}
-
-// ─── Order Queue ─────────────────────────────────────────────────────────────
-
-export interface AddToQueueResult {
-  ticket: { id: string; number: number }
-  categoryId: string
-  categoryName: string
-  transactionId: string
-  transactionNumber: string
-  items: {
-    itemId: string
-    name: string
-    sku: string
-    quantity: number
-    unitPrice: number
-    discountAmount: number
-    lineTotal: number
-  }[]
-}
-
-export async function addToOrderQueue(
-  transactionId: string,
-  input: { categoryId?: string; customerName?: string; notes?: string }
-): Promise<ApiResponse<AddToQueueResult>> {
-  try {
-    const result = await api.post<AddToQueueResult>(
-      `/pos/transactions/${transactionId}/add-to-queue`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to add to order queue' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to add to order queue' }
   }
 }
 

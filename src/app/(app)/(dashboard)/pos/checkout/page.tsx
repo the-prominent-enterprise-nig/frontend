@@ -23,7 +23,6 @@ import {
   KeyRound,
   WifiOff,
   UtensilsCrossed,
-  Bell,
   Users,
   Mail,
   Phone,
@@ -53,7 +52,6 @@ import {
   validateManagerOverride,
   syncTransactions,
   updateSessionDisplay,
-  addToOrderQueue,
   sendReceipt,
   getPaymentMethods,
   getDefaultAccountingTaxRate,
@@ -298,7 +296,6 @@ export default function CheckoutPage() {
   // POS config
   const [discountThreshold, setDiscountThreshold] = useState(20)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
-  const [queueEnabled, setQueueEnabled] = useState(false)
   const [inclusivePricing, setInclusivePricing] = useState(false)
 
   // SC/PWD discount
@@ -333,7 +330,6 @@ export default function CheckoutPage() {
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    queueTicketNumber?: number | null
     invoiceType?: PosInvoiceType
   } | null>(null)
 
@@ -440,7 +436,6 @@ export default function CheckoutPage() {
       if (res.success && res.data) {
         setDiscountThreshold(Number(res.data.discountOverrideThreshold ?? 20))
         setAllowNegativeStock(res.data.allowNegativeStock ?? false)
-        setQueueEnabled(!!res.data.orderQueueCategoryId)
         setInclusivePricing(res.data.defaultPricingMode === 'inclusive')
       }
     })
@@ -1127,7 +1122,6 @@ export default function CheckoutPage() {
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
-        queueTicketNumber: txData?.queueTicketNumber ?? null,
         invoiceType,
       })
     } catch (err) {
@@ -1225,7 +1219,6 @@ export default function CheckoutPage() {
       <SuccessScreen
         success={success}
         totalAmount={totalAmount}
-        queueEnabled={queueEnabled}
         selectedCustomer={selectedCustomer}
         onReset={resetSale}
         fmt={fmt}
@@ -2872,7 +2865,6 @@ export default function CheckoutPage() {
 function SuccessScreen({
   success,
   totalAmount,
-  queueEnabled,
   selectedCustomer,
   onReset,
   fmt,
@@ -2890,11 +2882,9 @@ function SuccessScreen({
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    queueTicketNumber?: number | null
     invoiceType?: PosInvoiceType
   }
   totalAmount: number
-  queueEnabled: boolean
   selectedCustomer: PosCustomer | null
   onReset: () => void
   fmt: (n: number) => string
@@ -2904,18 +2894,6 @@ function SuccessScreen({
   promoDiscount: number
   effectiveTaxRate: number | null
 }) {
-  const [showQueueForm, setShowQueueForm] = useState(false)
-  const [queueCustomerName, setQueueCustomerName] = useState(
-    selectedCustomer ? customerDisplayName(selectedCustomer) : ''
-  )
-  const [queueNotes, setQueueNotes] = useState('')
-  const [queueSubmitting, setQueueSubmitting] = useState(false)
-  const [queueResult, setQueueResult] = useState<{ number: number; categoryName: string } | null>(
-    null
-  )
-  const [queueError, setQueueError] = useState('')
-  const queueInFlight = useRef(false)
-
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
   const [receiptSending, setReceiptSending] = useState(false)
@@ -2940,25 +2918,6 @@ function SuccessScreen({
     day: 'numeric',
     year: 'numeric',
   })
-
-  async function handleAddToQueue() {
-    if (!success.transactionId || queueInFlight.current) return
-    queueInFlight.current = true
-    setQueueSubmitting(true)
-    setQueueError('')
-    const res = await addToOrderQueue(success.transactionId, {
-      customerName: queueCustomerName.trim() || undefined,
-      notes: queueNotes.trim() || undefined,
-    })
-    setQueueSubmitting(false)
-    queueInFlight.current = false
-    if (!res.success || !res.data) {
-      setQueueError(res.error ?? 'Failed to add to queue')
-      return
-    }
-    setQueueResult({ number: res.data.ticket.number, categoryName: res.data.categoryName })
-    setShowQueueForm(false)
-  }
 
   async function handleSendReceipt() {
     const email = receiptEmail.trim()
@@ -3029,21 +2988,6 @@ function SuccessScreen({
             </div>
           </div>
 
-          {/* Queue ticket */}
-          {(success.queueTicketNumber != null || queueResult) && (
-            <div className="rounded-xl bg-purple-50 px-6 py-4 text-center">
-              <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
-                {queueResult?.categoryName ?? 'Queue Ticket'}
-              </p>
-              <p className="text-6xl font-black text-purple-700">
-                #{success.queueTicketNumber ?? queueResult?.number}
-              </p>
-              <p className="mt-1 text-xs text-purple-400">
-                Show this number when your order is ready
-              </p>
-            </div>
-          )}
-
           {/* Total charged */}
           <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
             <p className="text-sm text-gray-500">Total Charged</p>
@@ -3065,85 +3009,6 @@ function SuccessScreen({
               Points earned for {customerDisplayName(selectedCustomer)}
             </p>
           )}
-
-          {/* Add to Order Queue */}
-          {!success.offlineBuffered &&
-            success.transactionId &&
-            queueEnabled &&
-            !queueResult &&
-            success.queueTicketNumber == null && (
-              <div>
-                {!showQueueForm ? (
-                  <button
-                    onClick={() => setShowQueueForm(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50"
-                  >
-                    <Bell size={14} /> Add to Order Queue
-                  </button>
-                ) : (
-                  <div className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
-                      Add to Order Queue
-                    </p>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Customer Name (optional)
-                      </label>
-                      <input
-                        autoFocus
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        placeholder="e.g. Juan dela Cruz"
-                        value={queueCustomerName}
-                        onChange={(e) => setQueueCustomerName(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Special Instructions (optional)
-                      </label>
-                      <input
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        placeholder="e.g. Extra spicy, no onions"
-                        value={queueNotes}
-                        onChange={(e) => setQueueNotes(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
-                      />
-                    </div>
-                    {queueError && (
-                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                        {queueError}
-                      </p>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setShowQueueForm(false)
-                          setQueueError('')
-                        }}
-                        className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleAddToQueue}
-                        disabled={queueSubmitting}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
-                      >
-                        {queueSubmitting ? (
-                          <>
-                            <Loader2 size={11} className="animate-spin" /> Issuing…
-                          </>
-                        ) : (
-                          <>
-                            <Bell size={11} /> Issue Ticket
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
           {/* Send Receipt */}
           {!success.offlineBuffered && success.transactionId && (
