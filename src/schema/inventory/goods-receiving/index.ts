@@ -12,7 +12,7 @@ const ReceiveStockLineSchema = z.object({
 })
 
 export const ReceiveStockFormSchema = z.object({
-  code: z.string().min(1, 'Reference number is required'),
+  code: z.string().optional(),
   purchaseOrderNumber: z.string().optional(),
   purchaseOrderDate: z.string().optional(),
   warehouseId: z.string().min(1, 'Destination warehouse is required'),

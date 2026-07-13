@@ -35,12 +35,14 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   const {
     purchaseOrderNumber: _purchaseOrderNumber,
     purchaseOrderDate: _purchaseOrderDate,
+    code,
     lines,
     ...rest
   } = parsed.data
 
   const backendPayload = {
     ...rest,
+    ...(code && code.trim() ? { code: code.trim() } : {}),
     lines: lines.map(({ itemId, expiryDate, batchNumber, autoGenerateSerials, ...lineRest }) => ({
       ...lineRest,
       itemId,
