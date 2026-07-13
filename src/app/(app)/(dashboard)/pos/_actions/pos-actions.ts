@@ -558,8 +558,6 @@ export async function validatePromoCode(
   }
 }
 
-// â”€â”€â”€ Gift Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export async function getGiftCards(): Promise<ApiResponse<GiftCard[]>> {
   try {
     const result = await api.get<GiftCard[]>('/pos/gift-cards', undefined, {
@@ -661,8 +659,6 @@ export async function updateSessionDisplay(
   }
 }
 
-// â”€â”€â”€ Loyalty â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export async function getLoyaltyByCustomer(
   customerId: string
 ): Promise<ApiResponse<LoyaltyAccount>> {
@@ -728,8 +724,6 @@ export async function redeemPoints(
   }
 }
 
-// â”€â”€â”€ Cash Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export async function getCashDrawerEvents(
   sessionId: string
 ): Promise<ApiResponse<CashDrawerEvent[]>> {
@@ -762,8 +756,6 @@ export async function createCashDrawerEvent(
     return { success: false, error: 'Failed to create cash drawer event' }
   }
 }
-
-// â”€â”€â”€ Branch Pricing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getBranchPricing(
   branchId?: string,
@@ -827,8 +819,6 @@ export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>
     return { success: false, error: 'Failed to delete branch pricing' }
   }
 }
-
-// â”€â”€â”€ Parked Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getParkedSales(
   terminalId?: string,
@@ -1040,8 +1030,6 @@ export async function cancelParkedSale(id: string): Promise<ApiResponse<ParkedSa
   }
 }
 
-// â”€â”€â”€ Branches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 export interface Branch {
   id: string
   name: string
@@ -1065,8 +1053,6 @@ export async function getBranches(): Promise<ApiResponse<Branch[]>> {
     return { success: false, error: 'Failed to fetch branches' }
   }
 }
-
-// â”€â”€â”€ Customers (CRM bridge) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function searchCustomers(q: string): Promise<ApiResponse<PosCustomer[]>> {
   try {
@@ -1110,8 +1096,6 @@ export async function createWalkInCustomer(
     return { success: false, error: 'Failed to create customer' }
   }
 }
-
-// â”€â”€â”€ Loyalty Program â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getLoyaltyProgram(tenantId: string): Promise<ApiResponse<LoyaltyProgram>> {
   try {
