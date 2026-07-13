@@ -35,12 +35,14 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   const {
     purchaseOrderNumber: _purchaseOrderNumber,
     purchaseOrderDate: _purchaseOrderDate,
+    code,
     lines,
     ...rest
   } = parsed.data
 
   const backendPayload = {
     ...rest,
+    ...(code ? { code } : {}),
     lines: lines.map(({ itemId, expiryDate, batchNumber, autoGenerateSerials, ...lineRest }) => ({
       ...lineRest,
       itemId,
@@ -64,6 +66,7 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   }
 
   revalidatePath('/inventory/goods-receiving')
+  revalidatePath('/inventory/purchase-orders')
 
   return {
     success: true,
