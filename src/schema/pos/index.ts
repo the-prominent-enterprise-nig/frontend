@@ -176,6 +176,7 @@ export interface PosTransactionLine {
   taxAmount: number
   lineTotal: number
   notes?: string | null
+  serialNumber?: string | null
 }
 
 export interface PosPayment {
@@ -217,6 +218,7 @@ export interface PosTransaction {
   journalEntryId?: string | null
   arInvoiceId?: string | null
   queueTicketNumber?: number | null
+  sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
   session?: PosSession
@@ -233,6 +235,7 @@ export interface CreateTransactionLineInput {
   taxAmount?: number
   pricingMode?: 'inclusive' | 'exclusive'
   notes?: string
+  serialNumberId?: string
 }
 
 export interface ScPwdDiscountInput {
@@ -262,6 +265,7 @@ export interface CreateTransactionInput {
   fxRate?: number
   notes?: string
   scPwdDiscount?: ScPwdDiscountInput
+  sellingAgentId?: string
   lines: CreateTransactionLineInput[]
 }
 
@@ -278,7 +282,7 @@ export interface PosCustomer {
 export interface CreateWalkInCustomerInput {
   firstName: string
   lastName?: string
-  phone?: string
+  phoneNumber?: string
   email?: string
 }
 

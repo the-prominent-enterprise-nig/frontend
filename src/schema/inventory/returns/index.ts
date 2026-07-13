@@ -12,6 +12,8 @@ export const CreateReturnFormSchema = z.object({
   variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
+  serialNumberId: z.string().optional(),
+  repairDecision: z.enum(['restock', 'flag_for_repair']).optional(),
 })
 
 export type CreateReturnFormValues = z.infer<typeof CreateReturnFormSchema>

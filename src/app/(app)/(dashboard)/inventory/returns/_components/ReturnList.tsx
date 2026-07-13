@@ -52,6 +52,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     setPage,
     warehouseOptions,
     itemOptions,
+    serialOptions,
     createReturn,
     isCreating,
     refetch,
@@ -286,6 +287,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
         isSubmitting={isCreating}
         itemOptions={itemOptions}
         warehouseOptions={warehouseOptions}
+        serialOptions={serialOptions}
       />
     </div>
   )
