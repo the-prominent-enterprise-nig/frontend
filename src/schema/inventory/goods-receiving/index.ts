@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 const ReceiveStockLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
+  purchaseOrderLineId: z.string().optional(),
   quantityReceived: z.number().positive('Quantity must be greater than 0'),
   unitCost: z.number().min(0).optional(),
   batchNumber: z.string().optional(),
@@ -12,7 +13,7 @@ const ReceiveStockLineSchema = z.object({
 })
 
 export const ReceiveStockFormSchema = z.object({
-  code: z.string().min(1, 'Reference number is required'),
+  code: z.string().optional(),
   purchaseOrderNumber: z.string().optional(),
   purchaseOrderDate: z.string().optional(),
   warehouseId: z.string().min(1, 'Destination warehouse is required'),

@@ -8,6 +8,10 @@ type Params = {
   limit?: number
   status?: string
   supplierId?: string
+  branchId?: string
+  search?: string
+  dateFrom?: string
+  dateTo?: string
 }
 
 export async function getPurchaseOrders(params: Params = {}) {
@@ -16,6 +20,10 @@ export async function getPurchaseOrders(params: Params = {}) {
     limit: params.limit,
     status: params.status,
     supplierId: params.supplierId,
+    branchId: params.branchId,
+    search: params.search,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   }
 
   return api.get<PurchaseOrderListResponse>('/procurement/purchase-orders', query)

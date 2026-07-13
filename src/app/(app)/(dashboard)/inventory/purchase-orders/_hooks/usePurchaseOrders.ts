@@ -5,11 +5,16 @@ import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getPurchaseOrders } from '../_actions/get-purchase-orders'
+import { createPurchaseOrder } from '../_actions/create-purchase-order'
 import { convertPrToPo } from '../_actions/convert-pr-to-po'
 import { approvePurchaseOrder } from '../_actions/approve-purchase-order'
 import { sendPurchaseOrder } from '../_actions/send-purchase-order'
 import { cancelPurchaseOrder } from '../_actions/cancel-purchase-order'
-import type { ConvertPrToPoFormValues } from '@/src/schema/inventory/purchase-orders'
+import { closePurchaseOrder } from '../_actions/close-purchase-order'
+import type {
+  ConvertPrToPoFormValues,
+  CreatePoFormValues,
+} from '@/src/schema/inventory/purchase-orders'
 
 export function usePurchaseOrders() {
   const queryClient = useQueryClient()
@@ -17,10 +22,11 @@ export function usePurchaseOrders() {
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const [search, setSearch] = useState('')
 
   const queryParams = useMemo(
-    () => ({ page, limit, status: statusFilter }),
-    [page, limit, statusFilter]
+    () => ({ page, limit, status: statusFilter, search: search || undefined }),
+    [page, limit, statusFilter, search]
   )
 
   const listQuery = useQuery({
@@ -28,6 +34,26 @@ export function usePurchaseOrders() {
     queryFn: () => getPurchaseOrders(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: CreatePoFormValues) => createPurchaseOrder(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Purchase order created',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      } else {
+        showToast({
+          title: 'Failed to create purchase order',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
   })
 
   const convertMutation = useMutation({
@@ -88,8 +114,28 @@ export function usePurchaseOrders() {
     },
   })
 
+  const closeMutation = useMutation({
+    mutationFn: (id: string) => closePurchaseOrder(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Purchase order closed',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      } else {
+        showToast({
+          title: 'Failed to close purchase order',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => cancelPurchaseOrder(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => cancelPurchaseOrder(id, reason),
     onSuccess: (result) => {
       if (result.success) {
         showToast({
@@ -128,8 +174,17 @@ export function usePurchaseOrders() {
       setPage(1)
     },
 
+    search,
+    setSearch: (v: string) => {
+      setSearch(v)
+      setPage(1)
+    },
+
     page,
     setPage,
+
+    createPO: (data: CreatePoFormValues) => createMutation.mutateAsync(data),
+    isCreating: createMutation.isPending,
 
     convertFromPr: (prId: string, data: ConvertPrToPoFormValues) =>
       convertMutation.mutateAsync({ prId, data }),
@@ -141,7 +196,11 @@ export function usePurchaseOrders() {
     sendPO: sendMutation.mutateAsync,
     isSending: sendMutation.isPending,
 
-    cancelPO: cancelMutation.mutateAsync,
+    closePO: closeMutation.mutateAsync,
+    isClosing: closeMutation.isPending,
+
+    cancelPO: ({ id, reason }: { id: string; reason: string }) =>
+      cancelMutation.mutateAsync({ id, reason }),
     isCancelling: cancelMutation.isPending,
 
     refetch: () => queryClient.invalidateQueries({ queryKey: ['purchase-orders'] }),
