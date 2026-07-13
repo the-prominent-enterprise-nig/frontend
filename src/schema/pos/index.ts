@@ -217,7 +217,6 @@ export interface PosTransaction {
   createdAt: string
   journalEntryId?: string | null
   arInvoiceId?: string | null
-  queueTicketNumber?: number | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -478,7 +477,6 @@ export interface PosConfig {
   discountOverrideThreshold: number
   receiptlessReturnDays: number
   allowNegativeStock?: boolean
-  orderQueueCategoryId?: string | null
   defaultPricingMode?: 'inclusive' | 'exclusive'
   createdAt: string
   updatedAt: string
@@ -495,7 +493,6 @@ export interface UpdatePosConfigInput {
   discountOverrideThreshold?: number
   receiptlessReturnDays?: number
   allowNegativeStock?: boolean
-  orderQueueCategoryId?: string | null
   defaultPricingMode?: 'inclusive' | 'exclusive'
 }
 

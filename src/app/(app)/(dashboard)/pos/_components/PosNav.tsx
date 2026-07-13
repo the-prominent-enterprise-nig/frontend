@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   ShoppingCart,
-  ClipboardList,
   PauseCircle,
   ReceiptText,
   Clock,
@@ -28,11 +27,10 @@ type NavItem = { label: string; href: string; exact?: boolean; icon: LucideIcon 
 const GROUPS = [
   {
     label: 'Operations',
-    paths: ['/pos', '/pos/checkout', '/pos/order-queue', '/pos/parked-sales', '/pos/transactions'],
+    paths: ['/pos', '/pos/checkout', '/pos/parked-sales', '/pos/transactions'],
     items: [
       { label: 'Overview', href: '/pos', exact: true, icon: LayoutDashboard },
       { label: 'Checkout', href: '/pos/checkout', icon: ShoppingCart },
-      { label: 'Order Queue', href: '/pos/order-queue', icon: ClipboardList },
       { label: 'Parked Sales', href: '/pos/parked-sales', icon: PauseCircle },
       { label: 'Transactions', href: '/pos/transactions', icon: ReceiptText },
     ] satisfies NavItem[],
