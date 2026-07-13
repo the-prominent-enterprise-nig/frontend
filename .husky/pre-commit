@@ -1,2 +1,2 @@
 pnpm format
-git add -A
+git diff --cached --name-only -z | xargs -0 git add
