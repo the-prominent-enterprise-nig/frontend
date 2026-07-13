@@ -44,15 +44,11 @@ function DrawerSkeleton() {
 
 function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const { item, stock, movements, substitutes, history } = useItem360(itemId, activeTab)
+  const { item, stock, substitutes, history } = useItem360(itemId, activeTab)
 
   type BalanceList = { data: import('@/src/schema/inventory/goods-receiving').StockBalance[] }
-  type LedgerList = { data: import('@/src/schema/inventory/goods-receiving').StockLedgerEntry[] }
   const itemData = item.data?.success ? item.data.data : null
   const stockData = stock.data?.success ? (stock.data.data as unknown as BalanceList) : null
-  const movementsData = movements.data?.success
-    ? (movements.data.data as unknown as LedgerList)
-    : null
   const substitutesData = substitutes.data?.success
     ? ((substitutes.data.data as unknown as { data: ItemSubstitute[] })?.data ??
       (substitutes.data.data as unknown as ItemSubstitute[]) ??
@@ -168,13 +164,7 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         ) : activeTab === 'stock' ? (
           <StockTab balances={stockData?.data ?? []} isLoading={stock.isLoading} />
         ) : activeTab === 'movements' ? (
-          <MovementsTab
-            entries={
-              movementsData?.data ??
-              ([] as import('@/src/schema/inventory/goods-receiving').StockLedgerEntry[])
-            }
-            isLoading={movements.isLoading}
-          />
+          <MovementsTab itemId={itemId} />
         ) : activeTab === 'substitutes' ? (
           <SubstitutesTab
             itemId={itemId}
