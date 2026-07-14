@@ -1,4 +1,5 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
+import type { CustomerType } from '@/src/schema/crm/types'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -330,6 +331,7 @@ export interface Customer {
   id: string | number
   name: string
   customerCode?: string
+  customerType?: CustomerType
   email?: string | null
   phone?: string | null
   billingAddress?: string | null
@@ -348,6 +350,7 @@ export interface CustomerInput {
   phoneNumber?: string | null
   address?: string | null
   note?: string | null
+  customerType?: CustomerType
 }
 
 export function getVendors(params?: ListParams) {
