@@ -10,6 +10,8 @@ import {
   REASON_CODE_LABELS,
   WriteOffReasonCode,
   WriteOffReasonCodeSchema,
+  WriteOffStatus,
+  WriteOffStatusSchema,
   WriteOffSummary,
 } from '@/src/schema/inventory/write-offs'
 import CreateWriteOffModal from './CreateWriteOffModal'
@@ -21,10 +23,24 @@ const REASON_COLORS: Record<WriteOffReasonCode, string> = {
   write_off: 'bg-red-100 text-red-700',
 }
 
+const STATUS_LABELS: Record<WriteOffStatus, string> = {
+  pending: 'Pending Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+}
+
+const STATUS_COLORS: Record<WriteOffStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700',
+  approved: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-600',
+}
+
 const reasonCodes = WriteOffReasonCodeSchema.options
+const writeOffStatuses = WriteOffStatusSchema.options
 
 export default function WriteOffList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.WRITE_OFFS_CREATE)
+  const canApprove = hasPermission(session, INVENTORY_PERMISSIONS.WRITE_OFFS_APPROVE)
 
   const {
     writeOffs,
@@ -34,10 +50,12 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
     error,
     reasonCodeFilter,
     warehouseFilter,
+    statusFilter,
     fromDate,
     toDate,
     setReasonCodeFilter,
     setWarehouseFilter,
+    setStatusFilter,
     setFromDate,
     setToDate,
     resetFilters,
@@ -51,12 +69,16 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
     itemOptions,
     createWriteOff,
     isCreating,
+    approveWriteOff,
+    isApproving,
+    rejectWriteOff,
+    isRejecting,
     refetch,
   } = useWriteOffManager()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  const hasFilters = reasonCodeFilter || warehouseFilter || fromDate || toDate
+  const hasFilters = reasonCodeFilter || warehouseFilter || statusFilter || fromDate || toDate
 
   function openDetail(wo: WriteOffSummary) {
     setSelectedWriteOff(wo)
@@ -68,7 +90,9 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Write-offs</h1>
+            <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">
+              Stock Write-offs
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
               Write off damaged, expired, or lost stock. Each entry posts an expense to the
               Inventory Loss account.
@@ -123,6 +147,21 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
                 {wh.code} — {wh.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={statusFilter ?? ''}
+            onChange={(e) =>
+              setStatusFilter((e.target.value || undefined) as WriteOffStatus | undefined)
+            }
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+          >
+            <option value="">All Statuses</option>
+            {writeOffStatuses.map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABELS[status]}
               </option>
             ))}
           </select>
@@ -208,6 +247,9 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Reason
                     </th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Status
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Date
                     </th>
@@ -228,7 +270,9 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
                           #{wo.id.slice(0, 8).toUpperCase()}
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-zinc-900">{wo.item?.name ?? '—'}</p>
+                          <p className="font-medium text-prominent-purple-900">
+                            {wo.item?.name ?? '—'}
+                          </p>
                           {wo.item?.sku && (
                             <p className="font-mono text-xs text-zinc-400">{wo.item.sku}</p>
                           )}
@@ -245,6 +289,17 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
                           >
                             {REASON_CODE_LABELS[wo.reasonCode]}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {wo.writeOffStatus ? (
+                            <span
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[wo.writeOffStatus]}`}
+                            >
+                              {STATUS_LABELS[wo.writeOffStatus]}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-zinc-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
                           {wo.writeOffDate
@@ -328,6 +383,11 @@ export default function WriteOffList({ session }: { session: SessionUser }) {
         writeOff={writeOffDetail}
         isLoading={isLoadingDetail}
         onClose={() => setSelectedWriteOff(null)}
+        canApprove={canApprove}
+        onApprove={approveWriteOff}
+        onReject={rejectWriteOff}
+        isApproving={isApproving}
+        isRejecting={isRejecting}
       />
     </div>
   )

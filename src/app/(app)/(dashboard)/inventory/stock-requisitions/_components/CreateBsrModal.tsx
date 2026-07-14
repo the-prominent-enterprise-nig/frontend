@@ -63,7 +63,9 @@ export default function CreateBsrModal({
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">New Stock Requisition</h2>
+            <h2 className="text-lg font-semibold text-prominent-purple-900">
+              New Stock Requisition
+            </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               Request stock from a warehouse to a branch.
             </p>

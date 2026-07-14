@@ -82,7 +82,9 @@ export default function BsrList({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Requisitions</h1>
+            <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">
+              Stock Requisitions
+            </h1>
             <p className="mt-1 text-sm text-zinc-500">
               Branch stock requests with quantity reservation.
             </p>

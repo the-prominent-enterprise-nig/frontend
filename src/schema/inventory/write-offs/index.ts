@@ -24,6 +24,14 @@ export const CreateWriteOffFormSchema = z.object({
 export type CreateWriteOffFormValues = z.infer<typeof CreateWriteOffFormSchema>
 export type WriteOffReasonCode = z.infer<typeof WriteOffReasonCodeSchema>
 
+export const WriteOffStatusSchema = z.enum(['pending', 'approved', 'rejected'])
+export type WriteOffStatus = z.infer<typeof WriteOffStatusSchema>
+
+export const RejectWriteOffFormSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(500),
+})
+export type RejectWriteOffFormValues = z.infer<typeof RejectWriteOffFormSchema>
+
 const WriteOffItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -36,6 +44,12 @@ const WriteOffWarehouseSchema = z.object({
   code: z.string(),
 })
 
+const WriteOffBranchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string().nullable().optional(),
+})
+
 const WriteOffAccountingEntrySchema = z.object({
   id: z.string(),
   referenceNumber: z.string().optional(),
@@ -45,8 +59,10 @@ const WriteOffAccountingEntrySchema = z.object({
 
 export const WriteOffSummarySchema = z.object({
   id: z.string(),
+  adjustmentNumber: z.string().optional(),
   item: WriteOffItemSchema.optional(),
   warehouse: WriteOffWarehouseSchema.optional(),
+  branch: WriteOffBranchSchema.nullable().optional(),
   quantity: z.number().optional().nullable(),
   unitCost: z.number().optional().nullable(),
   reasonCode: WriteOffReasonCodeSchema,
@@ -56,6 +72,12 @@ export const WriteOffSummarySchema = z.object({
   photoUrl: z.string().optional().nullable(),
   createdAt: z.string().optional(),
   createdBy: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
+  writeOffStatus: WriteOffStatusSchema.nullable().optional(),
+  approvedById: z.string().nullable().optional(),
+  approvedAt: z.string().nullable().optional(),
+  rejectedById: z.string().nullable().optional(),
+  rejectedAt: z.string().nullable().optional(),
+  rejectedReason: z.string().nullable().optional(),
 })
 
 export const WriteOffListResponseSchema = z.object({

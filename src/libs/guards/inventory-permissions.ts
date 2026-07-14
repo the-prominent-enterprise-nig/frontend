@@ -36,6 +36,7 @@ export const INVENTORY_PERMISSIONS = {
   // ── Write-offs ─────────────────────────────────────────────────────────────
   WRITE_OFFS_READ: 'inventory:write-offs:read',
   WRITE_OFFS_CREATE: 'inventory:write-offs:create',
+  WRITE_OFFS_APPROVE: 'inventory:write-offs:approve',
 
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
@@ -179,6 +180,7 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:transfers:receive': 'Receive incoming stock transfers',
   'inventory:write-offs:read': 'View write-off records',
   'inventory:write-offs:create': 'Create stock write-offs',
+  'inventory:write-offs:approve': 'Approve or reject stock write-offs',
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',

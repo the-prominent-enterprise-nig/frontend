@@ -133,7 +133,9 @@ export default function BsrDetailModal({
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div className="flex items-center gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Requisition Details</h2>
+              <h2 className="text-lg font-semibold text-prominent-purple-900">
+                Requisition Details
+              </h2>
               {bsr && <p className="mt-0.5 font-mono text-xs text-zinc-400">{bsr.code}</p>}
             </div>
             {bsr && (
@@ -166,7 +168,7 @@ export default function BsrDetailModal({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
                   Branch
                 </p>
-                <p className="mt-0.5 font-semibold text-zinc-900">
+                <p className="mt-0.5 font-semibold text-prominent-purple-900">
                   {bsr.branch?.name ?? bsr.branchId}
                 </p>
               </div>
@@ -174,7 +176,7 @@ export default function BsrDetailModal({
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
                   From Warehouse
                 </p>
-                <p className="mt-0.5 font-semibold text-zinc-900">
+                <p className="mt-0.5 font-semibold text-prominent-purple-900">
                   {bsr.fromWarehouse?.name ?? bsr.fromWarehouseId}
                 </p>
               </div>
@@ -216,7 +218,7 @@ export default function BsrDetailModal({
                       {bsr.lines.map((line, i) => (
                         <tr key={line.id ?? i}>
                           <td className="px-3 py-2">
-                            <p className="font-medium text-zinc-900">
+                            <p className="font-medium text-prominent-purple-900">
                               {line.item?.name ?? line.itemId ?? '—'}
                             </p>
                             {line.item?.sku && (

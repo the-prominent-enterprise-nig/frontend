@@ -40,6 +40,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Tag,
+  Trash2,
   Truck,
   Users,
   UsersRound,
@@ -122,6 +123,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/stock-requisitions',
         icon: ClipboardCheck,
         requiredPermission: INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_READ,
+      },
+      {
+        label: 'Write-offs',
+        href: '/inventory/write-offs',
+        icon: Trash2,
+        requiredPermission: INVENTORY_PERMISSIONS.WRITE_OFFS_READ,
       },
       {
         label: 'Purchase Requests',

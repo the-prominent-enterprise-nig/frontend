@@ -9,6 +9,7 @@ type GetWriteOffsParams = {
   reasonCode?: string
   itemId?: string
   warehouseId?: string
+  writeOffStatus?: string
   from?: string
   to?: string
 }
@@ -22,6 +23,7 @@ export async function getWriteOffs(
     reasonCode: params.reasonCode,
     itemId: params.itemId,
     warehouseId: params.warehouseId,
+    writeOffStatus: params.writeOffStatus,
     from: params.from,
     to: params.to,
   }

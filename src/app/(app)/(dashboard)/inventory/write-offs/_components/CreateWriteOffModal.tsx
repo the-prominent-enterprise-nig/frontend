@@ -103,7 +103,9 @@ export default function CreateWriteOffModal({
       <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Record Stock Write-off</h2>
+            <h2 className="text-lg font-semibold text-prominent-purple-900">
+              Record Stock Write-off
+            </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               Posts an expense to the Inventory Loss account automatically.
             </p>

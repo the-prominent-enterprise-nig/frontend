@@ -8,12 +8,16 @@ last_synced: '2026-06-10'
 
 ## Summary
 
-| ID     | Title                                                                                                         | Status | Priority |
-| ------ | ------------------------------------------------------------------------------------------------------------- | ------ | -------- |
-| POS-55 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner                                 | TO DO  | high     |
-| POS-56 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table                                       | TO DO  | normal   |
-| POS-57 | AA Business Owner, ISBAT manage POS PIN and payment method settings from a centralized configuration page     | for QA | normal   |
-| POS-58 | AA Employee, ISBAT access profile, settings, and account actions from a single dropdown in the top navigation | for QA | low      |
+| ID     | Title                                                                                                                  | Status | Priority |
+| ------ | ---------------------------------------------------------------------------------------------------------------------- | ------ | -------- |
+| POS-55 | AA Cashier, ISBAT complete a sale using only the keyboard and barcode scanner                                          | TO DO  | high     |
+| POS-56 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table                                                | TO DO  | normal   |
+| POS-57 | AA Business Owner, ISBAT manage POS PIN and payment method settings from a centralized configuration page              | for QA | normal   |
+| POS-58 | AA Employee, ISBAT access profile, settings, and account actions from a single dropdown in the top navigation          | for QA | low      |
+| POS-59 | AA Cashier, ISBAT open the stock request module directly from POS                                                      | TO DO  | normal   |
+| POS-60 | AA Cashier, ISBAT have POS automatically capture the correct serial/SKU set for a multi-part or bundled item at sale   | TO DO  | high     |
+| POS-61 | AA Cashier, ISBAT see which branch holds each serial for an item I search at POS, with my own branch highlighted first | TO DO  | high     |
+| POS-62 | AA Cashier, ISBAT raise a stock request for a specific serial in one tap directly from the POS serial picker           | TO DO  | high     |
 
 ---
 
@@ -399,3 +403,196 @@ The system should:
 - Admin Settings section MUST only appear for users with `admin:roles:manage` and primaryRole !== 'Business Owner'
 - "My Profile" MUST NOT appear in the sidebar for any role
 - Logout MUST be reachable from the avatar dropdown
+
+---
+
+### [POS-59] — AA Cashier, ISBAT open the stock request module directly from POS
+
+**Status:** TO DO
+**Priority:** normal
+**ClickUp:** https://app.clickup.com/t/86d3p2vp6
+
+---
+
+**Scenario:**
+A cashier who spots low or missing stock mid-sale has to leave POS entirely and go to Inventory to raise a stock request — there's no shortcut, which discourages requesting stock in the moment.
+
+**Given:**
+
+- A cashier is on the POS checkout screen
+
+**When:**
+
+- They tap a "Request Stock" shortcut in the POS menu
+
+**Then:**
+The system should:
+
+- Open the Branches Stock Request screen (or a lightweight modal version of it) without losing the current sale in progress
+- Return the cashier to the exact checkout state they left
+
+### POS menu
+
+- Adds a "Request Stock" entry to the POS side menu / more-actions menu
+
+### Buttons
+
+- **Request Stock**
+  - Opens the stock request flow; disabled if the cashier lacks the requisition permission
+
+---
+
+#### Empty States
+
+- n/a
+
+---
+
+#### Post-Action Behavior
+
+- Closing the stock request modal returns to checkout with the sale-in-progress untouched
+
+---
+
+### [POS-60] — AA Cashier, ISBAT have POS automatically capture the correct serial/SKU set for a multi-part or bundled item at sale
+
+**Status:** TO DO
+**Priority:** high
+**ClickUp:** https://app.clickup.com/t/86d3p2w2z
+
+---
+
+**Scenario:**
+Today POS only captures one serial per sale line and explodes a bundle into separate lines per component SKU — selling a multi-part item or a bundled unit (like a split-type aircon) doesn't keep its parts/components together as one sale.
+
+**Given:**
+
+- A multi-part or bundled-unit item (per INV-80 / INV-81) is being sold
+
+**When:**
+
+- The cashier adds it to the sale
+
+**Then:**
+The system should:
+
+- For a multi-part item: capture the one serial plus all its component SKUs as a single sale line
+- For a bundled unit: capture all component serials together under the one SKU, as a single sale line
+- Prevent selling one component of a bundle or one part of a multi-part item separately
+
+### Sale line
+
+- Multi-part/bundle items show an expandable line listing their parts/components, still priced and sold as one line
+
+### Buttons
+
+- (uses the standard Add to Sale action)
+
+---
+
+#### Empty States
+
+- n/a
+
+---
+
+#### Post-Action Behavior
+
+- Receipt shows the item as one line with its parts/serials listed underneath
+
+---
+
+### [POS-61] — AA Cashier, ISBAT see which branch holds each serial for an item I search at POS, with my own branch highlighted first
+
+**Status:** TO DO
+**Priority:** high
+**ClickUp:** https://app.clickup.com/t/86d3p2w49
+
+---
+
+**Scenario:**
+Searching an item at POS already returns every serial for it company-wide and already fetches which branch holds each one — but the picker only shows the bare serial number, so the cashier can't tell what's in their own branch versus elsewhere.
+
+**Given:**
+
+- A cashier searches an item at POS that has multiple serials across branches
+
+**When:**
+
+- The serial picker opens
+
+**Then:**
+The system should:
+
+- List serials grouped or tagged by branch
+- Visually highlight (badge/label) serials held in the cashier's current branch, shown first
+- Show the branch name for every out-of-branch serial
+
+### Serial picker
+
+- "This branch" badge on local serials; branch name label on others
+
+### Buttons
+
+- (uses the standard select-serial action)
+
+---
+
+#### Empty States
+
+- "No serials available for this item at any branch"
+
+---
+
+#### Post-Action Behavior
+
+- n/a
+
+---
+
+### [POS-62] — AA Cashier, ISBAT raise a stock request for a specific serial in one tap directly from the POS serial picker
+
+**Status:** TO DO
+**Priority:** high
+**ClickUp:** https://app.clickup.com/t/86d3p2w5c
+
+---
+
+**Scenario:**
+When the serial a customer wants is only available at another branch, the cashier has no way to request it without leaving the sale — this closes that gap by letting them request it straight from the picker, building on POS-59's POS entry point and POS-61's branch visibility.
+
+**Given:**
+
+- The cashier is viewing the serial picker for an item, with an out-of-branch serial visible
+
+**When:**
+
+- They tap "Request this serial" next to an out-of-branch serial
+
+**Then:**
+The system should:
+
+- Raise a stock request for that exact serial from the holding branch to the cashier's branch
+- Confirm the request was raised without leaving the current sale
+- Feed the request into the normal inter-branch transfer flow (source branch accepts, transfers, RR issued)
+
+### Serial picker
+
+- "Request this serial" action next to each out-of-branch serial
+
+### Buttons
+
+- **Request this serial**
+  - Raises the request; shows a brief confirmation toast
+
+---
+
+#### Empty States
+
+- n/a
+
+---
+
+#### Post-Action Behavior
+
+- The requested serial shows a "Requested" status in the picker until it arrives or the request is rejected

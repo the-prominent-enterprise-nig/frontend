@@ -6,11 +6,14 @@ import { showToast } from '@/src/components/ui/toast'
 import { getWriteOffs } from '../_actions/get-write-offs'
 import { getWriteOff } from '../_actions/get-write-off'
 import { createWriteOff } from '../_actions/create-write-off'
+import { approveWriteOff } from '../_actions/approve-write-off'
+import { rejectWriteOff } from '../_actions/reject-write-off'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import type {
   CreateWriteOffFormValues,
   WriteOffReasonCode,
+  WriteOffStatus,
   WriteOffSummary,
 } from '@/src/schema/inventory/write-offs'
 
@@ -23,6 +26,7 @@ export function useWriteOffManager() {
     undefined
   )
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
+  const [statusFilter, setStatusFilter] = useState<WriteOffStatus | undefined>(undefined)
   const [fromDate, setFromDate] = useState<string | undefined>(undefined)
   const [toDate, setToDate] = useState<string | undefined>(undefined)
   const [selectedWriteOff, setSelectedWriteOff] = useState<WriteOffSummary | null>(null)
@@ -33,10 +37,11 @@ export function useWriteOffManager() {
       limit,
       reasonCode: reasonCodeFilter,
       warehouseId: warehouseFilter,
+      writeOffStatus: statusFilter,
       from: fromDate,
       to: toDate,
     }),
-    [page, limit, reasonCodeFilter, warehouseFilter, fromDate, toDate]
+    [page, limit, reasonCodeFilter, warehouseFilter, statusFilter, fromDate, toDate]
   )
 
   const writeOffsQuery = useQuery({
@@ -85,6 +90,46 @@ export function useWriteOffManager() {
     },
   })
 
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => approveWriteOff(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Write-off approved', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-write-offs'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-write-off', selectedWriteOff?.id] })
+        if (selectedWriteOff) {
+          setSelectedWriteOff((prev) => (prev ? { ...prev, writeOffStatus: 'approved' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to approve write-off',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => rejectWriteOff(id, reason),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Write-off rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-write-offs'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-write-off', selectedWriteOff?.id] })
+        if (selectedWriteOff) {
+          setSelectedWriteOff((prev) => (prev ? { ...prev, writeOffStatus: 'rejected' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to reject write-off',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const writeOffs = writeOffsQuery.data?.data?.data ?? []
   const pagination = {
     total: writeOffsQuery.data?.data?.total ?? 0,
@@ -105,6 +150,7 @@ export function useWriteOffManager() {
 
     reasonCodeFilter,
     warehouseFilter,
+    statusFilter,
     fromDate,
     toDate,
     setReasonCodeFilter: (v: WriteOffReasonCode | undefined) => {
@@ -113,6 +159,10 @@ export function useWriteOffManager() {
     },
     setWarehouseFilter: (v: string | undefined) => {
       setWarehouseFilter(v)
+      setPage(1)
+    },
+    setStatusFilter: (v: WriteOffStatus | undefined) => {
+      setStatusFilter(v)
       setPage(1)
     },
     setFromDate: (v: string | undefined) => {
@@ -126,6 +176,7 @@ export function useWriteOffManager() {
     resetFilters: () => {
       setReasonCodeFilter(undefined)
       setWarehouseFilter(undefined)
+      setStatusFilter(undefined)
       setFromDate(undefined)
       setToDate(undefined)
       setPage(1)
@@ -144,6 +195,12 @@ export function useWriteOffManager() {
 
     createWriteOff: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+
+    approveWriteOff: (id: string) => approveMutation.mutateAsync(id),
+    isApproving: approveMutation.isPending,
+
+    rejectWriteOff: (id: string, reason: string) => rejectMutation.mutateAsync({ id, reason }),
+    isRejecting: rejectMutation.isPending,
 
     refetch: () => queryClient.invalidateQueries({ queryKey: ['inventory-write-offs'] }),
   }
