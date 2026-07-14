@@ -258,7 +258,7 @@ export interface ARInvoice {
   id: string
   invoiceNumber: string
   customerId: string
-  customer?: { id: string; firstName: string; lastName: string }
+  customer?: { id: string; name: string }
   invoiceDate: string
   dueDate: string
   description?: string

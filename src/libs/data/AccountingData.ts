@@ -328,16 +328,26 @@ export interface Supplier {
 
 export interface Customer {
   id: string | number
+  name: string
+  customerCode?: string
+  email?: string | null
+  phone?: string | null
+  billingAddress?: string | null
+  notes?: string | null
+  deletedAt?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Create/update accepts firstName/lastName split — the backend joins them
+ * into the unified `name` field server-side; reads always return `name`. */
+export interface CustomerInput {
   firstName: string
   lastName: string
   email?: string | null
   phoneNumber?: string | null
   address?: string | null
-  birthDate?: string | null
   note?: string | null
-  visibility?: boolean
-  createdAt?: string
-  updatedAt?: string
 }
 
 export function getVendors(params?: ListParams) {
@@ -390,10 +400,10 @@ export function getCustomerById(id: string | number) {
     tags: ['accounting-customers', `accounting-customer-${id}`],
   })
 }
-export function createCustomer(data: Partial<Customer>) {
+export function createCustomer(data: Partial<CustomerInput>) {
   return api.post<Customer>('/customers', data)
 }
-export function updateCustomer(id: string | number, data: Partial<Customer>) {
+export function updateCustomer(id: string | number, data: Partial<CustomerInput>) {
   return api.patch<Customer>(`/customers/${id}`, data)
 }
 export function deleteCustomer(id: string | number) {

@@ -6,7 +6,9 @@ import {
   getCustomers,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
   Customer,
+  CustomerInput,
 } from '@/src/libs/data/AccountingData'
 import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
@@ -42,7 +44,7 @@ export default function CustomersList({ session }: Props) {
     load()
   }, [load])
 
-  const handleSave = async (data: Partial<Customer>) => {
+  const handleSave = async (data: Partial<CustomerInput>) => {
     if (editing) {
       await updateCustomer(editing.id, data)
     } else {
@@ -54,8 +56,8 @@ export default function CustomersList({ session }: Props) {
   }
 
   const handleDelete = async (c: Customer) => {
-    if (!confirm(`Delete customer "${c.firstName} ${c.lastName}"?`)) return
-    await updateCustomer(c.id, { visibility: false })
+    if (!confirm(`Delete customer "${c.name}"?`)) return
+    await deleteCustomer(c.id)
     load()
   }
 
@@ -137,12 +139,10 @@ export default function CustomersList({ session }: Props) {
                 ) : (
                   items.map((c) => (
                     <tr key={c.id} className="hover:bg-zinc-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {c.firstName} {c.lastName}
-                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.name}</td>
                       <td className="px-4 py-3 text-sm text-zinc-700">{c.email || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.phoneNumber || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.address || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">{c.phone || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">{c.billingAddress || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           {canUpdate && (
@@ -189,6 +189,24 @@ export default function CustomersList({ session }: Props) {
   )
 }
 
+function customerToFormInput(customer: Customer | null): Partial<CustomerInput> {
+  if (!customer) {
+    return { firstName: '', lastName: '', email: '', phoneNumber: '', address: '', note: '' }
+  }
+  // `name` is stored as a single field — split naively for the two-field
+  // form (mirrors the same split the backend does when merging partial
+  // firstName/lastName updates back onto the stored name).
+  const [firstName, ...rest] = (customer.name ?? '').split(' ')
+  return {
+    firstName: firstName ?? '',
+    lastName: rest.join(' '),
+    email: customer.email ?? '',
+    phoneNumber: customer.phone ?? '',
+    address: customer.billingAddress ?? '',
+    note: customer.notes ?? '',
+  }
+}
+
 function CustomerFormDialog({
   customer,
   onClose,
@@ -196,22 +214,12 @@ function CustomerFormDialog({
 }: {
   customer: Customer | null
   onClose: () => void
-  onSave: (data: Partial<Customer>) => Promise<void> | void
+  onSave: (data: Partial<CustomerInput>) => Promise<void> | void
 }) {
-  const [form, setForm] = useState<Partial<Customer>>(
-    customer ?? {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phoneNumber: '',
-      address: '',
-      birthDate: '',
-      note: '',
-      visibility: true,
-    }
-  )
+  const [form, setForm] = useState<Partial<CustomerInput>>(customerToFormInput(customer))
   const [saving, setSaving] = useState(false)
-  const set = <K extends keyof Customer>(k: K, v: Customer[K]) => setForm((p) => ({ ...p, [k]: v }))
+  const set = <K extends keyof CustomerInput>(k: K, v: CustomerInput[K]) =>
+    setForm((p) => ({ ...p, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -264,14 +272,6 @@ function CustomerFormDialog({
               <input
                 value={form.phoneNumber ?? ''}
                 onChange={(e) => set('phoneNumber', e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-              />
-            </Field>
-            <Field label="Birth Date">
-              <input
-                type="date"
-                value={(form.birthDate ?? '').toString().slice(0, 10)}
-                onChange={(e) => set('birthDate', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
