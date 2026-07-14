@@ -1327,6 +1327,24 @@ export async function getUsers(): Promise<
   }
 }
 
+export async function getSellingAgents(): Promise<
+  ApiResponse<{ id: string; name: string; phone?: string | null; email?: string | null }[]>
+> {
+  try {
+    type AgentRow = { id: string; name: string; phone?: string | null; email?: string | null }
+    const result = await api.get<{ data: AgentRow[] }>('/crm/agents', {
+      status: 'active',
+      limit: 100,
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch sales agents' }
+    }
+    return { success: true, data: result.data.data ?? [] }
+  } catch {
+    return { success: false, error: 'Failed to fetch sales agents' }
+  }
+}
+
 export async function verifyCashierPin(
   userId: string,
   pin: string
