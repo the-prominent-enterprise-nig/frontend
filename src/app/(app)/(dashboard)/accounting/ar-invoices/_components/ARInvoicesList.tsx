@@ -98,9 +98,7 @@ export default function ARInvoicesList() {
               items.map((i) => (
                 <tr key={i.id}>
                   <td className="px-3 py-2 font-mono text-xs">{i.invoiceNumber}</td>
-                  <td className="px-3 py-2">
-                    {i.customer?.firstName} {i.customer?.lastName}
-                  </td>
+                  <td className="px-3 py-2">{i.customer?.name}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.invoiceDate)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.dueDate)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
@@ -262,7 +260,7 @@ function InvoiceFormDialog({
               <option value="">— Select —</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.firstName} {c.lastName}
+                  {c.name}
                 </option>
               ))}
             </select>
