@@ -19,6 +19,10 @@ export const CRM_PERMISSIONS = {
   PIPELINE_READ: 'crm:pipeline:read',
   PIPELINE_MANAGE: 'crm:pipeline:manage',
   SETTINGS_CONFIGURE: 'crm:settings:configure',
+  AGENTS_READ: 'crm:agents:read',
+  AGENTS_CREATE: 'crm:agents:create',
+  AGENTS_UPDATE: 'crm:agents:update',
+  AGENTS_DELETE: 'crm:agents:delete',
   WILDCARD: 'crm:*',
 } as const
 

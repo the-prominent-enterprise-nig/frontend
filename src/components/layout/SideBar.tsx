@@ -25,6 +25,7 @@ import {
   Funnel,
   HandCoins,
   House,
+  IdCard,
   Key,
   Layers,
   Library,
@@ -367,6 +368,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/segments',
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
+      },
+      {
+        label: 'Sales Agents',
+        href: '/crm/agents',
+        icon: IdCard,
+        requiredPermission: CRM_PERMISSIONS.AGENTS_READ,
       },
       {
         label: 'Settings',

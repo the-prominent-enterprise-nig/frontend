@@ -58,7 +58,7 @@ import {
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
   getAvailableSerialNumbers,
-  getUsers,
+  getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
   type SerialNumberRecord,
@@ -233,11 +233,11 @@ export default function CheckoutPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [catalogMode, setCatalogMode] = useState<'items' | 'menu'>('items')
 
-  // Selling agent
+  // Selling agent — CRM-owned agent list, not system User accounts
   const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
   const [sellingAgentSearch, setSellingAgentSearch] = useState('')
-  const [sellingAgentUsers, setSellingAgentUsers] = useState<
-    { id: string; name: string; email: string }[]
+  const [sellingAgents, setSellingAgents] = useState<
+    { id: string; name: string; phone?: string | null; email?: string | null }[]
   >([])
   const [sellingAgentOpen, setSellingAgentOpen] = useState(false)
 
@@ -441,10 +441,10 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Load staff list for selling agent typeahead
+  // Load CRM sales agent list for the selling-agent typeahead
   useEffect(() => {
-    getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setSellingAgentUsers(res.data)
+    getSellingAgents().then((res) => {
+      if (res.success && Array.isArray(res.data)) setSellingAgents(res.data)
     })
   }, [])
 
@@ -1789,7 +1789,7 @@ export default function CheckoutPage() {
                 />
                 <input
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                  placeholder="Search staff…"
+                  placeholder="Search agents…"
                   value={sellingAgentSearch}
                   onChange={(e) => {
                     setSellingAgentSearch(e.target.value)
@@ -1801,28 +1801,31 @@ export default function CheckoutPage() {
                 {sellingAgentOpen && sellingAgentSearch && (
                   <div className="absolute z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
                     {(() => {
-                      const filtered = sellingAgentUsers.filter(
-                        (u) =>
-                          u.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
-                          u.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
+                      const filtered = sellingAgents.filter(
+                        (a) =>
+                          a.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
+                          a.phone?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
+                          a.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
                       )
                       return filtered.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-400">No staff found</p>
+                        <p className="px-3 py-2 text-xs text-gray-400">No agents found</p>
                       ) : (
-                        filtered.slice(0, 8).map((u) => (
+                        filtered.slice(0, 8).map((a) => (
                           <button
-                            key={u.id}
+                            key={a.id}
                             className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
                             onMouseDown={() => {
-                              setSellingAgent({ id: u.id, name: u.name ?? u.email })
+                              setSellingAgent({ id: a.id, name: a.name })
                               setSellingAgentSearch('')
                               setSellingAgentOpen(false)
                             }}
                           >
                             <User size={11} className="shrink-0 text-gray-400" />
                             <div>
-                              <p className="font-medium text-gray-900">{u.name}</p>
-                              <p className="text-[10px] text-gray-400">{u.email}</p>
+                              <p className="font-medium text-gray-900">{a.name}</p>
+                              <p className="text-[10px] text-gray-400">
+                                {a.phone || a.email || ''}
+                              </p>
                             </div>
                           </button>
                         ))
