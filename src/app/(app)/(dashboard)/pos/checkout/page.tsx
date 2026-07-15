@@ -1295,7 +1295,6 @@ export default function CheckoutPage() {
     return () => {
       if (cancellationPollRef.current) clearInterval(cancellationPollRef.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancellationReqId])
 
   // ─── Success screen ────────────────────────────────────────────────────────
