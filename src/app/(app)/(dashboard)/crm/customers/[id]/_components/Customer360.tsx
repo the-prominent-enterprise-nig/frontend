@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, BellPlus, Pencil } from 'lucide-react'
+import { ArrowLeft, BellPlus, Pencil, Trash2 } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import type { Customer, Lead, Interaction, Reminder } from '@/src/schema/crm/types'
@@ -16,20 +17,40 @@ type CustomerView = Customer & {
 export default function Customer360({
   id,
   canEdit,
+  canDelete,
   canScheduleReminder,
   currentUserId,
   tenantId,
 }: {
   id: string
   canEdit: boolean
+  canDelete: boolean
   canScheduleReminder: boolean
   currentUserId: string
   tenantId: string
 }) {
+  const router = useRouter()
   const [data, setData] = useState<CustomerView | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reminderOpen, setReminderOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    if (!data) return
+    if (!confirm(`Delete ${data.name}? This can't be undone from here.`)) return
+    setDeleting(true)
+    setDeleteError(null)
+    const res = await customersApi.remove(id)
+    setDeleting(false)
+    if (res.success) {
+      router.push('/crm/customers')
+      router.refresh()
+    } else {
+      setDeleteError(res.error ?? 'Failed to delete customer')
+    }
+  }
 
   function reload() {
     customersApi.get360(id).then((res) => {
@@ -101,6 +122,23 @@ export default function Customer360({
           )}
         </div>
       </header>
+
+      {canDelete && (
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? 'Deleting…' : 'Delete customer'}
+          </button>
+        </div>
+      )}
+
+      {deleteError && (
+        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</p>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section className="rounded-xl border border-gray-200 bg-white p-5">

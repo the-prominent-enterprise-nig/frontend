@@ -4,12 +4,20 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
-import { createCustomerSchema, type CreateCustomerInput } from '@/src/schema/crm/customer'
-import type { CustomerType, CustomerStatus, CustomerSourceChannel } from '@/src/schema/crm/types'
+import {
+  createCustomerSchema,
+  PAYMENT_TERMS_OPTIONS,
+  type CreateCustomerInput,
+} from '@/src/schema/crm/customer'
+import type { CustomerType } from '@/src/schema/crm/types'
+import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 type FormState = {
-  name: string
+  firstName: string
+  lastName: string
   customerType: CustomerType
   companyName: string
   taxId: string
@@ -17,17 +25,15 @@ type FormState = {
   taxExemptionRef: string
   email: string
   phone: string
-  billingAddress: string
   shippingAddress: string
   paymentTerms: string
   creditLimit: string
-  sourceChannel: CustomerSourceChannel
-  status: CustomerStatus
   notes: string
 }
 
 const empty: FormState = {
-  name: '',
+  firstName: '',
+  lastName: '',
   customerType: 'individual',
   companyName: '',
   taxId: '',
@@ -35,12 +41,9 @@ const empty: FormState = {
   taxExemptionRef: '',
   email: '',
   phone: '',
-  billingAddress: '',
   shippingAddress: '',
   paymentTerms: '',
   creditLimit: '',
-  sourceChannel: 'sales',
-  status: 'active',
   notes: '',
 }
 
@@ -58,21 +61,21 @@ export default function NewCustomerForm() {
     e.preventDefault()
     setServerError(null)
 
+    const name = `${form.firstName} ${form.lastName}`.trim()
     const payload: CreateCustomerInput = {
-      name: form.name,
+      name,
       customerType: form.customerType,
-      companyName: form.companyName || undefined,
+      companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
       email: form.email || undefined,
       phone: form.phone || undefined,
-      billingAddress: form.billingAddress || undefined,
       shippingAddress: form.shippingAddress || undefined,
       paymentTerms: form.paymentTerms || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
-      sourceChannel: form.sourceChannel,
-      status: form.status,
+      // Fixed, not user-selectable — this form is a direct manual add under CRM.
+      sourceChannel: 'sales',
       notes: form.notes || undefined,
     }
 
@@ -116,67 +119,83 @@ export default function NewCustomerForm() {
       >
         <div className="grid grid-cols-2 gap-4">
           <Field
-            label="Name *"
-            error={errors.name}
-            value={form.name}
-            onChange={(v) => setField('name', v)}
+            label="First name *"
+            value={form.firstName}
+            maxLength={120}
+            onChange={(v) => setField('firstName', v)}
           />
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Type</label>
-            <select
-              value={form.customerType}
-              onChange={(e) => setField('customerType', e.target.value as CustomerType)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="individual">Individual</option>
-              <option value="business">Business</option>
-            </select>
-          </div>
+          <Field
+            label="Last name *"
+            value={form.lastName}
+            maxLength={120}
+            onChange={(v) => setField('lastName', v)}
+          />
+        </div>
+        {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}
+
+        <div>
+          <label className="block text-[13px] font-medium text-gray-700">Type</label>
+          <select
+            value={form.customerType ?? 'individual'}
+            onChange={(e) => setField('customerType', e.target.value as CustomerType)}
+            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+          >
+            <option value="individual">Individual</option>
+            <option value="business">Business</option>
+          </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        {form.customerType === 'business' && (
           <Field
             label="Company name"
             value={form.companyName}
+            maxLength={255}
             onChange={(v) => setField('companyName', v)}
           />
-          <Field label="Phone" value={form.phone} onChange={(v) => setField('phone', v)} />
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <Field
+            label="Email"
+            error={errors.email}
+            value={form.email}
+            maxLength={255}
+            type="email"
+            onChange={(v) => setField('email', v)}
+          />
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Phone</label>
+            <PhoneInput
+              value={form.phone ?? ''}
+              defaultCountry="PH"
+              international
+              countryCallingCodeEditable={false}
+              onChange={(v) => setField('phone', v ?? '')}
+              numberInputProps={{ className: 'phone-input-field' }}
+              className="ph-phone-input mt-1"
+            />
+          </div>
         </div>
 
-        <Field
-          label="Email"
-          error={errors.email}
-          value={form.email}
-          onChange={(v) => setField('email', v)}
-        />
-
         <div>
-          <label className="block text-[13px] font-medium text-gray-700">Billing address</label>
-          <textarea
-            rows={2}
-            value={form.billingAddress}
-            onChange={(e) => setField('billingAddress', e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Shipping address</label>
-          <textarea
-            rows={2}
-            value={form.shippingAddress}
-            onChange={(e) => setField('shippingAddress', e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Shipping address
+          </label>
+          <PhilippineAddressPicker onChange={(v) => setField('shippingAddress', v)} />
         </div>
 
         <div className="grid grid-cols-3 gap-4">
-          <Field label="Tax ID" value={form.taxId} onChange={(v) => setField('taxId', v)} />
+          <Field
+            label="Tax ID"
+            value={form.taxId}
+            maxLength={50}
+            onChange={(v) => setField('taxId', v)}
+          />
           <div className="flex items-end gap-2 pb-2">
             <input
               id="isTaxExempt"
               type="checkbox"
-              checked={form.isTaxExempt}
+              checked={form.isTaxExempt ?? false}
               onChange={(e) => setField('isTaxExempt', e.target.checked)}
               className="h-4 w-4 rounded border-gray-300"
             />
@@ -187,54 +206,42 @@ export default function NewCustomerForm() {
           <Field
             label="Exemption ref"
             value={form.taxExemptionRef}
+            maxLength={100}
             onChange={(v) => setField('taxExemptionRef', v)}
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <Field
-            label="Payment terms"
-            value={form.paymentTerms}
-            onChange={(v) => setField('paymentTerms', v)}
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
+            <select
+              value={form.paymentTerms ?? ''}
+              onChange={(e) => setField('paymentTerms', e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select payment terms</option>
+              {PAYMENT_TERMS_OPTIONS.map((term) => (
+                <option key={term} value={term}>
+                  {term}
+                </option>
+              ))}
+            </select>
+          </div>
           <Field
             label="Credit limit (₱)"
             value={form.creditLimit}
+            max={999_999_999}
+            type="number"
             onChange={(v) => setField('creditLimit', v)}
           />
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
-            <select
-              value={form.status}
-              onChange={(e) => setField('status', e.target.value as CustomerStatus)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
-          <select
-            value={form.sourceChannel}
-            onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="pos_walkin">POS Walk-in</option>
-            <option value="sales">Sales</option>
-            <option value="crm_lead">CRM Lead</option>
-            <option value="online">Online</option>
-          </select>
         </div>
 
         <div>
           <label className="block text-[13px] font-medium text-gray-700">Notes</label>
           <textarea
             rows={3}
-            value={form.notes}
+            value={form.notes ?? ''}
+            maxLength={1000}
             onChange={(e) => setField('notes', e.target.value)}
             className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
           />
@@ -269,17 +276,27 @@ function Field({
   value,
   onChange,
   error,
+  maxLength,
+  max,
+  type = 'text',
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   error?: string
+  maxLength?: number
+  max?: number
+  type?: string
 }) {
   return (
     <div>
       <label className="block text-[13px] font-medium text-gray-700">{label}</label>
       <input
-        value={value}
+        type={type}
+        value={value ?? ''}
+        maxLength={maxLength}
+        max={max}
+        min={type === 'number' ? 0 : undefined}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
       />

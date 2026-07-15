@@ -5,12 +5,18 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
-import { updateCustomerSchema, type UpdateCustomerInput } from '@/src/schema/crm/customer'
+import {
+  updateCustomerSchema,
+  PAYMENT_TERMS_OPTIONS,
+  type UpdateCustomerInput,
+} from '@/src/schema/crm/customer'
 import type { CustomerType, CustomerStatus, CustomerSourceChannel } from '@/src/schema/crm/types'
+import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 type FormState = {
   customerCode: string
-  name: string
+  firstName: string
+  lastName: string
   customerType: CustomerType
   companyName: string
   taxId: string
@@ -18,7 +24,6 @@ type FormState = {
   taxExemptionRef: string
   email: string
   phone: string
-  billingAddress: string
   shippingAddress: string
   paymentTerms: string
   creditLimit: string
@@ -29,7 +34,8 @@ type FormState = {
 
 const empty: FormState = {
   customerCode: '',
-  name: '',
+  firstName: '',
+  lastName: '',
   customerType: 'individual',
   companyName: '',
   taxId: '',
@@ -37,7 +43,6 @@ const empty: FormState = {
   taxExemptionRef: '',
   email: '',
   phone: '',
-  billingAddress: '',
   shippingAddress: '',
   paymentTerms: '',
   creditLimit: '',
@@ -49,6 +54,7 @@ const empty: FormState = {
 export default function EditCustomerForm({ id }: { id: string }) {
   const router = useRouter()
   const [form, setForm] = useState<FormState>(empty)
+  const [initialForm, setInitialForm] = useState<FormState>(empty)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -58,9 +64,13 @@ export default function EditCustomerForm({ id }: { id: string }) {
     customersApi.get(id).then((res) => {
       if (res.success && res.data) {
         const c = res.data
-        setForm({
+        // `name` is stored as a single field — split on the first space so
+        // the form can present it the same way the create form collects it.
+        const [firstName, ...lastParts] = c.name.split(' ')
+        const loaded: FormState = {
           customerCode: c.customerCode,
-          name: c.name,
+          firstName: firstName ?? '',
+          lastName: lastParts.join(' '),
           customerType: c.customerType,
           companyName: c.companyName ?? '',
           taxId: c.taxId ?? '',
@@ -68,20 +78,23 @@ export default function EditCustomerForm({ id }: { id: string }) {
           taxExemptionRef: c.taxExemptionRef ?? '',
           email: c.email ?? '',
           phone: c.phone ?? '',
-          billingAddress: c.billingAddress ?? '',
           shippingAddress: c.shippingAddress ?? '',
           paymentTerms: c.paymentTerms ?? '',
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           sourceChannel: c.sourceChannel,
           status: c.status,
           notes: c.notes ?? '',
-        })
+        }
+        setForm(loaded)
+        setInitialForm(loaded)
       } else {
         setServerError(res.error ?? 'Customer not found')
       }
       setLoading(false)
     })
   }, [id])
+
+  const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm)
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -93,7 +106,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
     // Strip empty strings — let the backend keep existing values for blanks.
     const payload: UpdateCustomerInput = {
       customerCode: form.customerCode,
-      name: form.name,
+      name: `${form.firstName} ${form.lastName}`.trim(),
       customerType: form.customerType,
       companyName: form.companyName || undefined,
       taxId: form.taxId || undefined,
@@ -101,7 +114,6 @@ export default function EditCustomerForm({ id }: { id: string }) {
       taxExemptionRef: form.taxExemptionRef || undefined,
       email: form.email || undefined,
       phone: form.phone || undefined,
-      billingAddress: form.billingAddress || undefined,
       shippingAddress: form.shippingAddress || undefined,
       paymentTerms: form.paymentTerms || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
@@ -154,39 +166,46 @@ export default function EditCustomerForm({ id }: { id: string }) {
         onSubmit={onSubmit}
         className="mt-6 max-w-2xl space-y-5 rounded-xl border border-gray-200 bg-white p-6"
       >
-        <div className="grid grid-cols-2 gap-4">
-          <Field
-            label="Customer code *"
-            error={errors.customerCode}
-            value={form.customerCode}
-            onChange={(v) => setField('customerCode', v)}
-          />
-          <Field
-            label="Name *"
-            error={errors.name}
-            value={form.name}
-            onChange={(v) => setField('name', v)}
-          />
-        </div>
+        <Field
+          label="Customer code *"
+          error={errors.customerCode}
+          value={form.customerCode}
+          onChange={(v) => setField('customerCode', v)}
+        />
 
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Type</label>
-            <select
-              value={form.customerType}
-              onChange={(e) => setField('customerType', e.target.value as CustomerType)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="individual">Individual</option>
-              <option value="business">Business</option>
-            </select>
-          </div>
+          <Field
+            label="First name *"
+            value={form.firstName}
+            onChange={(v) => setField('firstName', v)}
+          />
+          <Field
+            label="Last name *"
+            value={form.lastName}
+            onChange={(v) => setField('lastName', v)}
+          />
+        </div>
+        {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}
+
+        <div>
+          <label className="block text-[13px] font-medium text-gray-700">Type</label>
+          <select
+            value={form.customerType ?? 'individual'}
+            onChange={(e) => setField('customerType', e.target.value as CustomerType)}
+            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+          >
+            <option value="individual">Individual</option>
+            <option value="business">Business</option>
+          </select>
+        </div>
+
+        {form.customerType === 'business' && (
           <Field
             label="Company name"
             value={form.companyName}
             onChange={(v) => setField('companyName', v)}
           />
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <Field
@@ -199,22 +218,22 @@ export default function EditCustomerForm({ id }: { id: string }) {
         </div>
 
         <div>
-          <label className="block text-[13px] font-medium text-gray-700">Billing address</label>
-          <textarea
-            rows={2}
-            value={form.billingAddress}
-            onChange={(e) => setField('billingAddress', e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Shipping address</label>
-          <textarea
-            rows={2}
-            value={form.shippingAddress}
-            onChange={(e) => setField('shippingAddress', e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Shipping address
+          </label>
+          {form.shippingAddress && (
+            <p className="mb-1.5 text-xs text-gray-500">
+              Current: <span className="text-gray-700">{form.shippingAddress}</span> — pick below to
+              replace it.
+            </p>
+          )}
+          <PhilippineAddressPicker
+            onChange={(v) => {
+              // The picker fires '' until the user has actually picked
+              // something — ignore those so the loaded value isn't wiped
+              // out before the user starts editing.
+              if (v) setField('shippingAddress', v)
+            }}
           />
         </div>
 
@@ -224,7 +243,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
             <input
               id="isTaxExempt"
               type="checkbox"
-              checked={form.isTaxExempt}
+              checked={form.isTaxExempt ?? false}
               onChange={(e) => setField('isTaxExempt', e.target.checked)}
               className="h-4 w-4 rounded border-gray-300"
             />
@@ -240,11 +259,21 @@ export default function EditCustomerForm({ id }: { id: string }) {
         </div>
 
         <div className="grid grid-cols-3 gap-4">
-          <Field
-            label="Payment terms"
-            value={form.paymentTerms}
-            onChange={(v) => setField('paymentTerms', v)}
-          />
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
+            <select
+              value={form.paymentTerms ?? ''}
+              onChange={(e) => setField('paymentTerms', e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select payment terms</option>
+              {PAYMENT_TERMS_OPTIONS.map((term) => (
+                <option key={term} value={term}>
+                  {term}
+                </option>
+              ))}
+            </select>
+          </div>
           <Field
             label="Credit limit (₱)"
             value={form.creditLimit}
@@ -253,7 +282,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Status</label>
             <select
-              value={form.status}
+              value={form.status ?? 'active'}
               onChange={(e) => setField('status', e.target.value as CustomerStatus)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             >
@@ -267,7 +296,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
         <div>
           <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
           <select
-            value={form.sourceChannel}
+            value={form.sourceChannel ?? 'pos_walkin'}
             onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
             className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
           >
@@ -301,7 +330,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           </Link>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !hasChanges}
             className="rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
           >
             {submitting ? 'Saving…' : 'Save changes'}
@@ -327,7 +356,7 @@ function Field({
     <div>
       <label className="block text-[13px] font-medium text-gray-700">{label}</label>
       <input
-        value={value}
+        value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
       />
