@@ -288,10 +288,19 @@ function Field({
   max?: number
   type?: string
 }) {
+  // Derived, stable id — also lets tests target fields via getByLabel()
+  // instead of brittle selectors, since label/input weren't otherwise linked.
+  const id = `field-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
   return (
     <div>
-      <label className="block text-[13px] font-medium text-gray-700">{label}</label>
+      <label htmlFor={id} className="block text-[13px] font-medium text-gray-700">
+        {label}
+      </label>
       <input
+        id={id}
         type={type}
         value={value ?? ''}
         maxLength={maxLength}
