@@ -33,6 +33,7 @@ import {
   MoreHorizontal,
   TrendingUp,
   Package,
+  PackageCheck,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -313,6 +314,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/void-requests',
         icon: ShieldCheck,
         requiredPermission: 'pos:transactions:read',
+      },
+      {
+        label: 'Release Approvals',
+        href: '/pos/release-approvals',
+        icon: PackageCheck,
+        requiredPermission: 'pos:transaction:override',
       },
       {
         label: 'Promotions',

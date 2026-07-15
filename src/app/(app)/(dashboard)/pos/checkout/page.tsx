@@ -27,11 +27,13 @@ import {
   Mail,
   Phone,
   Send,
+  Clock,
 } from 'lucide-react'
 import { computePricingTotals } from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
@@ -61,8 +63,10 @@ import {
   getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
+  cancelReleaseFormRequest,
   type SerialNumberRecord,
 } from '../_actions/pos-actions'
+import { isPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
   PosInvoiceType,
@@ -331,6 +335,13 @@ export default function CheckoutPage() {
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     invoiceType?: PosInvoiceType
+  } | null>(null)
+
+  // Pending manager approval (serial-tracked sale awaiting Release Form review)
+  const [pendingApproval, setPendingApproval] = useState<{
+    releaseFormRequestId: string
+    totalAmount: number
+    serialLines: { itemName: string; serialNumberLabel?: string }[]
   } | null>(null)
 
   // Offline mode
@@ -1024,6 +1035,42 @@ export default function CheckoutPage() {
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
             (uuid) => idToName[uuid] ?? uuid
           )
+
+          // Backend has no dedicated error code yet for a serial that was reserved or
+          // sold from under the cashier — detect it by message content defensively and
+          // send them straight back to the picker instead of a dead-end error banner.
+          if (errMsg.toLowerCase().includes('no longer available')) {
+            const serialLines = cart.filter((l) => l.isSerialTracked && l.serialNumberId)
+            const stale =
+              serialLines.find(
+                (l) =>
+                  l.serialNumberLabel &&
+                  errMsg.toLowerCase().includes(l.serialNumberLabel.toLowerCase())
+              ) ?? serialLines[0]
+
+            if (stale) {
+              setCart((prev) =>
+                prev.map((l) =>
+                  l.itemId === stale.itemId
+                    ? { ...l, serialNumberId: undefined, serialNumberLabel: undefined }
+                    : l
+                )
+              )
+              setError(
+                `${stale.itemName}'s serial number is no longer available — please select another.`
+              )
+              setSubmitting(false)
+              setSerialPickerTarget({
+                itemId: stale.itemId,
+                itemName: stale.itemName,
+                unitPrice: stale.unitPrice,
+                quantity: stale.quantity,
+                isSerialTracked: true,
+              })
+              return
+            }
+          }
+
           const isTaxErr =
             errMsg.toLowerCase().includes('no tax rate configured') ||
             errMsg.toLowerCase().includes('tax rate')
@@ -1032,6 +1079,43 @@ export default function CheckoutPage() {
           setSubmitting(false)
           return
         }
+
+        // Serial-tracked line in the cart — backend deferred to manager approval
+        // instead of completing the sale. Show the pending screen and bail out
+        // before any payment/loyalty steps run (there is no transaction yet).
+        if (isPendingApproval(txRes.data)) {
+          const { releaseFormRequestId, sessionId: rfdSessionId } = txRes.data
+          const serialLines = cart
+            .filter((l) => l.isSerialTracked)
+            .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
+          const itemNameSummary =
+            serialLines.length === 1
+              ? serialLines[0].itemName
+              : `${serialLines.length} serial-tracked items`
+
+          usePosPendingRfdStore.getState().add({
+            releaseFormRequestId,
+            itemName: itemNameSummary,
+            totalAmount,
+            submittedAt: new Date().toISOString(),
+            sessionId: rfdSessionId,
+          })
+
+          updateSessionDisplay(sessionId, {
+            status: 'idle',
+            lines: [],
+            subtotal: 0,
+            discountTotal: 0,
+            taxTotal: 0,
+            totalAmount: 0,
+            currency: 'PHP',
+          })
+
+          setSubmitting(false)
+          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          return
+        }
+
         setTaxConfigError(false)
         txId = txRes.data.id
         txData = txRes.data
@@ -1147,6 +1231,7 @@ export default function CheckoutPage() {
     setError('')
     setTaxConfigError(false)
     setSuccess(null)
+    setPendingApproval(null)
     setIsTaxExempt(false)
     setTaxExemptionRef('')
     setSearchQuery('')
@@ -1228,6 +1313,18 @@ export default function CheckoutPage() {
         payments={payments}
         promoDiscount={promoDiscount}
         effectiveTaxRate={effectiveTaxRate}
+      />
+    )
+  }
+
+  if (pendingApproval) {
+    return (
+      <PendingApprovalScreen
+        releaseFormRequestId={pendingApproval.releaseFormRequestId}
+        totalAmount={pendingApproval.totalAmount}
+        serialLines={pendingApproval.serialLines}
+        onReset={resetSale}
+        fmt={fmt}
       />
     )
   }
@@ -1355,6 +1452,17 @@ export default function CheckoutPage() {
           <Loader2 size={14} className="animate-spin shrink-0 text-orange-500" />
           <p className="text-sm font-medium text-orange-700">
             Cancellation request pending manager approval — cart is locked.
+          </p>
+        </div>
+      )}
+
+      {/* Serial-tracked sale banner */}
+      {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
+        <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3">
+          <ShieldCheck size={14} className="shrink-0 text-amber-500" />
+          <p className="text-sm font-medium text-amber-700">
+            This sale includes a serialized item — it will need Business Owner or Branch Manager
+            approval before the invoice is created.
           </p>
         </div>
       )}
@@ -2355,9 +2463,11 @@ export default function CheckoutPage() {
                           ? 'Insufficient loyalty points'
                           : needsManagerOverride && !managerOverrideApproved
                             ? 'Manager override required'
-                            : invoiceType === 'charge'
-                              ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                              : `Confirm Sale — ${fmt(totalAmount)}`}
+                            : cart.some((l) => l.isSerialTracked)
+                              ? `Submit for Approval — ${fmt(totalAmount)}`
+                              : invoiceType === 'charge'
+                                ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -3191,6 +3301,91 @@ function SuccessScreen({
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Pending Approval Screen ───────────────────────────────────────────────────
+
+function PendingApprovalScreen({
+  releaseFormRequestId,
+  totalAmount,
+  serialLines,
+  onReset,
+  fmt,
+}: {
+  releaseFormRequestId: string
+  totalAmount: number
+  serialLines: { itemName: string; serialNumberLabel?: string }[]
+  onReset: () => void
+  fmt: (n: number) => string
+}) {
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+
+  async function handleCancelRequest() {
+    setCancelling(true)
+    setCancelError('')
+    const res = await cancelReleaseFormRequest(releaseFormRequestId)
+    setCancelling(false)
+    if (!res.success) {
+      setCancelError(res.error ?? 'Failed to cancel request.')
+      return
+    }
+    usePosPendingRfdStore.getState().remove(releaseFormRequestId)
+    onReset()
+  }
+
+  return (
+    <div className="flex min-h-full items-center justify-center bg-zinc-50 p-6">
+      <div className="flex w-full max-w-sm flex-col items-center gap-5 rounded-2xl border border-amber-100 bg-white p-8 text-center shadow-sm">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+          <Clock size={28} className="text-amber-600" />
+        </div>
+        <div>
+          <p className="text-xl font-bold text-gray-900">Pending Approval</p>
+          <p className="mt-1 text-sm text-amber-600">
+            Waiting for a Business Owner or Branch Manager to review.
+          </p>
+        </div>
+
+        <div className="w-full space-y-2 rounded-xl bg-gray-50 px-5 py-4 text-left">
+          {serialLines.map((line, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate font-medium text-gray-800">{line.itemName}</span>
+              <span className="shrink-0 font-mono text-xs text-gray-500">
+                {line.serialNumberLabel ?? '—'}
+              </span>
+            </div>
+          ))}
+          <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+            <span className="text-sm font-semibold text-gray-700">Total</span>
+            <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
+          </div>
+        </div>
+
+        <p className="break-all font-mono text-[10px] text-gray-400">Ref: {releaseFormRequestId}</p>
+
+        {cancelError && (
+          <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+            {cancelError}
+          </p>
+        )}
+
+        <button
+          onClick={onReset}
+          className="w-full rounded-xl bg-purple-700 py-3 text-sm font-bold text-white hover:bg-purple-800"
+        >
+          Start New Sale
+        </button>
+        <button
+          onClick={handleCancelRequest}
+          disabled={cancelling}
+          className="text-xs font-medium text-gray-400 hover:text-red-500 disabled:opacity-50"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel this request'}
+        </button>
       </div>
     </div>
   )
