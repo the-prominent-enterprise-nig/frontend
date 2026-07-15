@@ -213,6 +213,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: ReceiptText,
       },
       {
+        label: 'Expenses',
+        href: '/accounting/expenses',
+        icon: Coins,
+      },
+      {
         label: 'Bank Accounts',
         href: '/accounting/bank-accounts',
         icon: Wallet,
