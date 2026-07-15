@@ -17,7 +17,7 @@ export default async function UomPage() {
     redirect('/login')
   }
 
-  if (!can(session, INVENTORY_PERMISSIONS.ITEMS_READ)) {
+  if (!can(session, INVENTORY_PERMISSIONS.UOM_READ)) {
     redirect('/403')
   }
 
