@@ -60,7 +60,12 @@ import type {
   PosCancellationRequest,
   SubmitCancellationInput,
   ReviewCancellationInput,
+  CreateTransactionResult,
+  PosReleaseFormRequest,
+  ReleaseFormStatusResult,
+  ReviewReleaseFormInput,
 } from '@/src/schema/pos'
+import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
 
 const TAGS = {
@@ -84,6 +89,8 @@ const TAGS = {
   voidRequest: (txId: string) => `pos-void-requests-${txId}`,
   cancellationRequests: 'pos-cancellation-requests',
   cancellationRequest: (id: string) => `pos-cancellation-request-${id}`,
+  releaseFormRequests: 'pos-release-form-requests',
+  releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
 }
 
 export async function getTerminals(filters?: {
@@ -296,13 +303,16 @@ export async function getTransaction(id: string): Promise<ApiResponse<PosTransac
 
 export async function createTransaction(
   input: CreateTransactionInput
-): Promise<ApiResponse<PosTransaction>> {
+): Promise<ApiResponse<CreateTransactionResult>> {
   try {
-    const result = await api.post<PosTransaction>('/pos/transactions', input)
+    const result = await api.post<CreateTransactionResult>('/pos/transactions', input)
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to create transaction' }
     }
-    revalidateTag(TAGS.transactions, 'max')
+    // Pending-approval responses don't create a transaction — nothing to revalidate yet.
+    if (!isPendingApproval(result.data)) {
+      revalidateTag(TAGS.transactions, 'max')
+    }
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to create transaction' }
@@ -1923,5 +1933,102 @@ export async function rejectCancellationRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject cancellation request' }
+  }
+}
+
+// ─── Release Form Requests (serial-tracked sale approval) ────────────────────
+
+export async function getReleaseFormStatus(
+  requestId: string
+): Promise<ApiResponse<ReleaseFormStatusResult>> {
+  try {
+    const result = await api.get<ReleaseFormStatusResult>(
+      `/pos/release-form-requests/${requestId}/status`,
+      undefined,
+      { tags: [TAGS.releaseFormRequest(requestId)] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch release form status' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch release form status' }
+  }
+}
+
+export async function cancelReleaseFormRequest(
+  requestId: string
+): Promise<ApiResponse<PosReleaseFormRequest>> {
+  try {
+    const result = await api.post<PosReleaseFormRequest>(
+      `/pos/release-form-requests/${requestId}/cancel`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to cancel release form request' }
+    }
+    revalidateTag(TAGS.releaseFormRequests, 'max')
+    revalidateTag(TAGS.releaseFormRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to cancel release form request' }
+  }
+}
+
+export async function getPendingReleaseFormRequests(
+  branchId?: string
+): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/pending',
+      branchId ? { branchId } : undefined,
+      { tags: [TAGS.releaseFormRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch pending release requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch pending release requests' }
+  }
+}
+
+export async function approveReleaseFormRequest(
+  requestId: string,
+  input?: ReviewReleaseFormInput
+): Promise<ApiResponse<PosReleaseFormRequest>> {
+  try {
+    const result = await api.post<PosReleaseFormRequest>(
+      `/pos/release-form-requests/${requestId}/approve`,
+      input ?? {}
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve release form request' }
+    }
+    revalidateTag(TAGS.releaseFormRequests, 'max')
+    revalidateTag(TAGS.releaseFormRequest(requestId), 'max')
+    revalidateTag(TAGS.transactions, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve release form request' }
+  }
+}
+
+export async function rejectReleaseFormRequest(
+  requestId: string,
+  input?: ReviewReleaseFormInput
+): Promise<ApiResponse<PosReleaseFormRequest>> {
+  try {
+    const result = await api.post<PosReleaseFormRequest>(
+      `/pos/release-form-requests/${requestId}/reject`,
+      input ?? {}
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to reject release form request' }
+    }
+    revalidateTag(TAGS.releaseFormRequests, 'max')
+    revalidateTag(TAGS.releaseFormRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to reject release form request' }
   }
 }

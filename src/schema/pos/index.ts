@@ -712,3 +712,87 @@ export interface SubmitCancellationInput {
 export interface ReviewCancellationInput {
   reviewNotes?: string
 }
+
+// ─── Release Form Requests (serial-tracked sale approval) ────────────────────
+
+export type PosReleaseFormStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired'
+
+/** Response shape when POST /pos/transactions defers to manager approval
+ * instead of completing the sale immediately. */
+export interface PosTransactionPendingApproval {
+  status: 'pending_approval'
+  releaseFormRequestId: string
+  sessionId: string
+}
+
+export type CreateTransactionResult = PosTransaction | PosTransactionPendingApproval
+
+export function isPendingApproval(
+  data: CreateTransactionResult
+): data is PosTransactionPendingApproval {
+  return (data as PosTransactionPendingApproval)?.status === 'pending_approval'
+}
+
+export interface PosReleaseFormCartLine {
+  itemId: string
+  itemName: string
+  sku?: string
+  quantity: number
+  unitPrice: number
+  discountAmount?: number
+  taxAmount?: number
+  serialNumberId?: string
+  serialNumberLabel?: string
+  serialNumber?: string
+}
+
+export interface PosReleaseFormCartSnapshot {
+  sessionId?: string
+  customerId?: string | null
+  customer?: { id: string; name?: string | null } | null
+  lines?: PosReleaseFormCartLine[]
+  subtotal?: number
+  discountAmount?: number
+  discountTotal?: number
+  taxAmount?: number
+  taxTotal?: number
+  totalAmount?: number
+  invoiceType?: PosInvoiceType
+}
+
+export interface PosReleaseFormRequest {
+  id: string
+  tenantId?: string | null
+  sessionId: string
+  requestedById: string
+  status: PosReleaseFormStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  createdTransactionId?: string | null
+  cartSnapshot: PosReleaseFormCartSnapshot
+  requestedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  session?: {
+    cashier?: { id: string; name: string } | null
+    terminal?: { terminalCode: string; name?: string; branch?: { name: string } | null } | null
+  } | null
+}
+
+export interface ReleaseFormStatusResult {
+  status: PosReleaseFormStatus
+  reviewedAt?: string | null
+  reviewNotes?: string | null
+  createdTransactionId?: string | null
+}
+
+export interface ReviewReleaseFormInput {
+  reviewNotes?: string
+}
