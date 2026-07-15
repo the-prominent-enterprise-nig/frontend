@@ -8,11 +8,13 @@ import type {
   CustomerSegment,
   PipelineColumn,
   PaginatedResponse,
+  Agent,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type { CreateReminderInput, UpdateReminderInput } from '@/src/schema/crm/reminder'
+import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -150,4 +152,24 @@ export const segmentsApi = {
     api.patch<CustomerSegment>(`/crm/customer-segments/${id}`, body),
   refresh: (id: string) => api.post<CustomerSegment>(`/crm/customer-segments/${id}/refresh`),
   remove: (id: string) => api.delete(`/crm/customer-segments/${id}`),
+}
+
+// ─── Sales Agents ───────────────────────────────────────────
+
+export type AgentFilters = {
+  search?: string
+  status?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const agentsApi = {
+  list: (filters?: AgentFilters) =>
+    api.get<PaginatedResponse<Agent>>('/crm/agents', filters, {
+      tags: ['crm:agents'],
+    }),
+  get: (id: string) => api.get<Agent>(`/crm/agents/${id}`),
+  create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
+  update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
+  remove: (id: string) => api.delete(`/crm/agents/${id}`),
 }

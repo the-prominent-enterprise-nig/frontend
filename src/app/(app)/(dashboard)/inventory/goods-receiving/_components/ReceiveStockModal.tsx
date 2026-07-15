@@ -123,9 +123,6 @@ export default function ReceiveStockModal({
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Reference Number
-                  <span className="ml-1 text-xs font-normal text-zinc-400">
-                    (auto-generated if blank)
-                  </span>
                 </label>
                 <Controller
                   name="code"
@@ -133,13 +130,15 @@ export default function ReceiveStockModal({
                   render={({ field }) => (
                     <input
                       {...field}
-                      value={field.value ?? ''}
                       type="text"
-                      placeholder="GRN-YYYYMMDD-0001"
+                      placeholder="Auto-generated if blank"
                       className={fieldClass}
                     />
                   )}
                 />
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Leave blank to auto-generate (GRN-YYYYMMDD-NNNN)
+                </p>
               </div>
 
               <div>

@@ -25,6 +25,7 @@ import {
   Funnel,
   HandCoins,
   House,
+  IdCard,
   Key,
   Layers,
   Library,
@@ -32,6 +33,7 @@ import {
   MoreHorizontal,
   TrendingUp,
   Package,
+  PackageCheck,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -135,6 +137,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: ShoppingCart,
         requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
         activeWhen: ['/inventory/purchase-orders'],
+      },
+      {
+        label: 'Suppliers',
+        href: '/inventory/suppliers',
+        icon: Truck,
+        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
       },
       {
         label: 'Counting',
@@ -319,6 +327,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:transactions:read',
       },
       {
+        label: 'Release Approvals',
+        href: '/pos/release-approvals',
+        icon: PackageCheck,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
         label: 'Promotions',
         href: '/pos/promo-codes',
         icon: Tag,
@@ -372,6 +386,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/segments',
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
+      },
+      {
+        label: 'Sales Agents',
+        href: '/crm/agents',
+        icon: IdCard,
+        requiredPermission: CRM_PERMISSIONS.AGENTS_READ,
       },
       {
         label: 'Settings',
