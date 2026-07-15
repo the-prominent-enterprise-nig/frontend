@@ -19,7 +19,6 @@ import {
   KeyRound,
   LayoutList,
   Settings,
-  Target,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -58,19 +57,11 @@ const GROUPS = [
   },
   {
     label: 'Configuration',
-    paths: [
-      '/pos/gl-mapping',
-      '/pos/pin',
-      '/pos/settings',
-      '/pos/config',
-      '/pos/queue-categories',
-      '/pos/sales-quotas',
-    ],
+    paths: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config', '/pos/queue-categories'],
     items: [
       { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen },
       { label: 'Cashier PIN', href: '/pos/pin', icon: KeyRound },
       { label: 'Queue Categories', href: '/pos/queue-categories', icon: LayoutList },
-      { label: 'Sales Targets', href: '/pos/sales-quotas', icon: Target },
       { label: 'Settings', href: '/pos/settings', icon: Settings },
     ] satisfies NavItem[],
   },
