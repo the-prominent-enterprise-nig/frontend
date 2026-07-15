@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { BellPlus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
@@ -70,6 +70,7 @@ export default function CustomersList({
   currentUserId: string
   tenantId: string
 }) {
+  const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -174,7 +175,11 @@ export default function CustomersList({
             {!loading &&
               !error &&
               customers.map((c) => (
-                <tr key={c.id} className="group transition-colors hover:bg-gray-50">
+                <tr
+                  key={c.id}
+                  onClick={() => router.push(`/crm/customers/${c.id}`)}
+                  className="group cursor-pointer transition-colors hover:bg-gray-50"
+                >
                   <td className="px-4 py-3 font-mono text-[11.5px] text-gray-500">
                     {c.customerCode}
                   </td>
@@ -190,12 +195,9 @@ export default function CustomersList({
                         {initials(c.name)}
                       </span>
                       <div className="min-w-0">
-                        <Link
-                          href={`/crm/customers/${c.id}`}
-                          className="block font-medium text-gray-900 hover:text-prominent-orange-700 hover:underline"
-                        >
+                        <span className="block font-medium text-gray-900 group-hover:text-prominent-orange-700 group-hover:underline">
                           {c.name}
-                        </Link>
+                        </span>
                         <div className="truncate text-[12px] text-gray-500">
                           {c.companyName ?? <span className="capitalize">{c.customerType}</span>}
                         </div>
@@ -217,7 +219,10 @@ export default function CustomersList({
                   {canScheduleReminder && (
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => setReminderForCustomerId(c.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setReminderForCustomerId(c.id)
+                        }}
                         className="rounded-lg p-1.5 text-gray-400 opacity-0 transition-opacity hover:bg-prominent-orange-50 hover:text-prominent-orange-700 group-hover:opacity-100"
                         title="Schedule reminder"
                         aria-label="Schedule reminder"

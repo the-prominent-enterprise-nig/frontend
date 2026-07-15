@@ -258,7 +258,10 @@ export interface CreateTransactionInput {
   totalAmount: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
-  overrideManagerId?: string
+  /** Set when a manager has PIN-approved an override (receiptless return,
+   * discount threshold, or charge-sale credit/terms block). */
+  managerOverride?: boolean
+  managerUserId?: string
   allowNegativeStock?: boolean
   currency?: string
   fxRate?: number
