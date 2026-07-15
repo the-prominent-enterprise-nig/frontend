@@ -77,12 +77,24 @@ export function useItemMaster() {
     undefined
   )
   const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>(undefined)
+  const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
+    'createdAt'
+  )
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [selectedBundleItem, setSelectedBundleItem] = useState<ItemSummary | null>(null)
   const [selectedVariantItem, setSelectedVariantItem] = useState<ItemSummary | null>(null)
 
   const queryParams = useMemo(
-    () => ({ page, limit, search: search || undefined, lifecycle, primaryCategoryId }),
-    [page, limit, search, lifecycle, primaryCategoryId]
+    () => ({
+      page,
+      limit,
+      search: search || undefined,
+      lifecycle,
+      primaryCategoryId,
+      sortBy,
+      sortOrder,
+    }),
+    [page, limit, search, lifecycle, primaryCategoryId, sortBy, sortOrder]
   )
 
   const itemsQuery = useQuery({
@@ -267,6 +279,8 @@ export function useItemMaster() {
     setSearch('')
     setLifecycle(undefined)
     setPrimaryCategoryId(undefined)
+    setSortBy('createdAt')
+    setSortOrder('desc')
     setPage(1)
   }
 
@@ -306,6 +320,16 @@ export function useItemMaster() {
     },
     setPrimaryCategoryId: (val: string | undefined) => {
       setPrimaryCategoryId(val)
+      setPage(1)
+    },
+    sortBy,
+    sortOrder,
+    setSortBy: (val: typeof sortBy) => {
+      setSortBy(val)
+      setPage(1)
+    },
+    setSortOrder: (val: typeof sortOrder) => {
+      setSortOrder(val)
       setPage(1)
     },
     resetFilters,
