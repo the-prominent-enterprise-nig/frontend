@@ -18,6 +18,8 @@ export const POS_PERMISSIONS = {
   CASH_DRAWER_MANAGE: 'pos:cash-drawer:manage',
   BRANCH_PRICING_READ: 'pos:branch-pricing:read',
   BRANCH_PRICING_MANAGE: 'pos:branch-pricing:manage',
+  SALES_QUOTAS_READ: 'pos:sales-quotas:read',
+  SALES_QUOTAS_MANAGE: 'pos:sales-quotas:manage',
   WILDCARD: 'pos:*',
 } as const
 
@@ -45,6 +47,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:cash-drawer:manage': 'Record cash drawer events',
   'pos:branch-pricing:read': 'View branch price overrides',
   'pos:branch-pricing:manage': 'Create and edit branch price overrides',
+  'pos:sales-quotas:read': 'View branch sales targets',
+  'pos:sales-quotas:manage': 'Create and edit branch sales targets',
   'pos:*': 'Wildcard full POS access',
 }
 

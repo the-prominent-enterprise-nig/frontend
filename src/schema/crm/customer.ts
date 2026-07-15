@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { CustomerSourceChannelEnum, CustomerStatusEnum, CustomerTypeEnum } from './types'
 
 export const createCustomerSchema = z.object({
-  tenantId: z.string().min(1, 'Enterprise Owner is required'),
-  customerCode: z.string().min(1, 'Customer code is required').max(20),
+  tenantId: z.string().optional(),
+  customerCode: z.string().max(20).optional(),
   name: z.string().min(1, 'Name is required').max(255),
   customerType: CustomerTypeEnum.optional(),
   companyName: z.string().max(255).optional().or(z.literal('')),

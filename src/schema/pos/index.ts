@@ -790,6 +790,12 @@ export interface PosReleaseFormRequest {
     cashier?: { id: string; name: string } | null
     terminal?: { terminalCode: string; name?: string; branch?: { name: string } | null } | null
   } | null
+  /** Derived label — no dedicated model. Whether this is a plain RFD (serial
+   * hold), a credit-sale Application Form, or both. */
+  requestType?: 'RFD' | 'Application Form' | 'RFD + Application Form'
+  /** Live-computed credit/terms concerns for a charge sale (COD terms, over
+   * Net-N days, over credit limit) — advisory only, empty for cash sales. */
+  creditWarnings?: string[]
 }
 
 export interface ReleaseFormStatusResult {
