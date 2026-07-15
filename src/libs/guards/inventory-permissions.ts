@@ -66,6 +66,10 @@ export const INVENTORY_PERMISSIONS = {
   SERIAL_READ: 'inventory:serial:read',
   SERIAL_MANAGE: 'inventory:serial:manage',
 
+  // ── Unit Document Sheets (UDS) ─────────────────────────────────────────────
+  UDS_READ: 'inventory:uds:read',
+  UDS_MANAGE: 'inventory:uds:manage',
+
   // ── Expiry (Stock Controller) ──────────────────────────────────────────────
   EXPIRY_READ: 'inventory:expiry:read',
   EXPIRY_MANAGE: 'inventory:expiry:manage',
@@ -107,6 +111,11 @@ export const INVENTORY_PERMISSIONS = {
   RESERVATIONS_READ: 'inventory:reservations:read',
   RESERVATIONS_CREATE: 'inventory:reservations:create',
   RESERVATIONS_RELEASE: 'inventory:reservations:release',
+
+  // ── Stock Requisitions ─────────────────────────────────────────────────────
+  STOCK_REQUISITIONS_READ: 'inventory:stock-requisitions:read',
+  STOCK_REQUISITIONS_CREATE: 'inventory:stock-requisitions:create',
+  STOCK_REQUISITIONS_APPROVE: 'inventory:stock-requisitions:approve',
 
   // ── Negative Stock Policy (INV-36) ─────────────────────────────────────────
   NEGATIVE_STOCK_READ: 'inventory:negative-stock:read',
@@ -185,6 +194,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:batch:manage': 'Assign and manage batch numbers',
   'inventory:serial:read': 'View serial number records',
   'inventory:serial:manage': 'Assign and manage serial numbers',
+  'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
+  'inventory:uds:manage': 'Issue and update Unit Document Sheets',
   'inventory:expiry:read': 'View expiry-tracked stock',
   'inventory:expiry:manage': 'Manage expiry dates and FEFO picking',
   'inventory:cycle-count:read': 'View cycle count schedules',
@@ -222,6 +233,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:attributes:manage': 'Create and manage custom item attributes',
   'inventory:projection:read': 'View forward stock projection',
   'inventory:*': 'Wildcard full Inventory access',
+  'inventory:stock-requisitions:read': 'View branch stock requisitions',
+  'inventory:stock-requisitions:create': 'Create branch stock requisitions',
+  'inventory:stock-requisitions:approve': 'Approve or reject branch stock requisitions',
 }
 
 export type InventoryPermission = (typeof INVENTORY_PERMISSIONS)[keyof typeof INVENTORY_PERMISSIONS]

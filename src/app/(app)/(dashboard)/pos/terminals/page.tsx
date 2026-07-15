@@ -31,6 +31,8 @@ import type {
   CreateTerminalInput,
   UpdateTerminalInput,
 } from '@/src/schema/pos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -45,7 +47,8 @@ type ModalState =
   | { type: 'cashiers'; terminal: PosTerminal }
 
 export default function TerminalsPage() {
-  const { data, isLoading, isFetching, refetch } = useTerminals()
+  const { branchId } = usePosBranchContext()
+  const { data, isLoading, isFetching, refetch } = useTerminals(branchId ? { branchId } : undefined)
   const createMutation = useCreateTerminal()
   const updateMutation = useUpdateTerminal()
   const deleteMutation = useDeleteTerminal()
@@ -115,9 +118,13 @@ export default function TerminalsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div
+          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm ${
+            isFetching && !isLoading ? 'opacity-60 transition-opacity' : ''
+          }`}
+        >
           {isLoading ? (
-            <Skeleton />
+            <TerminalsTableSkeleton />
           ) : terminals.length === 0 ? (
             <Empty onAdd={() => setModal({ type: 'create' })} />
           ) : (
@@ -586,17 +593,52 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function Skeleton() {
+function TerminalsTableSkeleton() {
   return (
-    <div className="space-y-3 p-6">
-      {[...Array(4)].map((_, i) => (
-        <div key={i} className="flex animate-pulse gap-4">
-          <div className="h-4 w-1/6 rounded bg-gray-200" />
-          <div className="h-4 w-1/4 rounded bg-gray-200" />
-          <div className="h-4 w-1/5 rounded bg-gray-200" />
-        </div>
-      ))}
-    </div>
+    <table className="min-w-full text-sm">
+      <thead className="border-b border-gray-200 bg-gray-50">
+        <tr>
+          <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+            Code
+          </th>
+          <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+            Name
+          </th>
+          <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+            Branch
+          </th>
+          <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+            Status
+          </th>
+          <th className="px-5 py-3" />
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {[...Array(5)].map((_, i) => (
+          <tr key={i}>
+            <td className="px-5 py-3">
+              <Skeleton className="h-4 w-16" />
+            </td>
+            <td className="px-5 py-3">
+              <Skeleton className="h-4 w-32" />
+            </td>
+            <td className="px-5 py-3">
+              <Skeleton className="h-4 w-24" />
+            </td>
+            <td className="px-5 py-3">
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </td>
+            <td className="px-5 py-3">
+              <div className="flex items-center justify-end gap-2">
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-4" />
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 

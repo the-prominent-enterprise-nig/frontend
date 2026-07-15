@@ -64,7 +64,7 @@ export default function EditUserModal({ user, isOpen, onClose }: Props) {
     handleSubmit,
     trigger,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(MergedSchema),
     defaultValues: {
@@ -390,8 +390,9 @@ export default function EditUserModal({ user, isOpen, onClose }: Props) {
           ) : (
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isDirty}
               onClick={handleSubmit(onSubmit)}
+              title={!isDirty ? 'No changes to save' : undefined}
               className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? 'Saving...' : 'Save Changes'}

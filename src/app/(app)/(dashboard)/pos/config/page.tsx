@@ -8,12 +8,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   PackageX,
-  Bell,
   ReceiptText,
 } from 'lucide-react'
 import { getActivePosConfig, upsertPosConfig } from '../_actions/pos-actions'
 import type { PosConfig } from '@/src/schema/pos'
-import { QueueCategories, type QueueCategory } from '@/src/libs/data/QueueData'
 
 export default function PosConfigPage() {
   const [config, setConfig] = useState<PosConfig | null>(null)
@@ -22,30 +20,25 @@ export default function PosConfigPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
 
-  const [discountThreshold, setDiscountThreshold] = useState(20)
-  const [receiptlessReturnDays, setReceiptlessReturnDays] = useState(7)
+  const [discountThreshold, setDiscountThreshold] = useState<string>('20')
+  const [receiptlessReturnDays, setReceiptlessReturnDays] = useState<string>('7')
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
-  const [orderQueueCategoryId, setOrderQueueCategoryId] = useState<string>('')
   const [defaultPricingMode, setDefaultPricingMode] = useState<'inclusive' | 'exclusive'>(
     'exclusive'
   )
 
-  const [queueCategories, setQueueCategories] = useState<QueueCategory[]>([])
-
   useEffect(() => {
-    Promise.all([getActivePosConfig(), QueueCategories.list()])
-      .then(([configRes, catRes]) => {
+    getActivePosConfig()
+      .then((configRes) => {
         setLoading(false)
         if (configRes.success && configRes.data) {
           const c = configRes.data
           setConfig(c)
-          setDiscountThreshold(Number(c.discountOverrideThreshold ?? 20))
-          setReceiptlessReturnDays(Number(c.receiptlessReturnDays ?? 7))
+          setDiscountThreshold(String(c.discountOverrideThreshold ?? 20))
+          setReceiptlessReturnDays(String(c.receiptlessReturnDays ?? 7))
           setAllowNegativeStock(c.allowNegativeStock ?? false)
-          setOrderQueueCategoryId(c.orderQueueCategoryId ?? '')
           setDefaultPricingMode(c.defaultPricingMode ?? 'exclusive')
         }
-        setQueueCategories(catRes.data ?? [])
       })
       .catch(() => setLoading(false))
   }, [])
@@ -57,10 +50,11 @@ export default function PosConfigPage() {
 
     const payload = {
       existingId: config?.id,
-      discountOverrideThreshold: discountThreshold,
-      receiptlessReturnDays,
+      discountOverrideThreshold:
+        discountThreshold === '' ? 0 : Math.max(0, Math.min(100, Number(discountThreshold))),
+      receiptlessReturnDays:
+        receiptlessReturnDays === '' ? 0 : Math.max(0, Number(receiptlessReturnDays)),
       allowNegativeStock,
-      orderQueueCategoryId: orderQueueCategoryId || null,
       defaultPricingMode,
     }
     console.log('[PosConfig] upsertPosConfig payload:', payload)
@@ -75,10 +69,9 @@ export default function PosConfigPage() {
     if (res.data) {
       const saved = res.data as PosConfig
       setConfig(saved)
-      setDiscountThreshold(Number(saved.discountOverrideThreshold ?? 20))
-      setReceiptlessReturnDays(Number(saved.receiptlessReturnDays ?? 7))
+      setDiscountThreshold(String(saved.discountOverrideThreshold ?? 20))
+      setReceiptlessReturnDays(String(saved.receiptlessReturnDays ?? 7))
       setAllowNegativeStock(saved.allowNegativeStock ?? false)
-      setOrderQueueCategoryId(saved.orderQueueCategoryId ?? '')
       setDefaultPricingMode(saved.defaultPricingMode ?? 'exclusive')
     }
     setSuccess(true)
@@ -120,11 +113,10 @@ export default function PosConfigPage() {
                 type="number"
                 min={0}
                 max={100}
+                placeholder="0"
                 className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                 value={discountThreshold}
-                onChange={(e) =>
-                  setDiscountThreshold(Math.max(0, Math.min(100, Number(e.target.value))))
-                }
+                onChange={(e) => setDiscountThreshold(e.target.value)}
               />
               <span className="text-sm text-gray-500">% discount</span>
             </div>
@@ -141,9 +133,10 @@ export default function PosConfigPage() {
               <input
                 type="number"
                 min={0}
+                placeholder="0"
                 className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
                 value={receiptlessReturnDays}
-                onChange={(e) => setReceiptlessReturnDays(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => setReceiptlessReturnDays(e.target.value)}
               />
               <span className="text-sm text-gray-500">days</span>
             </div>
@@ -221,42 +214,6 @@ export default function PosConfigPage() {
                 VAT-exclusive.
               </div>
             )}
-          </div>
-
-          {/* Order Queue Category */}
-          <div className="border-t border-gray-100 pt-4">
-            <div className="flex items-start gap-2.5">
-              <Bell
-                size={16}
-                className={orderQueueCategoryId ? 'mt-0.5 text-purple-500' : 'mt-0.5 text-gray-400'}
-              />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-gray-700">Order Queue</p>
-                <p className="mt-0.5 mb-2 text-xs text-gray-500">
-                  When set, every completed sale auto-issues a ticket in this queue so staff know
-                  which orders to prepare. The ticket number appears on the receipt. If no category
-                  is selected, the queue step is silently skipped.
-                </p>
-                <select
-                  value={orderQueueCategoryId}
-                  onChange={(e) => setOrderQueueCategoryId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                >
-                  <option value="">— No queue (disabled) —</option>
-                  {queueCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                      {c.counterName ? ` · ${c.counterName}` : ''}
-                    </option>
-                  ))}
-                </select>
-                {queueCategories.length === 0 && (
-                  <p className="mt-1 text-xs text-gray-400">
-                    No queue categories found. Create one in Queue Management → Settings first.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         </div>
 

@@ -6,7 +6,10 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
-export async function cancelPurchaseOrder(id: string): Promise<ApiResponse<{ id: string }>> {
+export async function cancelPurchaseOrder(
+  id: string,
+  reason: string
+): Promise<ApiResponse<{ id: string }>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -19,7 +22,9 @@ export async function cancelPurchaseOrder(id: string): Promise<ApiResponse<{ id:
     }
   }
 
-  const result = await api.patch<{ id: string }>(`/procurement/purchase-orders/${id}/cancel`)
+  const result = await api.patch<{ id: string }>(`/procurement/purchase-orders/${id}/cancel`, {
+    reason,
+  })
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')

@@ -15,6 +15,8 @@ import type {
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
 } from '@/src/schema/pos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 interface LookupItem {
   id: string
@@ -44,7 +46,8 @@ type ModalState =
   | { type: 'delete'; record: BranchPricing }
 
 export default function BranchPricingPage() {
-  const { data, isLoading, isFetching, refetch } = useBranchPricing()
+  const { branchId } = usePosBranchContext()
+  const { data, isLoading, isFetching, refetch } = useBranchPricing(branchId ?? undefined)
   const createMutation = useCreateBranchPricing()
   const updateMutation = useUpdateBranchPricing()
   const deleteMutation = useDeleteBranchPricing()
@@ -130,15 +133,68 @@ export default function BranchPricingPage() {
 
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
-            <div className="space-y-3 p-6">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="flex animate-pulse gap-4">
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                </div>
-              ))}
-            </div>
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Branch
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Item
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Price
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Tax Rate
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Pricing Mode
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Effective From
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Effective To
+                  </th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {[...Array(5)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3 align-top">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3 align-top">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="mt-1.5 h-3 w-16" />
+                    </td>
+                    <td className="px-5 py-3 align-top text-right">
+                      <Skeleton className="ml-auto h-4 w-16" />
+                    </td>
+                    <td className="px-5 py-3 align-top text-right">
+                      <Skeleton className="ml-auto h-4 w-10" />
+                    </td>
+                    <td className="px-5 py-3 align-top">
+                      <Skeleton className="h-4 w-14 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3 align-top">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3 align-top">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3 align-top">
+                      <div className="flex items-center justify-end gap-2">
+                        <Skeleton className="h-6 w-6" />
+                        <Skeleton className="h-6 w-6" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : records.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
               <DollarSign size={40} />

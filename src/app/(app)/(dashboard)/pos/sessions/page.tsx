@@ -10,6 +10,8 @@ import {
 } from '../_hooks/usePos'
 import { verifyCashierPin, getUsers, getSessionReconciliation } from '../_actions/pos-actions'
 import { PosDateTime } from '../_components/PosDate'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import { RefreshCw, Monitor, Plus, X, ChevronDown, CheckCircle2 } from 'lucide-react'
 import type {
   PosSession,
@@ -38,7 +40,9 @@ type ModalState =
   | { type: 'reconciliation'; session: PosSession; data: SessionReconciliation }
 
 export default function SessionsPage() {
-  const { data, isLoading, isFetching, refetch } = useSessions()
+  const { branchId } = usePosBranchContext()
+  const branchFilter = branchId ? { branchId } : undefined
+  const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
   const openMutation = useOpenSession()
   const closeMutation = useCloseSession()
   const handoverMutation = useHandoverSession()
@@ -132,21 +136,6 @@ export default function SessionsPage() {
 
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
-            <div className="space-y-3 p-6">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex animate-pulse gap-4">
-                  <div className="h-4 w-1/4 rounded bg-gray-200" />
-                  <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  <div className="h-4 w-1/6 rounded bg-gray-200" />
-                </div>
-              ))}
-            </div>
-          ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
-              <Monitor size={40} />
-              <p className="text-sm">No sessions found.</p>
-            </div>
-          ) : (
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
@@ -178,11 +167,73 @@ export default function SessionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
+                {[...Array(6)].map((_, i) => (
+                  <tr key={i}>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-28" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Skeleton className="ml-auto h-4 w-16" />
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <Skeleton className="ml-auto h-4 w-8" />
+                    </td>
+                    <td className="px-5 py-3" />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : sessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
+              <Monitor size={40} />
+              <p className="text-sm">No sessions found.</p>
+            </div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Branch
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Terminal
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Cashier
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Opened
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Opening Cash
+                  </th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase text-gray-500">
+                    Transactions
+                  </th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
                 {sessions.map((s) => (
                   <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3">
-                      <span className="font-mono text-xs text-gray-500 select-all">{s.id}</span>
-                    </td>
                     <td className="px-5 py-3 text-gray-700">{s.terminal?.branch?.name ?? '—'}</td>
                     <td className="px-5 py-3 font-medium text-gray-800">
                       {s.terminal?.name ?? s.terminalId}
@@ -287,12 +338,14 @@ function OpenSessionModal({
   onClose: () => void
   onSubmit: (f: OpenSessionInput) => void
 }) {
-  const { data: terminalsData } = useTerminals()
+  const { branchId } = usePosBranchContext()
+  const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
   const terminals = terminalsData?.data ?? []
 
   const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })
 
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -302,15 +355,19 @@ function OpenSessionModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
@@ -399,7 +456,9 @@ function OpenSessionModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (
@@ -590,6 +649,7 @@ function HandoverModal({
   onSubmit: (f: HandoverSessionInput) => void
 }) {
   const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [usersError, setUsersError] = useState('')
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -601,15 +661,19 @@ function HandoverModal({
 
   useEffect(() => {
     getUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) setUsers(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setUsers(res.data)
+      } else {
+        setUsersError(res.error ?? 'Unable to load cashier list')
+      }
     })
   }, [])
 
   const filtered = search.trim()
     ? users.filter(
         (u) =>
-          u.name?.toLowerCase().includes(search.toLowerCase()) ||
-          u.email?.toLowerCase().includes(search.toLowerCase())
+          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
+          u.email?.toLowerCase()?.includes(search.toLowerCase())
       )
     : []
 
@@ -700,7 +764,9 @@ function HandoverModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={!!usersError}
                 />
+                {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
                 {filtered.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
                     {filtered.slice(0, 6).map((u) => (

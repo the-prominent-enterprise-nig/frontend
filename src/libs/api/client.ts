@@ -30,6 +30,8 @@ export interface ApiResponse<T = any> {
   success?: boolean
   message?: string
   error?: string
+  /** Machine-readable error code from the backend contract, e.g. 'BRANCH_NOT_FOUND' */
+  errorCode?: string
 }
 
 /**
@@ -125,6 +127,7 @@ export async function apiClient<T = any>(
         success: false,
         error: errorData.message || errorData.error || `HTTP error ${response.status}`,
         message: errorData.message || `Request failed with status ${response.status}`,
+        errorCode: errorData.errorCode,
       }
     }
 

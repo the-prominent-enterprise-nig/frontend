@@ -23,6 +23,8 @@ import {
 } from '../../_actions/pos-actions'
 import type { PosVoidRequest } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 interface Props {
   isManager: boolean
@@ -44,7 +46,34 @@ const statusIcon: Record<string, React.ReactNode> = {
   rejected: <XCircle size={10} />,
 }
 
+function VoidRequestRowSkeleton() {
+  return (
+    <tr>
+      <td className="px-5 py-3">
+        <Skeleton className="h-3.5 w-16" />
+      </td>
+      <td className="px-5 py-3">
+        <Skeleton className="h-3.5 w-24" />
+      </td>
+      <td className="px-5 py-3">
+        <Skeleton className="h-3.5 w-14" />
+      </td>
+      <td className="px-5 py-3">
+        <Skeleton className="h-3.5 w-32" />
+      </td>
+      <td className="px-5 py-3">
+        <Skeleton className="h-3.5 w-20" />
+      </td>
+      <td className="px-5 py-3">
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </td>
+      <td className="px-5 py-3" />
+    </tr>
+  )
+}
+
 export default function VoidRequestsList({ isManager }: Props) {
+  const { branchId } = usePosBranchContext()
   const [requests, setRequests] = useState<PosVoidRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -62,7 +91,9 @@ export default function VoidRequestsList({ isManager }: Props) {
   const [historyError, setHistoryError] = useState('')
 
   async function load() {
-    const res = isManager ? await getPendingVoidRequests() : await getBranchVoidRequests()
+    const res = isManager
+      ? await getPendingVoidRequests(branchId ?? undefined)
+      : await getBranchVoidRequests()
     if (res.success && res.data) {
       setRequests(res.data)
       setLoadError('')
@@ -76,7 +107,7 @@ export default function VoidRequestsList({ isManager }: Props) {
     setHistoryLoading(true)
     setHistoryError('')
     if (isManager) {
-      const res = await getVoidRequestHistory()
+      const res = await getVoidRequestHistory(branchId ?? undefined)
       if (res.success && res.data) {
         setHistoryRequests(res.data)
       } else {
@@ -109,7 +140,8 @@ export default function VoidRequestsList({ isManager }: Props) {
     load()
     const interval = setInterval(load, 10_000)
     return () => clearInterval(interval)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId])
 
   function openReview(req: PosVoidRequest) {
     setDetailTarget(null)
@@ -337,8 +369,37 @@ export default function VoidRequestsList({ isManager }: Props) {
 
       {!showHistory &&
         (loading ? (
-          <div className="flex items-center justify-center py-20 text-gray-400">
-            <Loader2 size={20} className="animate-spin mr-2" /> Loading…
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Transaction
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Cashier
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Amount
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Reason
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Requested
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Status
+                  </th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <VoidRequestRowSkeleton key={i} />
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : requests.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">

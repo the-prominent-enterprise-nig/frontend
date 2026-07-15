@@ -258,7 +258,7 @@ export interface ARInvoice {
   id: string
   invoiceNumber: string
   customerId: string
-  customer?: { id: string; firstName: string; lastName: string }
+  customer?: { id: string; name: string }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -308,6 +308,46 @@ export const APBills = {
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
   recordPayment: (id: string, body: any) => api.post<APBill>(`/ap-bills/${id}/payments`, body),
   remove: (id: string) => api.delete(`/ap-bills/${id}`),
+}
+
+// ============ Business Expenses ============
+export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
+export interface BusinessExpense {
+  id: string
+  expenseNumber: string
+  expenseDate: string
+  vendorId?: string | null
+  vendor?: { id: string; name: string } | null
+  payee?: string | null
+  description?: string | null
+  categoryAccountId: string
+  categoryAccount?: { id: string; name: string; number?: string } | null
+  subtotal: number
+  taxAmount: number
+  totalAmount: number
+  paymentMethod?: string | null
+  bankAccountId?: string | null
+  reference?: string | null
+  costCenter?: string | null
+  taxCode?: string | null
+  status: BusinessExpenseStatus
+  journalEntryId?: string | null
+}
+export const Expenses = {
+  list: (params?: {
+    search?: string
+    status?: string
+    categoryAccountId?: string
+    vendorId?: string
+    startDate?: string
+    endDate?: string
+  }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),
+  get: (id: string) => api.get<BusinessExpense>(`/expenses/${id}`),
+  create: (body: any) => api.post<BusinessExpense>('/expenses', body),
+  update: (id: string, body: any) => api.patch<BusinessExpense>(`/expenses/${id}`, body),
+  record: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/record`, {}),
+  void: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/void`, {}),
+  remove: (id: string) => api.delete(`/expenses/${id}`),
 }
 
 // ============ Bank Accounts ============

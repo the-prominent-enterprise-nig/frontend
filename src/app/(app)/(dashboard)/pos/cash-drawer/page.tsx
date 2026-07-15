@@ -5,6 +5,8 @@ import { useCashDrawerEvents, useCreateCashDrawerEvent, useSessions } from '../_
 import { Wallet, RefreshCw, Plus, X, ChevronDown } from 'lucide-react'
 import type { CashDrawerEvent, CreateCashDrawerEventInput } from '@/src/schema/pos'
 import { PosDateTime, PosDateShort } from '../_components/PosDate'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 
 const eventTypeLabel: Record<string, string> = {
   no_sale_open: 'No Sale / Open',
@@ -36,7 +38,12 @@ export default function CashDrawerPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [error, setError] = useState('')
 
-  const { data: sessionsData, isLoading: sessionsLoading } = useSessions()
+  const { branchId } = usePosBranchContext()
+  const {
+    data: sessionsData,
+    isLoading: sessionsLoading,
+    isFetching: sessionsFetching,
+  } = useSessions(branchId ? { branchId } : undefined)
   const { data, isLoading, isFetching, refetch } = useCashDrawerEvents(activeSessionId)
   const createMutation = useCreateCashDrawerEvent()
 
@@ -91,38 +98,44 @@ export default function CashDrawerPage() {
 
         {/* Session selector */}
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="mb-3 text-sm font-semibold text-gray-700">Select Session</p>
-          <div className="relative">
-            <select
-              className="select"
-              value={activeSessionId}
-              onChange={(e) => setActiveSessionId(e.target.value)}
-              disabled={sessionsLoading}
-            >
-              <option value="">
-                {sessionsLoading ? 'Loading sessions…' : 'Select a session…'}
-              </option>
-              {sessions.map((s) => {
-                const cashierName = s.cashier?.name || 'Unknown cashier'
-                const terminalName = s.terminal?.name ?? 'Unknown terminal'
-                const date = new Date(s.openedAt).toLocaleString('en-PH', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
-                return (
-                  <option key={s.id} value={s.id} suppressHydrationWarning>
-                    {terminalName} — {cashierName} ({s.status.replace('_', ' ')}) · {date}
-                  </option>
-                )
-              })}
-            </select>
-            <ChevronDown
-              size={14}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
+          <div className="mb-3 flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-700">Select Session</p>
+            {sessionsFetching && !sessionsLoading && (
+              <RefreshCw size={12} className="animate-spin text-gray-400" />
+            )}
           </div>
+          {sessionsLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : (
+            <div className="relative">
+              <select
+                className="select"
+                value={activeSessionId}
+                onChange={(e) => setActiveSessionId(e.target.value)}
+              >
+                <option value="">Select a session…</option>
+                {sessions.map((s) => {
+                  const cashierName = s.cashier?.name || 'Unknown cashier'
+                  const terminalName = s.terminal?.name ?? 'Unknown terminal'
+                  const date = new Date(s.openedAt).toLocaleString('en-PH', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                  return (
+                    <option key={s.id} value={s.id} suppressHydrationWarning>
+                      {terminalName} — {cashierName} ({s.status.replace('_', ' ')}) · {date}
+                    </option>
+                  )
+                })}
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+            </div>
+          )}
 
           {selectedSession && (
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
@@ -166,15 +179,23 @@ export default function CashDrawerPage() {
         {activeSessionId ? (
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             {isLoading ? (
-              <div className="space-y-3 p-6">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="flex animate-pulse gap-4">
-                    <div className="h-4 w-1/4 rounded bg-gray-200" />
-                    <div className="h-4 w-1/5 rounded bg-gray-200" />
-                    <div className="h-4 w-1/4 rounded bg-gray-200" />
-                    <div className="h-4 w-1/5 rounded bg-gray-200" />
-                  </div>
-                ))}
+              <div>
+                <div className="flex items-center gap-4 border-b border-gray-200 bg-gray-50 px-5 py-3">
+                  <Skeleton className="h-3 w-14" />
+                  <Skeleton className="ml-auto h-3 w-16" />
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-3 w-10" />
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-5 py-3">
+                      <Skeleton className="h-5 w-24 rounded-full" />
+                      <Skeleton className="ml-auto h-4 w-16" />
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-20" />
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : events.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-12 text-gray-400">

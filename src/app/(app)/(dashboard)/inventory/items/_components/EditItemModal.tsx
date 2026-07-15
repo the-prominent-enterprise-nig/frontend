@@ -122,9 +122,9 @@ export default function EditItemModal({
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
         sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
         costingMethod: 'weighted_average',
-        isBatchTracked: false,
-        isSerialTracked: false,
-        isExpiryTracked: false,
+        isBatchTracked: item.isBatchTracked ?? false,
+        isSerialTracked: item.isSerialTracked ?? false,
+        isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         hasVariants: item.hasVariants ?? false,
         taxRateId: item.taxRateId ?? undefined,
@@ -536,6 +536,37 @@ export default function EditItemModal({
 
             {/* empty second column for Tax Rate row */}
             <div className="hidden sm:block" />
+          </FormSection>
+
+          {/* Tracking */}
+          <FormSection title="Tracking" defaultOpen={true}>
+            <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {(
+                [
+                  { name: 'isBatchTracked', label: 'Batch Tracking' },
+                  { name: 'isSerialTracked', label: 'Serial Tracking' },
+                  { name: 'isExpiryTracked', label: 'Expiry Tracking' },
+                  { name: 'isBundle', label: 'Bundle Item' },
+                ] as const
+              ).map(({ name, label }) => (
+                <Controller
+                  key={name}
+                  name={name}
+                  control={control}
+                  render={({ field }) => (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                        className="accent-prominent-purple-600"
+                      />
+                      {label}
+                    </label>
+                  )}
+                />
+              ))}
+            </div>
           </FormSection>
 
           {/* Physical & Tags */}

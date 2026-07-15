@@ -66,6 +66,7 @@ export const SerialNumberSummarySchema = z.object({
   serialNumber: z.string(),
   item: SerialItemSchema.optional().nullable(),
   warehouse: SerialWarehouseSchema.optional().nullable(),
+  currentWarehouse: SerialWarehouseSchema.optional().nullable(),
   status: SerialStatusSchema,
   soldToCustomerId: z.string().optional().nullable(),
   saleDate: z.string().optional().nullable(),

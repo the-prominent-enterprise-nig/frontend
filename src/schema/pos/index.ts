@@ -153,6 +153,18 @@ export interface BranchPaymentMethodsResponse {
   meta: { branchId: string; branchName: string }
 }
 
+export interface BranchReceiptConfig {
+  logoUrl: string | null
+  headerText: string | null
+  footerText: string | null
+  overrides: { logoUrl: boolean; headerText: boolean; footerText: boolean }
+}
+
+export interface BranchReceiptConfigResponse {
+  data: BranchReceiptConfig
+  meta: { branchId: string; branchName: string }
+}
+
 export interface PosTransactionLine {
   id: string
   itemId: string
@@ -164,6 +176,7 @@ export interface PosTransactionLine {
   taxAmount: number
   lineTotal: number
   notes?: string | null
+  serialNumber?: string | null
 }
 
 export interface PosPayment {
@@ -204,7 +217,7 @@ export interface PosTransaction {
   createdAt: string
   journalEntryId?: string | null
   arInvoiceId?: string | null
-  queueTicketNumber?: number | null
+  sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
   session?: PosSession
@@ -221,6 +234,7 @@ export interface CreateTransactionLineInput {
   taxAmount?: number
   pricingMode?: 'inclusive' | 'exclusive'
   notes?: string
+  serialNumberId?: string
 }
 
 export interface ScPwdDiscountInput {
@@ -244,12 +258,19 @@ export interface CreateTransactionInput {
   totalAmount: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
-  overrideManagerId?: string
+  /** Set when a manager has PIN-approved an override (receiptless return,
+   * discount threshold, or charge-sale credit/terms block). */
+  managerOverride?: boolean
+  managerUserId?: string
   allowNegativeStock?: boolean
   currency?: string
   fxRate?: number
   notes?: string
+  /** Mandatory when transactionType is 'refund' — the backend rejects a
+   * refund submission with no reason. */
+  reason?: string
   scPwdDiscount?: ScPwdDiscountInput
+  sellingAgentId?: string
   lines: CreateTransactionLineInput[]
 }
 
@@ -266,7 +287,7 @@ export interface PosCustomer {
 export interface CreateWalkInCustomerInput {
   firstName: string
   lastName?: string
-  phone?: string
+  phoneNumber?: string
   email?: string
 }
 
@@ -462,7 +483,6 @@ export interface PosConfig {
   discountOverrideThreshold: number
   receiptlessReturnDays: number
   allowNegativeStock?: boolean
-  orderQueueCategoryId?: string | null
   defaultPricingMode?: 'inclusive' | 'exclusive'
   createdAt: string
   updatedAt: string
@@ -479,7 +499,6 @@ export interface UpdatePosConfigInput {
   discountOverrideThreshold?: number
   receiptlessReturnDays?: number
   allowNegativeStock?: boolean
-  orderQueueCategoryId?: string | null
   defaultPricingMode?: 'inclusive' | 'exclusive'
 }
 
@@ -695,4 +714,169 @@ export interface SubmitCancellationInput {
 
 export interface ReviewCancellationInput {
   reviewNotes?: string
+}
+
+// ─── Release Form Requests (serial-tracked sale approval) ────────────────────
+
+export type PosReleaseFormStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired'
+
+/** Response shape when POST /pos/transactions defers to manager approval
+ * instead of completing the sale immediately. */
+export interface PosTransactionPendingApproval {
+  status: 'pending_approval'
+  releaseFormRequestId: string
+  sessionId: string
+}
+
+export type CreateTransactionResult =
+  | PosTransaction
+  | PosTransactionPendingApproval
+  | PosRefundPendingApproval
+
+export function isPendingApproval(
+  data: CreateTransactionResult
+): data is PosTransactionPendingApproval {
+  return (data as PosTransactionPendingApproval)?.status === 'pending_approval'
+}
+
+export interface PosReleaseFormCartLine {
+  itemId: string
+  itemName: string
+  sku?: string
+  quantity: number
+  unitPrice: number
+  discountAmount?: number
+  taxAmount?: number
+  serialNumberId?: string
+  serialNumberLabel?: string
+  serialNumber?: string
+}
+
+export interface PosReleaseFormCartSnapshot {
+  sessionId?: string
+  customerId?: string | null
+  customer?: { id: string; name?: string | null } | null
+  lines?: PosReleaseFormCartLine[]
+  subtotal?: number
+  discountAmount?: number
+  discountTotal?: number
+  taxAmount?: number
+  taxTotal?: number
+  totalAmount?: number
+  invoiceType?: PosInvoiceType
+}
+
+export interface PosReleaseFormRequest {
+  id: string
+  tenantId?: string | null
+  sessionId: string
+  requestedById: string
+  status: PosReleaseFormStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  createdTransactionId?: string | null
+  cartSnapshot: PosReleaseFormCartSnapshot
+  requestedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  session?: {
+    cashier?: { id: string; name: string } | null
+    terminal?: { terminalCode: string; name?: string; branch?: { name: string } | null } | null
+  } | null
+}
+
+export interface ReleaseFormStatusResult {
+  status: PosReleaseFormStatus
+  reviewedAt?: string | null
+  reviewNotes?: string | null
+  createdTransactionId?: string | null
+}
+
+export interface ReviewReleaseFormInput {
+  reviewNotes?: string
+}
+
+// ─── Return/Refund Requests (unified cancellation/void/refund approval queue) ─
+// Backend unifies the three legacy approval mechanisms (cancellation, void,
+// refund) onto a single ReturnRefundRequest model. Cancellation and void keep
+// their own dedicated pages (resolving any already-pending old-model rows);
+// this queue is the NEW shared surface going forward for all three types.
+
+export type PosReturnRefundType = 'cancellation' | 'void' | 'refund'
+export type PosReturnRefundStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired'
+
+export interface PosReturnRefundRequest {
+  id: string
+  tenantId?: string | null
+  type: PosReturnRefundType
+  sessionId: string
+  /** Dual-purpose on the backend: the source transaction for type='void',
+   * and the *result* transaction (set on approval) for type='refund'. */
+  transactionId?: string | null
+  requestedById: string
+  reason?: string | null
+  status: PosReturnRefundStatus
+  reviewedById?: string | null
+  reviewNotes?: string | null
+  createdAt: string
+  reviewedAt?: string | null
+  /** Present for refund requests only (cart-snapshot based) — the wire
+   * field is refundCartSnapshot, not cartSnapshot. */
+  refundCartSnapshot?: PosReleaseFormCartSnapshot | null
+  requestedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  reviewedBy?: {
+    name: string | null
+    employee?: { employeeCode: string } | null
+  } | null
+  session?: {
+    cashier?: { id: string; name: string } | null
+    terminal?: { terminalCode: string; name?: string; branch?: { name: string } | null } | null
+  } | null
+  /** Present for void requests (transaction-based, not cart-snapshot based). */
+  transaction?: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  } | null
+}
+
+export interface ReturnRefundStatusResult {
+  status: PosReturnRefundStatus
+  reviewedAt?: string | null
+  reviewNotes?: string | null
+  /** Set once a refund request is approved — the newly-created transaction. */
+  transactionId?: string | null
+}
+
+export interface ReviewReturnRefundInput {
+  reviewNotes?: string
+}
+
+/** Response shape when POST /pos/transactions defers a refund to manager
+ * approval instead of completing it immediately. Mirrors
+ * PosTransactionPendingApproval's release-form shape with the return-refund
+ * id field instead. */
+export interface PosRefundPendingApproval {
+  status: 'pending_approval'
+  returnRefundRequestId: string
+  sessionId: string
+}
+
+export function isRefundPendingApproval(
+  data: CreateTransactionResult
+): data is PosRefundPendingApproval {
+  return (
+    (data as PosRefundPendingApproval)?.status === 'pending_approval' &&
+    'returnRefundRequestId' in data
+  )
 }

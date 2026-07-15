@@ -3,7 +3,10 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin } from '@/src/libs/guards/permission'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { getOwnerPaymentMethods } from './_actions/owner-payment-methods'
-import { getCashierPinStatus } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import {
+  getCashierPinStatus,
+  getReceiptBranding,
+} from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { ConfigurationTabs } from './_components/ConfigurationTabs'
 
 export const metadata = { title: 'Configuration | Prominent Enterprise' }
@@ -19,9 +22,10 @@ export default async function ConfigurationPage() {
   if (!session) redirect('/login')
   if (!canAccess(session)) redirect('/403')
 
-  const [paymentMethodsResult, pinStatusResult] = await Promise.all([
+  const [paymentMethodsResult, pinStatusResult, brandingResult] = await Promise.all([
     getOwnerPaymentMethods(),
     getCashierPinStatus(),
+    getReceiptBranding(),
   ])
 
   return (
@@ -37,6 +41,13 @@ export default async function ConfigurationPage() {
         <ConfigurationTabs
           initialPaymentMethods={paymentMethodsResult.data ?? []}
           initialHasPin={pinStatusResult.data?.hasPin ?? false}
+          initialBranding={
+            brandingResult.data ?? {
+              receiptLogoUrl: null,
+              receiptHeaderText: null,
+              receiptFooterText: null,
+            }
+          }
         />
       </div>
     </div>

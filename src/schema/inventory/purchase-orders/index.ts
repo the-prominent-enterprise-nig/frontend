@@ -1,5 +1,55 @@
 import { z } from 'zod'
 
+// ─── Create PO (direct, no PR) ────────────────────────────────────────────────
+
+export const CreatePoLineSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  quantity: z.number().positive('Quantity must be greater than 0'),
+  unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
+  description: z.string().max(500).optional(),
+  notes: z.string().max(500).optional(),
+})
+
+export const CreatePoFormSchema = z.object({
+  supplierId: z.string().min(1, 'Supplier is required'),
+  branchId: z.string().optional(),
+  warehouseId: z.string().optional(),
+  expectedDeliveryDate: z.string().optional(),
+  deliveryInstructions: z.string().max(1000).optional(),
+  paymentTerms: z.string().max(50).optional(),
+  shippingAddress: z.string().max(500).optional(),
+  notes: z.string().max(1000).optional(),
+  lines: z.array(CreatePoLineSchema).min(1, 'At least one line item is required'),
+})
+
+const CreatePoLineServerSchema = CreatePoLineSchema.extend({
+  quantity: z.coerce.number().positive('Quantity must be greater than 0'),
+  unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+})
+
+export const CreatePoServerSchema = CreatePoFormSchema.extend({
+  lines: z.array(CreatePoLineServerSchema).min(1, 'At least one line item is required'),
+})
+
+// ─── Update PO (draft fields only) ───────────────────────────────────────────
+
+export const UpdatePoFormSchema = z.object({
+  warehouseId: z.string().optional(),
+  expectedDeliveryDate: z.string().optional(),
+  deliveryInstructions: z.string().max(1000).optional(),
+  paymentTerms: z.string().max(50).optional(),
+  shippingAddress: z.string().max(500).optional(),
+  notes: z.string().max(1000).optional(),
+})
+
+// ─── Cancel PO ────────────────────────────────────────────────────────────────
+
+export const CancelPoSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(500),
+})
+
+// ─── Convert PR → PO ─────────────────────────────────────────────────────────
+
 export const ConvertPrToPoLineSchema = z.object({
   prLineId: z.string().min(1, 'PR line is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
@@ -51,8 +101,9 @@ const PoLineSchema = z.object({
   itemId: z.string(),
   item: PoItemSchema,
   description: z.string().optional().nullable(),
-  quantity: z.number(),
+  quantity: z.coerce.number(),
   unitPrice: z.coerce.number(),
+  receivedQuantity: z.coerce.number().optional().nullable(),
   lineTotal: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
@@ -86,6 +137,8 @@ export const PurchaseOrderSummarySchema = z.object({
   approvedById: z.string().optional().nullable(),
   approvedAt: z.string().optional().nullable(),
   sentAt: z.string().optional().nullable(),
+  cancellationReason: z.string().optional().nullable(),
+  cancelledById: z.string().optional().nullable(),
   fromPr: z
     .object({
       id: z.string(),
@@ -103,6 +156,10 @@ export const PurchaseOrderListResponseSchema = z.object({
   limit: z.number(),
 })
 
+export type CreatePoLineValues = z.infer<typeof CreatePoLineSchema>
+export type CreatePoFormValues = z.infer<typeof CreatePoFormSchema>
+export type UpdatePoFormValues = z.infer<typeof UpdatePoFormSchema>
+export type CancelPoValues = z.infer<typeof CancelPoSchema>
 export type ConvertPrToPoLineValues = z.infer<typeof ConvertPrToPoLineSchema>
 export type ConvertPrToPoFormValues = z.infer<typeof ConvertPrToPoFormSchema>
 export type PurchaseOrderSummary = z.infer<typeof PurchaseOrderSummarySchema>

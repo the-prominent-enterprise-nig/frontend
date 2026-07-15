@@ -60,6 +60,7 @@ export function useGoodsReceiving() {
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-ledger'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-item-360'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
       } else {
         showToast({
           title: 'Failed to receive stock',

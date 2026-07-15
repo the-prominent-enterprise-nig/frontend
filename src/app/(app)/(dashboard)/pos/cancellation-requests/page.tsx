@@ -8,8 +8,46 @@ import {
   rejectCancellationRequest,
 } from '../_actions/pos-actions'
 import type { PosCancellationRequest } from '@/src/schema/pos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
+
+function CancellationRequestSkeletonCard() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-5 w-20 rounded-full" />
+        </div>
+
+        <div className="mt-3 rounded-lg bg-gray-50 px-4 py-3">
+          <Skeleton className="mb-2 h-2.5 w-16" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+
+        <div className="mt-3 space-y-1.5">
+          <Skeleton className="h-2.5 w-28" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-5/6" />
+        </div>
+      </div>
+
+      <div className="space-y-3 px-5 py-4">
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <div className="flex gap-3">
+          <Skeleton className="h-8 flex-1 rounded-lg" />
+          <Skeleton className="h-8 flex-1 rounded-lg" />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function CancellationRequestsPage() {
+  const { branchId } = usePosBranchContext()
   const [requests, setRequests] = useState<PosCancellationRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
@@ -17,10 +55,10 @@ export default function CancellationRequestsPage() {
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    const res = await getPendingCancellationRequests()
+    const res = await getPendingCancellationRequests(branchId ?? undefined)
     setLoading(false)
     if (res.success && res.data) setRequests(res.data)
-  }, [])
+  }, [branchId])
 
   useEffect(() => {
     load()

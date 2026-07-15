@@ -21,9 +21,11 @@ import {
   Contact,
   FileBarChart,
   FileSpreadsheet,
+  ClipboardCheck,
   Funnel,
   HandCoins,
   House,
+  IdCard,
   Key,
   Layers,
   Library,
@@ -31,6 +33,7 @@ import {
   MoreHorizontal,
   TrendingUp,
   Package,
+  PackageCheck,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -40,6 +43,7 @@ import {
   ShoppingCart,
   Tag,
   Truck,
+  Undo2,
   Users,
   UsersRound,
   Wallet,
@@ -117,6 +121,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
       },
       {
+        label: 'Stock Requisitions',
+        href: '/inventory/stock-requisitions',
+        icon: ClipboardCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_READ,
+      },
+      {
         label: 'Purchase Requests',
         href: '/inventory/purchase-requests',
         icon: ClipboardList,
@@ -127,6 +137,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/purchase-orders',
         icon: ShoppingCart,
         requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
+        activeWhen: ['/inventory/purchase-orders'],
+      },
+      {
+        label: 'Suppliers',
+        href: '/inventory/suppliers',
+        icon: Truck,
+        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
       },
       {
         label: 'Counting',
@@ -151,6 +168,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/warehouses',
         icon: Warehouse,
         requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+      },
+      {
+        label: 'Unit Documents',
+        href: '/inventory/uds',
+        icon: ClipboardCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
       },
       {
         label: 'Reports',
@@ -197,6 +220,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'AP Bills',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+      },
+      {
+        label: 'Expenses',
+        href: '/accounting/expenses',
+        icon: Coins,
       },
       {
         label: 'Bank Accounts',
@@ -300,6 +328,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:transactions:read',
       },
       {
+        label: 'Release Approvals',
+        href: '/pos/release-approvals',
+        icon: PackageCheck,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
+        label: 'Return & Refund Approvals',
+        href: '/pos/return-refund-approvals',
+        icon: Undo2,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
         label: 'Promotions',
         href: '/pos/promo-codes',
         icon: Tag,
@@ -353,6 +393,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/segments',
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
+      },
+      {
+        label: 'Sales Agents',
+        href: '/crm/agents',
+        icon: IdCard,
+        requiredPermission: CRM_PERMISSIONS.AGENTS_READ,
       },
       {
         label: 'Settings',

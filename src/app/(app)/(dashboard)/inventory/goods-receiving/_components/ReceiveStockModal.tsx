@@ -34,6 +34,7 @@ const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
   batchNumber: '',
   expiryDate: '',
   qualityHold: false,
+  autoGenerateSerials: false,
   notes: '',
 })
 
@@ -63,6 +64,7 @@ export default function ReceiveStockModal({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<ReceiveStockFormValues>({
     resolver: zodResolver(ReceiveStockFormSchema),
@@ -82,10 +84,18 @@ export default function ReceiveStockModal({
     if (result.success) onClose()
   }
 
+  const watchedLines = watch('lines')
+
   function handleItemChange(idx: number, itemId: string): void {
     setValue(`lines.${idx}.itemId`, itemId)
     const item = items.find((i) => i.id === itemId)
     if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
+    if (!item?.isSerialTracked) setValue(`lines.${idx}.autoGenerateSerials`, false)
+  }
+
+  function isLineSerialTracked(idx: number): boolean {
+    const itemId = watchedLines?.[idx]?.itemId
+    return !!items.find((i) => i.id === itemId)?.isSerialTracked
   }
 
   return (
@@ -112,16 +122,23 @@ export default function ReceiveStockModal({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Reference Number <span className="text-red-500">*</span>
+                  Reference Number
                 </label>
                 <Controller
                   name="code"
                   control={control}
                   render={({ field }) => (
-                    <input {...field} type="text" placeholder="GRN-0001" className={fieldClass} />
+                    <input
+                      {...field}
+                      type="text"
+                      placeholder="Auto-generated if blank"
+                      className={fieldClass}
+                    />
                   )}
                 />
-                {errors.code && <p className="mt-1 text-xs text-red-600">{errors.code.message}</p>}
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Leave blank to auto-generate (GRN-YYYYMMDD-NNNN)
+                </p>
               </div>
 
               <div>
@@ -284,6 +301,7 @@ export default function ReceiveStockModal({
                         <th className="px-3 py-2">Unit Cost</th>
                         <th className="px-3 py-2">Batch No.</th>
                         <th className="px-3 py-2 text-center">QC Hold</th>
+                        <th className="px-3 py-2 text-center">Auto Serial</th>
                         <th className="px-3 py-2" />
                       </tr>
                     </thead>
@@ -388,6 +406,25 @@ export default function ReceiveStockModal({
                                 />
                               )}
                             />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {isLineSerialTracked(idx) ? (
+                              <Controller
+                                name={`lines.${idx}.autoGenerateSerials`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    type="checkbox"
+                                    checked={f.value ?? false}
+                                    onChange={(e) => f.onChange(e.target.checked)}
+                                    title="Auto-assign a serial number & barcode per unit received"
+                                    className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
+                                  />
+                                )}
+                              />
+                            ) : (
+                              <span className="text-xs text-zinc-300">—</span>
+                            )}
                           </td>
                           <td className="px-3 py-2">
                             <button

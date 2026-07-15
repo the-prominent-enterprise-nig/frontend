@@ -41,6 +41,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     primaryCategoryId,
     setPrimaryCategoryId,
     resetFilters,
+    sortBy,
+    sortOrder,
+    setSortBy,
+    setSortOrder,
     page,
     setPage,
     createItem,
@@ -170,7 +174,30 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               className="min-w-[180px]"
             />
           )}
-          {(search || lifecycle || primaryCategoryId) && (
+          <select
+            value={`${sortBy}:${sortOrder}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split(':') as [typeof sortBy, typeof sortOrder]
+              setSortBy(field)
+              setSortOrder(order)
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+          >
+            <option value="createdAt:desc">Newest first</option>
+            <option value="createdAt:asc">Oldest first</option>
+            <option value="name:asc">Name A→Z</option>
+            <option value="name:desc">Name Z→A</option>
+            <option value="sku:asc">SKU A→Z</option>
+            <option value="costPrice:asc">Cost ↑</option>
+            <option value="costPrice:desc">Cost ↓</option>
+            <option value="sellingPrice:asc">Price ↑</option>
+            <option value="sellingPrice:desc">Price ↓</option>
+          </select>
+          {(search ||
+            lifecycle ||
+            primaryCategoryId ||
+            sortBy !== 'createdAt' ||
+            sortOrder !== 'desc') && (
             <button
               type="button"
               onClick={resetFilters}

@@ -35,17 +35,24 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   const {
     purchaseOrderNumber: _purchaseOrderNumber,
     purchaseOrderDate: _purchaseOrderDate,
+    code,
+    receivedAt,
+    modeOfTransfer,
     lines,
     ...rest
   } = parsed.data
 
   const backendPayload = {
     ...rest,
-    lines: lines.map(({ itemId, expiryDate, batchNumber, ...lineRest }) => ({
+    ...(code && code.trim() ? { code: code.trim() } : {}),
+    ...(receivedAt && receivedAt.trim() ? { receivedAt: receivedAt.trim() } : {}),
+    ...(modeOfTransfer && modeOfTransfer.trim() ? { modeOfTransfer: modeOfTransfer.trim() } : {}),
+    lines: lines.map(({ itemId, expiryDate, batchNumber, autoGenerateSerials, ...lineRest }) => ({
       ...lineRest,
       itemId,
       ...(expiryDate ? { expiryDate } : {}),
       ...(batchNumber ? { batchNumber } : {}),
+      ...(autoGenerateSerials ? { autoGenerateSerials: true } : {}),
     })),
   }
 
@@ -63,6 +70,7 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   }
 
   revalidatePath('/inventory/goods-receiving')
+  revalidatePath('/inventory/purchase-orders')
 
   return {
     success: true,

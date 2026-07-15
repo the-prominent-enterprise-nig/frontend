@@ -21,6 +21,9 @@ export type ReminderType = z.infer<typeof ReminderTypeEnum>
 export const ReminderStatusEnum = z.enum(['pending', 'completed', 'overdue', 'cancelled'])
 export type ReminderStatus = z.infer<typeof ReminderStatusEnum>
 
+export const AgentStatusEnum = z.enum(['active', 'inactive'])
+export type AgentStatus = z.infer<typeof AgentStatusEnum>
+
 export interface PipelineStage {
   id: string
   tenantId: string
@@ -70,6 +73,17 @@ export interface Customer {
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Agent {
+  id: string
+  tenantId: string
+  name: string
+  phone?: string | null
+  email?: string | null
+  status: AgentStatus
   createdAt: string
   updatedAt: string
 }

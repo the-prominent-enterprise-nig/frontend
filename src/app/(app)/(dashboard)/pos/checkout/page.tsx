@@ -23,15 +23,18 @@ import {
   KeyRound,
   WifiOff,
   UtensilsCrossed,
-  Bell,
   Users,
   Mail,
   Phone,
   Send,
+  Clock,
 } from 'lucide-react'
 import { computePricingTotals } from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
+import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
 import {
@@ -51,15 +54,19 @@ import {
   validateManagerOverride,
   syncTransactions,
   updateSessionDisplay,
-  addToOrderQueue,
   sendReceipt,
   getPaymentMethods,
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
+  getAvailableSerialNumbers,
+  getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
+  cancelReleaseFormRequest,
+  type SerialNumberRecord,
 } from '../_actions/pos-actions'
+import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
   PosInvoiceType,
@@ -88,6 +95,7 @@ interface LookupItem {
   allowDecimal?: boolean
   isBundle?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
+  isSerialTracked?: boolean
 }
 
 interface CartLine {
@@ -100,6 +108,9 @@ interface CartLine {
   uomCode?: string
   allowDecimal?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
+  isSerialTracked?: boolean
+  serialNumberId?: string
+  serialNumberLabel?: string
 }
 
 interface PaymentRow {
@@ -170,7 +181,11 @@ const DECIMAL_CODES = new Set([
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
-  const { data: sessionsData } = useSessions({ status: 'open' })
+  const { branchId: switcherBranchId } = usePosBranchContext()
+  const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
+    status: 'open',
+    ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
+  })
   const rawSessions = sessionsData?.data
   const openSessions = useMemo(() => rawSessions ?? [], [rawSessions])
 
@@ -222,6 +237,19 @@ export default function CheckoutPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [catalogMode, setCatalogMode] = useState<'items' | 'menu'>('items')
 
+  // Selling agent — CRM-owned agent list, not system User accounts
+  const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
+  const [sellingAgentSearch, setSellingAgentSearch] = useState('')
+  const [sellingAgents, setSellingAgents] = useState<
+    { id: string; name: string; phone?: string | null; email?: string | null }[]
+  >([])
+  const [sellingAgentOpen, setSellingAgentOpen] = useState(false)
+
+  // Serial number picker
+  const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
+  const [serialNumbers, setSerialNumbers] = useState<SerialNumberRecord[]>([])
+  const [serialLoading, setSerialLoading] = useState(false)
+
   // Customer
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
   const [loyaltyAccount, setLoyaltyAccount] = useState<LoyaltyAccount | null>(null)
@@ -272,7 +300,6 @@ export default function CheckoutPage() {
   // POS config
   const [discountThreshold, setDiscountThreshold] = useState(20)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
-  const [queueEnabled, setQueueEnabled] = useState(false)
   const [inclusivePricing, setInclusivePricing] = useState(false)
 
   // SC/PWD discount
@@ -307,8 +334,14 @@ export default function CheckoutPage() {
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    queueTicketNumber?: number | null
     invoiceType?: PosInvoiceType
+  } | null>(null)
+
+  // Pending manager approval (serial-tracked sale awaiting Release Form review)
+  const [pendingApproval, setPendingApproval] = useState<{
+    releaseFormRequestId: string
+    totalAmount: number
+    serialLines: { itemName: string; serialNumberLabel?: string }[]
   } | null>(null)
 
   // Offline mode
@@ -414,11 +447,28 @@ export default function CheckoutPage() {
       if (res.success && res.data) {
         setDiscountThreshold(Number(res.data.discountOverrideThreshold ?? 20))
         setAllowNegativeStock(res.data.allowNegativeStock ?? false)
-        setQueueEnabled(!!res.data.orderQueueCategoryId)
         setInclusivePricing(res.data.defaultPricingMode === 'inclusive')
       }
     })
   }, [])
+
+  // Load CRM sales agent list for the selling-agent typeahead
+  useEffect(() => {
+    getSellingAgents().then((res) => {
+      if (res.success && Array.isArray(res.data)) setSellingAgents(res.data)
+    })
+  }, [])
+
+  // Fetch serial numbers when picker target changes
+  useEffect(() => {
+    if (!serialPickerTarget) return
+    setSerialLoading(true)
+    setSerialNumbers([])
+    getAvailableSerialNumbers(serialPickerTarget.itemId).then((res) => {
+      if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
+      setSerialLoading(false)
+    })
+  }, [serialPickerTarget?.itemId])
 
   // Fetch the active default accounting tax rate — controls global POS tax
   useEffect(() => {
@@ -657,6 +707,7 @@ export default function CheckoutPage() {
     setCart((prev) => {
       const existing = prev.find((l) => l.itemId === item.id)
       if (existing) {
+        if (existing.isSerialTracked) return prev
         return prev.map((l) =>
           l.itemId === item.id ? { ...l, quantity: parseFloat((l.quantity + qty).toFixed(3)) } : l
         )
@@ -668,18 +719,32 @@ export default function CheckoutPage() {
           itemName: item.name,
           sku: item.sku,
           unitPrice: item.price,
-          quantity: qty,
+          quantity: item.isSerialTracked ? 1 : qty,
           taxRate: item.taxRate ?? null,
           uomCode: item.uomCode,
           allowDecimal: item.allowDecimal ?? false,
           pricingMode: item.pricingMode ?? null,
+          isSerialTracked: item.isSerialTracked ?? false,
         },
       ]
     })
+    if (item.isSerialTracked) {
+      setSerialPickerTarget({
+        itemId: item.id,
+        itemName: item.name,
+        unitPrice: item.price,
+        quantity: 1,
+        isSerialTracked: true,
+      })
+    }
   }
 
   function setQty(itemId: string, qty: number) {
     const line = cart.find((l) => l.itemId === itemId)
+    if (line?.isSerialTracked) {
+      if (qty < 1) removeFromCart(itemId)
+      return
+    }
     const min = line?.allowDecimal ? 0.001 : 1
     if (qty < min) {
       removeFromCart(itemId)
@@ -945,9 +1010,11 @@ export default function CheckoutPage() {
           totalAmount,
           isTaxExempt: isTaxExempt || !!scPwdData,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
-          overrideManagerId: managerOverrideApproved ? overrideManagerId : undefined,
+          managerOverride: managerOverrideApproved || undefined,
+          managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
           scPwdDiscount: scPwdData ?? undefined,
+          sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -957,6 +1024,7 @@ export default function CheckoutPage() {
             discountAmount: 0,
             taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
             pricingMode: l.pricingMode ?? undefined,
+            serialNumberId: l.serialNumberId,
           })),
         })
 
@@ -967,6 +1035,42 @@ export default function CheckoutPage() {
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
             (uuid) => idToName[uuid] ?? uuid
           )
+
+          // Backend has no dedicated error code yet for a serial that was reserved or
+          // sold from under the cashier — detect it by message content defensively and
+          // send them straight back to the picker instead of a dead-end error banner.
+          if (errMsg.toLowerCase().includes('no longer available')) {
+            const serialLines = cart.filter((l) => l.isSerialTracked && l.serialNumberId)
+            const stale =
+              serialLines.find(
+                (l) =>
+                  l.serialNumberLabel &&
+                  errMsg.toLowerCase().includes(l.serialNumberLabel.toLowerCase())
+              ) ?? serialLines[0]
+
+            if (stale) {
+              setCart((prev) =>
+                prev.map((l) =>
+                  l.itemId === stale.itemId
+                    ? { ...l, serialNumberId: undefined, serialNumberLabel: undefined }
+                    : l
+                )
+              )
+              setError(
+                `${stale.itemName}'s serial number is no longer available — please select another.`
+              )
+              setSubmitting(false)
+              setSerialPickerTarget({
+                itemId: stale.itemId,
+                itemName: stale.itemName,
+                unitPrice: stale.unitPrice,
+                quantity: stale.quantity,
+                isSerialTracked: true,
+              })
+              return
+            }
+          }
+
           const isTaxErr =
             errMsg.toLowerCase().includes('no tax rate configured') ||
             errMsg.toLowerCase().includes('tax rate')
@@ -975,6 +1079,53 @@ export default function CheckoutPage() {
           setSubmitting(false)
           return
         }
+
+        // Serial-tracked line in the cart — backend deferred to manager approval
+        // instead of completing the sale. Show the pending screen and bail out
+        // before any payment/loyalty steps run (there is no transaction yet).
+        if (isPendingApproval(txRes.data)) {
+          const { releaseFormRequestId, sessionId: rfdSessionId } = txRes.data
+          const serialLines = cart
+            .filter((l) => l.isSerialTracked)
+            .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
+          const itemNameSummary =
+            serialLines.length === 1
+              ? serialLines[0].itemName
+              : `${serialLines.length} serial-tracked items`
+
+          usePosPendingRfdStore.getState().add({
+            releaseFormRequestId,
+            itemName: itemNameSummary,
+            totalAmount,
+            submittedAt: new Date().toISOString(),
+            sessionId: rfdSessionId,
+          })
+
+          updateSessionDisplay(sessionId, {
+            status: 'idle',
+            lines: [],
+            subtotal: 0,
+            discountTotal: 0,
+            taxTotal: 0,
+            totalAmount: 0,
+            currency: 'PHP',
+          })
+
+          setSubmitting(false)
+          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          return
+        }
+
+        // Defensive — checkout only ever submits transactionType: 'sale', so the
+        // backend should never defer here (that's the refund-specific path, which
+        // lives on the Transactions page, not checkout). Narrows the type for the
+        // PosTransaction access below.
+        if (isRefundPendingApproval(txRes.data)) {
+          setError('Unexpected response from server.')
+          setSubmitting(false)
+          return
+        }
+
         setTaxConfigError(false)
         txId = txRes.data.id
         txData = txRes.data
@@ -1066,7 +1217,6 @@ export default function CheckoutPage() {
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
-        queueTicketNumber: txData?.queueTicketNumber ?? null,
         invoiceType,
       })
     } catch (err) {
@@ -1091,6 +1241,7 @@ export default function CheckoutPage() {
     setError('')
     setTaxConfigError(false)
     setSuccess(null)
+    setPendingApproval(null)
     setIsTaxExempt(false)
     setTaxExemptionRef('')
     setSearchQuery('')
@@ -1164,7 +1315,6 @@ export default function CheckoutPage() {
       <SuccessScreen
         success={success}
         totalAmount={totalAmount}
-        queueEnabled={queueEnabled}
         selectedCustomer={selectedCustomer}
         onReset={resetSale}
         fmt={fmt}
@@ -1173,6 +1323,18 @@ export default function CheckoutPage() {
         payments={payments}
         promoDiscount={promoDiscount}
         effectiveTaxRate={effectiveTaxRate}
+      />
+    )
+  }
+
+  if (pendingApproval) {
+    return (
+      <PendingApprovalScreen
+        releaseFormRequestId={pendingApproval.releaseFormRequestId}
+        totalAmount={pendingApproval.totalAmount}
+        serialLines={pendingApproval.serialLines}
+        onReset={resetSale}
+        fmt={fmt}
       />
     )
   }
@@ -1240,7 +1402,9 @@ export default function CheckoutPage() {
           <span className="font-semibold text-gray-900 hidden sm:inline">New Sale</span>
         </div>
 
-        {openSessions.length > 1 ? (
+        {sessionsLoading ? (
+          <Skeleton className="h-7 w-40 rounded-lg" />
+        ) : openSessions.length > 1 ? (
           <div className="relative">
             <select
               className="appearance-none cursor-pointer rounded-lg border border-gray-200 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
@@ -1298,6 +1462,17 @@ export default function CheckoutPage() {
           <Loader2 size={14} className="animate-spin shrink-0 text-orange-500" />
           <p className="text-sm font-medium text-orange-700">
             Cancellation request pending manager approval — cart is locked.
+          </p>
+        </div>
+      )}
+
+      {/* Serial-tracked sale banner */}
+      {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
+        <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3">
+          <ShieldCheck size={14} className="shrink-0 text-amber-500" />
+          <p className="text-sm font-medium text-amber-700">
+            This sale includes a serialized item — it will need Business Owner or Branch Manager
+            approval before the invoice is created.
           </p>
         </div>
       )}
@@ -1444,6 +1619,16 @@ export default function CheckoutPage() {
                       <td className="px-4 py-2">
                         <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
                         {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                        {line.isSerialTracked && (
+                          <button
+                            onClick={() => setSerialPickerTarget(line)}
+                            className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                          >
+                            {line.serialNumberId
+                              ? `SN: ${line.serialNumberLabel}`
+                              : '⚠ Select serial'}
+                          </button>
+                        )}
                         {effectiveTaxRate != null ? (
                           <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
                             {activeTaxRate?.name ?? `VAT ${effectiveTaxRate}%`}
@@ -1685,6 +1870,88 @@ export default function CheckoutPage() {
                   <UserPlus size={12} /> New Customer
                 </button>
               </>
+            )}
+          </div>
+
+          {/* Selling Agent */}
+          <div className="border-b border-gray-100 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              Selling Agent{' '}
+              <span className="font-normal normal-case tracking-normal text-gray-300">
+                — optional
+              </span>
+            </p>
+            {sellingAgent ? (
+              <div className="flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100">
+                    <User size={13} className="text-purple-600" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900">{sellingAgent.name}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSellingAgent(null)
+                    setSellingAgentSearch('')
+                  }}
+                  className="text-purple-300 hover:text-purple-600"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                  placeholder="Search agents…"
+                  value={sellingAgentSearch}
+                  onChange={(e) => {
+                    setSellingAgentSearch(e.target.value)
+                    setSellingAgentOpen(true)
+                  }}
+                  onBlur={() => setTimeout(() => setSellingAgentOpen(false), 150)}
+                  onFocus={() => sellingAgentSearch && setSellingAgentOpen(true)}
+                />
+                {sellingAgentOpen && sellingAgentSearch && (
+                  <div className="absolute z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                    {(() => {
+                      const filtered = sellingAgents.filter(
+                        (a) =>
+                          a.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
+                          a.phone?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
+                          a.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
+                      )
+                      return filtered.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-gray-400">No agents found</p>
+                      ) : (
+                        filtered.slice(0, 8).map((a) => (
+                          <button
+                            key={a.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
+                            onMouseDown={() => {
+                              setSellingAgent({ id: a.id, name: a.name })
+                              setSellingAgentSearch('')
+                              setSellingAgentOpen(false)
+                            }}
+                          >
+                            <User size={11} className="shrink-0 text-gray-400" />
+                            <div>
+                              <p className="font-medium text-gray-900">{a.name}</p>
+                              <p className="text-[10px] text-gray-400">
+                                {a.phone || a.email || ''}
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -2181,6 +2448,7 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
+                cart.some((l) => l.isSerialTracked && !l.serialNumberId) ||
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
                 (needsManagerOverride && !managerOverrideApproved)
@@ -2195,17 +2463,21 @@ export default function CheckoutPage() {
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : invoiceType === 'charge' && !selectedCustomer
-                    ? 'Select a customer to charge'
-                    : invoiceType === 'cash' && balance > 0.009
-                      ? `Underpaid by ${fmt(balance)}`
-                      : invoiceType === 'cash' && loyaltyOverBalance
-                        ? 'Insufficient loyalty points'
-                        : needsManagerOverride && !managerOverrideApproved
-                          ? 'Manager override required'
-                          : invoiceType === 'charge'
-                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                            : `Confirm Sale — ${fmt(totalAmount)}`}
+                  : cart.some((l) => l.isSerialTracked && !l.serialNumberId)
+                    ? 'Select serial numbers to continue'
+                    : invoiceType === 'charge' && !selectedCustomer
+                      ? 'Select a customer to charge'
+                      : invoiceType === 'cash' && balance > 0.009
+                        ? `Underpaid by ${fmt(balance)}`
+                        : invoiceType === 'cash' && loyaltyOverBalance
+                          ? 'Insufficient loyalty points'
+                          : needsManagerOverride && !managerOverrideApproved
+                            ? 'Manager override required'
+                            : cart.some((l) => l.isSerialTracked)
+                              ? `Submit for Approval — ${fmt(totalAmount)}`
+                              : invoiceType === 'charge'
+                                ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -2497,6 +2769,72 @@ export default function CheckoutPage() {
         </Overlay>
       )}
 
+      {/* Serial Number Picker */}
+      {serialPickerTarget && (
+        <Overlay onClose={() => setSerialPickerTarget(null)}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
+              <Tag size={18} className="text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Select Serial Number</h2>
+              <p className="text-xs text-gray-500">{serialPickerTarget.itemName}</p>
+            </div>
+          </div>
+          {serialLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={20} className="animate-spin text-purple-400" />
+            </div>
+          ) : serialNumbers.length === 0 ? (
+            <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
+              No available serial numbers in stock for this item.
+            </div>
+          ) : (
+            <div className="max-h-64 space-y-1.5 overflow-y-auto">
+              {serialNumbers.map((sn) => {
+                const isSelected =
+                  cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId === sn.id
+                return (
+                  <button
+                    key={sn.id}
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                    }`}
+                    onClick={() => {
+                      setCart((prev) =>
+                        prev.map((l) =>
+                          l.itemId === serialPickerTarget.itemId
+                            ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
+                            : l
+                        )
+                      )
+                      setSerialPickerTarget(null)
+                    }}
+                  >
+                    <span className="font-mono text-sm font-semibold text-gray-900">
+                      {sn.serialNumber}
+                    </span>
+                    {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => setSerialPickerTarget(null)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              {cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId
+                ? 'Done'
+                : 'Skip for now'}
+            </button>
+          </div>
+        </Overlay>
+      )}
+
       {/* Measured-item quantity picker */}
       {measuredItem &&
         (() => {
@@ -2651,7 +2989,6 @@ export default function CheckoutPage() {
 function SuccessScreen({
   success,
   totalAmount,
-  queueEnabled,
   selectedCustomer,
   onReset,
   fmt,
@@ -2669,11 +3006,9 @@ function SuccessScreen({
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    queueTicketNumber?: number | null
     invoiceType?: PosInvoiceType
   }
   totalAmount: number
-  queueEnabled: boolean
   selectedCustomer: PosCustomer | null
   onReset: () => void
   fmt: (n: number) => string
@@ -2683,18 +3018,6 @@ function SuccessScreen({
   promoDiscount: number
   effectiveTaxRate: number | null
 }) {
-  const [showQueueForm, setShowQueueForm] = useState(false)
-  const [queueCustomerName, setQueueCustomerName] = useState(
-    selectedCustomer ? customerDisplayName(selectedCustomer) : ''
-  )
-  const [queueNotes, setQueueNotes] = useState('')
-  const [queueSubmitting, setQueueSubmitting] = useState(false)
-  const [queueResult, setQueueResult] = useState<{ number: number; categoryName: string } | null>(
-    null
-  )
-  const [queueError, setQueueError] = useState('')
-  const queueInFlight = useRef(false)
-
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
   const [receiptSending, setReceiptSending] = useState(false)
@@ -2719,25 +3042,6 @@ function SuccessScreen({
     day: 'numeric',
     year: 'numeric',
   })
-
-  async function handleAddToQueue() {
-    if (!success.transactionId || queueInFlight.current) return
-    queueInFlight.current = true
-    setQueueSubmitting(true)
-    setQueueError('')
-    const res = await addToOrderQueue(success.transactionId, {
-      customerName: queueCustomerName.trim() || undefined,
-      notes: queueNotes.trim() || undefined,
-    })
-    setQueueSubmitting(false)
-    queueInFlight.current = false
-    if (!res.success || !res.data) {
-      setQueueError(res.error ?? 'Failed to add to queue')
-      return
-    }
-    setQueueResult({ number: res.data.ticket.number, categoryName: res.data.categoryName })
-    setShowQueueForm(false)
-  }
 
   async function handleSendReceipt() {
     const email = receiptEmail.trim()
@@ -2808,21 +3112,6 @@ function SuccessScreen({
             </div>
           </div>
 
-          {/* Queue ticket */}
-          {(success.queueTicketNumber != null || queueResult) && (
-            <div className="rounded-xl bg-purple-50 px-6 py-4 text-center">
-              <p className="text-xs font-semibold uppercase tracking-wider text-purple-400">
-                {queueResult?.categoryName ?? 'Queue Ticket'}
-              </p>
-              <p className="text-6xl font-black text-purple-700">
-                #{success.queueTicketNumber ?? queueResult?.number}
-              </p>
-              <p className="mt-1 text-xs text-purple-400">
-                Show this number when your order is ready
-              </p>
-            </div>
-          )}
-
           {/* Total charged */}
           <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
             <p className="text-sm text-gray-500">Total Charged</p>
@@ -2844,85 +3133,6 @@ function SuccessScreen({
               Points earned for {customerDisplayName(selectedCustomer)}
             </p>
           )}
-
-          {/* Add to Order Queue */}
-          {!success.offlineBuffered &&
-            success.transactionId &&
-            queueEnabled &&
-            !queueResult &&
-            success.queueTicketNumber == null && (
-              <div>
-                {!showQueueForm ? (
-                  <button
-                    onClick={() => setShowQueueForm(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50"
-                  >
-                    <Bell size={14} /> Add to Order Queue
-                  </button>
-                ) : (
-                  <div className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/50 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
-                      Add to Order Queue
-                    </p>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Customer Name (optional)
-                      </label>
-                      <input
-                        autoFocus
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        placeholder="e.g. Juan dela Cruz"
-                        value={queueCustomerName}
-                        onChange={(e) => setQueueCustomerName(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Special Instructions (optional)
-                      </label>
-                      <input
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        placeholder="e.g. Extra spicy, no onions"
-                        value={queueNotes}
-                        onChange={(e) => setQueueNotes(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
-                      />
-                    </div>
-                    {queueError && (
-                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                        {queueError}
-                      </p>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setShowQueueForm(false)
-                          setQueueError('')
-                        }}
-                        className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleAddToQueue}
-                        disabled={queueSubmitting}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 py-2 text-xs font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
-                      >
-                        {queueSubmitting ? (
-                          <>
-                            <Loader2 size={11} className="animate-spin" /> Issuing…
-                          </>
-                        ) : (
-                          <>
-                            <Bell size={11} /> Issue Ticket
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
           {/* Send Receipt */}
           {!success.offlineBuffered && success.transactionId && (
@@ -3106,6 +3316,91 @@ function SuccessScreen({
   )
 }
 
+// ─── Pending Approval Screen ───────────────────────────────────────────────────
+
+function PendingApprovalScreen({
+  releaseFormRequestId,
+  totalAmount,
+  serialLines,
+  onReset,
+  fmt,
+}: {
+  releaseFormRequestId: string
+  totalAmount: number
+  serialLines: { itemName: string; serialNumberLabel?: string }[]
+  onReset: () => void
+  fmt: (n: number) => string
+}) {
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+
+  async function handleCancelRequest() {
+    setCancelling(true)
+    setCancelError('')
+    const res = await cancelReleaseFormRequest(releaseFormRequestId)
+    setCancelling(false)
+    if (!res.success) {
+      setCancelError(res.error ?? 'Failed to cancel request.')
+      return
+    }
+    usePosPendingRfdStore.getState().remove(releaseFormRequestId)
+    onReset()
+  }
+
+  return (
+    <div className="flex min-h-full items-center justify-center bg-zinc-50 p-6">
+      <div className="flex w-full max-w-sm flex-col items-center gap-5 rounded-2xl border border-amber-100 bg-white p-8 text-center shadow-sm">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+          <Clock size={28} className="text-amber-600" />
+        </div>
+        <div>
+          <p className="text-xl font-bold text-gray-900">Pending Approval</p>
+          <p className="mt-1 text-sm text-amber-600">
+            Waiting for a Business Owner or Branch Manager to review.
+          </p>
+        </div>
+
+        <div className="w-full space-y-2 rounded-xl bg-gray-50 px-5 py-4 text-left">
+          {serialLines.map((line, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate font-medium text-gray-800">{line.itemName}</span>
+              <span className="shrink-0 font-mono text-xs text-gray-500">
+                {line.serialNumberLabel ?? '—'}
+              </span>
+            </div>
+          ))}
+          <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+            <span className="text-sm font-semibold text-gray-700">Total</span>
+            <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
+          </div>
+        </div>
+
+        <p className="break-all font-mono text-[10px] text-gray-400">Ref: {releaseFormRequestId}</p>
+
+        {cancelError && (
+          <p className="w-full rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+            {cancelError}
+          </p>
+        )}
+
+        <button
+          onClick={onReset}
+          className="w-full rounded-xl bg-purple-700 py-3 text-sm font-bold text-white hover:bg-purple-800"
+        >
+          Start New Sale
+        </button>
+        <button
+          onClick={handleCancelRequest}
+          disabled={cancelling}
+          className="text-xs font-medium text-gray-400 hover:text-red-500 disabled:opacity-50"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel this request'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Catalog Card ─────────────────────────────────────────────────────────────
 
 function CatalogCard({
@@ -3182,7 +3477,7 @@ function NewCustomerModal({
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim() || undefined,
-      phone: form.phone.trim() || undefined,
+      phoneNumber: form.phone.trim() || undefined,
       email: form.email.trim() || undefined,
     })
     setSubmitting(false)

@@ -24,6 +24,11 @@ export const CreateTransferFormSchema = z
 export const DispatchTransferFormSchema = z.object({
   expectedArrival: z.string().optional(),
   notes: z.string().max(500).optional(),
+  driverName: z.string().max(150).optional(),
+  driverPhone: z.string().max(50).optional(),
+  driverLicense: z.string().max(100).optional(),
+  vehiclePlate: z.string().max(50).optional(),
+  carrierName: z.string().max(150).optional(),
 })
 
 export const ReceiveTransferFormSchema = z.object({
@@ -53,6 +58,7 @@ const TransferLineSchema = z.object({
 export const TransferSummarySchema = z.object({
   id: z.string(),
   status: TransferStatusSchema,
+  transferNumber: z.string().optional(),
   fromWarehouse: TransferWarehouseSchema.optional(),
   toWarehouse: TransferWarehouseSchema.optional(),
   transferDate: z.string().optional(),
@@ -62,6 +68,11 @@ export const TransferSummarySchema = z.object({
   dispatchedAt: z.string().nullable().optional(),
   receivedAt: z.string().nullable().optional(),
   cancelledAt: z.string().nullable().optional(),
+  driverName: z.string().nullable().optional(),
+  driverPhone: z.string().nullable().optional(),
+  driverLicense: z.string().nullable().optional(),
+  vehiclePlate: z.string().nullable().optional(),
+  carrierName: z.string().nullable().optional(),
   lines: z.array(TransferLineSchema).optional(),
   _count: z.object({ lines: z.number() }).optional(),
 })
