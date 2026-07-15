@@ -43,6 +43,7 @@ import {
   ShoppingCart,
   Tag,
   Truck,
+  Undo2,
   Users,
   UsersRound,
   Wallet,
@@ -221,6 +222,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: ReceiptText,
       },
       {
+        label: 'Expenses',
+        href: '/accounting/expenses',
+        icon: Coins,
+      },
+      {
         label: 'Bank Accounts',
         href: '/accounting/bank-accounts',
         icon: Wallet,
@@ -325,6 +331,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Release Approvals',
         href: '/pos/release-approvals',
         icon: PackageCheck,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
+        label: 'Return & Refund Approvals',
+        href: '/pos/return-refund-approvals',
+        icon: Undo2,
         requiredPermission: 'pos:transaction:override',
       },
       {

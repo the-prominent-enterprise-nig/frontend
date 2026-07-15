@@ -64,6 +64,9 @@ import type {
   PosReleaseFormRequest,
   ReleaseFormStatusResult,
   ReviewReleaseFormInput,
+  PosReturnRefundRequest,
+  ReturnRefundStatusResult,
+  ReviewReturnRefundInput,
 } from '@/src/schema/pos'
 import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
@@ -91,6 +94,8 @@ const TAGS = {
   cancellationRequest: (id: string) => `pos-cancellation-request-${id}`,
   releaseFormRequests: 'pos-release-form-requests',
   releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
+  returnRefundRequests: 'pos-return-refund-requests',
+  returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
 }
 
 export async function getTerminals(filters?: {
@@ -1685,12 +1690,20 @@ export async function updateReceiptBranding(input: {
 
 // ─── Void Requests ────────────────────────────────────────────────────────────
 
+/**
+ * Returns & Refunds Unification (Stage 1): this endpoint's submission now
+ * writes a ReturnRefundRequest, not a PosVoidRequest — the URL/route is
+ * unchanged, only what it creates. The returned id must be resolved via
+ * approveReturnRefundRequest/rejectReturnRefundRequest, NOT the old
+ * approveVoidRequest/rejectVoidRequest (those only ever resolve rows that
+ * already existed in the old, now-frozen PosVoidRequest table).
+ */
 export async function submitVoidRequest(
   transactionId: string,
   input: SubmitVoidRequestInput
-): Promise<ApiResponse<PosVoidRequest>> {
+): Promise<ApiResponse<PosReturnRefundRequest>> {
   try {
-    const result = await api.post<PosVoidRequest>(
+    const result = await api.post<PosReturnRefundRequest>(
       `/pos/transactions/${transactionId}/void-request`,
       input
     )
@@ -2030,5 +2043,106 @@ export async function rejectReleaseFormRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject release form request' }
+  }
+}
+
+// ─── Return/Refund Requests (unified cancellation/void/refund approval) ──────
+// New shared model the backend is unifying cancellation, void, and refund
+// approvals onto. Cancellation/void keep their own dedicated pages for
+// resolving already-pending old-model rows — this queue is the new surface
+// going forward and covers all three types (see `type` on each row).
+
+export async function getReturnRefundStatus(
+  requestId: string
+): Promise<ApiResponse<ReturnRefundStatusResult>> {
+  try {
+    const result = await api.get<ReturnRefundStatusResult>(
+      `/pos/return-refund-requests/${requestId}/status`,
+      undefined,
+      { tags: [TAGS.returnRefundRequest(requestId)] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch return/refund status' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch return/refund status' }
+  }
+}
+
+export async function cancelReturnRefundRequest(
+  requestId: string
+): Promise<ApiResponse<PosReturnRefundRequest>> {
+  try {
+    const result = await api.post<PosReturnRefundRequest>(
+      `/pos/return-refund-requests/${requestId}/cancel`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to cancel return/refund request' }
+    }
+    revalidateTag(TAGS.returnRefundRequests, 'max')
+    revalidateTag(TAGS.returnRefundRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to cancel return/refund request' }
+  }
+}
+
+export async function getPendingReturnRefundRequests(
+  branchId?: string
+): Promise<ApiResponse<PosReturnRefundRequest[]>> {
+  try {
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      branchId ? { branchId } : undefined,
+      { tags: [TAGS.returnRefundRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch pending requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch pending requests' }
+  }
+}
+
+export async function approveReturnRefundRequest(
+  requestId: string,
+  input?: ReviewReturnRefundInput
+): Promise<ApiResponse<PosReturnRefundRequest>> {
+  try {
+    const result = await api.post<PosReturnRefundRequest>(
+      `/pos/return-refund-requests/${requestId}/approve`,
+      input ?? {}
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve request' }
+    }
+    revalidateTag(TAGS.returnRefundRequests, 'max')
+    revalidateTag(TAGS.returnRefundRequest(requestId), 'max')
+    revalidateTag(TAGS.transactions, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve request' }
+  }
+}
+
+export async function rejectReturnRefundRequest(
+  requestId: string,
+  input?: ReviewReturnRefundInput
+): Promise<ApiResponse<PosReturnRefundRequest>> {
+  try {
+    const result = await api.post<PosReturnRefundRequest>(
+      `/pos/return-refund-requests/${requestId}/reject`,
+      input ?? {}
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to reject request' }
+    }
+    revalidateTag(TAGS.returnRefundRequests, 'max')
+    revalidateTag(TAGS.returnRefundRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to reject request' }
   }
 }

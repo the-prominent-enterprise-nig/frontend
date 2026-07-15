@@ -66,7 +66,7 @@ import {
   cancelReleaseFormRequest,
   type SerialNumberRecord,
 } from '../_actions/pos-actions'
-import { isPendingApproval } from '@/src/schema/pos'
+import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
   PosInvoiceType,
@@ -1113,6 +1113,16 @@ export default function CheckoutPage() {
 
           setSubmitting(false)
           setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          return
+        }
+
+        // Defensive — checkout only ever submits transactionType: 'sale', so the
+        // backend should never defer here (that's the refund-specific path, which
+        // lives on the Transactions page, not checkout). Narrows the type for the
+        // PosTransaction access below.
+        if (isRefundPendingApproval(txRes.data)) {
+          setError('Unexpected response from server.')
+          setSubmitting(false)
           return
         }
 

@@ -2,6 +2,7 @@ import ModuleGuard from '@/src/components/guards/ModuleGuard'
 import { PosNav } from './_components/PosNav'
 import { PosBranchSwitcher } from './_components/PosBranchSwitcher'
 import { PendingRfdIndicator } from './_components/PendingRfdIndicator'
+import { PendingRefundIndicator } from './_components/PendingRefundIndicator'
 
 export const metadata = {
   title: 'Point of Sale - Prominent Enterprise',
@@ -16,6 +17,7 @@ export default function PosLayout({ children }: { children: React.ReactNode }) {
           <PosNav />
           <div className="flex items-center gap-2 pr-4 lg:pr-6">
             <PendingRfdIndicator />
+            <PendingRefundIndicator />
             <PosBranchSwitcher />
           </div>
         </div>
