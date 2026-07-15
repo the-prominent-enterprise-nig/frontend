@@ -328,9 +328,6 @@ export function PurchaseOrderList({
   const fmtPHP = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
-  const fmtNGN = (n: number) =>
-    n.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 })
-
   return (
     <div className="min-h-screen bg-zinc-50/60 p-6">
       {/* ── Page header ──────────────────────────────────────────────────────── */}
@@ -744,17 +741,17 @@ export function PurchaseOrderList({
               <div className="space-y-3">
                 <div className="flex items-end justify-between">
                   <span className="text-3xl font-bold text-zinc-900">
-                    {fmtNGN(usage.currentSpend)}
+                    {fmtPHP(usage.currentSpend)}
                   </span>
                   <span className="mb-0.5 text-sm text-zinc-500">
-                    of {fmtNGN(Number(usage.quota.limitAmount))}
+                    of {fmtPHP(Number(usage.quota.limitAmount))}
                   </span>
                 </div>
                 <UsageBar usedPct={usage.usedPct} />
                 <div className="flex justify-between text-xs text-zinc-400">
                   <span>{usage.usedPct.toFixed(1)}% used</span>
                   <span className="font-medium text-zinc-600">
-                    {fmtNGN(usage.remaining ?? 0)} remaining
+                    {fmtPHP(usage.remaining ?? 0)} remaining
                   </span>
                 </div>
               </div>
@@ -817,7 +814,7 @@ export function PurchaseOrderList({
                       </td>
                       <td className="px-4 py-4 text-zinc-600">{q.fiscalYear}</td>
                       <td className="px-4 py-4 text-right font-semibold text-zinc-900">
-                        {fmtNGN(Number(q.limitAmount))}
+                        {fmtPHP(Number(q.limitAmount))}
                       </td>
                       <td className="px-4 py-4">
                         <span

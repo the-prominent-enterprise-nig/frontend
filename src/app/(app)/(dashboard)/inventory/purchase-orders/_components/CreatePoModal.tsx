@@ -61,7 +61,7 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
   if (!open) return null
 
   const fmtAmount = (n: number) =>
-    n.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 })
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

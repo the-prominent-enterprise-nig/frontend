@@ -52,7 +52,7 @@ export function QuotaList({ canManage }: { canManage: boolean }) {
   const [showCreate, setShowCreate] = useState(false)
 
   const fmt = (n: number) =>
-    n.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 })
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
   return (
     <div className="p-6">
