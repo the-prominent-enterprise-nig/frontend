@@ -41,6 +41,7 @@ type Props = {
   uomOptions: UomOption[]
   onAttributeSubmit: (attributes: Record<string, string>) => Promise<ApiResponse<unknown>>
   isAttributeSubmitting: boolean
+  canReadAttributes?: boolean
   groupOptions: ItemGroupOption[]
   subgroupOptions: ItemSubgroupOption[]
   brandOptions: ClassificationOption[]
@@ -57,6 +58,7 @@ export default function EditItemModal({
   uomOptions,
   onAttributeSubmit,
   isAttributeSubmitting,
+  canReadAttributes = true,
   groupOptions,
   subgroupOptions,
   brandOptions,
@@ -165,7 +167,7 @@ export default function EditItemModal({
   const { data: attrDefsData } = useQuery({
     queryKey: ['inventory-attribute-definitions', selectedCategoryId],
     queryFn: () => getAttributes({ categoryId: selectedCategoryId, limit: 100 }),
-    enabled: isOpen && !!selectedCategoryId,
+    enabled: isOpen && !!selectedCategoryId && canReadAttributes,
     staleTime: 5 * 60 * 1000,
   })
 

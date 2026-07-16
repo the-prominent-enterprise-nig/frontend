@@ -3,9 +3,22 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { UpdateUomFormSchema } from '@/src/schema/inventory/uom'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function updateUom(id: string, input: unknown): Promise<ApiResponse<void>> {
   if (!id) return { success: false, error: 'ID required', message: 'UOM ID is required' }
+
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.UOM_UPDATE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to update units of measure',
+    }
+  }
 
   const parsed = UpdateUomFormSchema.safeParse(input)
   if (!parsed.success) {

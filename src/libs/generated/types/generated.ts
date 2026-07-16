@@ -5474,6 +5474,58 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/credit-memos': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List credit memos (filter by status/customer/invoice) */
+    get: operations['CreditMemosController_findAll']
+    put?: never
+    /** Issue a credit memo against an open invoice — posts the GL contra entry and reduces the AR balance */
+    post: operations['CreditMemosController_issue']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a credit memo by id */
+    get: operations['CreditMemosController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}/void': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Void a credit memo — reverses its journal entry and restores the invoice balance */
+    post: operations['CreditMemosController_void']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ap-bills': {
     parameters: {
       query?: never
@@ -10135,6 +10187,21 @@ export interface components {
       payee?: string
       currencyId?: string
       transactions?: components['schemas']['TransactionLineDto'][]
+    }
+    CreateCreditMemoDto: {
+      /** @description AR invoice the credit memo is applied to */
+      arInvoiceId: string
+      /**
+       * @description Credit amount (must not exceed the invoice outstanding balance)
+       * @example 500
+       */
+      amount: number
+      /** @example Damaged goods returned */
+      reason?: string
+      /** @description Defaults to today when omitted */
+      memoDate?: string
+      /** @description Auto-generated when omitted */
+      memoNumber?: string
     }
     CreateExpenseDto: {
       /** @description Auto-generated when omitted */
@@ -20295,6 +20362,87 @@ export interface operations {
     }
   }
   ARInvoicesController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ISSUED' | 'VOID'
+        customerId?: string
+        arInvoiceId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_issue: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCreditMemoDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_void: {
     parameters: {
       query?: never
       header?: never
