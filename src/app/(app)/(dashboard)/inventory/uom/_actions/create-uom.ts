@@ -3,8 +3,21 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateUomFormSchema } from '@/src/schema/inventory/uom'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function createUom(input: unknown): Promise<ApiResponse<{ id: string }>> {
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.UOM_CREATE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to create units of measure',
+    }
+  }
+
   const parsed = CreateUomFormSchema.safeParse(input)
   if (!parsed.success) {
     return {

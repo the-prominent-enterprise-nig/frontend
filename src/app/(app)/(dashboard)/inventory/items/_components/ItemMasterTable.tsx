@@ -19,6 +19,7 @@ type Props = {
   isFetching: boolean
   canUpdate: boolean
   canDelete: boolean
+  canManageLifecycle: boolean
   onEdit: (item: ItemSummary) => void
   onDelete: (item: ItemSummary) => void
   onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
@@ -102,6 +103,7 @@ export default function ItemMasterTable({
   isFetching,
   canUpdate,
   canDelete,
+  canManageLifecycle,
   onEdit,
   onDelete,
   onLifecycleChange,
@@ -202,7 +204,7 @@ export default function ItemMasterTable({
                     : '—'}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  {canUpdate ? (
+                  {canManageLifecycle ? (
                     <LifecycleDropdown item={item} onLifecycleChange={onLifecycleChange} />
                   ) : (
                     <span

@@ -11,16 +11,18 @@ import {
   KeyRound,
   X,
   PackageCheck,
-  Printer,
-  AlertTriangle,
 } from 'lucide-react'
 import {
-  getPendingReleaseFormRequests,
-  approveReleaseFormRequest,
-  rejectReleaseFormRequest,
+  getPendingReturnRefundRequests,
+  approveReturnRefundRequest,
+  rejectReturnRefundRequest,
   validateManagerByPin,
 } from '../../_actions/pos-actions'
-import type { PosReleaseFormRequest, PosReleaseFormCartLine } from '@/src/schema/pos'
+import type {
+  PosReturnRefundRequest,
+  PosReturnRefundType,
+  PosReleaseFormCartLine,
+} from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -49,37 +51,24 @@ const statusIcon: Record<string, React.ReactNode> = {
   expired: <XCircle size={10} />,
 }
 
-const requestTypeBadge: Record<string, string> = {
-  RFD: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  'Application Form': 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-  'RFD + Application Form': 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
+const typeBadge: Record<PosReturnRefundType, string> = {
+  refund: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
+  void: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+  cancellation: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
 }
 
-function RequestTypeBadge({ requestType }: { requestType?: string }) {
-  const type = requestType ?? 'RFD'
-  return (
-    <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${requestTypeBadge[type] ?? 'bg-gray-100 text-gray-600'}`}
-    >
-      {type}
-    </span>
-  )
+const approveLabel: Record<PosReturnRefundType, string> = {
+  refund: 'Approve & Refund',
+  void: 'Approve & Void',
+  cancellation: 'Approve & Cancel',
 }
 
 /** The line the row/cards key off — first line flagged serial-tracked, or
- * failing that just the first line in the snapshot. */
-function primaryLine(req: PosReleaseFormRequest): PosReleaseFormCartLine | undefined {
-  const lines = req.cartSnapshot?.lines ?? []
+ * failing that just the first line in the snapshot. Only present for
+ * cart-snapshot based requests (refund/cancellation), not void. */
+function primaryLine(req: PosReturnRefundRequest): PosReleaseFormCartLine | undefined {
+  const lines = req.refundCartSnapshot?.lines ?? []
   return lines.find((l) => l.serialNumberId) ?? lines[0]
-}
-
-function serialLabel(line?: PosReleaseFormCartLine): string {
-  if (!line) return '—'
-  return (
-    line.serialNumberLabel ??
-    line.serialNumber ??
-    (line.serialNumberId ? '#' + line.serialNumberId.slice(0, 8) : '—')
-  )
 }
 
 function shortId(id?: string | null): string {
@@ -87,28 +76,40 @@ function shortId(id?: string | null): string {
   return id.length > 8 ? `${id.slice(0, 8)}…` : id
 }
 
-function cashierLabel(req: PosReleaseFormRequest): string {
+function cashierLabel(req: PosReturnRefundRequest): string {
   return req.requestedBy?.name ?? req.session?.cashier?.name ?? shortId(req.requestedById)
 }
 
-function branchTerminalLabel(req: PosReleaseFormRequest): string {
+function branchTerminalLabel(req: PosReturnRefundRequest): string {
   const branch = req.session?.terminal?.branch?.name
   const terminal = req.session?.terminal?.terminalCode ?? req.session?.terminal?.name
   if (branch && terminal) return `${branch} · ${terminal}`
   return branch ?? terminal ?? shortId(req.sessionId)
 }
 
-function customerLabel(req: PosReleaseFormRequest): string {
+function customerLabel(req: PosReturnRefundRequest): string {
   return (
-    req.cartSnapshot?.customer?.name ??
-    (req.cartSnapshot?.customerId ? shortId(req.cartSnapshot.customerId) : 'Walk-in')
+    req.refundCartSnapshot?.customer?.name ??
+    (req.refundCartSnapshot?.customerId ? shortId(req.refundCartSnapshot.customerId) : 'Walk-in')
   )
+}
+
+/** Void requests are transaction-based (no cart snapshot); refund/cancellation
+ * are cart-snapshot based. Reference reads whichever the row type has. */
+function referenceLabel(req: PosReturnRefundRequest): string {
+  if (req.transaction) return req.transaction.transactionNumber
+  const line = primaryLine(req)
+  return line?.itemName ?? '—'
+}
+
+function amountOf(req: PosReturnRefundRequest): number {
+  return req.refundCartSnapshot?.totalAmount ?? req.transaction?.totalAmount ?? 0
 }
 
 function RequestRowSkeleton() {
   return (
     <tr>
-      {Array.from({ length: 10 }).map((_, i) => (
+      {Array.from({ length: 8 }).map((_, i) => (
         <td key={i} className="px-5 py-3">
           <Skeleton className="h-3.5 w-16" />
         </td>
@@ -117,25 +118,25 @@ function RequestRowSkeleton() {
   )
 }
 
-export default function ReleaseApprovalsList({ isManager }: Props) {
+export default function ReturnRefundApprovalsList({ isManager }: Props) {
   const { branchId } = usePosBranchContext()
-  const [requests, setRequests] = useState<PosReleaseFormRequest[]>([])
+  const [requests, setRequests] = useState<PosReturnRefundRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [detailTarget, setDetailTarget] = useState<PosReleaseFormRequest | null>(null)
-  const [reviewTarget, setReviewTarget] = useState<PosReleaseFormRequest | null>(null)
+  const [detailTarget, setDetailTarget] = useState<PosReturnRefundRequest | null>(null)
+  const [reviewTarget, setReviewTarget] = useState<PosReturnRefundRequest | null>(null)
   const [reviewNotes, setReviewNotes] = useState('')
   const [approvalPin, setApprovalPin] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState('')
 
   async function load() {
-    const res = await getPendingReleaseFormRequests(branchId ?? undefined)
+    const res = await getPendingReturnRefundRequests(branchId ?? undefined)
     if (res.success && res.data) {
       setRequests(res.data)
       setLoadError('')
     } else if (!res.success) {
-      setLoadError(res.error ?? 'Failed to load release approvals.')
+      setLoadError(res.error ?? 'Failed to load return/refund approvals.')
     }
     setLoading(false)
   }
@@ -147,7 +148,7 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId])
 
-  function openReview(req: PosReleaseFormRequest) {
+  function openReview(req: PosReturnRefundRequest) {
     setDetailTarget(null)
     setReviewTarget(req)
     setReviewNotes('')
@@ -160,74 +161,6 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
     setReviewNotes('')
     setApprovalPin('')
     setReviewError('')
-  }
-
-  /** Reuses the same window.open + window.print() pattern as the receipt
-   * reprint flow (TransactionsList.tsx::handleReprint) — no server-side PDF
-   * generation, just a styled, printable HTML document opened in a new tab. */
-  function handlePrint(req: PosReleaseFormRequest) {
-    const title =
-      (req.requestType ?? 'RFD').toUpperCase() === 'RFD'
-        ? 'RELEASE FORM DOCUMENT'
-        : req.requestType === 'Application Form'
-          ? 'APPLICATION FORM'
-          : 'RELEASE FORM DOCUMENT + APPLICATION FORM'
-
-    const lineRows = (req.cartSnapshot?.lines ?? [])
-      .map(
-        (l) =>
-          `<tr><td>${l.itemName}${l.serialNumberId ? ` <span style="color:#888">(${serialLabel(l)})</span>` : ''}</td><td style="text-align:right">${l.quantity}</td><td style="text-align:right">&#8369;${l.unitPrice.toFixed(2)}</td></tr>`
-      )
-      .join('')
-
-    const warningRows = (req.creditWarnings ?? []).map((w) => `<li>${w}</li>`).join('')
-
-    const date = new Date(req.createdAt).toLocaleString('en-PH')
-    const reviewedDate = req.reviewedAt ? new Date(req.reviewedAt).toLocaleString('en-PH') : null
-
-    const html = `<!DOCTYPE html><html><head><title>${title} — ${req.id}</title>
-<style>
-  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
-  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
-  .center{text-align:center;margin:3px 0;color:#555}
-  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
-  table{width:100%;border-collapse:collapse}
-  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
-  td{padding:3px 4px}
-  .row{display:flex;justify-content:space-between;padding:2px 0}
-  .warn{background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:6px 10px;margin:8px 0;color:#92400e}
-  .warn ul{margin:4px 0 0 16px;padding:0}
-  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
-  @media print{.no-print{display:none}}
-</style></head><body>
-<div class="banner">${title}</div>
-<p class="center" style="font-weight:bold">${req.id}</p>
-<p class="center">${date}</p>
-<hr>
-<div class="row"><span>Cashier</span><span>${cashierLabel(req)}</span></div>
-<div class="row"><span>Branch / Terminal</span><span>${branchTerminalLabel(req)}</span></div>
-<div class="row"><span>Customer</span><span>${customerLabel(req)}</span></div>
-<hr>
-<table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th></tr></thead><tbody>${lineRows}</tbody></table>
-<hr>
-<div class="row" style="font-weight:bold"><span>TOTAL</span><span>&#8369;${(req.cartSnapshot?.totalAmount ?? 0).toFixed(2)}</span></div>
-${warningRows ? `<div class="warn"><strong>Credit/terms concerns</strong><ul>${warningRows}</ul></div>` : ''}
-<hr>
-<div class="row"><span>Status</span><span style="text-transform:capitalize">${req.status}</span></div>
-${req.reviewedById ? `<div class="row"><span>Reviewed by</span><span>${shortId(req.reviewedById)}</span></div>` : ''}
-${reviewedDate ? `<div class="row"><span>Reviewed at</span><span>${reviewedDate}</span></div>` : ''}
-${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}</span></div>` : ''}
-<p class="footer">${title}. Not a receipt.</p>
-<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
-</body></html>`
-
-    const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
-    if (w) {
-      w.document.write(html)
-      w.document.close()
-      w.focus()
-      setTimeout(() => w.print(), 400)
-    }
   }
 
   async function handleApprove() {
@@ -246,7 +179,7 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
       return
     }
 
-    const res = await approveReleaseFormRequest(reviewTarget.id, {
+    const res = await approveReturnRefundRequest(reviewTarget.id, {
       reviewNotes: reviewNotes.trim() || `Approved by ${pinRes.data.managerName}`,
     })
     setReviewing(false)
@@ -278,7 +211,9 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
       return
     }
 
-    const res = await rejectReleaseFormRequest(reviewTarget.id, { reviewNotes: reviewNotes.trim() })
+    const res = await rejectReturnRefundRequest(reviewTarget.id, {
+      reviewNotes: reviewNotes.trim(),
+    })
     setReviewing(false)
     if (!res.success) {
       setReviewError(res.error ?? 'Failed to reject.')
@@ -291,12 +226,9 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">
-          Release &amp; Application Form Approvals
-        </h1>
+        <h1 className="text-xl font-bold text-gray-900">Return & Refund Approvals</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Serial-tracked sales and credit (charge) sales awaiting manager approval before their
-          invoice is created.
+          Cancellations, voids, and refunds awaiting manager approval before they take effect.
         </p>
       </div>
 
@@ -314,12 +246,10 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 <tr className="border-b border-gray-100 bg-gray-50">
                   {[
                     'Type',
-                    'Item / Serial',
+                    'Reference',
                     'Cashier',
                     'Branch / Terminal',
-                    'Unit Price',
-                    'Discount',
-                    'Total',
+                    'Amount',
                     'Customer',
                     'Submitted',
                     'Status',
@@ -345,7 +275,7 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
       ) : requests.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
           <PackageCheck size={32} className="mb-3 text-green-400" />
-          <p className="font-medium text-gray-700">No pending release requests</p>
+          <p className="font-medium text-gray-700">No pending return/refund requests</p>
           <p className="mt-1 text-sm text-gray-400">
             All caught up. This page refreshes every 10 seconds.
           </p>
@@ -360,7 +290,7 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                     Type
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Item / Serial
+                    Reference
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Cashier
@@ -369,13 +299,7 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                     Branch / Terminal
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Unit Price
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Discount
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Total
+                    Amount
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Customer
@@ -390,70 +314,52 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {requests.map((req) => {
-                  const line = primaryLine(req)
-                  const extraLines = (req.cartSnapshot?.lines?.length ?? 1) - 1
-                  return (
-                    <tr
-                      key={req.id}
-                      onClick={() => setDetailTarget(req)}
-                      className="hover:bg-gray-50 transition-colors cursor-pointer"
-                    >
-                      <td className="px-5 py-3">
-                        <RequestTypeBadge requestType={req.requestType} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <p className="font-medium text-gray-900">
-                          {line?.itemName ?? '—'}
-                          {extraLines > 0 && (
-                            <span className="ml-1 text-xs font-normal text-gray-400">
-                              +{extraLines} more
-                            </span>
-                          )}
-                        </p>
-                        <p className="font-mono text-[11px] text-gray-400">{serialLabel(line)}</p>
-                      </td>
-                      <td className="px-5 py-3 text-gray-800">{cashierLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-600">{branchTerminalLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-600">
-                        {line ? formatCurrency(line.unitPrice) : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-gray-600">
-                        {formatCurrency(
-                          req.cartSnapshot?.discountAmount ?? req.cartSnapshot?.discountTotal ?? 0
-                        )}
-                      </td>
-                      <td className="px-5 py-3 font-semibold text-gray-900">
-                        {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
-                      </td>
-                      <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-500">
-                        <PosDateTime iso={req.createdAt} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                {requests.map((req) => (
+                  <tr
+                    key={req.id}
+                    onClick={() => setDetailTarget(req)}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-5 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${typeBadge[req.type]}`}
+                      >
+                        {req.type}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 font-medium text-gray-900">{referenceLabel(req)}</td>
+                    <td className="px-5 py-3 text-gray-800">{cashierLabel(req)}</td>
+                    <td className="px-5 py-3 text-gray-600">{branchTerminalLabel(req)}</td>
+                    <td className="px-5 py-3 font-semibold text-gray-900">
+                      {formatCurrency(amountOf(req))}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
+                    <td className="px-5 py-3 text-gray-500">
+                      <PosDateTime iso={req.createdAt} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                      >
+                        {statusIcon[req.status]}
+                        {req.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {isManager && req.status === 'pending' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openReview(req)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
                         >
-                          {statusIcon[req.status]}
-                          {req.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {isManager && req.status === 'pending' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openReview(req)
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
-                          >
-                            <ShieldCheck size={11} /> Review
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
+                          <ShieldCheck size={11} /> Review
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -468,10 +374,9 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
             <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-gray-900">Release Form Request</h2>
-                    <RequestTypeBadge requestType={detailTarget.requestType} />
-                  </div>
+                  <h2 className="text-lg font-bold text-gray-900 capitalize">
+                    {detailTarget.type} Request
+                  </h2>
                   <p className="text-xs text-gray-500 mt-0.5 font-mono">{detailTarget.id}</p>
                 </div>
                 <button
@@ -481,20 +386,6 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                   <X size={18} />
                 </button>
               </div>
-
-              {(detailTarget.creditWarnings?.length ?? 0) > 0 && (
-                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium">Credit/terms concerns</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                      {detailTarget.creditWarnings!.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -514,10 +405,20 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                   <span className="text-gray-500">Branch / Terminal</span>
                   <span className="text-gray-900">{branchTerminalLabel(detailTarget)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Customer</span>
-                  <span className="text-gray-900">{customerLabel(detailTarget)}</span>
-                </div>
+                {detailTarget.transaction && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Transaction</span>
+                    <span className="text-gray-900 font-mono text-xs">
+                      {detailTarget.transaction.transactionNumber}
+                    </span>
+                  </div>
+                )}
+                {!detailTarget.transaction && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Customer</span>
+                    <span className="text-gray-900">{customerLabel(detailTarget)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">Submitted</span>
                   <span className="text-gray-700">
@@ -526,29 +427,40 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 </div>
               </div>
 
-              <div>
-                <p className="mb-1 text-xs font-medium text-gray-500">Items</p>
-                <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
-                  {(detailTarget.cartSnapshot?.lines ?? []).map((line, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-gray-800">{line.itemName}</p>
-                        {line.serialNumberId && (
-                          <p className="font-mono text-[11px] text-gray-400">{serialLabel(line)}</p>
-                        )}
-                      </div>
-                      <div className="shrink-0 text-right text-gray-600">
-                        <p>
-                          {line.quantity} × {formatCurrency(line.unitPrice)}
-                        </p>
-                      </div>
+              {detailTarget.reason && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-gray-500">Reason</p>
+                  <p className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 leading-relaxed">
+                    {detailTarget.reason}
+                  </p>
+                </div>
+              )}
+
+              {detailTarget.refundCartSnapshot?.lines &&
+                detailTarget.refundCartSnapshot.lines.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-medium text-gray-500">Items</p>
+                    <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+                      {detailTarget.refundCartSnapshot.lines.map((line, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between px-3 py-2 text-sm"
+                        >
+                          <p className="truncate font-medium text-gray-800">{line.itemName}</p>
+                          <div className="shrink-0 text-right text-gray-600">
+                            <p>
+                              {line.quantity} × {formatCurrency(line.unitPrice)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-900">
-                  <span>Total</span>
-                  <span>{formatCurrency(detailTarget.cartSnapshot?.totalAmount ?? 0)}</span>
-                </div>
+                  </div>
+                )}
+
+              <div className="mt-2 flex justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-900">
+                <span>Amount</span>
+                <span>{formatCurrency(amountOf(detailTarget))}</span>
               </div>
 
               {detailTarget.reviewNotes && (
@@ -560,22 +472,16 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  onClick={() => handlePrint(detailTarget)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  <Printer size={13} /> Print
-                </button>
-                {isManager && detailTarget.status === 'pending' && (
+              {isManager && detailTarget.status === 'pending' && (
+                <div className="flex justify-end pt-1">
                   <button
                     onClick={() => openReview(detailTarget)}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
                   >
                     <ShieldCheck size={13} /> Review
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -591,26 +497,11 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-gray-900">Review Release Request</h2>
-                  <RequestTypeBadge requestType={reviewTarget.requestType} />
-                </div>
+                <h2 className="text-lg font-bold text-gray-900 capitalize">
+                  Review {reviewTarget.type} Request
+                </h2>
                 <p className="font-mono text-xs text-gray-500 mt-0.5">{reviewTarget.id}</p>
               </div>
-
-              {(reviewTarget.creditWarnings?.length ?? 0) > 0 && (
-                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium">Credit/terms concerns</p>
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                      {reviewTarget.creditWarnings!.map((w, i) => (
-                        <li key={i}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
@@ -618,16 +509,13 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                   <span className="text-gray-900 font-medium">{cashierLabel(reviewTarget)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Item / Serial</span>
-                  <span className="text-gray-700 text-right">
-                    {primaryLine(reviewTarget)?.itemName ?? '—'} ·{' '}
-                    {serialLabel(primaryLine(reviewTarget))}
-                  </span>
+                  <span className="text-gray-500">Reference</span>
+                  <span className="text-gray-700 text-right">{referenceLabel(reviewTarget)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Total</span>
+                  <span className="text-gray-500">Amount</span>
                   <span className="font-semibold text-gray-900">
-                    {formatCurrency(reviewTarget.cartSnapshot?.totalAmount ?? 0)}
+                    {formatCurrency(amountOf(reviewTarget))}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -707,7 +595,7 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                   ) : (
                     <ShieldCheck size={13} />
                   )}
-                  Approve & Release
+                  {approveLabel[reviewTarget.type]}
                 </button>
               </div>
             </div>

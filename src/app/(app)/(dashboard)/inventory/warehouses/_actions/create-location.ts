@@ -23,7 +23,6 @@ export async function createLocation(
 
   const result = await api.post<{ id: string }>(`/inventory/warehouses/${warehouseId}/locations`, {
     ...parsed.data,
-    warehouseId,
   })
 
   if (!result.success) {
