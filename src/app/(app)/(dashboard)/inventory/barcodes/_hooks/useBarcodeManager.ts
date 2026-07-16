@@ -7,6 +7,7 @@ import { getItems } from '../../items/_actions/get-items'
 import { getItemBarcodes } from '../_actions/get-item-barcodes'
 import { generateBarcode } from '../_actions/generate-barcode'
 import { createBarcode } from '../_actions/create-barcode'
+import { deleteBarcode } from '../_actions/delete-barcode'
 import { bulkGenerateBarcodes } from '../_actions/bulk-generate-barcodes'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { BarcodeType, CreateBarcodeFormValues } from '@/src/schema/inventory/barcodes'
@@ -51,6 +52,19 @@ export function useBarcodeManager() {
     onSuccess: (result, { itemId }) => {
       if (result.success) {
         showToast({ title: 'Barcode added', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['item-barcodes', itemId] })
+      } else {
+        showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ itemId, barcodeId }: { itemId: string; barcodeId: string }) =>
+      deleteBarcode(itemId, barcodeId),
+    onSuccess: (result, { itemId }) => {
+      if (result.success) {
+        showToast({ title: 'Barcode deleted', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['item-barcodes', itemId] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
@@ -118,6 +132,9 @@ export function useBarcodeManager() {
     addBarcode: (itemId: string, data: CreateBarcodeFormValues) =>
       createMutation.mutateAsync({ itemId, data }),
     isAdding: createMutation.isPending,
+    deleteBarcode: (itemId: string, barcodeId: string) =>
+      deleteMutation.mutateAsync({ itemId, barcodeId }),
+    isDeleting: deleteMutation.isPending,
     bulkGenerate: (itemIds: string[], barcodeType: BarcodeType) =>
       bulkMutation.mutateAsync({ itemIds, barcodeType }),
     isBulkGenerating: bulkMutation.isPending,
