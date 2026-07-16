@@ -97,7 +97,7 @@ export function CreateQuotaModal({ onClose, onSubmit, isSubmitting }: Props) {
           {/* Limit Amount */}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-700">
-              Spending Limit (₦)
+              Spending Limit (₱)
             </label>
             <input
               {...register('limitAmount', { valueAsNumber: true })}

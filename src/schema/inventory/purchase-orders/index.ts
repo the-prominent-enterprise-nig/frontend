@@ -123,6 +123,7 @@ export const PurchaseOrderSummarySchema = z.object({
   supplierId: z.string(),
   supplier: PoSupplierSchema,
   branchId: z.string().optional().nullable(),
+  branch: PoWarehouseSchema.optional().nullable(),
   warehouseId: z.string().optional().nullable(),
   warehouse: PoWarehouseSchema.optional().nullable(),
   orderDate: z.string().optional().nullable(),
