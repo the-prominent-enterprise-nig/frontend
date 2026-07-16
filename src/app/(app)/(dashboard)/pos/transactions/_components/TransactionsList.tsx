@@ -1093,6 +1093,7 @@ function TransactionDetail({
       {showRefund && (
         <RefundModal
           transaction={tx}
+          session={session}
           onClose={() => setShowRefund(false)}
           onSubmitted={() => {
             setShowRefund(false)
@@ -1113,10 +1114,12 @@ function TransactionDetail({
  * approval instead of completing instantly. */
 function RefundModal({
   transaction,
+  session,
   onClose,
   onSubmitted,
 }: {
   transaction: PosTransaction
+  session: SessionUser
   onClose: () => void
   onSubmitted: () => void
 }) {
@@ -1193,6 +1196,7 @@ function RefundModal({
         totalAmount: transaction.totalAmount,
         submittedAt: new Date().toISOString(),
         sessionId: refundSessionId,
+        submittedByUserId: session.id,
       })
 
       showToast({

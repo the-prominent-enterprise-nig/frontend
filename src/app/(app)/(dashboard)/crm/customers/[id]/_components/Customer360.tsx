@@ -7,6 +7,7 @@ import { ArrowLeft, BellPlus, Pencil, Trash2 } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import type { Customer, Lead, Interaction, Reminder } from '@/src/schema/crm/types'
+import type { InstallmentSchedule } from '@/src/schema/pos'
 
 type CustomerView = Customer & {
   leads: Lead[]
@@ -37,6 +38,10 @@ export default function Customer360({
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
+  const [installmentLoading, setInstallmentLoading] = useState(true)
+  const [installmentError, setInstallmentError] = useState<string | null>(null)
+
   async function handleDelete() {
     if (!data) return
     if (!confirm(`Delete ${data.name}? This can't be undone from here.`)) return
@@ -63,6 +68,14 @@ export default function Customer360({
       if (res.success && res.data) setData(res.data)
       else setError(res.error ?? 'Customer not found')
       setLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    customersApi.getInstallmentSchedules(id).then((res) => {
+      if (res.success && res.data) setInstallmentSchedules(res.data)
+      else setInstallmentError(res.error ?? 'Failed to load installment plans')
+      setInstallmentLoading(false)
     })
   }, [id])
 
@@ -197,6 +210,62 @@ export default function Customer360({
         </section>
       </div>
 
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
+          {installmentLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
+          ) : installmentError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
+          ) : installmentSchedules.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No installment plans for this customer.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {installmentSchedules.map((s) => (
+                <div key={s.id} className="rounded-lg border border-gray-100 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                    <span className="font-mono text-gray-500">
+                      {s.posTransaction?.transactionNumber ?? s.id}
+                    </span>
+                    <span className="text-gray-500">
+                      {s.termMonths} mo · {Number(s.factorRate).toFixed(2)}x · Down{' '}
+                      {formatPeso(s.downPayment)} · Total {formatPeso(s.totalPayable)}
+                    </span>
+                  </div>
+                  <ul className="mt-2 divide-y divide-gray-100">
+                    {s.lines.map((line) => (
+                      <li
+                        key={line.lineNumber}
+                        className="flex items-center justify-between py-1.5 text-[13px]"
+                      >
+                        <span className="text-gray-700">
+                          Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                          {new Date(line.arInvoice.dueDate).toLocaleDateString()}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium text-gray-800">
+                            {formatPeso(line.arInvoice.totalAmount)}
+                          </span>
+                          <InstallmentStatusBadge status={line.arInvoice.status} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href="/accounting/ar-invoices"
+                    className="mt-2 inline-block text-[12px] text-prominent-orange-700 hover:underline"
+                  >
+                    View full AR ledger →
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
       {canDelete && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
           <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
@@ -239,5 +308,40 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-gray-500">{label}</dt>
       <dd className="text-right font-medium text-gray-800">{value}</dd>
     </div>
+  )
+}
+
+function formatPeso(n: number) {
+  return `₱${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/
+// PAID/OVERDUE/CANCELLED) — "SENT" means "posted, awaiting payment", not that
+// a notification went out. Relabeled to the Paid/Due/Overdue language a
+// customer-facing installment schedule actually needs.
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  SENT: 'Due',
+  PARTIAL: 'Partially Paid',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  CANCELLED: 'Cancelled',
+}
+
+function InstallmentStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    PAID: 'bg-green-100 text-green-700',
+    PARTIAL: 'bg-amber-100 text-amber-700',
+    OVERDUE: 'bg-red-100 text-red-700',
+    SENT: 'bg-gray-100 text-gray-600',
+    DRAFT: 'bg-gray-100 text-gray-500',
+    CANCELLED: 'bg-gray-100 text-gray-400',
+  }
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
+    >
+      {STATUS_LABELS[status] ?? status}
+    </span>
   )
 }

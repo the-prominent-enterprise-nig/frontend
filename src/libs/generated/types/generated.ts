@@ -676,7 +676,7 @@ export interface paths {
     /** List transactions with optional filters (POS-09) */
     get: operations['TransactionsController_findAll']
     put?: never
-    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge (credit) sale are submitted as a pending release form request (an "Application Form" for charge sales); refunds are submitted as a pending return/refund request — all require manager approval. */
+    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales); refunds are submitted as a pending return/refund request — all require manager approval. */
     post: operations['TransactionsController_create']
     delete?: never
     options?: never
@@ -1527,6 +1527,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/customers/{id}/installment-schedules': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3) */
+    get: operations['PosCustomersController_getInstallmentSchedules']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/cashier/pin/status': {
     parameters: {
       query?: never
@@ -2147,6 +2164,76 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/financing-terms': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all installment financing terms */
+    get: operations['FinancingTermsController_findAll']
+    put?: never
+    /** Create an installment financing term */
+    post: operations['FinancingTermsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Live installment preview (monthly installment, total payable, due dates) for the checkout screen — uses the same pure calculation as actual posting time, so it can never drift from what gets posted */
+    post: operations['FinancingTermsController_preview']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/active': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List active financing terms selectable at checkout (branch-specific + tenant-wide) */
+    get: operations['FinancingTermsController_findActive']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get one financing term */
+    get: operations['FinancingTermsController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update a financing term (rate, active flag, notes) */
+    patch: operations['FinancingTermsController_update']
+    trace?: never
+  }
   '/inventory/items/images/bulk-import': {
     parameters: {
       query?: never
@@ -2266,6 +2353,26 @@ export interface paths {
     patch: operations['ItemsController_update']
     trace?: never
   }
+  '/inventory/items/bulk-import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Bulk-create items from a CSV upload
+     * @description Required columns: sku, name, baseUnitCode. Optional: description, costPrice, sellingPrice. baseUnitCode is matched against existing Unit of Measure codes for the tenant. Each row is processed independently — returns a summary of created items and per-row errors.
+     */
+    post: operations['ItemsController_bulkImport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/{id}/lifecycle': {
     parameters: {
       query?: never
@@ -2301,6 +2408,24 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/items/{id}/variants/{variantId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a variant (fails if the variant has stock on hand) */
+    delete: operations['ItemsController_removeVariant']
+    options?: never
+    head?: never
+    /** Update a variant — all fields are optional */
+    patch: operations['ItemsController_updateVariant']
+    trace?: never
+  }
   '/inventory/items/{id}/barcodes': {
     parameters: {
       query?: never
@@ -2314,6 +2439,23 @@ export interface paths {
     /** Add a barcode to an item or one of its variants */
     post: operations['ItemsController_createBarcode']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/barcodes/{barcodeId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a barcode from an item */
+    delete: operations['ItemsController_removeBarcode']
     options?: never
     head?: never
     patch?: never
@@ -5387,6 +5529,58 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/credit-memos': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List credit memos (filter by status/customer/invoice) */
+    get: operations['CreditMemosController_findAll']
+    put?: never
+    /** Issue a credit memo against an open invoice — posts the GL contra entry and reduces the AR balance */
+    post: operations['CreditMemosController_issue']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a credit memo by id */
+    get: operations['CreditMemosController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}/void': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Void a credit memo — reverses its journal entry and restores the invoice balance */
+    post: operations['CreditMemosController_void']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ap-bills': {
     parameters: {
       query?: never
@@ -7441,16 +7635,23 @@ export interface components {
       journalEntryId?: string
       notes?: string
       /**
-       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId)
+       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId); installment = splits the balance after downPayment into a financing-term schedule of AR invoices (requires customerId + financingTermId)
        * @default cash
        * @enum {string}
        */
-      invoiceType: 'cash' | 'charge'
+      invoiceType: 'cash' | 'charge' | 'installment'
       /**
        * @description Days until the AR invoice is due (charge invoices only). Defaults to 30.
        * @example 30
        */
       chargeDueDays?: number
+      /** @description Financing term to apply (installment invoices only) */
+      financingTermId?: string
+      /**
+       * @description Amount collected up front (installment invoices only). Defaults to 0.
+       * @example 3000
+       */
+      downPayment?: number
       /** @description SC/PWD discount — triggers 20% BIR-compliant discount on VAT-exclusive base with VAT exemption (POS-42/53) */
       scPwdDiscount?: components['schemas']['ScPwdDiscountDto']
       /**
@@ -7954,6 +8155,40 @@ export interface components {
       /** @description type=void only: per-line repair routing for serial-tracked units being restocked on approval. Lines not listed here default to "restock". */
       lineDecisions?: components['schemas']['VoidLineRepairDecisionDto'][]
     }
+    CreateFinancingTermDto: {
+      /** @description Leave empty for a tenant-wide term */
+      branchId?: string
+      /**
+       * @description Number of monthly installments
+       * @example 12
+       */
+      termMonths: number
+      /**
+       * @description Multiplier applied to the financed principal to get totalPayable (e.g. 1.15 = 15% total markup over the term)
+       * @example 1.15
+       */
+      factorRate: number
+      notes?: string
+    }
+    ComputeInstallmentPreviewDto: {
+      /**
+       * @description Full sale price (subtotal + tax)
+       * @example 30000
+       */
+      totalAmount: number
+      /**
+       * @description Amount collected up front. Defaults to 0.
+       * @example 6000
+       */
+      downPayment?: number
+      /** @description FinancingTerm id to preview the schedule against */
+      financingTermId: string
+    }
+    UpdateFinancingTermDto: {
+      factorRate?: number
+      isActive?: boolean
+      notes?: string
+    }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
       sku: string
@@ -8241,6 +8476,26 @@ export interface components {
        */
       priceOverride?: number
     }
+    UpdateVariantDto: {
+      /**
+       * @description Unique SKU for this variant
+       * @example ITEM-0001-RED-L
+       */
+      variantSku?: string
+      /**
+       * @description Key-value attributes that differentiate this variant
+       * @example {
+       *       "color": "Red",
+       *       "size": "L"
+       *     }
+       */
+      attributes?: Record<string, never>
+      /**
+       * @description Price override for this variant
+       * @example 275.0000
+       */
+      priceOverride?: number
+    }
     CreateBarcodeDto: {
       /**
        * @description Barcode value string
@@ -8443,8 +8698,6 @@ export interface components {
       status: 'active' | 'inactive'
     }
     CreateLocationDto: {
-      /** @description Parent warehouse ID */
-      warehouseId: string
       /**
        * @description Unique location code within warehouse
        * @example A-01
@@ -10007,6 +10260,21 @@ export interface components {
       payee?: string
       currencyId?: string
       transactions?: components['schemas']['TransactionLineDto'][]
+    }
+    CreateCreditMemoDto: {
+      /** @description AR invoice the credit memo is applied to */
+      arInvoiceId: string
+      /**
+       * @description Credit amount (must not exceed the invoice outstanding balance)
+       * @example 500
+       */
+      amount: number
+      /** @example Damaged goods returned */
+      reason?: string
+      /** @description Defaults to today when omitted */
+      memoDate?: string
+      /** @description Auto-generated when omitted */
+      memoNumber?: string
     }
     CreateExpenseDto: {
       /** @description Auto-generated when omitted */
@@ -13024,6 +13292,26 @@ export interface operations {
       }
     }
   }
+  PosCustomersController_getInstallmentSchedules: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of installment schedules */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   CashierPinController_getPinStatus: {
     parameters: {
       query?: never
@@ -13894,6 +14182,126 @@ export interface operations {
       }
     }
   }
+  FinancingTermsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateFinancingTermDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_preview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ComputeInstallmentPreviewDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_findActive: {
+    parameters: {
+      query?: {
+        branchId?: unknown
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateFinancingTermDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemImagesController_bulkImport: {
     parameters: {
       query?: never
@@ -14219,6 +14627,31 @@ export interface operations {
       }
     }
   }
+  ItemsController_bulkImport: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string
+        }
+      }
+    }
+    responses: {
+      /** @description { created: [...], errors: [...] } */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemsController_updateLifecycle: {
     parameters: {
       query?: never
@@ -14297,6 +14730,70 @@ export interface operations {
       }
     }
   }
+  ItemsController_removeVariant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Parent item UUID */
+        id: string
+        /** @description Variant UUID */
+        variantId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Variant removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Variant not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_updateVariant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Parent item UUID */
+        id: string
+        /** @description Variant UUID */
+        variantId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateVariantDto']
+      }
+    }
+    responses: {
+      /** @description Variant updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Variant not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemsController_findBarcodes: {
     parameters: {
       query?: never
@@ -14343,6 +14840,36 @@ export interface operations {
       }
       /** @description Barcode value already in use */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_removeBarcode: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+        /** @description Barcode UUID */
+        barcodeId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Barcode removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Barcode not found */
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -20027,6 +20554,87 @@ export interface operations {
     }
   }
   ARInvoicesController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ISSUED' | 'VOID'
+        customerId?: string
+        arInvoiceId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_issue: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCreditMemoDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_void: {
     parameters: {
       query?: never
       header?: never
