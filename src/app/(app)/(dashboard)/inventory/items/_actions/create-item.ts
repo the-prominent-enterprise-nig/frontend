@@ -3,8 +3,21 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateItemFormSchema, CreateItemFormValues } from '@/src/schema/inventory/items'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function createItem(input: unknown): Promise<ApiResponse<{ id: string }>> {
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to create items',
+    }
+  }
+
   const parsed = CreateItemFormSchema.safeParse(input)
   if (!parsed.success) {
     return {

@@ -8,6 +8,8 @@
     "start": "next start",
     "type-check": "tsc --noEmit",
     "test": "echo 'No test suite configured' && exit 0",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",
@@ -38,7 +40,9 @@
     "react-dom": "19.2.3",
     "react-grid-layout": "^2.2.3",
     "react-hook-form": "^7.71.2",
+    "react-phone-number-input": "^3.4.17",
     "react-select": "^5.10.2",
+    "select-philippines-address": "^1.0.6",
     "shadcn": "^4.0.6",
     "socket.io-client": "^4.8.3",
     "sonner": "^2.0.7",
@@ -49,6 +53,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@tanstack/eslint-plugin-query": "^5.91.4",
     "@types/node": "^20",
