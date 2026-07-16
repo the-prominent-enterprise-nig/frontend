@@ -84,6 +84,7 @@ export interface Agent {
   phone?: string | null
   email?: string | null
   status: AgentStatus
+  commissionRate?: number | null
   createdAt: string
   updatedAt: string
 }
