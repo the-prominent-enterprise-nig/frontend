@@ -2107,6 +2107,24 @@ export async function getPendingReleaseFormRequests(
   }
 }
 
+export async function getOwnReleaseFormRequests(): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/own',
+      undefined,
+      {
+        tags: [TAGS.releaseFormRequests],
+      }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch your release requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch your release requests' }
+  }
+}
+
 export async function getReleaseFormHistory(
   branchId?: string
 ): Promise<ApiResponse<PosReleaseFormRequest[]>> {

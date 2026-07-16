@@ -23,6 +23,13 @@ export function PendingRefundIndicator({ userId }: { userId: string | null }) {
   const [open, setOpen] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
 
+  // See PendingRfdIndicator for why this exists: zustand's persist()
+  // rehydrates from localStorage synchronously on the client before first
+  // paint, while the server always renders the default empty state — a
+  // real, pre-existing entry would otherwise mismatch null vs. the button.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   // localStorage isn't scoped per-account — see PendingRfdIndicator for why
   // this filter+prune pair exists.
   const entries = useMemo(
@@ -92,7 +99,7 @@ export function PendingRefundIndicator({ userId }: { userId: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries.length])
 
-  if (entries.length === 0) return null
+  if (!mounted || entries.length === 0) return null
 
   return (
     <div className="relative">

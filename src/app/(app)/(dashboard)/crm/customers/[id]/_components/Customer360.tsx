@@ -315,6 +315,19 @@ function formatPeso(n: number) {
   return `₱${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/
+// PAID/OVERDUE/CANCELLED) — "SENT" means "posted, awaiting payment", not that
+// a notification went out. Relabeled to the Paid/Due/Overdue language a
+// customer-facing installment schedule actually needs.
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  SENT: 'Due',
+  PARTIAL: 'Partially Paid',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  CANCELLED: 'Cancelled',
+}
+
 function InstallmentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PAID: 'bg-green-100 text-green-700',
@@ -322,12 +335,13 @@ function InstallmentStatusBadge({ status }: { status: string }) {
     OVERDUE: 'bg-red-100 text-red-700',
     SENT: 'bg-gray-100 text-gray-600',
     DRAFT: 'bg-gray-100 text-gray-500',
+    CANCELLED: 'bg-gray-100 text-gray-400',
   }
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
     >
-      {status}
+      {STATUS_LABELS[status] ?? status}
     </span>
   )
 }

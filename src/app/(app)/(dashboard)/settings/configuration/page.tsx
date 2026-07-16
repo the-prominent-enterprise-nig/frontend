@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { isAdmin } from '@/src/libs/guards/permission'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { canManagePosSettings } from '@/src/libs/guards/permission'
 import { getOwnerPaymentMethods } from './_actions/owner-payment-methods'
 import {
   getCashierPinStatus,
@@ -11,16 +10,10 @@ import { ConfigurationTabs } from './_components/ConfigurationTabs'
 
 export const metadata = { title: 'Configuration | Prominent Enterprise' }
 
-function canAccess(user: SessionUser): boolean {
-  if (isAdmin(user)) return true
-  const allRoles = [user.primaryRole ?? '', ...user.roles]
-  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
-}
-
 export default async function ConfigurationPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!canAccess(session)) redirect('/403')
+  if (!canManagePosSettings(session)) redirect('/403')
 
   const [paymentMethodsResult, pinStatusResult, brandingResult] = await Promise.all([
     getOwnerPaymentMethods(),

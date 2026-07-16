@@ -22,9 +22,16 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-type NavItem = { label: string; href: string; exact?: boolean; icon: LucideIcon }
+type NavItem = {
+  label: string
+  href: string
+  exact?: boolean
+  icon: LucideIcon
+  /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
+  configOnly?: boolean
+}
 
-const GROUPS = [
+const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
   {
     label: 'Operations',
     paths: ['/pos', '/pos/checkout', '/pos/parked-sales', '/pos/transactions'],
@@ -65,16 +72,26 @@ const GROUPS = [
       '/pos/financing-terms',
     ],
     items: [
-      { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen },
+      { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen, configOnly: true },
       { label: 'Cashier PIN', href: '/pos/pin', icon: KeyRound },
-      { label: 'Queue Categories', href: '/pos/queue-categories', icon: LayoutList },
-      { label: 'Financing Terms', href: '/pos/financing-terms', icon: HandCoins },
-      { label: 'Settings', href: '/pos/settings', icon: Settings },
+      {
+        label: 'Queue Categories',
+        href: '/pos/queue-categories',
+        icon: LayoutList,
+        configOnly: true,
+      },
+      {
+        label: 'Financing Terms',
+        href: '/pos/financing-terms',
+        icon: HandCoins,
+        configOnly: true,
+      },
+      { label: 'Settings', href: '/pos/settings', icon: Settings, configOnly: true },
     ] satisfies NavItem[],
   },
 ]
 
-export function PosNav() {
+export function PosNav({ canConfigurePos }: { canConfigurePos: boolean }) {
   const pathname = usePathname()
 
   // Standalone pages (approvals, void/refund requests, cancellation
@@ -85,9 +102,11 @@ export function PosNav() {
   const activeGroup = GROUPS.find((g) => g.paths.includes(pathname))
   if (!activeGroup) return null
 
+  const visibleItems = activeGroup.items.filter((item) => canConfigurePos || !item.configOnly)
+
   return (
     <nav className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {activeGroup.items.map((item) => {
+      {visibleItems.map((item) => {
         const { label, href, exact } = item
         const active = exact ? pathname === href : pathname.startsWith(href)
         return (

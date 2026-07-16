@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import {
   getPendingReleaseFormRequests,
+  getOwnReleaseFormRequests,
   getReleaseFormHistory,
   approveReleaseFormRequest,
   rejectReleaseFormRequest,
@@ -139,9 +140,15 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
   const [historyError, setHistoryError] = useState('')
 
   async function load() {
-    const res = await getPendingReleaseFormRequests(branchId ?? undefined)
+    const res = isManager
+      ? await getPendingReleaseFormRequests(branchId ?? undefined)
+      : await getOwnReleaseFormRequests()
     if (res.success && res.data) {
-      setRequests(res.data)
+      // Cashiers fetch their own requests of any status (there's no
+      // branch-wide pending endpoint they're allowed to call) — the queue
+      // here only shows the still-pending ones, matching what a manager
+      // sees; resolved ones show up in History instead, same as a manager.
+      setRequests(isManager ? res.data : res.data.filter((r) => r.status === 'pending'))
       setLoadError('')
     } else if (!res.success) {
       setLoadError(res.error ?? 'Failed to load release approvals.')
@@ -158,9 +165,11 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
 
   async function loadHistory() {
     setHistoryLoading(true)
-    const res = await getReleaseFormHistory(branchId ?? undefined)
+    const res = isManager
+      ? await getReleaseFormHistory(branchId ?? undefined)
+      : await getOwnReleaseFormRequests()
     if (res.success && res.data) {
-      setHistoryRequests(res.data)
+      setHistoryRequests(isManager ? res.data : res.data.filter((r) => r.status !== 'pending'))
       setHistoryError('')
     } else if (!res.success) {
       setHistoryError(res.error ?? 'Failed to load history.')

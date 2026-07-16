@@ -33,7 +33,6 @@ import { computePricingTotals } from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
-import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
@@ -216,13 +215,11 @@ export default function CheckoutPage() {
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
   const [isBranchManager, setIsBranchManager] = useState(false)
-  const [authUserId, setAuthUserId] = useState<string | null>(null)
   useEffect(() => {
     getSessionOrNull().then((s) => {
       if (!s) return
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
-      setAuthUserId(s.id ?? null)
     })
   }, [])
 
@@ -1138,7 +1135,7 @@ export default function CheckoutPage() {
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
-          const { releaseFormRequestId, sessionId: rfdSessionId } = txRes.data
+          const { releaseFormRequestId } = txRes.data
           const serialLines = cart
             .filter((l) => l.isSerialTracked)
             .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
@@ -1154,23 +1151,6 @@ export default function CheckoutPage() {
                   itemName: l.itemName,
                   serialNumberLabel: `×${l.quantity}`,
                 }))
-          const itemNameSummary =
-            serialLines.length === 1
-              ? serialLines[0].itemName
-              : serialLines.length > 1
-                ? `${serialLines.length} serial-tracked items`
-                : cart.length === 1
-                  ? cart[0].itemName
-                  : `${cart.length} items`
-
-          usePosPendingRfdStore.getState().add({
-            releaseFormRequestId,
-            itemName: itemNameSummary,
-            totalAmount,
-            submittedAt: new Date().toISOString(),
-            sessionId: rfdSessionId,
-            submittedByUserId: authUserId ?? '',
-          })
 
           updateSessionDisplay(sessionId, {
             status: 'idle',
@@ -3625,7 +3605,6 @@ function PendingApprovalScreen({
       setCancelError(res.error ?? 'Failed to cancel request.')
       return
     }
-    usePosPendingRfdStore.getState().remove(releaseFormRequestId)
     onReset()
   }
 
