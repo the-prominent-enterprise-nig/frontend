@@ -1,5 +1,5 @@
 import { test as setup, expect } from '@playwright/test'
-import { gotoReady, fillStable } from './utils'
+import { gotoReady, fillAllStable } from './utils'
 
 const authFile = 'e2e/.auth/business-owner.json'
 
@@ -16,13 +16,20 @@ const PASSWORD = process.env.E2E_OWNER_PASSWORD ?? 'dev-prominent-enterprise-202
 setup('authenticate as business owner', async ({ page }) => {
   await gotoReady(page, '/login')
 
-  await fillStable(page.locator('#email'), EMAIL)
-  await fillStable(page.locator('#password'), PASSWORD)
+  await fillAllStable([
+    { locator: page.locator('#email'), value: EMAIL },
+    { locator: page.locator('#password'), value: PASSWORD },
+  ])
 
-  await page.click('button[type="submit"]')
-
-  // LoginForm redirects to '/' on success.
-  await expect(page).toHaveURL('/', { timeout: 15_000 })
+  // The submit button's onClick can still be un-hydrated the instant the form
+  // finishes filling (same race fillStable works around for inputs) — retry
+  // the click until the post-login redirect actually happens, rather than a
+  // one-shot click that can silently no-op.
+  await expect(async () => {
+    await page.click('button[type="submit"]')
+    // LoginForm redirects to '/' on success.
+    await expect(page).toHaveURL('/', { timeout: 8_000 })
+  }).toPass({ timeout: 20_000 })
 
   await page.context().storageState({ path: authFile })
 })

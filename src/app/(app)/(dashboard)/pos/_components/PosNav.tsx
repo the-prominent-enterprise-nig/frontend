@@ -10,7 +10,6 @@ import {
   Clock,
   Wallet,
   Monitor,
-  UtensilsCrossed,
   Tag,
   Gift,
   Star,
@@ -37,12 +36,11 @@ const GROUPS = [
   },
   {
     label: 'Management',
-    paths: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals', '/pos/menu-items'],
+    paths: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
     items: [
       { label: 'Sessions', href: '/pos/sessions', icon: Clock },
       { label: 'Cash Drawer', href: '/pos/cash-drawer', icon: Wallet },
       { label: 'Terminals', href: '/pos/terminals', icon: Monitor },
-      { label: 'Menu Items', href: '/pos/menu-items', icon: UtensilsCrossed },
     ] satisfies NavItem[],
   },
   {
