@@ -38,7 +38,6 @@ import {
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
-import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
@@ -68,6 +67,8 @@ import {
   submitCancellationRequest,
   getCancellationRequestStatus,
   cancelReleaseFormRequest,
+  getActiveFinancingTerms,
+  previewInstallment,
   type SerialNumberRecord,
 } from '../_actions/pos-actions'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
@@ -81,6 +82,8 @@ import type {
   PosTransaction,
   SyncTransactionItem,
   ScPwdDiscountInput,
+  FinancingTerm,
+  InstallmentPreview,
 } from '@/src/schema/pos'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -285,8 +288,17 @@ export default function CheckoutPage() {
   >([])
 
   // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
+  // | 'installment' (down payment now + the rest financed into an AR schedule)
   const [invoiceType, setInvoiceType] = useState<PosInvoiceType>('cash')
   const [chargeDueDays, setChargeDueDays] = useState(30)
+
+  // Installment financing
+  const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+  const [financingTermId, setFinancingTermId] = useState('')
+  const [downPaymentInput, setDownPaymentInput] = useState('0')
+  const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview | null>(null)
+  const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState(false)
+  const installmentPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -339,6 +351,7 @@ export default function CheckoutPage() {
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     invoiceType?: PosInvoiceType
+    installmentPreview?: InstallmentPreview | null
   } | null>(null)
 
   // Pending manager approval (serial-tracked sale awaiting Release Form review)
@@ -644,6 +657,33 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
+  // ─── Installment financing ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (invoiceType !== 'installment') return
+    getActiveFinancingTerms(activeBranchId ?? undefined).then((res) => {
+      setFinancingTerms(res.data ?? [])
+    })
+  }, [invoiceType, activeBranchId])
+
+  useEffect(() => {
+    if (invoiceType !== 'installment' || !financingTermId || totalAmount <= 0) {
+      setInstallmentPreview(null)
+      return
+    }
+    if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
+    installmentPreviewTimer.current = setTimeout(async () => {
+      setInstallmentPreviewLoading(true)
+      const downPayment = parseFloat(downPaymentInput) || 0
+      const res = await previewInstallment({ totalAmount, downPayment, financingTermId })
+      setInstallmentPreview(res.success ? (res.data ?? null) : null)
+      setInstallmentPreviewLoading(false)
+    }, 300)
+    return () => {
+      if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
+    }
+  }, [invoiceType, financingTermId, downPaymentInput, totalAmount])
+
   // ─── Push cart to customer display ────────────────────────────────────────
 
   const displayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -925,6 +965,24 @@ export default function CheckoutPage() {
         setError('Charge invoices require an active network connection.')
         return
       }
+    } else if (invoiceType === 'installment') {
+      if (!selectedCustomer) {
+        setError('A customer must be selected for an installment sale.')
+        return
+      }
+      if (!financingTermId) {
+        setError('Select a financing term for this installment sale.')
+        return
+      }
+      const downPayment = parseFloat(downPaymentInput) || 0
+      if (downPayment < 0 || downPayment > totalAmount) {
+        setError('Down payment must be between 0 and the total sale amount.')
+        return
+      }
+      if (isOffline) {
+        setError('Installment sales require an active network connection.')
+        return
+      }
     } else {
       if (payments.length === 0) {
         setError('Add at least one payment method.')
@@ -1011,6 +1069,9 @@ export default function CheckoutPage() {
           transactionType: 'sale',
           invoiceType,
           chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
+          financingTermId: invoiceType === 'installment' ? financingTermId : undefined,
+          downPayment:
+            invoiceType === 'installment' ? parseFloat(downPaymentInput) || 0 : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1094,22 +1155,22 @@ export default function CheckoutPage() {
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
-          const { releaseFormRequestId, sessionId: rfdSessionId } = txRes.data
+          const { releaseFormRequestId } = txRes.data
           const serialLines = cart
             .filter((l) => l.isSerialTracked)
             .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
-          const itemNameSummary =
-            serialLines.length === 1
-              ? serialLines[0].itemName
-              : `${serialLines.length} serial-tracked items`
-
-          usePosPendingRfdStore.getState().add({
-            releaseFormRequestId,
-            itemName: itemNameSummary,
-            totalAmount,
-            submittedAt: new Date().toISOString(),
-            sessionId: rfdSessionId,
-          })
+          // A charge/installment sale can reach pending-approval with zero
+          // serial-tracked lines (that's not just a serialized-item flow
+          // anymore) — fall back to describing/listing the cart itself
+          // rather than producing a nonsensical "0 serial-tracked items"
+          // label and an empty line-items area on the pending screen.
+          const displayLines =
+            serialLines.length > 0
+              ? serialLines
+              : cart.map((l) => ({
+                  itemName: l.itemName,
+                  serialNumberLabel: `×${l.quantity}`,
+                }))
 
           updateSessionDisplay(sessionId, {
             status: 'idle',
@@ -1122,7 +1183,7 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
           return
         }
 
@@ -1228,6 +1289,7 @@ export default function CheckoutPage() {
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
         invoiceType,
+        installmentPreview: invoiceType === 'installment' ? installmentPreview : null,
       })
     } catch (err) {
       console.error('[POS] handleConfirm error:', err)
@@ -1261,6 +1323,9 @@ export default function CheckoutPage() {
     setFromTab(null)
     setInvoiceType('cash')
     setChargeDueDays(30)
+    setFinancingTermId('')
+    setDownPaymentInput('0')
+    setInstallmentPreview(null)
     localStorage.removeItem(POS_FROM_TAB_KEY)
     setCancellationReqId(null)
     if (cancellationPollRef.current) {
@@ -2179,6 +2244,19 @@ export default function CheckoutPage() {
                   Bill to customer account
                 </span>
               </button>
+              <button
+                onClick={() => setInvoiceType('installment')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'installment'
+                    ? 'border-prominent-purple-500 bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Installment
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Down payment + financed schedule
+                </span>
+              </button>
             </div>
             {invoiceType === 'charge' && (
               <div className="mt-2.5 space-y-2">
@@ -2199,6 +2277,86 @@ export default function CheckoutPage() {
                   />
                   <label className="text-xs text-gray-500">days</label>
                 </div>
+              </div>
+            )}
+            {invoiceType === 'installment' && (
+              <div className="mt-2.5 space-y-2">
+                {!selectedCustomer && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    A customer must be selected for an installment sale.
+                  </p>
+                )}
+                <div>
+                  <label className="mb-1 block text-[11px] text-gray-500">Financing Term</label>
+                  <div className="relative">
+                    <select
+                      value={financingTermId}
+                      onChange={(e) => setFinancingTermId(e.target.value)}
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                    >
+                      <option value="">Select a term…</option>
+                      {financingTerms.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
+                          {t.branch ? ` · ${t.branch.name}` : ' · Tenant-wide'}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={12}
+                      className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500 whitespace-nowrap">Down payment</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    max={totalAmount}
+                    value={downPaymentInput}
+                    onChange={(e) => setDownPaymentInput(e.target.value)}
+                    className="w-28 rounded-lg border border-gray-200 px-2 py-1.5 text-right font-mono text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                  />
+                </div>
+                {financingTermId && (
+                  <div className="rounded-lg bg-prominent-purple-50 px-3 py-2 text-xs text-prominent-purple-700">
+                    {installmentPreviewLoading ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 size={11} className="animate-spin" /> Calculating…
+                      </span>
+                    ) : installmentPreview ? (
+                      <div className="space-y-0.5">
+                        <div className="flex justify-between">
+                          <span>Monthly Installment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(installmentPreview.monthlyInstallment)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Payable</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(installmentPreview.totalPayable)}
+                          </span>
+                        </div>
+                        {installmentPreview.lines[0] && (
+                          <div className="flex justify-between opacity-80">
+                            <span>First due</span>
+                            <span>
+                              {new Date(installmentPreview.lines[0].dueDate).toLocaleDateString(
+                                'en-PH',
+                                { month: 'short', day: 'numeric', year: 'numeric' }
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="opacity-70">Preview unavailable.</span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2231,6 +2389,23 @@ export default function CheckoutPage() {
                   <p className="mt-2 rounded-lg bg-blue-100 px-3 py-1.5 text-[11px] font-medium text-blue-700">
                     {customerDisplayName(selectedCustomer)} · Due in {chargeDueDays} day
                     {chargeDueDays !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            ) : invoiceType === 'installment' ? (
+              <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-5 text-center">
+                <Receipt size={20} className="mx-auto mb-2 text-prominent-purple-400" />
+                <p className="text-xs font-medium text-prominent-purple-700">
+                  Installment plan will be created
+                </p>
+                <p className="mt-1 text-[11px] text-prominent-purple-500">
+                  The down payment (if any) is collected once approved; the rest is financed into an
+                  AR schedule of monthly dues.
+                </p>
+                {selectedCustomer && (
+                  <p className="mt-2 rounded-lg bg-prominent-purple-100 px-3 py-1.5 text-[11px] font-medium text-prominent-purple-700">
+                    {customerDisplayName(selectedCustomer)} · Down payment{' '}
+                    {fmt(parseFloat(downPaymentInput) || 0)}
                   </p>
                 )}
               </div>
@@ -2446,12 +2621,15 @@ export default function CheckoutPage() {
                 ) ||
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
+                (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
                 (needsManagerOverride && !managerOverrideApproved)
               }
               className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
                 invoiceType === 'charge'
                   ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-purple-700 hover:bg-purple-800'
+                  : invoiceType === 'installment'
+                    ? 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
+                    : 'bg-purple-700 hover:bg-purple-800'
               }`}
             >
               {submitting
@@ -2466,17 +2644,23 @@ export default function CheckoutPage() {
                     ? 'Select serial numbers to continue'
                     : invoiceType === 'charge' && !selectedCustomer
                       ? 'Select a customer to charge'
-                      : invoiceType === 'cash' && balance > 0.009
-                        ? `Underpaid by ${fmt(balance)}`
-                        : invoiceType === 'cash' && loyaltyOverBalance
-                          ? 'Insufficient loyalty points'
-                          : needsManagerOverride && !managerOverrideApproved
-                            ? 'Manager override required'
-                            : cart.some((l) => l.isSerialTracked)
-                              ? `Submit for Approval — ${fmt(totalAmount)}`
-                              : invoiceType === 'charge'
-                                ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                : `Confirm Sale — ${fmt(totalAmount)}`}
+                      : invoiceType === 'installment' && !selectedCustomer
+                        ? 'Select a customer for installment'
+                        : invoiceType === 'installment' && !financingTermId
+                          ? 'Select a financing term'
+                          : invoiceType === 'cash' && balance > 0.009
+                            ? `Underpaid by ${fmt(balance)}`
+                            : invoiceType === 'cash' && loyaltyOverBalance
+                              ? 'Insufficient loyalty points'
+                              : needsManagerOverride && !managerOverrideApproved
+                                ? 'Manager override required'
+                                : cart.some((l) => l.isSerialTracked)
+                                  ? `Submit for Approval — ${fmt(totalAmount)}`
+                                  : invoiceType === 'charge'
+                                    ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                    : invoiceType === 'installment'
+                                      ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                      : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -3076,6 +3260,7 @@ function SuccessScreen({
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     invoiceType?: PosInvoiceType
+    installmentPreview?: InstallmentPreview | null
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -3136,13 +3321,17 @@ function SuccessScreen({
     ? 'border-amber-200'
     : success.invoiceType === 'charge'
       ? 'border-blue-100'
-      : 'border-green-100'
+      : success.invoiceType === 'installment'
+        ? 'border-prominent-purple-100'
+        : 'border-green-100'
 
   const iconBg = success.offlineBuffered
     ? 'bg-amber-100'
     : success.invoiceType === 'charge'
       ? 'bg-blue-100'
-      : 'bg-green-100'
+      : success.invoiceType === 'installment'
+        ? 'bg-prominent-purple-100'
+        : 'bg-green-100'
 
   return (
     <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
@@ -3156,8 +3345,15 @@ function SuccessScreen({
             <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
               {success.offlineBuffered ? (
                 <WifiOff size={28} className="text-amber-600" />
-              ) : success.invoiceType === 'charge' ? (
-                <Receipt size={28} className="text-blue-600" />
+              ) : success.invoiceType === 'charge' || success.invoiceType === 'installment' ? (
+                <Receipt
+                  size={28}
+                  className={
+                    success.invoiceType === 'installment'
+                      ? 'text-prominent-purple-600'
+                      : 'text-blue-600'
+                  }
+                />
               ) : (
                 <CheckCircle2 size={28} className="text-green-600" />
               )}
@@ -3168,7 +3364,9 @@ function SuccessScreen({
                   ? 'Sale Buffered (Offline)'
                   : success.invoiceType === 'charge'
                     ? 'Charge Invoice Issued'
-                    : 'Sale Complete'}
+                    : success.invoiceType === 'installment'
+                      ? 'Installment Plan Created'
+                      : 'Sale Complete'}
               </p>
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
@@ -3176,11 +3374,32 @@ function SuccessScreen({
                 <p className="mt-1 text-sm text-blue-500">
                   AR invoice posted — payment due from customer.
                 </p>
+              ) : success.invoiceType === 'installment' ? (
+                <p className="mt-1 text-sm text-prominent-purple-500">
+                  Down payment collected; the rest is financed into an AR schedule.
+                </p>
               ) : (
                 <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
               )}
             </div>
           </div>
+
+          {success.invoiceType === 'installment' && success.installmentPreview && (
+            <div className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700">
+              <div className="flex justify-between">
+                <span>Monthly Installment</span>
+                <span className="font-mono font-semibold">
+                  {fmt(success.installmentPreview.monthlyInstallment)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Total Payable</span>
+                <span className="font-mono font-semibold">
+                  {fmt(success.installmentPreview.totalPayable)}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Total charged */}
           <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
@@ -3411,7 +3630,6 @@ function PendingApprovalScreen({
       setCancelError(res.error ?? 'Failed to cancel request.')
       return
     }
-    usePosPendingRfdStore.getState().remove(releaseFormRequestId)
     onReset()
   }
 

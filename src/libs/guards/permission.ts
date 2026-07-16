@@ -147,3 +147,15 @@ export function isAdmin(user: SessionUser): boolean {
   if (hasPrivilegedRole(user)) return true
   return ADMIN_ROLE_PERMISSIONS.some((p) => can(user, p))
 }
+
+/**
+ * Business Owner or Branch Manager only — the two roles allowed to configure
+ * POS-wide settings (GL mapping, discount/stock thresholds, financing terms,
+ * etc). Deliberately narrower than `can(user, 'pos:*')`, which loosely
+ * matches any single pos:x:y permission a Cashier also happens to hold.
+ */
+export function canManagePosSettings(user: SessionUser): boolean {
+  if (isAdmin(user)) return true
+  const allRoles = [user.primaryRole ?? '', ...user.roles]
+  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
+}

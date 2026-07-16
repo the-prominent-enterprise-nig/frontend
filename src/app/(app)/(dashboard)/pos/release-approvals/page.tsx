@@ -11,7 +11,7 @@ export const metadata = {
 export default async function ReleaseApprovalsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)) redirect('/403')
+  if (!can(session, POS_PERMISSIONS.TRANSACTIONS_READ)) redirect('/pos')
 
   const isManager = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
 
