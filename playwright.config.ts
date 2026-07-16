@@ -7,6 +7,13 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  // Next dev-mode compiles each route's bundle on first hit rather than
+  // ahead of time — with multiple workers, several specs cold-compiling
+  // different routes at once can make the single shared dev server slow
+  // enough to blow past even generous per-attempt retry budgets (observed:
+  // a spec that passes in ~4s alone can time out entirely at 3 workers).
+  // One worker trades suite speed for a server that's never contended.
+  workers: 1,
   reporter: 'html',
   // Next dev-mode compiles routes on demand and keeps long-lived connections
   // open (HMR, etc.), so the browser's 'load' event is unreliable here —

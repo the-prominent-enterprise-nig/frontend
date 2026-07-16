@@ -71,6 +71,7 @@ export default function CreateItemModal({
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: false,
+      requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
       hasVariants: false,
@@ -490,6 +491,7 @@ export default function CreateItemModal({
                 [
                   { name: 'isBatchTracked', label: 'Batch Tracking' },
                   { name: 'isSerialTracked', label: 'Serial Tracking' },
+                  { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
                   { name: 'isExpiryTracked', label: 'Expiry Tracking' },
                   { name: 'isBundle', label: 'Bundle Item' },
                 ] as const
