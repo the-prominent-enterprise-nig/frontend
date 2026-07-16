@@ -230,7 +230,10 @@ export function useCreateTransaction() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateTransactionInput) => createTransaction(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+      qc.invalidateQueries({ queryKey: ['pos-sessions'] })
+    },
   })
 }
 
@@ -278,7 +281,10 @@ export function useSyncTransactions() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: SyncTransactionsInput) => syncTransactions(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+      qc.invalidateQueries({ queryKey: ['pos-sessions'] })
+    },
   })
 }
 
