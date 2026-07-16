@@ -15,6 +15,7 @@ import {
   Settings,
   Palette,
   CreditCard,
+  HandCoins,
 } from 'lucide-react'
 
 export const metadata = { title: 'POS Settings' }
@@ -79,6 +80,12 @@ const sections = [
     description: 'Live order summary for customer-facing screen.',
     href: '/pos/customer-display',
     icon: Tv2,
+  },
+  {
+    label: 'Financing Terms',
+    description: 'Configure installment terms (months + markup) for checkout.',
+    href: '/pos/financing-terms',
+    icon: HandCoins,
   },
 ]
 

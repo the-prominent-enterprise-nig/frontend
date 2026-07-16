@@ -676,7 +676,7 @@ export interface paths {
     /** List transactions with optional filters (POS-09) */
     get: operations['TransactionsController_findAll']
     put?: never
-    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge (credit) sale are submitted as a pending release form request (an "Application Form" for charge sales); refunds are submitted as a pending return/refund request — all require manager approval. */
+    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales); refunds are submitted as a pending return/refund request — all require manager approval. */
     post: operations['TransactionsController_create']
     delete?: never
     options?: never
@@ -1527,6 +1527,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/customers/{id}/installment-schedules': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3) */
+    get: operations['PosCustomersController_getInstallmentSchedules']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/cashier/pin/status': {
     parameters: {
       query?: never
@@ -2145,6 +2162,76 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List all installment financing terms */
+    get: operations['FinancingTermsController_findAll']
+    put?: never
+    /** Create an installment financing term */
+    post: operations['FinancingTermsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/preview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Live installment preview (monthly installment, total payable, due dates) for the checkout screen — uses the same pure calculation as actual posting time, so it can never drift from what gets posted */
+    post: operations['FinancingTermsController_preview']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/active': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List active financing terms selectable at checkout (branch-specific + tenant-wide) */
+    get: operations['FinancingTermsController_findActive']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/financing-terms/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get one financing term */
+    get: operations['FinancingTermsController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update a financing term (rate, active flag, notes) */
+    patch: operations['FinancingTermsController_update']
     trace?: never
   }
   '/inventory/items/images/bulk-import': {
@@ -7441,16 +7528,23 @@ export interface components {
       journalEntryId?: string
       notes?: string
       /**
-       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId)
+       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId); installment = splits the balance after downPayment into a financing-term schedule of AR invoices (requires customerId + financingTermId)
        * @default cash
        * @enum {string}
        */
-      invoiceType: 'cash' | 'charge'
+      invoiceType: 'cash' | 'charge' | 'installment'
       /**
        * @description Days until the AR invoice is due (charge invoices only). Defaults to 30.
        * @example 30
        */
       chargeDueDays?: number
+      /** @description Financing term to apply (installment invoices only) */
+      financingTermId?: string
+      /**
+       * @description Amount collected up front (installment invoices only). Defaults to 0.
+       * @example 3000
+       */
+      downPayment?: number
       /** @description SC/PWD discount — triggers 20% BIR-compliant discount on VAT-exclusive base with VAT exemption (POS-42/53) */
       scPwdDiscount?: components['schemas']['ScPwdDiscountDto']
       /**
@@ -7953,6 +8047,40 @@ export interface components {
       reviewNotes?: string
       /** @description type=void only: per-line repair routing for serial-tracked units being restocked on approval. Lines not listed here default to "restock". */
       lineDecisions?: components['schemas']['VoidLineRepairDecisionDto'][]
+    }
+    CreateFinancingTermDto: {
+      /** @description Leave empty for a tenant-wide term */
+      branchId?: string
+      /**
+       * @description Number of monthly installments
+       * @example 12
+       */
+      termMonths: number
+      /**
+       * @description Multiplier applied to the financed principal to get totalPayable (e.g. 1.15 = 15% total markup over the term)
+       * @example 1.15
+       */
+      factorRate: number
+      notes?: string
+    }
+    ComputeInstallmentPreviewDto: {
+      /**
+       * @description Full sale price (subtotal + tax)
+       * @example 30000
+       */
+      totalAmount: number
+      /**
+       * @description Amount collected up front. Defaults to 0.
+       * @example 6000
+       */
+      downPayment?: number
+      /** @description FinancingTerm id to preview the schedule against */
+      financingTermId: string
+    }
+    UpdateFinancingTermDto: {
+      factorRate?: number
+      isActive?: boolean
+      notes?: string
     }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
@@ -13024,6 +13152,26 @@ export interface operations {
       }
     }
   }
+  PosCustomersController_getInstallmentSchedules: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of installment schedules */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   CashierPinController_getPinStatus: {
     parameters: {
       query?: never
@@ -13887,6 +14035,126 @@ export interface operations {
     }
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateFinancingTermDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_preview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ComputeInstallmentPreviewDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_findActive: {
+    parameters: {
+      query?: {
+        branchId?: unknown
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  FinancingTermsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateFinancingTermDto']
+      }
+    }
+    responses: {
+      200: {
         headers: {
           [name: string]: unknown
         }

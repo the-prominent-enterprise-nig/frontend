@@ -43,6 +43,12 @@ import type {
   BranchPricing,
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
+  FinancingTerm,
+  CreateFinancingTermInput,
+  UpdateFinancingTermInput,
+  ComputeInstallmentPreviewInput,
+  InstallmentPreview,
+  InstallmentSchedule,
   ParkedSale,
   ParkSaleInput,
   HandoverSessionInput,
@@ -85,6 +91,7 @@ const TAGS = {
   loyaltyProgram: 'pos-loyalty-program',
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
   branchPricing: 'pos-branch-pricing',
+  financingTerms: 'pos-financing-terms',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
   receiptBranding: 'pos-receipt-branding',
@@ -840,6 +847,100 @@ export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>
     return { success: true }
   } catch {
     return { success: false, error: 'Failed to delete branch pricing' }
+  }
+}
+
+// ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
+
+export async function getFinancingTerms(): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>('/pos/financing-terms', undefined, {
+      tags: [TAGS.financingTerms],
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch financing terms' }
+  }
+}
+
+export async function getActiveFinancingTerms(
+  branchId?: string
+): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>(
+      '/pos/financing-terms/active',
+      branchId ? { branchId } : undefined
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch active financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch active financing terms' }
+  }
+}
+
+export async function createFinancingTerm(
+  input: CreateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.post<FinancingTerm>('/pos/financing-terms', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create financing term' }
+  }
+}
+
+export async function updateFinancingTerm(
+  id: string,
+  input: UpdateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.patch<FinancingTerm>(`/pos/financing-terms/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update financing term' }
+  }
+}
+
+export async function previewInstallment(
+  input: ComputeInstallmentPreviewInput
+): Promise<ApiResponse<InstallmentPreview>> {
+  try {
+    const result = await api.post<InstallmentPreview>('/pos/financing-terms/preview', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to compute installment preview' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function getCustomerInstallmentSchedules(
+  customerId: string
+): Promise<ApiResponse<InstallmentSchedule[]>> {
+  try {
+    const result = await api.get<InstallmentSchedule[]>(
+      `/pos/customers/${customerId}/installment-schedules`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch installment schedules' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch installment schedules' }
   }
 }
 
