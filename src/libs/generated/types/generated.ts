@@ -2353,6 +2353,26 @@ export interface paths {
     patch: operations['ItemsController_update']
     trace?: never
   }
+  '/inventory/items/bulk-import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Bulk-create items from a CSV upload
+     * @description Required columns: sku, name, baseUnitCode. Optional: description, costPrice, sellingPrice. baseUnitCode is matched against existing Unit of Measure codes for the tenant. Each row is processed independently — returns a summary of created items and per-row errors.
+     */
+    post: operations['ItemsController_bulkImport']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/{id}/lifecycle': {
     parameters: {
       query?: never
@@ -2388,6 +2408,24 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/items/{id}/variants/{variantId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a variant (fails if the variant has stock on hand) */
+    delete: operations['ItemsController_removeVariant']
+    options?: never
+    head?: never
+    /** Update a variant — all fields are optional */
+    patch: operations['ItemsController_updateVariant']
+    trace?: never
+  }
   '/inventory/items/{id}/barcodes': {
     parameters: {
       query?: never
@@ -2401,6 +2439,23 @@ export interface paths {
     /** Add a barcode to an item or one of its variants */
     post: operations['ItemsController_createBarcode']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/barcodes/{barcodeId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Remove a barcode from an item */
+    delete: operations['ItemsController_removeBarcode']
     options?: never
     head?: never
     patch?: never
@@ -8421,6 +8476,26 @@ export interface components {
        */
       priceOverride?: number
     }
+    UpdateVariantDto: {
+      /**
+       * @description Unique SKU for this variant
+       * @example ITEM-0001-RED-L
+       */
+      variantSku?: string
+      /**
+       * @description Key-value attributes that differentiate this variant
+       * @example {
+       *       "color": "Red",
+       *       "size": "L"
+       *     }
+       */
+      attributes?: Record<string, never>
+      /**
+       * @description Price override for this variant
+       * @example 275.0000
+       */
+      priceOverride?: number
+    }
     CreateBarcodeDto: {
       /**
        * @description Barcode value string
@@ -8623,8 +8698,6 @@ export interface components {
       status: 'active' | 'inactive'
     }
     CreateLocationDto: {
-      /** @description Parent warehouse ID */
-      warehouseId: string
       /**
        * @description Unique location code within warehouse
        * @example A-01
@@ -14554,6 +14627,31 @@ export interface operations {
       }
     }
   }
+  ItemsController_bulkImport: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string
+        }
+      }
+    }
+    responses: {
+      /** @description { created: [...], errors: [...] } */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemsController_updateLifecycle: {
     parameters: {
       query?: never
@@ -14632,6 +14730,70 @@ export interface operations {
       }
     }
   }
+  ItemsController_removeVariant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Parent item UUID */
+        id: string
+        /** @description Variant UUID */
+        variantId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Variant removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Variant not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_updateVariant: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Parent item UUID */
+        id: string
+        /** @description Variant UUID */
+        variantId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateVariantDto']
+      }
+    }
+    responses: {
+      /** @description Variant updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Variant not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemsController_findBarcodes: {
     parameters: {
       query?: never
@@ -14678,6 +14840,36 @@ export interface operations {
       }
       /** @description Barcode value already in use */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_removeBarcode: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+        /** @description Barcode UUID */
+        barcodeId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Barcode removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Barcode not found */
+      404: {
         headers: {
           [name: string]: unknown
         }
