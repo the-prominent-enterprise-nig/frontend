@@ -10,6 +10,7 @@ import {
   ExternalLink,
   BookOpen,
   ClipboardList,
+  Landmark,
 } from 'lucide-react'
 import { useGoodsReceiving } from '../_hooks/useGoodsReceiving'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -19,14 +20,16 @@ import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
 import ReceiveStockModal from './ReceiveStockModal'
 import StockLedgerTab from './StockLedgerTab'
 import ReceivingReportsTab from './ReceivingReportsTab'
+import WithholdingSummaryTab from './WithholdingSummaryTab'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 
-type Tab = 'balances' | 'ledger' | 'reports'
+type Tab = 'balances' | 'ledger' | 'reports' | 'withholding'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'balances', label: 'Stock Balances', icon: <PackageCheck className="h-4 w-4" /> },
   { id: 'ledger', label: 'Stock Ledger', icon: <BookOpen className="h-4 w-4" /> },
   { id: 'reports', label: 'Receiving Reports', icon: <ClipboardList className="h-4 w-4" /> },
+  { id: 'withholding', label: 'Withholding Summary', icon: <Landmark className="h-4 w-4" /> },
 ]
 
 const TX_LABELS: Record<string, string> = {
@@ -433,6 +436,9 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
 
         {/* ── Tab: Receiving Reports ── */}
         {activeTab === 'reports' && <ReceivingReportsTab />}
+
+        {/* ── Tab: Withholding Summary ── */}
+        {activeTab === 'withholding' && <WithholdingSummaryTab />}
       </div>
 
       <ReceiveStockModal

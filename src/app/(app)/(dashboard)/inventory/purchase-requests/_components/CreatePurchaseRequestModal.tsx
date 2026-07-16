@@ -9,7 +9,7 @@ import {
   type CreatePurchaseRequestFormValues,
 } from '@/src/schema/inventory/purchase-requests'
 import { ItemSearchCombobox } from './ItemSearchCombobox'
-import { SupplierSearchCombobox } from './SupplierSearchCombobox'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 

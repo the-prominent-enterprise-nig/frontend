@@ -21,6 +21,14 @@ import {
 function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
   const d = doc.document as Record<string, unknown>
   const lines = (d.lines as Array<Record<string, unknown>>) ?? []
+  const supplier = d.supplier as Record<string, unknown> | undefined
+
+  const detailsHtml = `<h2>Receiving Details</h2><div class="meta">
+      <div><p class="label">Supplier</p><p>${supplier?.name ?? '—'}</p></div>
+      ${d.purchaseOrderNumber ? `<div><p class="label">PO No.</p><p>${d.purchaseOrderNumber}</p></div>` : ''}
+      ${d.poDate ? `<div><p class="label">PO Date</p><p>${new Date(d.poDate as string).toLocaleDateString('en-PH')}</p></div>` : ''}
+      ${d.withholding === 'pct_1' ? `<div><p class="label">Withholding</p><p>1% (₱${Number(d.withheldAmount ?? 0).toFixed(2)})</p></div>` : ''}
+    </div>`
 
   const rows = lines
     .map((l) => {
@@ -37,7 +45,8 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
     })
     .join('')
 
-  return `<h2>Items</h2>
+  return `${detailsHtml}
+    <h2>Items</h2>
     <table>
       <thead><tr>
         <th>Item</th>
@@ -71,6 +80,18 @@ function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
   )
 }
 
+function JournalEntryBadge({ journalEntryId }: { journalEntryId?: string | null }) {
+  if (!journalEntryId) return <span className="text-zinc-400">MANUAL</span>
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="rounded bg-prominent-purple-50 px-1.5 py-0.5 font-medium text-prominent-purple-700">
+        GL POSTED
+      </span>
+      <span className="font-mono text-zinc-500">{journalEntryId.slice(0, 8)}</span>
+    </span>
+  )
+}
+
 function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: () => void }) {
   const [isPrinting, setIsPrinting] = useState(false)
 
@@ -91,6 +112,40 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
               year: 'numeric',
             })}
           </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+            <span>
+              Supplier:{' '}
+              <span className="font-medium text-zinc-700">{report.supplier?.name ?? '—'}</span>
+            </span>
+            {report.purchaseOrderNumber && (
+              <span>
+                PO No: <span className="font-mono text-zinc-700">{report.purchaseOrderNumber}</span>
+              </span>
+            )}
+            {report.poDate && (
+              <span>
+                PO Date:{' '}
+                <span className="text-zinc-700">
+                  {new Date(report.poDate).toLocaleDateString('en-PH', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </span>
+              </span>
+            )}
+            {report.withholding === 'pct_1' && (
+              <span>
+                Withholding:{' '}
+                <span className="font-medium text-amber-600">
+                  1% (₱{(report.withheldAmount ?? 0).toFixed(2)})
+                </span>
+              </span>
+            )}
+            <span>
+              <JournalEntryBadge journalEntryId={report.journalEntryId} />
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
