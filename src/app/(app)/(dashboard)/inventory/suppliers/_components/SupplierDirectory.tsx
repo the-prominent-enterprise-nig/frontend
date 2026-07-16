@@ -1,29 +1,113 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Search, X, ChevronRight, Loader2 } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Search, X, ChevronRight, Loader2, Plus, Pencil } from 'lucide-react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import { getItems } from '../../items/_actions/get-items'
+import { getSupplier } from '../_actions/get-supplier'
+import { createSupplier } from '../_actions/create-supplier'
+import { updateSupplier } from '../_actions/update-supplier'
 import SupplierItemsPanel from './SupplierItemsPanel'
+import { SupplierFormModal } from './SupplierFormModal'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { showToast } from '@/src/components/ui/toast'
+import type { CreateSupplierFormValues, SupplierDetail } from '@/src/schema/inventory/suppliers'
 
 type SupplierOption = { id: string; code: string; name: string; taxId?: string | null }
 
 export default function SupplierDirectory({ session }: { session: SessionUser }) {
   const canUpdate = hasPermission(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_UPDATE)
+  const canCreate = hasPermission(session, PROCUREMENT_PERMISSIONS.SUPPLIERS_CREATE)
 
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<SupplierOption | null>(null)
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create')
+  const [editingDetail, setEditingDetail] = useState<SupplierDetail | null>(null)
+  const [isFetchingDetail, setIsFetchingDetail] = useState(false)
+
+  const queryClient = useQueryClient()
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers-directory', search],
     queryFn: () => getSuppliers({ search: search || undefined, limit: 100 }),
     staleTime: STALE.OPERATIONAL,
   })
+
+  const createMutation = useMutation({
+    mutationFn: (data: CreateSupplierFormValues) => createSupplier(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Supplier created', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['suppliers-directory'] })
+      } else {
+        showToast({
+          title: 'Failed to create supplier',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateSupplierFormValues }) =>
+      updateSupplier(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Supplier updated', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['suppliers-directory'] })
+      } else {
+        showToast({
+          title: 'Failed to update supplier',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  function handleOpenCreate() {
+    setModalMode('create')
+    setEditingDetail(null)
+    setModalOpen(true)
+  }
+
+  async function handleOpenEdit() {
+    if (!selected) return
+    setIsFetchingDetail(true)
+    const res = await getSupplier(selected.id)
+    setIsFetchingDetail(false)
+    if (!res.success || !res.data) {
+      showToast({ title: 'Failed to load supplier', description: res.message, status: 'error' })
+      return
+    }
+    setEditingDetail(res.data)
+    setModalMode('edit')
+    setModalOpen(true)
+  }
+
+  async function handleSubmit(data: CreateSupplierFormValues) {
+    if (modalMode === 'edit' && selected) {
+      const result = await updateMutation.mutateAsync({ id: selected.id, data })
+      if (result.success) {
+        setSelected({
+          id: selected.id,
+          code: data.code,
+          name: data.name,
+          taxId: data.taxId ?? null,
+        })
+      }
+    } else {
+      await createMutation.mutateAsync(data)
+    }
+    setModalOpen(false)
+  }
 
   const itemsQuery = useQuery({
     queryKey: ['inventory-items-lookup-active'],
@@ -42,11 +126,23 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Suppliers</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Select a supplier to manage which items they carry.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Suppliers</h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Select a supplier to manage which items they carry.
+            </p>
+          </div>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+            >
+              <Plus className="h-4 w-4" />
+              New Supplier
+            </button>
+          )}
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -116,9 +212,26 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
               </div>
             ) : (
               <div className="space-y-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900">{selected.name}</h2>
-                  <p className="text-xs text-zinc-400">{selected.code}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-zinc-900">{selected.name}</h2>
+                    <p className="text-xs text-zinc-400">{selected.code}</p>
+                  </div>
+                  {canUpdate && (
+                    <button
+                      type="button"
+                      onClick={handleOpenEdit}
+                      disabled={isFetchingDetail}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+                    >
+                      {isFetchingDetail ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Pencil className="h-3.5 w-3.5" />
+                      )}
+                      Edit
+                    </button>
+                  )}
                 </div>
                 <hr className="border-zinc-100" />
                 <SupplierItemsPanel
@@ -132,6 +245,15 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
           </div>
         </div>
       </div>
+
+      <SupplierFormModal
+        open={modalOpen}
+        mode={modalMode}
+        initialData={editingDetail}
+        onClose={() => setModalOpen(false)}
+        onSubmit={handleSubmit}
+        isSubmitting={createMutation.isPending || updateMutation.isPending}
+      />
     </div>
   )
 }
