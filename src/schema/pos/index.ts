@@ -286,8 +286,8 @@ export interface PosCustomer {
 
 export interface CreateWalkInCustomerInput {
   firstName: string
-  lastName?: string
-  phoneNumber?: string
+  lastName: string
+  phoneNumber: string
   email?: string
 }
 

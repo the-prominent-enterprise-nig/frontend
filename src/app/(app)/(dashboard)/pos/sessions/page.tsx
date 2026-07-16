@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   useSessions,
   useOpenSession,
@@ -8,11 +8,11 @@ import {
   useHandoverSession,
   useTerminals,
 } from '../_hooks/usePos'
-import { verifyCashierPin, getUsers, getSessionReconciliation } from '../_actions/pos-actions'
+import { verifyCashierPin, searchUsers, getSessionReconciliation } from '../_actions/pos-actions'
 import { PosDateTime } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { RefreshCw, Monitor, Plus, X, ChevronDown, CheckCircle2 } from 'lucide-react'
+import { RefreshCw, Monitor, Plus, X, ChevronDown, CheckCircle2, Loader2 } from 'lucide-react'
 import type {
   PosSession,
   OpenSessionInput,
@@ -344,32 +344,40 @@ function OpenSessionModal({
 
   const [form, setForm] = useState({ terminalId: '', openingCash: 0, notes: '' })
 
-  const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [filtered, setFiltered] = useState<{ id: string; name: string; email: string }[]>([])
   const [usersError, setUsersError] = useState('')
+  const [searching, setSearching] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [verifyError, setVerifyError] = useState('')
   const [verifiedCashier, setVerifiedCashier] = useState<{ id: string; name: string } | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    getUsers().then((res) => {
+    if (!search.trim()) {
+      setFiltered([])
+      setUsersError('')
+      return
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true)
+      const res = await searchUsers(search.trim(), branchId ?? undefined)
       if (res.success && Array.isArray(res.data)) {
-        setUsers(res.data)
+        setFiltered(res.data)
+        setUsersError('')
       } else {
-        setUsersError(res.error ?? 'Unable to load cashier list')
+        setFiltered([])
+        setUsersError(res.error ?? 'Unable to search cashiers')
       }
-    })
-  }, [])
-
-  const filtered = search.trim()
-    ? users.filter(
-        (u) =>
-          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
-          u.email?.toLowerCase()?.includes(search.toLowerCase())
-      )
-    : []
+      setSearching(false)
+    }, 300)
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current)
+    }
+  }, [search, branchId])
 
   async function handleVerify() {
     if (!selectedUser) return
@@ -456,24 +464,33 @@ function OpenSessionModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  disabled={!!usersError}
                 />
+                {searching && (
+                  <Loader2
+                    size={14}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                  />
+                )}
                 {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
-                {filtered.length > 0 && (
+                {!usersError && search.trim() && !searching && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
-                    {filtered.slice(0, 6).map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          setSelectedUser({ id: u.id, name: u.name })
-                          setSearch('')
-                        }}
-                        className="flex w-full flex-col px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                      >
-                        <span className="text-sm font-medium text-gray-800">{u.name}</span>
-                        <span className="text-xs text-gray-400">{u.email}</span>
-                      </button>
-                    ))}
+                    {filtered.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">No cashiers found</p>
+                    ) : (
+                      filtered.slice(0, 6).map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setSelectedUser({ id: u.id, name: u.name })
+                            setSearch('')
+                          }}
+                          className="flex w-full flex-col px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                        >
+                          <span className="text-sm font-medium text-gray-800">{u.name}</span>
+                          <span className="text-xs text-gray-400">{u.email}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -648,8 +665,9 @@ function HandoverModal({
   onClose: () => void
   onSubmit: (f: HandoverSessionInput) => void
 }) {
-  const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [filtered, setFiltered] = useState<{ id: string; name: string; email: string }[]>([])
   const [usersError, setUsersError] = useState('')
+  const [searching, setSearching] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
   const [pin, setPin] = useState('')
@@ -658,24 +676,32 @@ function HandoverModal({
   const [verified, setVerified] = useState<{ id: string; name: string } | null>(null)
   const [declaredCash, setDeclaredCash] = useState(0)
   const [notes, setNotes] = useState('')
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const branchId = session.terminal?.branchId
 
   useEffect(() => {
-    getUsers().then((res) => {
+    if (!search.trim()) {
+      setFiltered([])
+      setUsersError('')
+      return
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true)
+      const res = await searchUsers(search.trim(), branchId ?? undefined)
       if (res.success && Array.isArray(res.data)) {
-        setUsers(res.data)
+        setFiltered(res.data)
+        setUsersError('')
       } else {
-        setUsersError(res.error ?? 'Unable to load cashier list')
+        setFiltered([])
+        setUsersError(res.error ?? 'Unable to search cashiers')
       }
-    })
-  }, [])
-
-  const filtered = search.trim()
-    ? users.filter(
-        (u) =>
-          u.name?.toLowerCase()?.includes(search.toLowerCase()) ||
-          u.email?.toLowerCase()?.includes(search.toLowerCase())
-      )
-    : []
+      setSearching(false)
+    }, 300)
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current)
+    }
+  }, [search, branchId])
 
   async function handleVerify() {
     if (!selectedUser) return
@@ -764,24 +790,33 @@ function HandoverModal({
                   placeholder="Type to search…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  disabled={!!usersError}
                 />
+                {searching && (
+                  <Loader2
+                    size={14}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                  />
+                )}
                 {usersError && <p className="mt-1 text-xs text-red-500">{usersError}</p>}
-                {filtered.length > 0 && (
+                {!usersError && search.trim() && !searching && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
-                    {filtered.slice(0, 6).map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => {
-                          setSelectedUser({ id: u.id, name: u.name })
-                          setSearch('')
-                        }}
-                        className="flex w-full flex-col px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                      >
-                        <span className="text-sm font-medium text-gray-800">{u.name}</span>
-                        <span className="text-xs text-gray-400">{u.email}</span>
-                      </button>
-                    ))}
+                    {filtered.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">No cashiers found</p>
+                    ) : (
+                      filtered.slice(0, 6).map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setSelectedUser({ id: u.id, name: u.name })
+                            setSearch('')
+                          }}
+                          className="flex w-full flex-col px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                        >
+                          <span className="text-sm font-medium text-gray-800">{u.name}</span>
+                          <span className="text-xs text-gray-400">{u.email}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

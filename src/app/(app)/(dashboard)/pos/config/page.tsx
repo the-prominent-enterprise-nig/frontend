@@ -115,7 +115,7 @@ export default function PosConfigPage() {
                 max={100}
                 placeholder="0"
                 className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                value={discountThreshold}
+                value={discountThreshold === '0' ? '' : discountThreshold}
                 onChange={(e) => setDiscountThreshold(e.target.value)}
               />
               <span className="text-sm text-gray-500">% discount</span>
@@ -135,7 +135,7 @@ export default function PosConfigPage() {
                 min={0}
                 placeholder="0"
                 className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                value={receiptlessReturnDays}
+                value={receiptlessReturnDays === '0' ? '' : receiptlessReturnDays}
                 onChange={(e) => setReceiptlessReturnDays(e.target.value)}
               />
               <span className="text-sm text-gray-500">days</span>
