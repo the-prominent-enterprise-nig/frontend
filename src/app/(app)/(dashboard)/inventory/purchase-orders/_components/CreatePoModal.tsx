@@ -5,7 +5,7 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
-import { SupplierSearchCombobox } from '../../purchase-requests/_components/SupplierSearchCombobox'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { BranchSearchCombobox } from '../../purchase-requests/_components/BranchSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
