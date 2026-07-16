@@ -164,6 +164,7 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-4 py-3 text-left">Reference</th>
                   <th className="px-4 py-3 text-left">Source</th>
+                  <th className="px-4 py-3 text-left">Branch</th>
                   <th className="px-4 py-3 text-left">Description</th>
                   <th className="px-4 py-3 text-left">Type</th>
                   <th className="px-4 py-3 text-left">Status</th>
@@ -175,13 +176,13 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                    <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                       Loading...
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                    <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                       No journal entries found.
                     </td>
                   </tr>
@@ -230,6 +231,9 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                             ) : (
                               <span className="text-gray-400">MANUAL</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-600">
+                            {entry.branchName ?? <span className="text-gray-400">Tenant-wide</span>}
                           </td>
                           <td className="px-4 py-3 text-gray-800 max-w-xs truncate">
                             {entry.description || '—'}
@@ -294,7 +298,7 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
 
                         {isOpen && (
                           <tr className="bg-gray-50/60">
-                            <td colSpan={10} className="px-8 py-4">
+                            <td colSpan={11} className="px-8 py-4">
                               {/* Transaction lines */}
                               <div>
                                 <div className="text-xs text-gray-500 mb-1.5 font-medium uppercase">

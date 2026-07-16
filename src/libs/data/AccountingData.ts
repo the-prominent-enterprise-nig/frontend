@@ -88,6 +88,8 @@ export interface JournalEntry {
   sourceModule?: string | null
   sourceDocumentNo?: string | null
   sourceDocumentId?: string | null
+  branchId?: string | null
+  branchName?: string | null
   postedBy?: string | null
   createdBy?: string | null
   transactions: Transaction[]
