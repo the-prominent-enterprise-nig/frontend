@@ -15,6 +15,7 @@ import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type { CreateReminderInput, UpdateReminderInput } from '@/src/schema/crm/reminder'
 import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
+import type { InstallmentSchedule } from '@/src/schema/pos'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -93,6 +94,8 @@ export const customersApi = {
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   update: (id: string, body: UpdateCustomerInput) =>
     api.patch<Customer>(`/crm/customers/${id}`, body),
+  getInstallmentSchedules: (id: string) =>
+    api.get<InstallmentSchedule[]>(`/pos/customers/${id}/installment-schedules`),
   remove: (id: string) => api.delete(`/crm/customers/${id}`),
 }
 

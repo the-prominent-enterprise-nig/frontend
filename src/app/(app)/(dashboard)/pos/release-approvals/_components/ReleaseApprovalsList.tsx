@@ -13,9 +13,13 @@ import {
   PackageCheck,
   Printer,
   AlertTriangle,
+  History,
+  ArrowLeft,
 } from 'lucide-react'
 import {
   getPendingReleaseFormRequests,
+  getOwnReleaseFormRequests,
+  getReleaseFormHistory,
   approveReleaseFormRequest,
   rejectReleaseFormRequest,
   validateManagerByPin,
@@ -129,10 +133,22 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState('')
 
+  // History view
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyRequests, setHistoryRequests] = useState<PosReleaseFormRequest[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+
   async function load() {
-    const res = await getPendingReleaseFormRequests(branchId ?? undefined)
+    const res = isManager
+      ? await getPendingReleaseFormRequests(branchId ?? undefined)
+      : await getOwnReleaseFormRequests()
     if (res.success && res.data) {
-      setRequests(res.data)
+      // Cashiers fetch their own requests of any status (there's no
+      // branch-wide pending endpoint they're allowed to call) — the queue
+      // here only shows the still-pending ones, matching what a manager
+      // sees; resolved ones show up in History instead, same as a manager.
+      setRequests(isManager ? res.data : res.data.filter((r) => r.status === 'pending'))
       setLoadError('')
     } else if (!res.success) {
       setLoadError(res.error ?? 'Failed to load release approvals.')
@@ -146,6 +162,29 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId])
+
+  async function loadHistory() {
+    setHistoryLoading(true)
+    const res = isManager
+      ? await getReleaseFormHistory(branchId ?? undefined)
+      : await getOwnReleaseFormRequests()
+    if (res.success && res.data) {
+      setHistoryRequests(isManager ? res.data : res.data.filter((r) => r.status !== 'pending'))
+      setHistoryError('')
+    } else if (!res.success) {
+      setHistoryError(res.error ?? 'Failed to load history.')
+    }
+    setHistoryLoading(false)
+  }
+
+  function openHistory() {
+    setShowHistory(true)
+    loadHistory()
+  }
+
+  function closeHistory() {
+    setShowHistory(false)
+  }
 
   function openReview(req: PosReleaseFormRequest) {
     setDetailTarget(null)
@@ -290,174 +329,309 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">
-          Release &amp; Application Form Approvals
-        </h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Serial-tracked sales and credit (charge) sales awaiting manager approval before their
-          invoice is created.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          {showHistory ? (
+            <>
+              <button
+                onClick={closeHistory}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                <ArrowLeft size={15} />
+                Back to Queue
+              </button>
+              <h1 className="mt-1 text-xl font-bold text-gray-900">
+                Release &amp; Application Form History
+              </h1>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Approved and rejected release form requests.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-gray-900">
+                Release &amp; Application Form Approvals
+              </h1>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Serial-tracked sales and credit (charge) sales awaiting manager approval before
+                their invoice is created.
+              </p>
+            </>
+          )}
+        </div>
+        {!showHistory && (
+          <button
+            onClick={openHistory}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <History size={13} />
+            History
+          </button>
+        )}
       </div>
 
-      {loadError && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {loadError}
-        </div>
+      {/* ── History view ─────────────────────────────────────────────────── */}
+      {showHistory && (
+        <>
+          {historyError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {historyError}
+            </div>
+          )}
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-20 text-gray-400">
+              <Loader2 size={20} className="animate-spin mr-2" /> Loading history…
+            </div>
+          ) : historyRequests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
+              <History size={32} className="mb-3 text-gray-300" />
+              <p className="font-medium text-gray-700">No history yet</p>
+              <p className="mt-1 text-sm text-gray-400">
+                Approved and rejected release form requests will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      {[
+                        'Type',
+                        'Item / Serial',
+                        'Cashier',
+                        'Branch / Terminal',
+                        'Total',
+                        'Customer',
+                        'Status',
+                        'Reviewed By',
+                        'Reviewed At',
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {historyRequests.map((req) => {
+                      const line = primaryLine(req)
+                      return (
+                        <tr
+                          key={req.id}
+                          onClick={() => setDetailTarget(req)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-5 py-3">
+                            <RequestTypeBadge requestType={req.requestType} />
+                          </td>
+                          <td className="px-5 py-3">
+                            <p className="font-medium text-gray-900">{line?.itemName ?? '—'}</p>
+                            <p className="font-mono text-[11px] text-gray-400">
+                              {serialLabel(line)}
+                            </p>
+                          </td>
+                          <td className="px-5 py-3 text-gray-800">{cashierLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-600">{branchTerminalLabel(req)}</td>
+                          <td className="px-5 py-3 font-semibold text-gray-900">
+                            {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
+                          </td>
+                          <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                            >
+                              {statusIcon[req.status]}
+                              {req.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-gray-600 text-sm">
+                            {req.reviewedBy?.name ?? '—'}
+                          </td>
+                          <td className="px-5 py-3 text-gray-500 text-sm">
+                            {req.reviewedAt ? <PosDateTime iso={req.reviewedAt} /> : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {loading ? (
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  {[
-                    'Type',
-                    'Item / Serial',
-                    'Cashier',
-                    'Branch / Terminal',
-                    'Unit Price',
-                    'Discount',
-                    'Total',
-                    'Customer',
-                    'Submitted',
-                    'Status',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <RequestRowSkeleton key={i} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : requests.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
-          <PackageCheck size={32} className="mb-3 text-green-400" />
-          <p className="font-medium text-gray-700">No pending release requests</p>
-          <p className="mt-1 text-sm text-gray-400">
-            All caught up. This page refreshes every 10 seconds.
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Type
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Item / Serial
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Cashier
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Branch / Terminal
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Unit Price
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Discount
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Total
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Customer
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Submitted
-                  </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Status
-                  </th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {requests.map((req) => {
-                  const line = primaryLine(req)
-                  const extraLines = (req.cartSnapshot?.lines?.length ?? 1) - 1
-                  return (
-                    <tr
-                      key={req.id}
-                      onClick={() => setDetailTarget(req)}
-                      className="hover:bg-gray-50 transition-colors cursor-pointer"
-                    >
-                      <td className="px-5 py-3">
-                        <RequestTypeBadge requestType={req.requestType} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <p className="font-medium text-gray-900">
-                          {line?.itemName ?? '—'}
-                          {extraLines > 0 && (
-                            <span className="ml-1 text-xs font-normal text-gray-400">
-                              +{extraLines} more
-                            </span>
-                          )}
-                        </p>
-                        <p className="font-mono text-[11px] text-gray-400">{serialLabel(line)}</p>
-                      </td>
-                      <td className="px-5 py-3 text-gray-800">{cashierLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-600">{branchTerminalLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-600">
-                        {line ? formatCurrency(line.unitPrice) : '—'}
-                      </td>
-                      <td className="px-5 py-3 text-gray-600">
-                        {formatCurrency(
-                          req.cartSnapshot?.discountAmount ?? req.cartSnapshot?.discountTotal ?? 0
-                        )}
-                      </td>
-                      <td className="px-5 py-3 font-semibold text-gray-900">
-                        {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
-                      </td>
-                      <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
-                      <td className="px-5 py-3 text-gray-500">
-                        <PosDateTime iso={req.createdAt} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+      {/* ── Pending view ─────────────────────────────────────────────────── */}
+      {!showHistory && (
+        <>
+          {loadError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+              {loadError}
+            </div>
+          )}
+
+          {loading ? (
+            <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      {[
+                        'Type',
+                        'Item / Serial',
+                        'Cashier',
+                        'Branch / Terminal',
+                        'Unit Price',
+                        'Discount',
+                        'Total',
+                        'Customer',
+                        'Submitted',
+                        'Status',
+                      ].map((h) => (
+                        <th
+                          key={h}
+                          className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500"
                         >
-                          {statusIcon[req.status]}
-                          {req.status}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {isManager && req.status === 'pending' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openReview(req)
-                            }}
-                            className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
-                          >
-                            <ShieldCheck size={11} /> Review
-                          </button>
-                        )}
-                      </td>
+                          {h}
+                        </th>
+                      ))}
+                      <th className="px-5 py-3" />
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <RequestRowSkeleton key={i} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : requests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 py-20 text-center">
+              <PackageCheck size={32} className="mb-3 text-green-400" />
+              <p className="font-medium text-gray-700">No pending release requests</p>
+              <p className="mt-1 text-sm text-gray-400">
+                All caught up. This page refreshes every 10 seconds.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Type
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Item / Serial
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Cashier
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Branch / Terminal
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Unit Price
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Discount
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Total
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Customer
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Submitted
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Status
+                      </th>
+                      <th className="px-5 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {requests.map((req) => {
+                      const line = primaryLine(req)
+                      const extraLines = (req.cartSnapshot?.lines?.length ?? 1) - 1
+                      return (
+                        <tr
+                          key={req.id}
+                          onClick={() => setDetailTarget(req)}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-5 py-3">
+                            <RequestTypeBadge requestType={req.requestType} />
+                          </td>
+                          <td className="px-5 py-3">
+                            <p className="font-medium text-gray-900">
+                              {line?.itemName ?? '—'}
+                              {extraLines > 0 && (
+                                <span className="ml-1 text-xs font-normal text-gray-400">
+                                  +{extraLines} more
+                                </span>
+                              )}
+                            </p>
+                            <p className="font-mono text-[11px] text-gray-400">
+                              {serialLabel(line)}
+                            </p>
+                          </td>
+                          <td className="px-5 py-3 text-gray-800">{cashierLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-600">{branchTerminalLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-600">
+                            {line ? formatCurrency(line.unitPrice) : '—'}
+                          </td>
+                          <td className="px-5 py-3 text-gray-600">
+                            {formatCurrency(
+                              req.cartSnapshot?.discountAmount ??
+                                req.cartSnapshot?.discountTotal ??
+                                0
+                            )}
+                          </td>
+                          <td className="px-5 py-3 font-semibold text-gray-900">
+                            {formatCurrency(req.cartSnapshot?.totalAmount ?? 0)}
+                          </td>
+                          <td className="px-5 py-3 text-gray-600">{customerLabel(req)}</td>
+                          <td className="px-5 py-3 text-gray-500">
+                            <PosDateTime iso={req.createdAt} />
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold capitalize ${statusBadge[req.status] ?? ''}`}
+                            >
+                              {statusIcon[req.status]}
+                              {req.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {isManager && req.status === 'pending' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openReview(req)
+                                }}
+                                className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100 transition-colors"
+                              >
+                                <ShieldCheck size={11} /> Review
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Detail modal */}

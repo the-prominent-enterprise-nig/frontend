@@ -331,7 +331,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Release Approvals',
         href: '/pos/release-approvals',
         icon: PackageCheck,
-        requiredPermission: 'pos:transaction:override',
+        // Cashiers can view (not approve) their own submitted requests here —
+        // matches the page's own guard (POS_PERMISSIONS.TRANSACTIONS_READ).
+        requiredPermission: 'pos:transactions:read',
       },
       {
         label: 'Return & Refund Approvals',
@@ -350,8 +352,20 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Configuration',
         href: '/pos/gl-mapping',
         icon: Key,
-        requiredPermission: 'pos:transactions:read',
-        activeWhen: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
+        // Business Owner / Branch Manager only — pos:transactions:read (what
+        // this used before) is also held by Cashier, which let them reach
+        // GL Mapping / POS Config / Queue Categories.
+        requiredPermission: 'pos:config:manage',
+        activeWhen: ['/pos/gl-mapping', '/pos/settings', '/pos/config', '/pos/queue-categories'],
+      },
+      {
+        // Every POS role needs their own PIN (checkout PIN entry, manager
+        // approvals) — kept separate from the Configuration item above so
+        // hiding that one from Cashier doesn't also remove their only way to
+        // reach this.
+        label: 'Cashier PIN',
+        href: '/pos/pin',
+        icon: Key,
       },
     ],
     bottom: [],
@@ -686,6 +700,16 @@ function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
           },
         ]
       : []),
+    // /settings/configuration's own page-level guard already allows Branch
+    // Manager (POS PIN self-service, payment methods, receipt branding) —
+    // without this the page was unreachable in practice since no nav link
+    // pointed to it for this role.
+    {
+      section: 'My Workspace' as const,
+      label: 'Configuration',
+      href: '/settings/configuration',
+      icon: Settings,
+    },
   ]
 }
 

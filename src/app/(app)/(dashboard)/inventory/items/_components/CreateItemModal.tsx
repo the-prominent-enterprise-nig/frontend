@@ -70,7 +70,7 @@ export default function CreateItemModal({
       primaryCategoryId: '',
       costingMethod: 'weighted_average',
       isBatchTracked: false,
-      isSerialTracked: false,
+      isSerialTracked: true,
       requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
