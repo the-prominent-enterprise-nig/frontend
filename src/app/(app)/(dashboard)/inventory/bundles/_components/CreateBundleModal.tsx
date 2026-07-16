@@ -36,6 +36,7 @@ export default function CreateBundleModal({
     resolver: zodResolver(CreateBundleFormSchema),
     defaultValues: {
       costPrice: 0,
+      isSerialTracked: false,
       components: [{ componentItemId: '', quantityPerBundle: 1 }],
     },
   })
@@ -44,7 +45,11 @@ export default function CreateBundleModal({
 
   useEffect(() => {
     if (!isOpen) {
-      reset({ costPrice: 0, components: [{ componentItemId: '', quantityPerBundle: 1 }] })
+      reset({
+        costPrice: 0,
+        isSerialTracked: false,
+        components: [{ componentItemId: '', quantityPerBundle: 1 }],
+      })
     }
   }, [isOpen, reset])
 
@@ -234,6 +239,30 @@ export default function CreateBundleModal({
                   />
                 )}
               />
+            </div>
+
+            {/* Serial tracking */}
+            <div className="flex items-start gap-2 rounded-lg border border-zinc-200 px-4 py-3">
+              <Controller
+                name="isSerialTracked"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    type="checkbox"
+                    id="bundle-is-serial-tracked"
+                    checked={field.value ?? false}
+                    onChange={(e) => field.onChange(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+              <label htmlFor="bundle-is-serial-tracked" className="text-sm text-zinc-700">
+                <span className="font-medium">Serial Tracked (e.g. Furniture Set)</span>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  Sold and registered as one physical unit with its own serial number, instead of
+                  tracking each component individually at checkout.
+                </p>
+              </label>
             </div>
 
             {/* Component Items */}

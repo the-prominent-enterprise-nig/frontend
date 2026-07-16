@@ -1794,12 +1794,13 @@ export interface SerialNumberRecord {
 }
 
 export async function getAvailableSerialNumbers(
-  itemId: string
+  itemId: string,
+  branchId?: string
 ): Promise<ApiResponse<SerialNumberRecord[]>> {
   try {
     type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock`
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock${branchId ? `&branchId=${branchId}` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch serial numbers' }

@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable } from './utils'
+import { gotoReady, fillAllStable, fillStable } from './utils'
 
-// Phase 1 — CRM Add Customer (scenario step 1: "find or create the customer
-// ... a customer can exist without buying").
-test.describe('Phase 1 — CRM Add Customer', () => {
+// CRM — Add Customer (scenario step 1: "find or create the customer ... a
+// customer can exist without buying").
+test.describe('CRM — Add Customer', () => {
   test('creates a customer with no prior sale, then deletes it (cleanup)', async ({ page }) => {
     const uniqueSuffix = Date.now()
     const firstName = 'E2E'
@@ -12,14 +12,21 @@ test.describe('Phase 1 — CRM Add Customer', () => {
 
     await gotoReady(page, '/crm/customers/new')
 
-    await fillStable(page.getByLabel('First name *'), firstName)
-    await fillStable(page.getByLabel('Last name *'), lastName)
-    await fillStable(page.getByLabel('Email'), `e2e.${uniqueSuffix}@example.com`)
+    await fillAllStable([
+      { locator: page.getByLabel('First name *'), value: firstName },
+      { locator: page.getByLabel('Last name *'), value: lastName },
+      { locator: page.getByLabel('Email'), value: `e2e.${uniqueSuffix}@example.com` },
+    ])
 
-    await page.getByRole('button', { name: 'Create customer' }).click()
-
-    // Redirects straight to the new customer's detail page — no sale involved.
-    await expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 15_000 })
+    // The submit button can be un-hydrated (dead onClick) the instant navigation
+    // finishes — same hydration race fillStable/fillAllStable work around for
+    // inputs. Retries the click (generous 8s per attempt, so an in-flight but
+    // slow submission is never mistaken for a no-op and double-submitted)
+    // until the redirect to the new customer's detail page actually happens.
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Create customer' }).click()
+      await expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 8_000 })
+    }).toPass({ timeout: 20_000 })
     await expect(page.getByRole('heading', { name: fullName })).toBeVisible()
 
     // Confirm it's findable by search from the customers list (also exercises

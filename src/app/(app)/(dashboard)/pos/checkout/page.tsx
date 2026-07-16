@@ -36,7 +36,6 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
-import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
 import {
   itemLookup,
   createTransaction,
@@ -96,6 +95,7 @@ interface LookupItem {
   isBundle?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
   isSerialTracked?: boolean
+  requiresSecondarySerial?: boolean
 }
 
 interface CartLine {
@@ -111,6 +111,9 @@ interface CartLine {
   isSerialTracked?: boolean
   serialNumberId?: string
   serialNumberLabel?: string
+  requiresSecondarySerial?: boolean
+  secondarySerialNumberId?: string
+  secondarySerialNumberLabel?: string
 }
 
 interface PaymentRow {
@@ -225,17 +228,11 @@ export default function CheckoutPage() {
     return session?.terminal?.branchId ?? (session?.terminal as any)?.branch?.id ?? null
   }, [openSessions, sessionId, isBranchManager, authBranchId])
 
-  // Menu items catalog (loaded separately — bundle items are excluded from pos/catalog)
-  const [menuItems, setMenuItems] = useState<LookupItem[]>([])
-  const [menuItemsLoading, setMenuItemsLoading] = useState(false)
-  const [menuItemsLoaded, setMenuItemsLoaded] = useState(false)
-
   // Cart
   const [cart, setCart] = useState<CartLine[]>([])
 
-  // Item search + catalog mode toggle
+  // Item search
   const [searchQuery, setSearchQuery] = useState('')
-  const [catalogMode, setCatalogMode] = useState<'items' | 'menu'>('items')
 
   // Selling agent — CRM-owned agent list, not system User accounts
   const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
@@ -247,8 +244,10 @@ export default function CheckoutPage() {
 
   // Serial number picker
   const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
+  const [serialPickerStage, setSerialPickerStage] = useState<'primary' | 'secondary'>('primary')
   const [serialNumbers, setSerialNumbers] = useState<SerialNumberRecord[]>([])
   const [serialLoading, setSerialLoading] = useState(false)
+  const [serialSearchQuery, setSerialSearchQuery] = useState('')
 
   // Customer
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
@@ -459,16 +458,19 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Fetch serial numbers when picker target changes
+  // Fetch serial numbers when picker target or stage (primary/secondary) changes
   useEffect(() => {
     if (!serialPickerTarget) return
     setSerialLoading(true)
     setSerialNumbers([])
-    getAvailableSerialNumbers(serialPickerTarget.itemId).then((res) => {
-      if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
-      setSerialLoading(false)
-    })
-  }, [serialPickerTarget?.itemId])
+    setSerialSearchQuery('')
+    getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
+      (res) => {
+        if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
+        setSerialLoading(false)
+      }
+    )
+  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
 
   // Fetch the active default accounting tax rate — controls global POS tax
   useEffect(() => {
@@ -562,28 +564,12 @@ export default function CheckoutPage() {
     [cart]
   )
 
-  // Lazy-load menu items the first time the menu tab is opened
-  useEffect(() => {
-    if (catalogMode !== 'menu' || menuItemsLoaded) return
-    setMenuItemsLoading(true)
-    getMenuItems().then((data) => {
-      const mapped = data.map((item) => ({
-        id: item.id,
-        name: item.name,
-        sku: item.sku ?? undefined,
-        price: item.sellingPrice ?? 0,
-        isBundle: true,
-        uomCode: undefined,
-      }))
-      setMenuItems(mapped)
-      setMenuItemsLoaded(true)
-      setMenuItemsLoading(false)
-    })
-  }, [catalogMode, menuItemsLoaded])
-
   const displayItems = useMemo(() => {
-    const source =
-      catalogMode === 'menu' ? menuItems : catalogItems.filter((item) => !item.isBundle)
+    // A plain (non-serialized) bundle has no single sellable unit and stays
+    // excluded; a serial-tracked bundle (e.g. a "Furniture Set") is sold and
+    // registered as one unit like any other serialized item, so it's allowed
+    // through here.
+    const source = catalogItems.filter((item) => !item.isBundle || item.isSerialTracked)
     const q = searchQuery.trim().toLowerCase()
     if (!q) return source
     return source.filter(
@@ -592,7 +578,7 @@ export default function CheckoutPage() {
         item.sku?.toLowerCase().includes(q) ||
         item.barcode?.toLowerCase().includes(q)
     )
-  }, [catalogItems, menuItems, searchQuery, catalogMode])
+  }, [catalogItems, searchQuery])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
 
@@ -725,16 +711,19 @@ export default function CheckoutPage() {
           allowDecimal: item.allowDecimal ?? false,
           pricingMode: item.pricingMode ?? null,
           isSerialTracked: item.isSerialTracked ?? false,
+          requiresSecondarySerial: item.requiresSecondarySerial ?? false,
         },
       ]
     })
     if (item.isSerialTracked) {
+      setSerialPickerStage('primary')
       setSerialPickerTarget({
         itemId: item.id,
         itemName: item.name,
         unitPrice: item.price,
         quantity: 1,
         isSerialTracked: true,
+        requiresSecondarySerial: item.requiresSecondarySerial ?? false,
       })
     }
   }
@@ -1025,6 +1014,7 @@ export default function CheckoutPage() {
             taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
             pricingMode: l.pricingMode ?? undefined,
             serialNumberId: l.serialNumberId,
+            secondarySerialNumberId: l.secondarySerialNumberId,
           })),
         })
 
@@ -1305,7 +1295,6 @@ export default function CheckoutPage() {
     return () => {
       if (cancellationPollRef.current) clearInterval(cancellationPollRef.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancellationReqId])
 
   // ─── Success screen ────────────────────────────────────────────────────────
@@ -1515,27 +1504,6 @@ export default function CheckoutPage() {
           {/* Search bar */}
           <div className="shrink-0 border-b border-gray-100 px-4 py-3 space-y-2">
             {/* Mode toggle */}
-            <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 text-xs font-semibold">
-              <button
-                onClick={() => {
-                  setCatalogMode('items')
-                  setSearchQuery('')
-                }}
-                className={`flex-1 rounded-md py-1.5 transition-colors ${catalogMode === 'items' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Items
-              </button>
-              <button
-                onClick={() => {
-                  setCatalogMode('menu')
-                  setSearchQuery('')
-                }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${catalogMode === 'menu' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                <UtensilsCrossed size={11} /> Menu Items
-              </button>
-            </div>
-
             <div className="relative">
               <Search
                 size={14}
@@ -1544,16 +1512,14 @@ export default function CheckoutPage() {
               <input
                 autoFocus
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                placeholder={
-                  catalogMode === 'menu' ? 'Search menu items…' : 'Search by name or SKU…'
-                }
+                placeholder="Search by name or SKU…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             {catalogItems.length > 0 && (
               <p className="text-[10px] text-gray-400">
-                {displayItems.length} {catalogMode === 'menu' ? 'menu item' : 'item'}
+                {displayItems.length} item
                 {displayItems.length !== 1 ? 's' : ''}
                 {searchQuery && ` matching "${searchQuery}"`}
               </p>
@@ -1562,7 +1528,7 @@ export default function CheckoutPage() {
 
           {/* Catalog grid */}
           <div className="flex-1 overflow-y-auto bg-gray-50/60 p-3">
-            {catalogLoading || menuItemsLoading ? (
+            {catalogLoading ? (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <div
@@ -2448,7 +2414,11 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
-                cart.some((l) => l.isSerialTracked && !l.serialNumberId) ||
+                cart.some(
+                  (l) =>
+                    (l.isSerialTracked && !l.serialNumberId) ||
+                    (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+                ) ||
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
                 (needsManagerOverride && !managerOverrideApproved)
@@ -2463,7 +2433,11 @@ export default function CheckoutPage() {
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : cart.some((l) => l.isSerialTracked && !l.serialNumberId)
+                  : cart.some(
+                        (l) =>
+                          (l.isSerialTracked && !l.serialNumberId) ||
+                          (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+                      )
                     ? 'Select serial numbers to continue'
                     : invoiceType === 'charge' && !selectedCustomer
                       ? 'Select a customer to charge'
@@ -2770,70 +2744,139 @@ export default function CheckoutPage() {
       )}
 
       {/* Serial Number Picker */}
-      {serialPickerTarget && (
-        <Overlay onClose={() => setSerialPickerTarget(null)}>
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
-              <Tag size={18} className="text-purple-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Select Serial Number</h2>
-              <p className="text-xs text-gray-500">{serialPickerTarget.itemName}</p>
-            </div>
-          </div>
-          {serialLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={20} className="animate-spin text-purple-400" />
-            </div>
-          ) : serialNumbers.length === 0 ? (
-            <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
-              No available serial numbers in stock for this item.
-            </div>
-          ) : (
-            <div className="max-h-64 space-y-1.5 overflow-y-auto">
-              {serialNumbers.map((sn) => {
-                const isSelected =
-                  cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId === sn.id
-                return (
-                  <button
-                    key={sn.id}
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                      isSelected
-                        ? 'border-purple-500 bg-purple-50'
-                        : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
-                    }`}
-                    onClick={() => {
-                      setCart((prev) =>
-                        prev.map((l) =>
-                          l.itemId === serialPickerTarget.itemId
-                            ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
-                            : l
-                        )
-                      )
-                      setSerialPickerTarget(null)
-                    }}
-                  >
-                    <span className="font-mono text-sm font-semibold text-gray-900">
-                      {sn.serialNumber}
-                    </span>
-                    {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
-                  </button>
+      {serialPickerTarget &&
+        (() => {
+          const targetLine = cart.find((l) => l.itemId === serialPickerTarget.itemId)
+          const isSecondaryStage = serialPickerStage === 'secondary'
+          const selectedId = isSecondaryStage
+            ? targetLine?.secondarySerialNumberId
+            : targetLine?.serialNumberId
+          // The primary serial can't also be picked as the secondary — hide it
+          // from the secondary list (backend enforces distinctness regardless).
+          const visibleSerials = serialNumbers
+            .filter((sn) => !isSecondaryStage || sn.id !== targetLine?.serialNumberId)
+            .filter((sn) =>
+              serialSearchQuery.trim()
+                ? sn.serialNumber.toLowerCase().includes(serialSearchQuery.trim().toLowerCase())
+                : true
+            )
+
+          function pick(sn: SerialNumberRecord) {
+            if (isSecondaryStage) {
+              setCart((prev) =>
+                prev.map((l) =>
+                  l.itemId === serialPickerTarget!.itemId
+                    ? {
+                        ...l,
+                        secondarySerialNumberId: sn.id,
+                        secondarySerialNumberLabel: sn.serialNumber,
+                      }
+                    : l
                 )
-              })}
-            </div>
-          )}
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setSerialPickerTarget(null)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              )
+              setSerialPickerTarget(null)
+              setSerialPickerStage('primary')
+              return
+            }
+            setCart((prev) =>
+              prev.map((l) =>
+                l.itemId === serialPickerTarget!.itemId
+                  ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
+                  : l
+              )
+            )
+            if (targetLine?.requiresSecondarySerial) {
+              setSerialPickerStage('secondary')
+            } else {
+              setSerialPickerTarget(null)
+            }
+          }
+
+          return (
+            <Overlay
+              dismissible={false}
+              onClose={() => {
+                setSerialPickerTarget(null)
+                setSerialPickerStage('primary')
+              }}
             >
-              {cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId
-                ? 'Done'
-                : 'Skip for now'}
-            </button>
-          </div>
-        </Overlay>
-      )}
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
+                  <Tag size={18} className="text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    {isSecondaryStage ? 'Select Outdoor Unit Serial' : 'Select Serial Number'}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {serialPickerTarget.itemName}
+                    {isSecondaryStage && ' — Outdoor Unit'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    A serial number is required to continue with this item.
+                  </p>
+                </div>
+              </div>
+              <div className="relative mb-3">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  autoFocus
+                  value={serialSearchQuery}
+                  onChange={(e) => setSerialSearchQuery(e.target.value)}
+                  placeholder="Search serial number…"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                />
+              </div>
+              {serialLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={20} className="animate-spin text-purple-400" />
+                </div>
+              ) : visibleSerials.length === 0 ? (
+                <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
+                  {serialSearchQuery
+                    ? `No serial numbers match "${serialSearchQuery}".`
+                    : 'No available serial numbers in stock for this item at this branch.'}
+                </div>
+              ) : (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {visibleSerials.map((sn) => {
+                    const isSelected = selectedId === sn.id
+                    return (
+                      <button
+                        key={sn.id}
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                        }`}
+                        onClick={() => pick(sn)}
+                      >
+                        <span className="font-mono text-sm font-semibold text-gray-900">
+                          {sn.serialNumber}
+                        </span>
+                        {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => {
+                    setSerialPickerTarget(null)
+                    setSerialPickerStage('primary')
+                  }}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+            </Overlay>
+          )
+        })()}
 
       {/* Measured-item quantity picker */}
       {measuredItem &&
@@ -3555,18 +3598,30 @@ function NewCustomerModal({
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Overlay({
+  children,
+  onClose,
+  dismissible = true,
+}: {
+  children: React.ReactNode
+  onClose: () => void
+  /** When false, there's no backdrop-click or X close — the modal can only be
+   * dismissed by whatever action inside it programmatically closes it. */
+  dismissible?: boolean
+}) {
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={dismissible ? onClose : undefined} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-          <button
-            onClick={onClose}
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
-          >
-            <X size={18} />
-          </button>
+          {dismissible && (
+            <button
+              onClick={onClose}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+            >
+              <X size={18} />
+            </button>
+          )}
           {children}
         </div>
       </div>

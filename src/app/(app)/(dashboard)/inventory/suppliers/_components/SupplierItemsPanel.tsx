@@ -338,7 +338,7 @@ export default function SupplierItemsPanel({
                     </td>
                     <td className="px-4 py-2 text-zinc-600">{m.supplierSku ?? '—'}</td>
                     <td className="px-4 py-2 text-zinc-600">
-                      {m.unitPrice != null ? `₦${Number(m.unitPrice).toLocaleString()}` : '—'}
+                      {m.unitPrice != null ? `₱${Number(m.unitPrice).toLocaleString()}` : '—'}
                     </td>
                     <td className="px-4 py-2 text-zinc-600">
                       {m.leadTimeDays != null ? `${m.leadTimeDays}d` : '—'}

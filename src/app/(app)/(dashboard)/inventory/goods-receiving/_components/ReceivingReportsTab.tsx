@@ -13,54 +13,45 @@ import {
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { getReceivingDocument } from '../_actions/get-receiving-document'
+import {
+  printInventoryDocument,
+  type PrintDocumentEnvelope,
+} from '@/src/libs/print/printInventoryDocument'
+
+function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
+  const d = doc.document as Record<string, unknown>
+  const lines = (d.lines as Array<Record<string, unknown>>) ?? []
+
+  const rows = lines
+    .map((l) => {
+      const item = l.item as Record<string, unknown> | undefined
+      const discrepancy = l.discrepancy as Record<string, unknown> | undefined
+      const itemLabel = item?.sku ? `${item.name ?? '—'} (${item.sku})` : (item?.name ?? '—')
+      return `<tr>
+        <td>${itemLabel}</td>
+        <td style="text-align:right">${discrepancy?.qtyOrdered ?? '—'}</td>
+        <td style="text-align:right">${l.quantityReceived}</td>
+        <td>${l.batchNumber ?? '—'}</td>
+        <td>${l.qualityHold ? 'QC Hold' : 'OK'}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<h2>Items</h2>
+    <table>
+      <thead><tr>
+        <th>Item</th>
+        <th style="text-align:right">Qty Ordered</th>
+        <th style="text-align:right">Qty Received</th>
+        <th>Batch</th>
+        <th>Condition</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`
+}
 
 function printDocument(data: unknown) {
-  const doc = data as {
-    documentType: string
-    documentNumber: string
-    generatedAt: string
-    enterprise: {
-      companyLegalName: string
-      companyTradingName?: string
-      registrationNumber?: string
-      taxId?: string
-      contactPerson?: string
-    } | null
-    document: Record<string, unknown>
-  }
-
-  const win = window.open('', '_blank', 'width=900,height=700')
-  if (!win) return
-
-  win.document.write(`<!DOCTYPE html><html><head><title>${doc.documentNumber}</title><style>
-    body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-    h1 { font-size: 20px; margin: 0 0 4px; }
-    h2 { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; margin-bottom: 12px; }
-    .label { color: #888; font-size: 11px; text-transform: uppercase; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 6px 8px; background: #f5f5f5; font-size: 11px; text-transform: uppercase; }
-    td { padding: 6px 8px; border-top: 1px solid #eee; }
-    .footer { margin-top: 32px; font-size: 11px; color: #999; }
-    @media print { body { padding: 0; } button { display: none; } }
-  </style></head><body>
-    <p class="label">Goods Receipt Note</p>
-    <h1>${doc.documentNumber}</h1>
-    <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
-    ${
-      doc.enterprise
-        ? `<h2>Enterprise</h2><div class="meta">
-      <div><p class="label">Company</p><p>${doc.enterprise.companyLegalName}</p></div>
-      ${doc.enterprise.companyTradingName ? `<div><p class="label">Trading Name</p><p>${doc.enterprise.companyTradingName}</p></div>` : ''}
-      ${doc.enterprise.registrationNumber ? `<div><p class="label">Reg. No.</p><p>${doc.enterprise.registrationNumber}</p></div>` : ''}
-      ${doc.enterprise.taxId ? `<div><p class="label">Tax ID</p><p>${doc.enterprise.taxId}</p></div>` : ''}
-      ${doc.enterprise.contactPerson ? `<div><p class="label">Contact</p><p>${doc.enterprise.contactPerson}</p></div>` : ''}
-    </div>`
-        : ''
-    }
-    <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`)
-  win.document.close()
+  printInventoryDocument(data, 'Goods Receipt Note', renderGoodsReceiptBody)
 }
 
 function DiscrepancyBadge({ report }: { report: ReceivingReport }) {

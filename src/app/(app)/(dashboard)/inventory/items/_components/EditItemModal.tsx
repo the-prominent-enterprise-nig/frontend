@@ -97,6 +97,7 @@ export default function EditItemModal({
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: false,
+      requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
       hasVariants: false,
@@ -126,6 +127,7 @@ export default function EditItemModal({
         costingMethod: 'weighted_average',
         isBatchTracked: item.isBatchTracked ?? false,
         isSerialTracked: item.isSerialTracked ?? false,
+        requiresSecondarySerial: item.requiresSecondarySerial ?? false,
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         hasVariants: item.hasVariants ?? false,
@@ -547,6 +549,7 @@ export default function EditItemModal({
                 [
                   { name: 'isBatchTracked', label: 'Batch Tracking' },
                   { name: 'isSerialTracked', label: 'Serial Tracking' },
+                  { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
                   { name: 'isExpiryTracked', label: 'Expiry Tracking' },
                   { name: 'isBundle', label: 'Bundle Item' },
                 ] as const
