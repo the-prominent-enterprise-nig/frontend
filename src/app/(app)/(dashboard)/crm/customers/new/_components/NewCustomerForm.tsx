@@ -1,20 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
 import {
-  updateCustomerSchema,
+  createCustomerSchema,
   PAYMENT_TERMS_OPTIONS,
-  type UpdateCustomerInput,
+  type CreateCustomerInput,
 } from '@/src/schema/crm/customer'
-import type { CustomerType, CustomerStatus, CustomerSourceChannel } from '@/src/schema/crm/types'
+import type { CustomerType } from '@/src/schema/crm/types'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 type FormState = {
-  customerCode: string
   firstName: string
   lastName: string
   customerType: CustomerType
@@ -27,13 +28,10 @@ type FormState = {
   shippingAddress: string
   paymentTerms: string
   creditLimit: string
-  sourceChannel: CustomerSourceChannel
-  status: CustomerStatus
   notes: string
 }
 
 const empty: FormState = {
-  customerCode: '',
   firstName: '',
   lastName: '',
   customerType: 'individual',
@@ -46,55 +44,15 @@ const empty: FormState = {
   shippingAddress: '',
   paymentTerms: '',
   creditLimit: '',
-  sourceChannel: 'pos_walkin',
-  status: 'active',
   notes: '',
 }
 
-export default function EditCustomerForm({ id }: { id: string }) {
+export default function NewCustomerForm() {
   const router = useRouter()
   const [form, setForm] = useState<FormState>(empty)
-  const [initialForm, setInitialForm] = useState<FormState>(empty)
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState<string | null>(null)
-
-  useEffect(() => {
-    customersApi.get(id).then((res) => {
-      if (res.success && res.data) {
-        const c = res.data
-        // `name` is stored as a single field — split on the first space so
-        // the form can present it the same way the create form collects it.
-        const [firstName, ...lastParts] = c.name.split(' ')
-        const loaded: FormState = {
-          customerCode: c.customerCode,
-          firstName: firstName ?? '',
-          lastName: lastParts.join(' '),
-          customerType: c.customerType,
-          companyName: c.companyName ?? '',
-          taxId: c.taxId ?? '',
-          isTaxExempt: c.isTaxExempt,
-          taxExemptionRef: c.taxExemptionRef ?? '',
-          email: c.email ?? '',
-          phone: c.phone ?? '',
-          shippingAddress: c.shippingAddress ?? '',
-          paymentTerms: c.paymentTerms ?? '',
-          creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
-          sourceChannel: c.sourceChannel,
-          status: c.status,
-          notes: c.notes ?? '',
-        }
-        setForm(loaded)
-        setInitialForm(loaded)
-      } else {
-        setServerError(res.error ?? 'Customer not found')
-      }
-      setLoading(false)
-    })
-  }, [id])
-
-  const hasChanges = JSON.stringify(form) !== JSON.stringify(initialForm)
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -103,12 +61,11 @@ export default function EditCustomerForm({ id }: { id: string }) {
     e.preventDefault()
     setServerError(null)
 
-    // Strip empty strings — let the backend keep existing values for blanks.
-    const payload: UpdateCustomerInput = {
-      customerCode: form.customerCode,
-      name: `${form.firstName} ${form.lastName}`.trim(),
+    const name = `${form.firstName} ${form.lastName}`.trim()
+    const payload: CreateCustomerInput = {
+      name,
       customerType: form.customerType,
-      companyName: form.companyName || undefined,
+      companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
@@ -117,12 +74,12 @@ export default function EditCustomerForm({ id }: { id: string }) {
       shippingAddress: form.shippingAddress || undefined,
       paymentTerms: form.paymentTerms || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
-      sourceChannel: form.sourceChannel,
-      status: form.status,
+      // Fixed, not user-selectable — this form is a direct manual add under CRM.
+      sourceChannel: 'sales',
       notes: form.notes || undefined,
     }
 
-    const parsed = updateCustomerSchema.safeParse(payload)
+    const parsed = createCustomerSchema.safeParse(payload)
     if (!parsed.success) {
       const errs: Record<string, string> = {}
       parsed.error.issues.forEach((i) => {
@@ -133,55 +90,44 @@ export default function EditCustomerForm({ id }: { id: string }) {
     }
     setErrors({})
     setSubmitting(true)
-    const res = await customersApi.update(id, parsed.data)
+    const res = await customersApi.create(parsed.data)
     setSubmitting(false)
-    if (res.success) {
-      router.push(`/crm/customers/${id}`)
+    if (res.success && res.data) {
+      router.push(`/crm/customers/${res.data.id}`)
       router.refresh()
     } else {
-      setServerError(res.error ?? 'Failed to update customer')
+      setServerError(res.error ?? 'Failed to create customer')
     }
-  }
-
-  if (loading) {
-    return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
   }
 
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href={`/crm/customers/${id}`}
+        href="/crm/customers"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to customer
+        Back to customers
       </Link>
 
-      <h1 className="text-2xl font-semibold text-gray-900">Edit Customer</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Update profile, billing, tax, and account status.
-      </p>
+      <h1 className="text-2xl font-semibold text-prominent-purple-900">New Customer</h1>
+      <p className="mt-1 text-sm text-gray-500">Create a customer profile — no sale required.</p>
 
       <form
         onSubmit={onSubmit}
         className="mt-6 max-w-2xl space-y-5 rounded-xl border border-gray-200 bg-white p-6"
       >
-        <Field
-          label="Customer code *"
-          error={errors.customerCode}
-          value={form.customerCode}
-          onChange={(v) => setField('customerCode', v)}
-        />
-
         <div className="grid grid-cols-2 gap-4">
           <Field
             label="First name *"
             value={form.firstName}
+            maxLength={120}
             onChange={(v) => setField('firstName', v)}
           />
           <Field
             label="Last name *"
             value={form.lastName}
+            maxLength={120}
             onChange={(v) => setField('lastName', v)}
           />
         </div>
@@ -203,6 +149,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           <Field
             label="Company name"
             value={form.companyName}
+            maxLength={255}
             onChange={(v) => setField('companyName', v)}
           />
         )}
@@ -212,33 +159,38 @@ export default function EditCustomerForm({ id }: { id: string }) {
             label="Email"
             error={errors.email}
             value={form.email}
+            maxLength={255}
+            type="email"
             onChange={(v) => setField('email', v)}
           />
-          <Field label="Phone" value={form.phone} onChange={(v) => setField('phone', v)} />
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Phone</label>
+            <PhoneInput
+              value={form.phone ?? ''}
+              defaultCountry="PH"
+              international
+              countryCallingCodeEditable={false}
+              onChange={(v) => setField('phone', v ?? '')}
+              numberInputProps={{ className: 'phone-input-field' }}
+              className="ph-phone-input mt-1"
+            />
+          </div>
         </div>
 
         <div>
           <label className="mb-1 block text-[13px] font-medium text-gray-700">
             Shipping address
           </label>
-          {form.shippingAddress && (
-            <p className="mb-1.5 text-xs text-gray-500">
-              Current: <span className="text-gray-700">{form.shippingAddress}</span> — pick below to
-              replace it.
-            </p>
-          )}
-          <PhilippineAddressPicker
-            onChange={(v) => {
-              // The picker fires '' until the user has actually picked
-              // something — ignore those so the loaded value isn't wiped
-              // out before the user starts editing.
-              if (v) setField('shippingAddress', v)
-            }}
-          />
+          <PhilippineAddressPicker onChange={(v) => setField('shippingAddress', v)} />
         </div>
 
         <div className="grid grid-cols-3 gap-4">
-          <Field label="Tax ID" value={form.taxId} onChange={(v) => setField('taxId', v)} />
+          <Field
+            label="Tax ID"
+            value={form.taxId}
+            maxLength={50}
+            onChange={(v) => setField('taxId', v)}
+          />
           <div className="flex items-end gap-2 pb-2">
             <input
               id="isTaxExempt"
@@ -254,11 +206,12 @@ export default function EditCustomerForm({ id }: { id: string }) {
           <Field
             label="Exemption ref"
             value={form.taxExemptionRef}
+            maxLength={100}
             onChange={(v) => setField('taxExemptionRef', v)}
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
             <select
@@ -277,41 +230,18 @@ export default function EditCustomerForm({ id }: { id: string }) {
           <Field
             label="Credit limit (₱)"
             value={form.creditLimit}
+            max={999_999_999}
+            type="number"
             onChange={(v) => setField('creditLimit', v)}
           />
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
-            <select
-              value={form.status ?? 'active'}
-              onChange={(e) => setField('status', e.target.value as CustomerStatus)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
-          <select
-            value={form.sourceChannel ?? 'pos_walkin'}
-            onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="pos_walkin">POS Walk-in</option>
-            <option value="sales">Sales</option>
-            <option value="crm_lead">CRM Lead</option>
-            <option value="online">Online</option>
-          </select>
         </div>
 
         <div>
           <label className="block text-[13px] font-medium text-gray-700">Notes</label>
           <textarea
             rows={3}
-            value={form.notes}
+            value={form.notes ?? ''}
+            maxLength={1000}
             onChange={(e) => setField('notes', e.target.value)}
             className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
           />
@@ -323,17 +253,17 @@ export default function EditCustomerForm({ id }: { id: string }) {
 
         <div className="flex items-center justify-end gap-3">
           <Link
-            href={`/crm/customers/${id}`}
+            href="/crm/customers"
             className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
           >
             Cancel
           </Link>
           <button
             type="submit"
-            disabled={submitting || !hasChanges}
+            disabled={submitting}
             className="rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
           >
-            {submitting ? 'Saving…' : 'Save changes'}
+            {submitting ? 'Creating…' : 'Create customer'}
           </button>
         </div>
       </form>
@@ -346,17 +276,36 @@ function Field({
   value,
   onChange,
   error,
+  maxLength,
+  max,
+  type = 'text',
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   error?: string
+  maxLength?: number
+  max?: number
+  type?: string
 }) {
+  // Derived, stable id — also lets tests target fields via getByLabel()
+  // instead of brittle selectors, since label/input weren't otherwise linked.
+  const id = `field-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
   return (
     <div>
-      <label className="block text-[13px] font-medium text-gray-700">{label}</label>
+      <label htmlFor={id} className="block text-[13px] font-medium text-gray-700">
+        {label}
+      </label>
       <input
+        id={id}
+        type={type}
         value={value ?? ''}
+        maxLength={maxLength}
+        max={max}
+        min={type === 'number' ? 0 : undefined}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
       />

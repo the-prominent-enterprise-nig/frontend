@@ -11,6 +11,8 @@ import {
   KeyRound,
   X,
   PackageCheck,
+  Printer,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   getPendingReleaseFormRequests,
@@ -45,6 +47,23 @@ const statusIcon: Record<string, React.ReactNode> = {
   rejected: <XCircle size={10} />,
   cancelled: <XCircle size={10} />,
   expired: <XCircle size={10} />,
+}
+
+const requestTypeBadge: Record<string, string> = {
+  RFD: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+  'Application Form': 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
+  'RFD + Application Form': 'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200',
+}
+
+function RequestTypeBadge({ requestType }: { requestType?: string }) {
+  const type = requestType ?? 'RFD'
+  return (
+    <span
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${requestTypeBadge[type] ?? 'bg-gray-100 text-gray-600'}`}
+    >
+      {type}
+    </span>
+  )
 }
 
 /** The line the row/cards key off — first line flagged serial-tracked, or
@@ -89,7 +108,7 @@ function customerLabel(req: PosReleaseFormRequest): string {
 function RequestRowSkeleton() {
   return (
     <tr>
-      {Array.from({ length: 9 }).map((_, i) => (
+      {Array.from({ length: 10 }).map((_, i) => (
         <td key={i} className="px-5 py-3">
           <Skeleton className="h-3.5 w-16" />
         </td>
@@ -141,6 +160,74 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
     setReviewNotes('')
     setApprovalPin('')
     setReviewError('')
+  }
+
+  /** Reuses the same window.open + window.print() pattern as the receipt
+   * reprint flow (TransactionsList.tsx::handleReprint) — no server-side PDF
+   * generation, just a styled, printable HTML document opened in a new tab. */
+  function handlePrint(req: PosReleaseFormRequest) {
+    const title =
+      (req.requestType ?? 'RFD').toUpperCase() === 'RFD'
+        ? 'RELEASE FORM DOCUMENT'
+        : req.requestType === 'Application Form'
+          ? 'APPLICATION FORM'
+          : 'RELEASE FORM DOCUMENT + APPLICATION FORM'
+
+    const lineRows = (req.cartSnapshot?.lines ?? [])
+      .map(
+        (l) =>
+          `<tr><td>${l.itemName}${l.serialNumberId ? ` <span style="color:#888">(${serialLabel(l)})</span>` : ''}</td><td style="text-align:right">${l.quantity}</td><td style="text-align:right">&#8369;${l.unitPrice.toFixed(2)}</td></tr>`
+      )
+      .join('')
+
+    const warningRows = (req.creditWarnings ?? []).map((w) => `<li>${w}</li>`).join('')
+
+    const date = new Date(req.createdAt).toLocaleString('en-PH')
+    const reviewedDate = req.reviewedAt ? new Date(req.reviewedAt).toLocaleString('en-PH') : null
+
+    const html = `<!DOCTYPE html><html><head><title>${title} — ${req.id}</title>
+<style>
+  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
+  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+  .center{text-align:center;margin:3px 0;color:#555}
+  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
+  td{padding:3px 4px}
+  .row{display:flex;justify-content:space-between;padding:2px 0}
+  .warn{background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:6px 10px;margin:8px 0;color:#92400e}
+  .warn ul{margin:4px 0 0 16px;padding:0}
+  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="banner">${title}</div>
+<p class="center" style="font-weight:bold">${req.id}</p>
+<p class="center">${date}</p>
+<hr>
+<div class="row"><span>Cashier</span><span>${cashierLabel(req)}</span></div>
+<div class="row"><span>Branch / Terminal</span><span>${branchTerminalLabel(req)}</span></div>
+<div class="row"><span>Customer</span><span>${customerLabel(req)}</span></div>
+<hr>
+<table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th></tr></thead><tbody>${lineRows}</tbody></table>
+<hr>
+<div class="row" style="font-weight:bold"><span>TOTAL</span><span>&#8369;${(req.cartSnapshot?.totalAmount ?? 0).toFixed(2)}</span></div>
+${warningRows ? `<div class="warn"><strong>Credit/terms concerns</strong><ul>${warningRows}</ul></div>` : ''}
+<hr>
+<div class="row"><span>Status</span><span style="text-transform:capitalize">${req.status}</span></div>
+${req.reviewedById ? `<div class="row"><span>Reviewed by</span><span>${shortId(req.reviewedById)}</span></div>` : ''}
+${reviewedDate ? `<div class="row"><span>Reviewed at</span><span>${reviewedDate}</span></div>` : ''}
+${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}</span></div>` : ''}
+<p class="footer">${title}. Not a receipt.</p>
+<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.focus()
+      setTimeout(() => w.print(), 400)
+    }
   }
 
   async function handleApprove() {
@@ -204,10 +291,12 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Release Approvals</h1>
+        <h1 className="text-xl font-bold text-gray-900">
+          Release &amp; Application Form Approvals
+        </h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Serial-tracked sales awaiting Release Form Document approval before their invoice is
-          created.
+          Serial-tracked sales and credit (charge) sales awaiting manager approval before their
+          invoice is created.
         </p>
       </div>
 
@@ -224,6 +313,7 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   {[
+                    'Type',
                     'Item / Serial',
                     'Cashier',
                     'Branch / Terminal',
@@ -267,6 +357,9 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Type
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Item / Serial
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -306,6 +399,9 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
                       onClick={() => setDetailTarget(req)}
                       className="hover:bg-gray-50 transition-colors cursor-pointer"
                     >
+                      <td className="px-5 py-3">
+                        <RequestTypeBadge requestType={req.requestType} />
+                      </td>
                       <td className="px-5 py-3">
                         <p className="font-medium text-gray-900">
                           {line?.itemName ?? '—'}
@@ -372,7 +468,10 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
             <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Release Form Request</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-gray-900">Release Form Request</h2>
+                    <RequestTypeBadge requestType={detailTarget.requestType} />
+                  </div>
                   <p className="text-xs text-gray-500 mt-0.5 font-mono">{detailTarget.id}</p>
                 </div>
                 <button
@@ -382,6 +481,20 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
                   <X size={18} />
                 </button>
               </div>
+
+              {(detailTarget.creditWarnings?.length ?? 0) > 0 && (
+                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">Credit/terms concerns</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {detailTarget.creditWarnings!.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -447,16 +560,22 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
                 </div>
               )}
 
-              {isManager && detailTarget.status === 'pending' && (
-                <div className="flex justify-end pt-1">
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => handlePrint(detailTarget)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  <Printer size={13} /> Print
+                </button>
+                {isManager && detailTarget.status === 'pending' && (
                   <button
                     onClick={() => openReview(detailTarget)}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
                   >
                     <ShieldCheck size={13} /> Review
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -472,9 +591,26 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6 space-y-4">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Review Release Request</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-gray-900">Review Release Request</h2>
+                  <RequestTypeBadge requestType={reviewTarget.requestType} />
+                </div>
                 <p className="font-mono text-xs text-gray-500 mt-0.5">{reviewTarget.id}</p>
               </div>
+
+              {(reviewTarget.creditWarnings?.length ?? 0) > 0 && (
+                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">Credit/terms concerns</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      {reviewTarget.creditWarnings!.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
