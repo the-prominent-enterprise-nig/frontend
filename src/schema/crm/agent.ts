@@ -6,6 +6,8 @@ export const createAgentSchema = z.object({
   phone: z.string().max(50).optional().or(z.literal('')),
   email: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   status: AgentStatusEnum.optional(),
+  /** Flat commission rate as a fraction, e.g. 0.05 = 5%. Null/omitted = no commission. */
+  commissionRate: z.number().min(0).max(1).nullable().optional(),
 })
 export type CreateAgentInput = z.infer<typeof createAgentSchema>
 
