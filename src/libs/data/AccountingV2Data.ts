@@ -282,6 +282,40 @@ export const ARInvoices = {
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
 }
 
+// ============ Credit Memos ============
+export type CreditMemoStatus = 'ISSUED' | 'VOID'
+export interface CreditMemo {
+  id: string
+  memoNumber: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string } | null
+  arInvoiceId: string
+  arInvoice?: {
+    id: string
+    invoiceNumber: string
+    totalAmount: number
+    amountPaid: number
+    status: string
+  } | null
+  memoDate: string
+  amount: number
+  reason?: string | null
+  status: CreditMemoStatus
+  journalEntryId?: string | null
+}
+export const CreditMemos = {
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    arInvoiceId?: string
+  }) => api.get<{ items: CreditMemo[]; total: number }>('/credit-memos', params as any),
+  get: (id: string) => api.get<CreditMemo>(`/credit-memos/${id}`),
+  issue: (body: { arInvoiceId: string; amount: number; reason?: string; memoDate?: string }) =>
+    api.post<CreditMemo>('/credit-memos', body),
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
+}
+
 // ============ AP Bills ============
 export interface APBill {
   id: string
