@@ -216,11 +216,13 @@ export default function CheckoutPage() {
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
   const [isBranchManager, setIsBranchManager] = useState(false)
+  const [authUserId, setAuthUserId] = useState<string | null>(null)
   useEffect(() => {
     getSessionOrNull().then((s) => {
       if (!s) return
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
+      setAuthUserId(s.id ?? null)
     })
   }, [])
 
@@ -1140,10 +1142,26 @@ export default function CheckoutPage() {
           const serialLines = cart
             .filter((l) => l.isSerialTracked)
             .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
+          // A charge/installment sale can reach pending-approval with zero
+          // serial-tracked lines (that's not just a serialized-item flow
+          // anymore) — fall back to describing/listing the cart itself
+          // rather than producing a nonsensical "0 serial-tracked items"
+          // label and an empty line-items area on the pending screen.
+          const displayLines =
+            serialLines.length > 0
+              ? serialLines
+              : cart.map((l) => ({
+                  itemName: l.itemName,
+                  serialNumberLabel: `×${l.quantity}`,
+                }))
           const itemNameSummary =
             serialLines.length === 1
               ? serialLines[0].itemName
-              : `${serialLines.length} serial-tracked items`
+              : serialLines.length > 1
+                ? `${serialLines.length} serial-tracked items`
+                : cart.length === 1
+                  ? cart[0].itemName
+                  : `${cart.length} items`
 
           usePosPendingRfdStore.getState().add({
             releaseFormRequestId,
@@ -1151,6 +1169,7 @@ export default function CheckoutPage() {
             totalAmount,
             submittedAt: new Date().toISOString(),
             sessionId: rfdSessionId,
+            submittedByUserId: authUserId ?? '',
           })
 
           updateSessionDisplay(sessionId, {
@@ -1164,7 +1183,7 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
           return
         }
 
@@ -2273,7 +2292,7 @@ export default function CheckoutPage() {
                       <option value="">Select a term…</option>
                       {financingTerms.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.termMonths} months · {t.factorRate.toFixed(2)}x
+                          {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
                           {t.branch ? ` · ${t.branch.name}` : ' · Tenant-wide'}
                         </option>
                       ))}

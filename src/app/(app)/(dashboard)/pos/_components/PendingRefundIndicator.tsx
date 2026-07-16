@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Undo2, ChevronDown, X } from 'lucide-react'
 import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
 import { getReturnRefundStatus, cancelReturnRefundRequest } from '../_actions/pos-actions'
@@ -17,11 +17,26 @@ const fmt = (n: number) =>
  * since the two poll different endpoints/ids and only refund needed a new
  * submitter-side pending state (void/cancellation already have their own
  * pending UX on their existing pages). */
-export function PendingRefundIndicator() {
-  const entries = usePosPendingRefundStore((s) => s.entries)
+export function PendingRefundIndicator({ userId }: { userId: string | null }) {
+  const rawEntries = usePosPendingRefundStore((s) => s.entries)
   const remove = usePosPendingRefundStore((s) => s.remove)
   const [open, setOpen] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+
+  // localStorage isn't scoped per-account — see PendingRfdIndicator for why
+  // this filter+prune pair exists.
+  const entries = useMemo(
+    () => (userId ? rawEntries.filter((e) => e.submittedByUserId === userId) : []),
+    [rawEntries, userId]
+  )
+
+  useEffect(() => {
+    if (!userId) return
+    for (const e of rawEntries) {
+      if (e.submittedByUserId !== userId) remove(e.returnRefundRequestId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawEntries, userId])
 
   async function handleCancel(returnRefundRequestId: string) {
     setCancellingId(returnRefundRequestId)

@@ -686,6 +686,16 @@ function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
           },
         ]
       : []),
+    // /settings/configuration's own page-level guard already allows Branch
+    // Manager (POS PIN self-service, payment methods, receipt branding) —
+    // without this the page was unreachable in practice since no nav link
+    // pointed to it for this role.
+    {
+      section: 'My Workspace' as const,
+      label: 'Configuration',
+      href: '/settings/configuration',
+      icon: Settings,
+    },
   ]
 }
 

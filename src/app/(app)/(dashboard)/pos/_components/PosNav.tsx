@@ -77,7 +77,13 @@ const GROUPS = [
 export function PosNav() {
   const pathname = usePathname()
 
-  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname)) ?? GROUPS[0]
+  // Standalone pages (approvals, void/refund requests, cancellation
+  // requests, payment methods, receipt branding, customer display, etc.)
+  // aren't part of any group — they used to silently fall back to the
+  // Operations tabs (Overview/Checkout/Parked Sales/Transactions), which
+  // don't apply there. Show nothing instead.
+  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname))
+  if (!activeGroup) return null
 
   return (
     <nav className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

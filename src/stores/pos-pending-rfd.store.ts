@@ -7,6 +7,10 @@ export interface PendingRfdEntry {
   totalAmount: number
   submittedAt: string
   sessionId: string
+  /** Whoever submitted this — lets the indicator hide/prune entries left
+   * over from a different account that was previously logged in on this
+   * same browser (localStorage isn't scoped per-account). */
+  submittedByUserId: string
 }
 
 interface PosPendingRfdStore {

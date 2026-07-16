@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Clock, ChevronDown } from 'lucide-react'
 import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { getReleaseFormStatus } from '../_actions/pos-actions'
@@ -11,10 +11,29 @@ const POLL_INTERVAL_MS = 12_000
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
-export function PendingRfdIndicator() {
-  const entries = usePosPendingRfdStore((s) => s.entries)
+export function PendingRfdIndicator({ userId }: { userId: string | null }) {
+  const rawEntries = usePosPendingRfdStore((s) => s.entries)
   const remove = usePosPendingRfdStore((s) => s.remove)
   const [open, setOpen] = useState(false)
+
+  // localStorage isn't scoped per-account, so entries submitted by a
+  // previously logged-in user on this same browser would otherwise leak
+  // into the current account's badge/list forever (they belong to a
+  // request this account may not even have visibility into).
+  const entries = useMemo(
+    () => (userId ? rawEntries.filter((e) => e.submittedByUserId === userId) : []),
+    [rawEntries, userId]
+  )
+
+  // Prune foreign entries out of the persisted store in the background so
+  // they don't keep resurfacing on every mount.
+  useEffect(() => {
+    if (!userId) return
+    for (const e of rawEntries) {
+      if (e.submittedByUserId !== userId) remove(e.releaseFormRequestId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawEntries, userId])
 
   useEffect(() => {
     if (entries.length === 0) return

@@ -10,6 +10,8 @@ import { MODULES } from '@/src/libs/guards/modules'
 import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
+import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
+import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
 
 interface SessionUser {
   id: string
@@ -160,6 +162,12 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                       <button
                         onClick={async () => {
                           setProfileOpen(false)
+                          // These persist to localStorage keyed by name only, not
+                          // by user — without this they'd leak the previous
+                          // account's pending-approval badges into the next
+                          // login on the same browser.
+                          usePosPendingRfdStore.getState().clear()
+                          usePosPendingRefundStore.getState().clear()
                           await logoutAndRedirect()
                         }}
                         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
