@@ -353,15 +353,20 @@ function OpenSessionModal({
   const [verifyError, setVerifyError] = useState('')
   const [verifiedCashier, setVerifiedCashier] = useState<{ id: string; name: string } | null>(null)
 
+  // Scope the sign-in search to Cashiers at this terminal's branch (falls
+  // back to the page's branch context until a terminal is picked).
+  const selectedTerminal = terminals.find((t) => t.id === form.terminalId)
+  const effectiveBranchId = selectedTerminal?.branchId ?? branchId ?? undefined
+
   useEffect(() => {
-    getUsers().then((res) => {
+    getUsers({ role: 'Cashier', branchId: effectiveBranchId }).then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setUsers(res.data)
       } else {
         setUsersError(res.error ?? 'Unable to load cashier list')
       }
     })
-  }, [])
+  }, [effectiveBranchId])
 
   const filtered = search.trim()
     ? users.filter(
@@ -660,14 +665,14 @@ function HandoverModal({
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
-    getUsers().then((res) => {
+    getUsers({ role: 'Cashier', branchId: session.terminal?.branchId }).then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setUsers(res.data)
       } else {
         setUsersError(res.error ?? 'Unable to load cashier list')
       }
     })
-  }, [])
+  }, [session.terminal?.branchId])
 
   const filtered = search.trim()
     ? users.filter(

@@ -1426,12 +1426,16 @@ export async function changeCashierPin(
   }
 }
 
-export async function getUsers(): Promise<
-  ApiResponse<{ id: string; name: string; email: string }[]>
-> {
+export async function getUsers(filters?: {
+  role?: string
+  branchId?: string
+}): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
   try {
     type UserRow = { id: string; name: string; email: string }
-    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
+    const result = await api.get<UserRow[] | { data: UserRow[] }>(
+      '/users',
+      filters as Record<string, string>
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
