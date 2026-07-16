@@ -235,6 +235,7 @@ export interface CreateTransactionLineInput {
   pricingMode?: 'inclusive' | 'exclusive'
   notes?: string
   serialNumberId?: string
+  secondarySerialNumberId?: string
 }
 
 export interface ScPwdDiscountInput {

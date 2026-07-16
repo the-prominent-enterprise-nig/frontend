@@ -21,6 +21,9 @@ export const CreateBundleFormSchema = z.object({
     .min(0, 'Cost price must be 0 or greater'),
   sellingPrice: z.number().min(0).optional(),
   description: z.string().max(500).optional(),
+  // A serial-tracked bundle is sold and registered as one physical unit (e.g.
+  // a "Furniture Set") — its own serial, not per-component serials.
+  isSerialTracked: z.boolean().optional(),
   components: z
     .array(BundleComponentFormSchema)
     .min(1, 'A bundle must include at least one component item'),

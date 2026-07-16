@@ -10,7 +10,7 @@ import {
 } from '@/src/schema/inventory/purchase-orders'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
-import { SupplierSearchCombobox } from './SupplierSearchCombobox'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 
 type Props = {
   open: boolean

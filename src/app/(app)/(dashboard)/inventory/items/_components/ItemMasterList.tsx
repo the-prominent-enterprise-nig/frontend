@@ -69,6 +69,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     itemOptions,
     createBundle,
     isCreatingBundle,
+    addBundleComponent,
+    isAddingBundleComponent,
+    removeBundleComponent,
+    removingComponentId,
     selectedVariantItem,
     setSelectedVariantItem,
     variants,
@@ -335,6 +339,12 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         components={bundleComponents}
         availableQty={bundleAvailableQty}
         isLoading={isLoadingComponents}
+        itemOptions={itemOptions}
+        onAddComponent={addBundleComponent}
+        isAddingComponent={isAddingBundleComponent}
+        onRemoveComponent={removeBundleComponent}
+        removingComponentId={removingComponentId}
+        canEdit={canCreateBundle}
         onClose={() => setSelectedBundleItem(null)}
       />
 
