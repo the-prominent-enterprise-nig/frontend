@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, Loader2 } from 'lucide-react'
 
@@ -46,7 +47,11 @@ export function SearchCombobox({
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
+    null
+  )
   const containerRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -59,10 +64,31 @@ export function SearchCombobox({
     if (!value) setConfirmedLabel('')
   }, [value])
 
+  const updatePosition = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+  }, [])
+
+  // Portal the dropdown to <body> and track the trigger's position — this is
+  // what lets it float above ancestor containers (e.g. a scrollable table
+  // inside a modal) instead of being clipped or trapped inside their bounds.
+  useEffect(() => {
+    if (!open) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open, updatePosition])
+
   // Close on outside click — restore confirmed label without losing the form value
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (!containerRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
         setOpen(false)
         setSearchQuery('')
       }
@@ -131,37 +157,46 @@ export function SearchCombobox({
         )}
       </div>
 
-      {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-            </div>
-          ) : options.length === 0 ? (
-            <p className="px-3 py-3 text-sm text-zinc-400">
-              {debouncedQuery ? `${emptyMessage} for "${debouncedQuery}"` : typeToSearchMessage}
-            </p>
-          ) : (
-            options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => handleSelect(option)}
-                className={`flex w-full items-center justify-between px-3 py-2 text-sm transition-colors hover:bg-zinc-50 ${
-                  option.id === value
-                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                    : 'text-zinc-800'
-                }`}
-              >
-                <span className="font-medium">{option.primary}</span>
-                {option.secondary && (
-                  <span className="font-mono text-xs text-zinc-400">{option.secondary}</span>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            style={{ top: position.top, left: position.left, width: position.width }}
+            className="fixed z-100 max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+          >
+            {isLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+              </div>
+            ) : options.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-zinc-400">
+                {debouncedQuery ? `${emptyMessage} for "${debouncedQuery}"` : typeToSearchMessage}
+              </p>
+            ) : (
+              options.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleSelect(option)}
+                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 ${
+                    option.id === value
+                      ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                      : 'text-zinc-800'
+                  }`}
+                >
+                  <span className="w-full truncate font-medium">{option.primary}</span>
+                  {option.secondary && (
+                    <span className="w-full truncate font-mono text-xs text-zinc-400">
+                      {option.secondary}
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
