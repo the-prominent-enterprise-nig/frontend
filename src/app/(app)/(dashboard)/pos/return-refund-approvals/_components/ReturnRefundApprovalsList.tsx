@@ -226,7 +226,7 @@ export default function ReturnRefundApprovalsList({ isManager }: Props) {
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Return & Refund Approvals</h1>
+        <h1 className="text-xl font-bold text-gray-900">Refund Approvals</h1>
         <p className="mt-0.5 text-sm text-gray-500">
           Cancellations, voids, and refunds awaiting manager approval before they take effect.
         </p>

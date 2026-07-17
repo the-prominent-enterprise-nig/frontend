@@ -330,7 +330,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:transactions:read',
       },
       {
-        label: 'Return & Refund Approvals',
+        label: 'Refund Approvals',
         href: '/pos/return-refund-approvals',
         icon: Undo2,
         requiredPermission: 'pos:transaction:override',
