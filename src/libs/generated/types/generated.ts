@@ -172,6 +172,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/users/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search users by name or email */
+    get: operations['UsersController_search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/users/{id}': {
     parameters: {
       query?: never
@@ -571,8 +588,25 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Cash-in-Transit report: per closed session, the amount moved from Undeposited Funds to Cash in Transit on close */
+    /** Outstanding Cash-in-Transit report: per closed, uncleared session, the amount still awaiting a bank deposit */
     get: operations['SessionsController_getCashInTransitReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/sessions/cash-in-transit/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cleared Cash-in-Transit history: sessions already deposited to a bank */
+    get: operations['SessionsController_getCashInTransitHistory']
     put?: never
     post?: never
     delete?: never
@@ -676,7 +710,7 @@ export interface paths {
     /** List transactions with optional filters (POS-09) */
     get: operations['TransactionsController_findAll']
     put?: never
-    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales); refunds are submitted as a pending return/refund request — all require manager approval. */
+    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales), UNLESS the submitter already holds pos:transaction:override (e.g. a Branch Manager ringing up their own sale), in which case it posts directly — they already have the authority they would otherwise be asking themselves for. Refunds are always submitted as a pending return/refund request requiring manager approval. */
     post: operations['TransactionsController_create']
     delete?: never
     options?: never
@@ -1960,6 +1994,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/release-form-requests/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Manager fetches resolved (approved/rejected) release form requests — history view */
+    get: operations['ReleaseFormRequestsController_getHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/release-form-requests/own': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cashier fetches their own submitted release form requests (any status) — read-only status visibility, no approval capability */
+    get: operations['ReleaseFormRequestsController_getOwn']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/release-form-requests/{id}': {
     parameters: {
       query?: never
@@ -2171,10 +2239,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List all installment financing terms */
+    /** List installment financing terms — a branch-assigned caller only sees their own branch's terms plus tenant-wide ones. */
     get: operations['FinancingTermsController_findAll']
     put?: never
-    /** Create an installment financing term */
+    /** Create an installment financing term. A branch-assigned caller (Branch Manager) is always scoped to their own branch, regardless of what branchId is submitted. */
     post: operations['FinancingTermsController_create']
     delete?: never
     options?: never
@@ -2230,7 +2298,7 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    /** Update a financing term (rate, active flag, notes) */
+    /** Update a financing term (rate, active flag, notes). A branch-assigned caller (Branch Manager) can only update terms scoped to their own branch. */
     patch: operations['FinancingTermsController_update']
     trace?: never
   }
@@ -2954,6 +3022,23 @@ export interface paths {
     }
     /** Get a print-ready document envelope for a Goods Receipt Note, including enterprise info. */
     get: operations['StockController_getReceivingDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/stock/withholding-summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Roll up withheld amounts across Receiving Reports, filterable by supplier and date range. */
+    get: operations['StockController_getWithholdingSummary']
     put?: never
     post?: never
     delete?: never
@@ -5796,6 +5881,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/bank-accounts/clear-cash-in-transit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Clear one or more closed sessions' Cash-in-Transit balance into an actual bank deposit */
+    post: operations['BankAccountsController_clearCashInTransit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/fixed-assets': {
     parameters: {
       query?: never
@@ -6762,6 +6864,23 @@ export interface paths {
     head?: never
     /** Update a sales agent */
     patch: operations['AgentController_update']
+    trace?: never
+  }
+  '/crm/agents/{id}/commissions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List an agent's commission ledger — one row per completed sale, newest first */
+    get: operations['AgentController_findCommissions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/branches': {
@@ -8836,6 +8955,23 @@ export interface components {
       receivedAt?: string
       /** @description General notes for this receipt */
       notes?: string
+      /** @description Supplier this receipt is from. Required when no line is linked to a PO (PO-linked receipts derive it from the PO if omitted). */
+      supplierId?: string
+      /**
+       * @description Date the linked PO was raised (auto-filled from the PO's orderDate on the client)
+       * @example 2026-07-01
+       */
+      poDate?: string
+      /**
+       * @description Free-text PO reference number for traceability
+       * @example PO-20260701-0001
+       */
+      purchaseOrderNumber?: string
+      /**
+       * @description Withholding tax flag for this receipt. Defaults to the supplier's configured default when omitted.
+       * @enum {string}
+       */
+      withholding?: 'none' | 'pct_1'
       /** @description Items being received */
       lines: components['schemas']['ReceiveStockLineDto'][]
     }
@@ -9766,6 +9902,12 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       /** @example Preferred supplier for office supplies. */
       notes?: string
+      /**
+       * @description Default withholding tax to prefill on Receiving Reports for this supplier
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
     }
     SupplierBankAccountDto: {
       id: string
@@ -9814,6 +9956,11 @@ export interface components {
       taxId?: string
       address?: string
       discountTerms?: string
+      /**
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
       bankAccounts: components['schemas']['SupplierBankAccountDto'][]
       /** @example 500000 */
       creditLimit?: number
@@ -9891,6 +10038,12 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       /** @example Preferred supplier for office supplies. */
       notes?: string
+      /**
+       * @description Default withholding tax to prefill on Receiving Reports for this supplier
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
     }
     CreateSupplierDocumentDto: {
       /** @enum {string} */
@@ -10322,6 +10475,16 @@ export interface components {
       /** @description VAT, NON_VAT, EXEMPT */
       taxCode?: string
     }
+    ClearCashInTransitDto: {
+      /** @description Bank account the deposit was made to */
+      bankAccountId: string
+      /** @description Closed POS session ids being cleared into this deposit */
+      sessionIds: string[]
+      /** @example 2026-07-16 */
+      depositDate: string
+      /** @description Bank deposit slip / reference number */
+      reference?: string
+    }
     CreatePipelineStageDto: {
       /** @example tenant-001 */
       tenantId: string
@@ -10670,6 +10833,11 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description Flat commission rate on a sale's pre-VAT subtotal (0.05 = 5%). Omit/null for no commission.
+       * @example 0.05
+       */
+      commissionRate?: Record<string, never>
     }
     AgentDto: {
       id: string
@@ -10678,6 +10846,8 @@ export interface components {
       email?: string
       /** @enum {string} */
       status: 'active' | 'inactive'
+      /** @example 0.05 */
+      commissionRate?: Record<string, never>
       createdAt: string
       updatedAt: string
     }
@@ -10697,6 +10867,11 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description Flat commission rate on a sale's pre-VAT subtotal (0.05 = 5%). Omit/null for no commission.
+       * @example 0.05
+       */
+      commissionRate?: Record<string, never>
     }
     AssignManagerDto: {
       /** @example a1b2c3d4-... */
@@ -10942,6 +11117,7 @@ export interface operations {
         search: string
         status: string
         branchId: string
+        role: string
         page: string
         limit: string
       }
@@ -11000,6 +11176,30 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  UsersController_search: {
+    parameters: {
+      query: {
+        q: string
+        search: string
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of users matching the search query */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponseDto'][]
+        }
       }
     }
   }
@@ -11826,6 +12026,28 @@ export interface operations {
       }
     }
   }
+  SessionsController_getCashInTransitHistory: {
+    parameters: {
+      query?: {
+        dateFrom?: string
+        dateTo?: string
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cash-in-Transit history rows */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SessionsController_findOne: {
     parameters: {
       query?: never
@@ -12253,7 +12475,9 @@ export interface operations {
   }
   TransactionsController_getBranchVoidRequests: {
     parameters: {
-      query?: never
+      query: {
+        branchId: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -12407,10 +12631,7 @@ export interface operations {
   }
   ParkedSalesController_findAll: {
     parameters: {
-      query: {
-        terminalId: string
-        branchId: string
-      }
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -12994,10 +13215,7 @@ export interface operations {
   }
   BranchPricingController_findAll: {
     parameters: {
-      query: {
-        branchId: string
-        itemId: string
-      }
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -13037,9 +13255,7 @@ export interface operations {
   }
   BranchPricingController_getForItem: {
     parameters: {
-      query: {
-        branchId: string
-      }
+      query?: never
       header?: never
       path: {
         /** @description Item ID */
@@ -13926,6 +14142,42 @@ export interface operations {
       query: {
         branchId: string
       }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReleaseFormRequestsController_getHistory: {
+    parameters: {
+      query: {
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReleaseFormRequestsController_getOwn: {
+    parameters: {
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -15940,6 +16192,35 @@ export interface operations {
       }
     }
   }
+  StockController_getWithholdingSummary: {
+    parameters: {
+      query?: {
+        /** @description Filter to a specific supplier */
+        supplierId?: string
+        /** @description Start of date range (inclusive) */
+        startDate?: string
+        /** @description End of date range (inclusive) */
+        endDate?: string
+        /** @description Page number */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated withholding rows plus a totalWithheld aggregate */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   StockController_getReorderRules: {
     parameters: {
       query?: {
@@ -16723,8 +17004,11 @@ export interface operations {
       query?: {
         warehouseId?: string
         categoryId?: string
-        /** @description ISO date string. Note: historical point-in-time valuation requires ledger replay (not implemented); current balances are used instead. */
-        asOfDate?: string
+        search?: string
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never
@@ -16750,6 +17034,12 @@ export interface operations {
         endDate?: string
         /** @description Period length in days used to normalise turnover rate (default: 30) */
         periodDays?: number
+        search?: string
+        status?: 'healthy' | 'slow_moving' | 'dead_stock'
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never
@@ -20129,6 +20419,7 @@ export interface operations {
         limit: string
         search: string
         status: string
+        branchId?: string
       }
       header?: never
       path?: never
@@ -21084,6 +21375,27 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BankAccountsController_clearCashInTransit: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ClearCashInTransitDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -23142,6 +23454,25 @@ export interface operations {
           'application/json': components['schemas']['AgentDto']
         }
       }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AgentController_findCommissions: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
       404: {
         headers: {
           [name: string]: unknown

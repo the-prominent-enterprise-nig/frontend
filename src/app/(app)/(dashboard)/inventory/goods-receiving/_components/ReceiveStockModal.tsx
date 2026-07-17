@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Plus, Trash2 } from 'lucide-react'
+import { X, Loader2, Plus, Trash2, ScanBarcode, ChevronUp } from 'lucide-react'
 import {
   ReceiveStockFormSchema,
   type ReceiveStockFormValues,
@@ -77,8 +77,15 @@ export default function ReceiveStockModal({
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
+  const [expandedSerialRows, setExpandedSerialRows] = useState<Set<string>>(new Set())
+  const [serialText, setSerialText] = useState<Record<string, string>>({})
+
   useEffect(() => {
-    if (!isOpen) reset(defaultValues)
+    if (!isOpen) {
+      reset(defaultValues)
+      setExpandedSerialRows(new Set())
+      setSerialText({})
+    }
   }, [isOpen, reset])
 
   if (!isOpen) return null
@@ -100,12 +107,65 @@ export default function ReceiveStockModal({
     setValue(`lines.${idx}.itemId`, itemId)
     const item = items.find((i) => i.id === itemId)
     if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
-    if (!item?.isSerialTracked) setValue(`lines.${idx}.autoGenerateSerials`, false)
+    if (!item?.isSerialTracked) {
+      setValue(`lines.${idx}.autoGenerateSerials`, false)
+      setValue(`lines.${idx}.serialNumbers`, undefined)
+      const fieldId = fields[idx]?.id
+      if (fieldId) {
+        setSerialText((prev) => ({ ...prev, [fieldId]: '' }))
+        setExpandedSerialRows((prev) => {
+          const next = new Set(prev)
+          next.delete(fieldId)
+          return next
+        })
+      }
+    }
   }
 
   function isLineSerialTracked(idx: number): boolean {
     const itemId = watchedLines?.[idx]?.itemId
     return !!items.find((i) => i.id === itemId)?.isSerialTracked
+  }
+
+  function parseSerials(text: string): string[] {
+    return text
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+
+  function toggleSerialEntry(fieldId: string, idx: number): void {
+    setExpandedSerialRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(fieldId)) {
+        next.delete(fieldId)
+      } else {
+        next.add(fieldId)
+        setValue(`lines.${idx}.autoGenerateSerials`, false)
+      }
+      return next
+    })
+  }
+
+  function handleSerialTextChange(fieldId: string, idx: number, text: string): void {
+    setSerialText((prev) => ({ ...prev, [fieldId]: text }))
+    const parsed = parseSerials(text)
+    setValue(`lines.${idx}.serialNumbers`, parsed.length > 0 ? parsed : undefined, {
+      shouldValidate: true,
+    })
+  }
+
+  function handleAutoGenerateToggle(fieldId: string, idx: number, checked: boolean): void {
+    setValue(`lines.${idx}.autoGenerateSerials`, checked)
+    if (checked) {
+      setValue(`lines.${idx}.serialNumbers`, undefined)
+      setSerialText((prev) => ({ ...prev, [fieldId]: '' }))
+      setExpandedSerialRows((prev) => {
+        const next = new Set(prev)
+        next.delete(fieldId)
+        return next
+      })
+    }
   }
 
   return (
@@ -367,129 +427,177 @@ export default function ReceiveStockModal({
                         <th className="px-3 py-2">Unit Cost</th>
                         <th className="px-3 py-2">Batch No.</th>
                         <th className="px-3 py-2 text-center">QC Hold</th>
-                        <th className="px-3 py-2 text-center">Auto Serial</th>
+                        <th className="px-3 py-2 text-center">Serials</th>
                         <th className="px-3 py-2" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {fields.map((field, idx) => (
-                        <tr key={field.id} className="hover:bg-zinc-50">
-                          <td className="px-3 py-2 min-w-64">
-                            <Controller
-                              name={`lines.${idx}.itemId`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <ItemSearchCombobox
-                                  value={f.value}
-                                  onChange={(itemId) => handleItemChange(idx, itemId)}
-                                  error={errors.lines?.[idx]?.itemId?.message}
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <Controller
-                              name={`lines.${idx}.quantityReceived`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  {...f}
-                                  type="number"
-                                  min="0.01"
-                                  step="any"
-                                  value={f.value === 0 ? '' : f.value}
-                                  placeholder="0"
-                                  className={`w-24 ${cellInputClass}`}
-                                  onChange={(e) =>
-                                    f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
-                                  }
-                                />
-                              )}
-                            />
-                            {errors.lines?.[idx]?.quantityReceived && (
-                              <p className="mt-0.5 text-xs text-red-600">
-                                {errors.lines[idx]?.quantityReceived?.message}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <Controller
-                              name={`lines.${idx}.unitCost`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  {...f}
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={f.value ?? ''}
-                                  className={`w-28 ${cellInputClass}`}
-                                  onChange={(e) =>
-                                    f.onChange(
-                                      e.target.value === '' ? undefined : Number(e.target.value)
-                                    )
-                                  }
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <Controller
-                              name={`lines.${idx}.batchNumber`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  {...f}
-                                  type="text"
-                                  placeholder="Optional"
-                                  className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <Controller
-                              name={`lines.${idx}.qualityHold`}
-                              control={control}
-                              render={({ field: f }) => (
-                                <input
-                                  type="checkbox"
-                                  checked={f.value ?? false}
-                                  onChange={(e) => f.onChange(e.target.checked)}
-                                  className="h-4 w-4 rounded border-zinc-300"
-                                />
-                              )}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {isLineSerialTracked(idx) ? (
+                        <Fragment key={field.id}>
+                          <tr className="hover:bg-zinc-50">
+                            <td className="px-3 py-2 min-w-64">
                               <Controller
-                                name={`lines.${idx}.autoGenerateSerials`}
+                                name={`lines.${idx}.itemId`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <ItemSearchCombobox
+                                    value={f.value}
+                                    onChange={(itemId) => handleItemChange(idx, itemId)}
+                                    error={errors.lines?.[idx]?.itemId?.message}
+                                  />
+                                )}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Controller
+                                name={`lines.${idx}.quantityReceived`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    {...f}
+                                    type="number"
+                                    min="0.01"
+                                    step="any"
+                                    value={f.value === 0 ? '' : f.value}
+                                    placeholder="0"
+                                    className={`w-24 ${cellInputClass}`}
+                                    onChange={(e) =>
+                                      f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
+                                    }
+                                  />
+                                )}
+                              />
+                              {errors.lines?.[idx]?.quantityReceived && (
+                                <p className="mt-0.5 text-xs text-red-600">
+                                  {errors.lines[idx]?.quantityReceived?.message}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <Controller
+                                name={`lines.${idx}.unitCost`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    {...f}
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={f.value ?? ''}
+                                    className={`w-28 ${cellInputClass}`}
+                                    onChange={(e) =>
+                                      f.onChange(
+                                        e.target.value === '' ? undefined : Number(e.target.value)
+                                      )
+                                    }
+                                  />
+                                )}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Controller
+                                name={`lines.${idx}.batchNumber`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    {...f}
+                                    type="text"
+                                    placeholder="Optional"
+                                    className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
+                                  />
+                                )}
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <Controller
+                                name={`lines.${idx}.qualityHold`}
                                 control={control}
                                 render={({ field: f }) => (
                                   <input
                                     type="checkbox"
                                     checked={f.value ?? false}
                                     onChange={(e) => f.onChange(e.target.checked)}
-                                    title="Auto-assign a serial number & barcode per unit received"
-                                    className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
+                                    className="h-4 w-4 rounded border-zinc-300"
                                   />
                                 )}
                               />
-                            ) : (
-                              <span className="text-xs text-zinc-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <button
-                              type="button"
-                              onClick={() => remove(idx)}
-                              className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="px-3 py-2">
+                              {isLineSerialTracked(idx) ? (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Controller
+                                    name={`lines.${idx}.autoGenerateSerials`}
+                                    control={control}
+                                    render={({ field: f }) => (
+                                      <input
+                                        type="checkbox"
+                                        checked={f.value ?? false}
+                                        onChange={(e) =>
+                                          handleAutoGenerateToggle(field.id, idx, e.target.checked)
+                                        }
+                                        title="Auto-assign a serial number & barcode per unit received"
+                                        className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
+                                      />
+                                    )}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSerialEntry(field.id, idx)}
+                                    className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                                  >
+                                    {expandedSerialRows.has(field.id) ? (
+                                      <ChevronUp className="h-3 w-3" />
+                                    ) : (
+                                      <ScanBarcode className="h-3 w-3" />
+                                    )}
+                                    {(watchedLines?.[idx]?.serialNumbers?.length ?? 0) > 0
+                                      ? `${watchedLines?.[idx]?.serialNumbers?.length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
+                                      : 'Enter serials'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="block text-center text-xs text-zinc-300">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => remove(idx)}
+                                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          </tr>
+                          {expandedSerialRows.has(field.id) && (
+                            <tr className="bg-zinc-50">
+                              <td colSpan={7} className="px-4 py-3">
+                                <label
+                                  htmlFor={`serial-entry-${field.id}`}
+                                  className="mb-1 block text-xs font-medium text-zinc-600"
+                                >
+                                  Serial numbers for this line — one per line or comma-separated
+                                  (must total {watchedLines?.[idx]?.quantityReceived || 0})
+                                </label>
+                                <textarea
+                                  id={`serial-entry-${field.id}`}
+                                  rows={3}
+                                  value={serialText[field.id] ?? ''}
+                                  onChange={(e) =>
+                                    handleSerialTextChange(field.id, idx, e.target.value)
+                                  }
+                                  placeholder="SN-001&#10;SN-002&#10;SN-003"
+                                  className={`${fieldClass} resize-none font-mono text-xs`}
+                                />
+                                {errors.lines?.[idx]?.serialNumbers && (
+                                  <p className="mt-1 text-xs text-red-600">
+                                    {errors.lines[idx]?.serialNumbers?.message}
+                                  </p>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>

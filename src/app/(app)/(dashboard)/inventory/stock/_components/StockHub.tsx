@@ -1,13 +1,23 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { PackageCheck, BookOpen, ClipboardList, Archive, TrendingDown } from 'lucide-react'
+import {
+  PackageCheck,
+  BookOpen,
+  ClipboardList,
+  Archive,
+  TrendingDown,
+  Hash,
+  ScanBarcode,
+} from 'lucide-react'
 import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
 import StockBalanceList from './StockBalanceList'
 import ReservationsPageView from '../../reservations/_components/ReservationsPageView'
 import NegativeStockPageView from '../../negative-stock/_components/NegativeStockPageView'
 import StockLedgerTab from '../../goods-receiving/_components/StockLedgerTab'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
+import { SerialNumberList } from '../../serial-numbers/_components'
+import { BarcodesPageView } from '../../barcodes/_components'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 const TABS = [
@@ -16,6 +26,8 @@ const TABS = [
   { id: 'reports', label: 'Receiving Reports', icon: ClipboardList },
   { id: 'reservations', label: 'Reservations', icon: Archive },
   { id: 'negative', label: 'Negative Stock', icon: TrendingDown },
+  { id: 'serials', label: 'Serial Numbers', icon: Hash },
+  { id: 'barcodes', label: 'Barcodes', icon: ScanBarcode },
 ]
 
 export function StockHub({ session }: { session: SessionUser }) {
@@ -37,6 +49,10 @@ export function StockHub({ session }: { session: SessionUser }) {
         <ReservationsPageView session={session} />
       ) : tab === 'negative' ? (
         <NegativeStockPageView session={session} />
+      ) : tab === 'serials' ? (
+        <SerialNumberList session={session} />
+      ) : tab === 'barcodes' ? (
+        <BarcodesPageView session={session} />
       ) : (
         <StockBalanceList session={session} />
       )}
