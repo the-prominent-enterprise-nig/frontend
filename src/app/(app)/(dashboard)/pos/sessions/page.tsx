@@ -369,7 +369,7 @@ function OpenSessionModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), branchId ?? undefined)
+      const res = await searchUsers(search.trim(), effectiveBranchId)
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -382,7 +382,7 @@ function OpenSessionModal({
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current)
     }
-  }, [search, branchId])
+  }, [search, effectiveBranchId])
 
   async function handleVerify() {
     if (!selectedUser) return
