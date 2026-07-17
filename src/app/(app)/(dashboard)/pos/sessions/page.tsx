@@ -355,6 +355,11 @@ function OpenSessionModal({
   const [verifiedCashier, setVerifiedCashier] = useState<{ id: string; name: string } | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Scope the sign-in search to Cashiers at this terminal's branch (falls
+  // back to the page's branch context until a terminal is picked).
+  const selectedTerminal = terminals.find((t) => t.id === form.terminalId)
+  const effectiveBranchId = selectedTerminal?.branchId ?? branchId ?? undefined
+
   useEffect(() => {
     if (!search.trim()) {
       setFiltered([])

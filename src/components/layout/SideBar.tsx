@@ -365,6 +365,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/gl-mapping', '/pos/settings', '/pos/config', '/pos/queue-categories'],
       },
       {
+        label: 'Cash-in-Transit',
+        href: '/pos/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: 'pos:cash-in-transit:read',
+      },
+      {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Configuration item above so
         // hiding that one from Cashier doesn't also remove their only way to

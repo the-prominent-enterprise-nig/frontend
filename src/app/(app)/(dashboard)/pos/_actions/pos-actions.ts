@@ -103,6 +103,7 @@ const TAGS = {
   releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
   returnRefundRequests: 'pos-return-refund-requests',
   returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
+  cashInTransit: 'pos-cash-in-transit',
 }
 
 export async function getTerminals(filters?: {
@@ -1425,12 +1426,16 @@ export async function changeCashierPin(
   }
 }
 
-export async function getUsers(): Promise<
-  ApiResponse<{ id: string; name: string; email: string }[]>
-> {
+export async function getUsers(filters?: {
+  role?: string
+  branchId?: string
+}): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
   try {
     type UserRow = { id: string; name: string; email: string }
-    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
+    const result = await api.get<UserRow[] | { data: UserRow[] }>(
+      '/users',
+      filters as Record<string, string>
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
@@ -2303,5 +2308,97 @@ export async function rejectReturnRefundRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject request' }
+  }
+}
+
+export interface CashInTransitSessionRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  journalEntryId: string | null
+}
+
+export async function getCashInTransitReport(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitSessionRow[]>> {
+  try {
+    const result = await api.get<CashInTransitSessionRow[]>(
+      '/pos/sessions/cash-in-transit',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit report' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit report' }
+  }
+}
+
+export interface CashInTransitHistoryRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  citClearedAt: string | null
+  citClearingJournalEntryId: string | null
+  depositedTo: string | null
+  depositDate: string | null
+}
+
+export async function getCashInTransitHistory(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitHistoryRow[]>> {
+  try {
+    const result = await api.get<CashInTransitHistoryRow[]>(
+      '/pos/sessions/cash-in-transit/history',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit history' }
+  }
+}
+
+export interface ClearCashInTransitInput {
+  bankAccountId: string
+  sessionIds: string[]
+  depositDate: string
+  reference?: string
+}
+
+export interface ClearCashInTransitResult {
+  journalEntryId: string
+  amount: number
+  sessionsCleared: number
+}
+
+export async function clearCashInTransit(
+  input: ClearCashInTransitInput
+): Promise<ApiResponse<ClearCashInTransitResult>> {
+  try {
+    const result = await api.post<ClearCashInTransitResult>(
+      '/bank-accounts/clear-cash-in-transit',
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to clear Cash-in-Transit' }
+    }
+    revalidateTag(TAGS.cashInTransit, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to clear Cash-in-Transit' }
   }
 }

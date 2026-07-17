@@ -20,6 +20,8 @@ export const POS_PERMISSIONS = {
   BRANCH_PRICING_MANAGE: 'pos:branch-pricing:manage',
   FINANCING_TERMS_READ: 'pos:financing-terms:read',
   FINANCING_TERMS_MANAGE: 'pos:financing-terms:manage',
+  CASH_IN_TRANSIT_READ: 'pos:cash-in-transit:read',
+  CASH_IN_TRANSIT_MANAGE: 'pos:cash-in-transit:manage',
   WILDCARD: 'pos:*',
 } as const
 
@@ -49,6 +51,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:branch-pricing:manage': 'Create and edit branch price overrides',
   'pos:financing-terms:read': 'View installment financing terms',
   'pos:financing-terms:manage': 'Create and edit installment financing terms',
+  'pos:cash-in-transit:read': 'View outstanding Cash-in-Transit sessions',
+  'pos:cash-in-transit:manage': 'Clear Cash-in-Transit sessions into a bank deposit',
   'pos:*': 'Wildcard full POS access',
 }
 
