@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, ShoppingCart } from 'lucide-react'
 import {
   ConvertPrToPoFormSchema,
@@ -11,6 +12,7 @@ import {
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
 
 type Props = {
   open: boolean
@@ -20,7 +22,21 @@ type Props = {
   isConverting?: boolean
 }
 
+function defaultShippingAddress(pr: PurchaseRequestSummary | null): string {
+  if (!pr) return ''
+  return [pr.branch?.addressLine1, pr.branch?.city].filter(Boolean).join(', ')
+}
+
 export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting }: Props) {
+  const warehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    enabled: !!pr,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const warehouses = warehousesQuery.data?.data?.data ?? []
+
   const {
     control,
     handleSubmit,
@@ -53,7 +69,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
         expectedDeliveryDate: '',
         deliveryInstructions: '',
         paymentTerms: '',
-        shippingAddress: '',
+        shippingAddress: defaultShippingAddress(pr),
         notes: '',
         lines: pr.lines.map((line) => ({
           prLineId: line.id,
@@ -135,18 +151,23 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
             {/* Warehouse + Expected Delivery */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse ID</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
                 <Controller
                   name="warehouseId"
                   control={control}
                   render={({ field }) => (
-                    <input
+                    <select
                       {...field}
                       value={field.value ?? ''}
-                      type="text"
-                      placeholder="Optional warehouse ID"
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    />
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    >
+                      <option value="">Select warehouse…</option>
+                      {warehouses.map((wh) => (
+                        <option key={wh.id} value={wh.id}>
+                          {wh.code} — {wh.name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 />
               </div>
@@ -190,24 +211,6 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               {errors.deliveryInstructions && (
                 <p className="mt-1 text-xs text-red-600">{errors.deliveryInstructions.message}</p>
               )}
-            </div>
-
-            {/* Payment Terms */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Payment Terms</label>
-              <Controller
-                name="paymentTerms"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. Net 30"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
             </div>
 
             {/* Shipping Address */}

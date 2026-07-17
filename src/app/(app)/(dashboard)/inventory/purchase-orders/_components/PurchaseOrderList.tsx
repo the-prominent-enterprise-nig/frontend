@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom'
 import {
   Loader2,
   Plus,
-  TrendingUp,
   Search,
   FileText,
   ShoppingBag,
@@ -17,22 +16,16 @@ import {
   Ban,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
-import { useProcurementQuotas } from '../../procurement-quotas/_hooks/useProcurementQuotas'
-import { CreateQuotaModal } from '../../procurement-quotas/_components/CreateQuotaModal'
 import { CancelPoModal } from './CancelPoModal'
 import { CreatePoModal } from './CreatePoModal'
 import { PoDetailModal } from './PoDetailModal'
 import { PoReceiptsPanel } from './PoReceiptsPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
-import type { ProcurementQuota } from '@/src/schema/inventory/procurement-quotas'
 
 // ─── Section tabs ─────────────────────────────────────────────────────────────
 
-const SECTION_TABS = [
-  { label: 'Purchase Orders', value: 'orders' },
-  { label: 'Spending Quotas', value: 'quotas' },
-] as const
+const SECTION_TABS = [{ label: 'Purchase Orders', value: 'orders' }] as const
 type Section = (typeof SECTION_TABS)[number]['value']
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -238,47 +231,22 @@ function SkeletonRow() {
   )
 }
 
-// ─── Quota helpers ────────────────────────────────────────────────────────────
-
-const GRAIN_LABELS: Record<string, string> = {
-  monthly: 'Monthly',
-  quarterly: 'Quarterly',
-  annual: 'Annual',
-}
-
-function GrainBadge({ grain }: { grain: ProcurementQuota['grain'] }) {
-  const styles: Record<string, string> = {
-    monthly: 'bg-blue-50 text-blue-700 border-blue-100',
-    quarterly: 'bg-amber-50 text-amber-700 border-amber-100',
-    annual: 'bg-prominent-purple-50 text-prominent-purple-700 border-prominent-purple-100',
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${styles[grain] ?? 'bg-zinc-50 text-zinc-600 border-zinc-200'}`}
-    >
-      {GRAIN_LABELS[grain] ?? grain}
-    </span>
-  )
-}
-
-function UsageBar({ usedPct }: { usedPct: number }) {
-  const pct = Math.min(usedPct, 100)
-  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-400' : 'bg-emerald-500'
-  return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-      <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
-    </div>
-  )
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PurchaseOrderList({
-  canManageQuotas,
   canCreate,
+  canApprove,
+  canSend,
+  canCancel,
+  canClose,
+  canReceive,
 }: {
-  canManageQuotas: boolean
   canCreate: boolean
+  canApprove: boolean
+  canSend: boolean
+  canCancel: boolean
+  canClose: boolean
+  canReceive: boolean
 }) {
   const [activeSection, setActiveSection] = useState<Section>('orders')
 
@@ -305,18 +273,6 @@ export function PurchaseOrderList({
     refetch,
   } = usePurchaseOrders()
 
-  const {
-    quotas,
-    usage,
-    isLoading: isQuotasLoading,
-    isUsageLoading,
-    createQuota,
-    isCreating: isCreatingQuota,
-    updateQuota,
-    isUpdating,
-  } = useProcurementQuotas()
-
-  const [showCreateQuota, setShowCreateQuota] = useState(false)
   const [showCreatePo, setShowCreatePo] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiptsTarget, setReceiptsTarget] = useState<PurchaseOrderSummary | null>(null)
@@ -347,16 +303,6 @@ export function PurchaseOrderList({
             >
               <Plus className="h-4 w-4" />
               New Purchase Order
-            </button>
-          )}
-          {activeSection === 'quotas' && canManageQuotas && (
-            <button
-              type="button"
-              onClick={() => setShowCreateQuota(true)}
-              className="flex items-center gap-2 rounded-xl bg-prominent-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-prominent-purple-700 active:scale-95 transition-all"
-            >
-              <Plus className="h-4 w-4" />
-              New Quota
             </button>
           )}
         </div>
@@ -562,53 +508,63 @@ export function PurchaseOrderList({
                           <div className="flex items-center justify-end gap-1.5">
                             {po.status === 'draft' && (
                               <>
-                                <button
-                                  type="button"
-                                  onClick={() => approvePO(po.id)}
-                                  disabled={isActing}
-                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                                >
-                                  Approve
-                                </button>
-                                <IconBtn
-                                  title="Cancel PO"
-                                  onClick={() => setCancelTarget(po)}
-                                  disabled={isActing}
-                                  variant="danger"
-                                >
-                                  <Ban className="h-3.5 w-3.5" />
-                                </IconBtn>
+                                {canApprove && (
+                                  <button
+                                    type="button"
+                                    onClick={() => approvePO(po.id)}
+                                    disabled={isActing}
+                                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                                {canCancel && (
+                                  <IconBtn
+                                    title="Cancel PO"
+                                    onClick={() => setCancelTarget(po)}
+                                    disabled={isActing}
+                                    variant="danger"
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                  </IconBtn>
+                                )}
                               </>
                             )}
 
                             {po.status === 'approved' && (
                               <>
-                                <IconBtn
-                                  title="Receive stock"
-                                  onClick={() => setReceiveTarget(po)}
-                                  variant="purple"
-                                >
-                                  <PackagePlus className="h-3.5 w-3.5" />
-                                </IconBtn>
-                                <IconBtn
-                                  title="Send to supplier"
-                                  onClick={() => sendPO(po.id)}
-                                  disabled={isActing}
-                                >
-                                  <Send className="h-3.5 w-3.5" />
-                                </IconBtn>
-                                <IconBtn
-                                  title="Cancel PO"
-                                  onClick={() => setCancelTarget(po)}
-                                  disabled={isActing}
-                                  variant="danger"
-                                >
-                                  <Ban className="h-3.5 w-3.5" />
-                                </IconBtn>
+                                {canReceive && (
+                                  <IconBtn
+                                    title="Receive stock"
+                                    onClick={() => setReceiveTarget(po)}
+                                    variant="purple"
+                                  >
+                                    <PackagePlus className="h-3.5 w-3.5" />
+                                  </IconBtn>
+                                )}
+                                {canSend && (
+                                  <IconBtn
+                                    title="Send to supplier"
+                                    onClick={() => sendPO(po.id)}
+                                    disabled={isActing}
+                                  >
+                                    <Send className="h-3.5 w-3.5" />
+                                  </IconBtn>
+                                )}
+                                {canCancel && (
+                                  <IconBtn
+                                    title="Cancel PO"
+                                    onClick={() => setCancelTarget(po)}
+                                    disabled={isActing}
+                                    variant="danger"
+                                  >
+                                    <Ban className="h-3.5 w-3.5" />
+                                  </IconBtn>
+                                )}
                               </>
                             )}
 
-                            {po.status === 'sent' && (
+                            {po.status === 'sent' && canReceive && (
                               <IconBtn
                                 title="Receive stock"
                                 onClick={() => setReceiveTarget(po)}
@@ -620,29 +576,33 @@ export function PurchaseOrderList({
 
                             {po.status === 'partially_received' && (
                               <>
-                                <IconBtn
-                                  title="Receive more stock"
-                                  onClick={() => setReceiveTarget(po)}
-                                  variant="purple"
-                                >
-                                  <PackagePlus className="h-3.5 w-3.5" />
-                                </IconBtn>
-                                <IconBtn
-                                  title="Close"
-                                  onClick={() => closePO(po.id)}
-                                  disabled={isActing}
-                                  variant="default"
-                                >
-                                  {isClosing ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Archive className="h-3.5 w-3.5" />
-                                  )}
-                                </IconBtn>
+                                {canReceive && (
+                                  <IconBtn
+                                    title="Receive more stock"
+                                    onClick={() => setReceiveTarget(po)}
+                                    variant="purple"
+                                  >
+                                    <PackagePlus className="h-3.5 w-3.5" />
+                                  </IconBtn>
+                                )}
+                                {canClose && (
+                                  <IconBtn
+                                    title="Close"
+                                    onClick={() => closePO(po.id)}
+                                    disabled={isActing}
+                                    variant="default"
+                                  >
+                                    {isClosing ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Archive className="h-3.5 w-3.5" />
+                                    )}
+                                  </IconBtn>
+                                )}
                               </>
                             )}
 
-                            {po.status === 'fully_received' && (
+                            {po.status === 'fully_received' && canClose && (
                               <button
                                 type="button"
                                 onClick={() => closePO(po.id)}
@@ -716,160 +676,7 @@ export function PurchaseOrderList({
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          SPENDING QUOTAS TAB
-      ══════════════════════════════════════════════════════════════════════ */}
-      {activeSection === 'quotas' && (
-        <div className="space-y-5">
-          {/* Usage widget */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-prominent-purple-50">
-                <TrendingUp className="h-4 w-4 text-prominent-purple-600" />
-              </div>
-              <span className="text-sm font-semibold text-zinc-700">
-                Current Period — Tenant-Wide
-              </span>
-            </div>
-
-            {isUsageLoading ? (
-              <div className="space-y-3">
-                <div className="h-8 w-40 animate-pulse rounded-lg bg-zinc-100" />
-                <div className="h-2 w-full animate-pulse rounded-full bg-zinc-100" />
-              </div>
-            ) : usage?.quota ? (
-              <div className="space-y-3">
-                <div className="flex items-end justify-between">
-                  <span className="text-3xl font-bold text-zinc-900">
-                    {fmtPHP(usage.currentSpend)}
-                  </span>
-                  <span className="mb-0.5 text-sm text-zinc-500">
-                    of {fmtPHP(Number(usage.quota.limitAmount))}
-                  </span>
-                </div>
-                <UsageBar usedPct={usage.usedPct} />
-                <div className="flex justify-between text-xs text-zinc-400">
-                  <span>{usage.usedPct.toFixed(1)}% used</span>
-                  <span className="font-medium text-zinc-600">
-                    {fmtPHP(usage.remaining ?? 0)} remaining
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-zinc-400">
-                No active quota configured for the current period.
-              </p>
-            )}
-          </div>
-
-          {/* Quotas table */}
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            {isQuotasLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-6 w-6 animate-spin text-zinc-300" />
-              </div>
-            ) : quotas.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-sm font-medium text-zinc-500">No spending quotas configured</p>
-                {canManageQuotas && (
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Create a quota to enforce budget limits on purchase orders
-                  </p>
-                )}
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 bg-zinc-50">
-                    {[
-                      'Scope',
-                      'Period',
-                      'Fiscal Year',
-                      'Limit',
-                      'Status',
-                      'Notes',
-                      ...(canManageQuotas ? [''] : []),
-                    ].map((h, i) => (
-                      <th
-                        key={h || i}
-                        className={`px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 ${i === 3 ? 'text-right' : 'text-left'}`}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {quotas.map((q) => (
-                    <tr key={q.id} className="transition-colors hover:bg-zinc-50/70">
-                      <td className="px-4 py-4">
-                        {q.branch ? (
-                          <span className="font-medium text-zinc-800">{q.branch.name}</span>
-                        ) : (
-                          <span className="italic text-zinc-400">Tenant-wide</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <GrainBadge grain={q.grain} />
-                      </td>
-                      <td className="px-4 py-4 text-zinc-600">{q.fiscalYear}</td>
-                      <td className="px-4 py-4 text-right font-semibold text-zinc-900">
-                        {fmtPHP(Number(q.limitAmount))}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${q.isActive ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-zinc-50 border-zinc-200 text-zinc-500'}`}
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${q.isActive ? 'bg-emerald-500' : 'bg-zinc-300'}`}
-                          />
-                          {q.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-zinc-500">
-                        {q.notes ?? <span className="text-zinc-300">—</span>}
-                      </td>
-                      {canManageQuotas && (
-                        <td className="px-4 py-4 text-right">
-                          {q.isActive ? (
-                            <button
-                              type="button"
-                              disabled={isUpdating}
-                              onClick={() => updateQuota(q.id, { isActive: false })}
-                              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
-                            >
-                              Deactivate
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={isUpdating}
-                              onClick={() => updateQuota(q.id, { isActive: true })}
-                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                            >
-                              Activate
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Modals & panels ──────────────────────────────────────────────────── */}
-
-      {showCreateQuota && (
-        <CreateQuotaModal
-          onClose={() => setShowCreateQuota(false)}
-          onSubmit={createQuota}
-          isSubmitting={isCreatingQuota}
-        />
-      )}
 
       <CreatePoModal
         open={showCreatePo}

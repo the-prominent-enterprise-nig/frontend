@@ -96,8 +96,10 @@ export function PoDetailModal({ po, onClose }: Props) {
             <InfoRow label="Warehouse" value={po.warehouse?.name ?? '—'} />
             <InfoRow label="Order Date" value={fmtDate(po.orderDate)} />
             <InfoRow label="Expected Delivery" value={fmtDate(po.expectedDeliveryDate)} />
-            <InfoRow label="Payment Terms" value={po.paymentTerms ?? '—'} />
-            <InfoRow label="Approved" value={fmtDate(po.approvedAt)} />
+            <InfoRow
+              label="Approved"
+              value={po.approvedByName ? `${po.approvedByName} · ${fmtDate(po.approvedAt)}` : '—'}
+            />
             {po.shippingAddress && (
               <div className="col-span-2">
                 <InfoRow label="Shipping Address" value={po.shippingAddress} />

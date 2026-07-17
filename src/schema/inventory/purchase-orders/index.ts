@@ -136,6 +136,7 @@ export const PurchaseOrderSummarySchema = z.object({
   totalAmount: z.coerce.number(),
   preparedById: z.string().optional().nullable(),
   approvedById: z.string().optional().nullable(),
+  approvedByName: z.string().optional().nullable(),
   approvedAt: z.string().optional().nullable(),
   sentAt: z.string().optional().nullable(),
   cancellationReason: z.string().optional().nullable(),
