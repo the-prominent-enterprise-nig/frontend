@@ -33,10 +33,6 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
 
-  // ── Write-offs ─────────────────────────────────────────────────────────────
-  WRITE_OFFS_READ: 'inventory:write-offs:read',
-  WRITE_OFFS_CREATE: 'inventory:write-offs:create',
-
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
   BUNDLES_CREATE: 'inventory:bundles:create',
@@ -172,8 +168,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:transfers:create': 'Create stock transfer requests',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:receive': 'Receive incoming stock transfers',
-  'inventory:write-offs:read': 'View write-off records',
-  'inventory:write-offs:create': 'Create stock write-offs',
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',

@@ -5,7 +5,6 @@ import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
 import TransferList from '../../transfers/_components/TransferList'
 import GoodsReceivingList from '../../goods-receiving/_components/GoodsReceivingList'
 import ReturnList from '../../returns/_components/ReturnList'
-import WriteOffList from '../../write-offs/_components/WriteOffList'
 import QualityHoldList from '../../quality-hold/_components/QualityHoldList'
 import BackordersPageView from '../../backorders/_components/BackordersPageView'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -14,7 +13,6 @@ const TABS = [
   { id: 'transfers', label: 'Transfers' },
   { id: 'receiving', label: 'Receiving' },
   { id: 'returns', label: 'Returns' },
-  { id: 'write-offs', label: 'Write-offs' },
   { id: 'quality', label: 'Quality Hold' },
   { id: 'backorders', label: 'Backorders' },
 ]
@@ -30,8 +28,6 @@ export function OperationsHub({ session }: { session: SessionUser }) {
         <GoodsReceivingList session={session} />
       ) : tab === 'returns' ? (
         <ReturnList session={session} />
-      ) : tab === 'write-offs' ? (
-        <WriteOffList session={session} />
       ) : tab === 'quality' ? (
         <QualityHoldList session={session} />
       ) : tab === 'backorders' ? (

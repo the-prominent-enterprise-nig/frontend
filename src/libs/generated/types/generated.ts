@@ -2130,6 +2130,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/return-refund-requests/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Manager fetches resolved (approved/rejected) cancellation/void/refund requests for their tenant/branch */
+    get: operations['ReturnRefundRequestsController_getHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/return-refund-requests/mine': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cashier fetches their own submitted cancellation/void/refund requests — no manager permission required */
+    get: operations['ReturnRefundRequestsController_getMine']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/return-refund-requests/{id}': {
     parameters: {
       query?: never
@@ -3186,23 +3220,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/inventory/adjustments/write-off': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Write off inventory (damaged, expired, or write_off reason codes only) */
-    post: operations['AdjustmentsController_writeOff']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/inventory/adjustments/{id}': {
     parameters: {
       query?: never
@@ -3215,44 +3232,6 @@ export interface paths {
     put?: never
     post?: never
     delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/adjustments/{id}/attachments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List photos attached to a write-off / stock adjustment (INV-29) */
-    get: operations['AdjustmentsController_listPhotos']
-    put?: never
-    /**
-     * Attach a photo to a write-off / stock adjustment (INV-29)
-     * @description The file must already exist in the Files module. Supports multiple photos per write-off.
-     */
-    post: operations['AdjustmentsController_attachPhoto']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/adjustments/{id}/attachments/{attachmentId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /** Remove a photo attachment from a write-off (INV-29) */
-    delete: operations['AdjustmentsController_removePhoto']
     options?: never
     head?: never
     patch?: never
@@ -8999,39 +8978,6 @@ export interface components {
       /** @description Adjustment lines (at least 1 required) */
       lines: components['schemas']['AdjustmentLineDto'][]
     }
-    WriteOffDto: {
-      /** @description Warehouse UUID */
-      warehouseId: string
-      /** @description Item UUID */
-      itemId: string
-      /** @description Variant UUID */
-      variantId?: string
-      /** @description Batch UUID */
-      batchId?: string
-      /** @description Location UUID within the warehouse */
-      locationId?: string
-      /**
-       * @description Quantity to write off (must be positive)
-       * @example 5
-       */
-      quantity: number
-      /**
-       * @description Reason code — must be damaged, expired, or write_off
-       * @enum {string}
-       */
-      reasonCode: 'damaged' | 'expired' | 'write_off'
-      /** @description Required justification notes for write-offs */
-      notes: string
-      /**
-       * @description Unit cost for impact value calculation
-       * @example 25.5
-       */
-      unitCost?: number
-    }
-    AttachWriteOffPhotoDto: {
-      /** @description UUID of an already-uploaded File record */
-      fileId: string
-    }
     CreateCountDto: {
       /** @description Warehouse UUID to count */
       warehouseId: string
@@ -14137,6 +14083,46 @@ export interface operations {
     parameters: {
       query: {
         branchId: string
+        type: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReturnRefundRequestsController_getHistory: {
+    parameters: {
+      query: {
+        branchId: string
+        type: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReturnRefundRequestsController_getMine: {
+    parameters: {
+      query: {
+        type: string
       }
       header?: never
       path?: never
@@ -16318,28 +16304,6 @@ export interface operations {
       }
     }
   }
-  AdjustmentsController_writeOff: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WriteOffDto']
-      }
-    }
-    responses: {
-      /** @description Write-off recorded */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   AdjustmentsController_findOne: {
     parameters: {
       query?: never
@@ -16353,75 +16317,6 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock adjustment detail */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_listPhotos: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of photo attachments */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_attachPhoto: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AttachWriteOffPhotoDto']
-      }
-    }
-    responses: {
-      /** @description Photo attached */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_removePhoto: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-        /** @description FileAttachment UUID */
-        attachmentId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Photo detached */
       200: {
         headers: {
           [name: string]: unknown
