@@ -250,6 +250,7 @@ export default function CheckoutPage() {
   const [serialPickerStage, setSerialPickerStage] = useState<'primary' | 'secondary'>('primary')
   const [serialNumbers, setSerialNumbers] = useState<SerialNumberRecord[]>([])
   const [serialLoading, setSerialLoading] = useState(false)
+  const [serialError, setSerialError] = useState('')
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
 
   // Customer
@@ -476,10 +477,17 @@ export default function CheckoutPage() {
     if (!serialPickerTarget) return
     setSerialLoading(true)
     setSerialNumbers([])
+    setSerialError('')
     setSerialSearchQuery('')
     getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
       (res) => {
-        if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
+        if (res.success && Array.isArray(res.data)) {
+          setSerialNumbers(res.data)
+        } else if (!res.success) {
+          // A failed fetch (e.g. missing permission) must not look like
+          // "zero serials in stock" — that's a data state, this is an error.
+          setSerialError(res.error || 'Failed to load serial numbers.')
+        }
         setSerialLoading(false)
       }
     )
@@ -3017,6 +3025,10 @@ export default function CheckoutPage() {
               {serialLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 size={20} className="animate-spin text-purple-400" />
+                </div>
+              ) : serialError ? (
+                <div className="rounded-lg bg-red-50 px-4 py-5 text-center text-sm text-red-700">
+                  {serialError}
                 </div>
               ) : visibleSerials.length === 0 ? (
                 <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
