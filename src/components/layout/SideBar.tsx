@@ -121,12 +121,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
       },
       {
-        label: 'Stock Requisitions',
-        href: '/inventory/stock-requisitions',
-        icon: ClipboardCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_READ,
-      },
-      {
         label: 'Purchase Requests',
         href: '/inventory/purchase-requests',
         icon: ClipboardList,
