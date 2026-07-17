@@ -29,7 +29,12 @@ import {
   Send,
   Clock,
 } from 'lucide-react'
-import { computePricingTotals } from './_utils/calculations'
+import {
+  computePricingTotals,
+  resolveLineTaxRate,
+  displayUnitPriceWithTax,
+  lineTaxAmount,
+} from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -595,7 +600,7 @@ export default function CheckoutPage() {
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
 
-  const { vatExclSubtotalForBackend, effectiveTaxRate, taxTotal } = computePricingTotals({
+  const { vatExclSubtotalForBackend, additiveTax, taxTotal } = computePricingTotals({
     cart,
     rawSubtotal,
     inclusivePricing,
@@ -603,11 +608,25 @@ export default function CheckoutPage() {
     isTaxExempt,
   })
 
+  // Branch price overrides can give individual lines their own tax rate, so a
+  // cart can legitimately mix rates — the summary line below reflects that
+  // instead of always naming the tenant-wide default.
+  const distinctLineTaxRates = Array.from(
+    new Set(
+      cart.map((l) => resolveLineTaxRate(l, activeTaxRate)).filter((r): r is number => r != null)
+    )
+  )
+  const hasMixedTaxRates = distinctLineTaxRates.length > 1
+  const uniformLineTaxRate = distinctLineTaxRates.length === 1 ? distinctLineTaxRates[0] : null
+
   // promoDiscount is cleared when SC/PWD is active (cannot stack)
   const promoDiscount = promoResult?.valid && !scPwdData ? (promoResult.discountAmount ?? 0) : 0
 
-  // Display subtotal: inclusive mode shows tag prices as-is; exclusive adds tax
-  const subtotal = inclusivePricing ? rawSubtotal : rawSubtotal + taxTotal
+  // additiveTax is 0 for lines whose tax is already baked into unitPrice
+  // (inclusive), and the real per-line tax for lines that still need it added
+  // on top (exclusive) — correct for carts that mix both, not just carts that
+  // uniformly match the tenant's global pricing-mode default.
+  const subtotal = rawSubtotal + additiveTax
 
   // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
   const scPwdEstimatedDiscount = scPwdData
@@ -675,14 +694,15 @@ export default function CheckoutPage() {
     displayTimerRef.current = setTimeout(() => {
       updateSessionDisplay(sessionId, {
         status: cart.length > 0 ? 'active' : 'idle',
-        lines: cart.map((l) => ({
-          itemName: l.itemName,
-          quantity: l.quantity,
-          unitPrice:
-            effectiveTaxRate != null ? l.unitPrice * (1 + effectiveTaxRate / 100) : l.unitPrice,
-          lineTotal:
-            effectiveTaxRate != null ? lineTotal(l) * (1 + effectiveTaxRate / 100) : lineTotal(l),
-        })),
+        lines: cart.map((l) => {
+          const displayUnitPrice = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing)
+          return {
+            itemName: l.itemName,
+            quantity: l.quantity,
+            unitPrice: displayUnitPrice,
+            lineTotal: displayUnitPrice * l.quantity,
+          }
+        }),
         subtotal,
         discountTotal: promoDiscount,
         taxTotal,
@@ -1003,7 +1023,7 @@ export default function CheckoutPage() {
         promoCodeId: promoResult?.promoCode?.id,
         discountAmount: promoDiscount,
         taxAmount: taxTotal,
-        subtotal: rawSubtotal,
+        subtotal: vatExclSubtotalForBackend,
         totalAmount,
         isTaxExempt: isTaxExempt || !!scPwdData,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
@@ -1016,7 +1036,7 @@ export default function CheckoutPage() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           discountAmount: 0,
-          taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
+          taxAmount: lineTaxAmount(l, activeTaxRate, inclusivePricing),
           pricingMode: l.pricingMode ?? undefined,
         })),
       }
@@ -1056,7 +1076,7 @@ export default function CheckoutPage() {
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
           taxAmount: taxTotal,
-          subtotal: rawSubtotal,
+          subtotal: vatExclSubtotalForBackend,
           totalAmount,
           isTaxExempt: isTaxExempt || !!scPwdData,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
@@ -1072,7 +1092,7 @@ export default function CheckoutPage() {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             discountAmount: 0,
-            taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
+            taxAmount: lineTaxAmount(l, activeTaxRate, inclusivePricing),
             pricingMode: l.pricingMode ?? undefined,
             serialNumberId: l.serialNumberId,
             secondarySerialNumberId: l.secondarySerialNumberId,
@@ -1376,7 +1396,8 @@ export default function CheckoutPage() {
         cart={cart}
         payments={payments}
         promoDiscount={promoDiscount}
-        effectiveTaxRate={effectiveTaxRate}
+        activeTaxRate={activeTaxRate}
+        inclusivePricing={inclusivePricing}
       />
     )
   }
@@ -1624,7 +1645,8 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    effectiveTaxRate={effectiveTaxRate}
+                    activeTaxRate={activeTaxRate}
+                    inclusivePricing={inclusivePricing}
                   />
                 ))}
               </div>
@@ -1645,105 +1667,109 @@ export default function CheckoutPage() {
               </div>
               <table className="min-w-full text-sm">
                 <tbody className="divide-y divide-gray-50">
-                  {cart.map((line) => (
-                    <tr key={line.itemId} className="group hover:bg-gray-50">
-                      <td className="px-4 py-2">
-                        <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
-                        {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
-                        {line.isSerialTracked && (
-                          <button
-                            onClick={() => setSerialPickerTarget(line)}
-                            className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                          >
-                            {line.serialNumberId
-                              ? `SN: ${line.serialNumberLabel}`
-                              : '⚠ Select serial'}
-                          </button>
-                        )}
-                        {effectiveTaxRate != null ? (
-                          <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
-                            {activeTaxRate?.name ?? `VAT ${effectiveTaxRate}%`}
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
-                            No Tax
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() =>
-                              line.allowDecimal
-                                ? removeFromCart(line.itemId)
-                                : setQty(line.itemId, line.quantity - 1)
-                            }
-                            disabled={!!cancellationReqId}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                          >
-                            <Minus size={10} />
-                          </button>
-                          {line.allowDecimal ? (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <input
-                                type="number"
-                                min="0.001"
-                                step="0.1"
-                                value={line.quantity}
-                                onChange={(e) => {
-                                  const v = parseFloat(e.target.value)
-                                  if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                }}
-                                className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                              {line.uomCode && (
-                                <span className="text-[9px] text-gray-400 uppercase">
-                                  {line.uomCode}
-                                </span>
-                              )}
-                            </div>
+                  {cart.map((line) => {
+                    const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
+                    return (
+                      <tr key={line.itemId} className="group hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
+                          {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                          {line.isSerialTracked && (
+                            <button
+                              onClick={() => setSerialPickerTarget(line)}
+                              className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                            >
+                              {line.serialNumberId
+                                ? `SN: ${line.serialNumberLabel}`
+                                : '⚠ Select serial'}
+                            </button>
+                          )}
+                          {lineTaxRate != null ? (
+                            <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                              {line.taxRate == null
+                                ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                : `VAT ${lineTaxRate}%`}
+                            </span>
                           ) : (
-                            <span className="w-6 text-center text-xs font-semibold">
-                              {line.quantity}
+                            <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
+                              No Tax
                             </span>
                           )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() =>
+                                line.allowDecimal
+                                  ? removeFromCart(line.itemId)
+                                  : setQty(line.itemId, line.quantity - 1)
+                              }
+                              disabled={!!cancellationReqId}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
+                            >
+                              <Minus size={10} />
+                            </button>
+                            {line.allowDecimal ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <input
+                                  type="number"
+                                  min="0.001"
+                                  step="0.1"
+                                  value={line.quantity}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value)
+                                    if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                  }}
+                                  className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                />
+                                {line.uomCode && (
+                                  <span className="text-[9px] text-gray-400 uppercase">
+                                    {line.uomCode}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="w-6 text-center text-xs font-semibold">
+                                {line.quantity}
+                              </span>
+                            )}
+                            <button
+                              onClick={() =>
+                                line.allowDecimal
+                                  ? setMeasuredItem({
+                                      id: line.itemId,
+                                      name: line.itemName,
+                                      sku: line.sku,
+                                      price: line.unitPrice,
+                                      taxRate: line.taxRate,
+                                      uomCode: line.uomCode,
+                                      allowDecimal: true,
+                                    })
+                                  : setQty(line.itemId, line.quantity + 1)
+                              }
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            >
+                              <Plus size={10} />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
+                          {fmt(
+                            displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                              line.quantity
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
                           <button
-                            onClick={() =>
-                              line.allowDecimal
-                                ? setMeasuredItem({
-                                    id: line.itemId,
-                                    name: line.itemName,
-                                    sku: line.sku,
-                                    price: line.unitPrice,
-                                    taxRate: line.taxRate,
-                                    uomCode: line.uomCode,
-                                    allowDecimal: true,
-                                  })
-                                : setQty(line.itemId, line.quantity + 1)
-                            }
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            onClick={() => removeFromCart(line.itemId)}
+                            className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
                           >
-                            <Plus size={10} />
+                            <X size={12} />
                           </button>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                        {fmt(
-                          effectiveTaxRate != null
-                            ? lineTotal(line) * (1 + effectiveTaxRate / 100)
-                            : lineTotal(line)
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => removeFromCart(line.itemId)}
-                          className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-                        >
-                          <X size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2007,7 +2033,7 @@ export default function CheckoutPage() {
                 <span>
                   Subtotal ({cart.length} item{cart.length !== 1 ? 's' : ''})
                 </span>
-                <span>{fmt(subtotal)}</span>
+                <span>{fmt(vatExclSubtotalForBackend)}</span>
               </div>
               {promoDiscount > 0 && (
                 <div className="flex justify-between text-green-600">
@@ -2021,22 +2047,21 @@ export default function CheckoutPage() {
                   <span>−{fmt(scPwdEstimatedDiscount)}</span>
                 </div>
               )}
-              {taxTotal > 0 && !isTaxExempt && !scPwdData && (
-                <>
-                  {inclusivePricing && (
-                    <div className="flex justify-between text-gray-400 text-xs">
-                      <span>VATable Sales (net)</span>
-                      <span>{fmt(vatExclSubtotalForBackend)}</span>
-                    </div>
-                  )}
+              {cart.length > 0 &&
+                !isTaxExempt &&
+                !scPwdData &&
+                (hasMixedTaxRates || uniformLineTaxRate != null) && (
                   <div className="flex justify-between text-gray-400 text-xs">
                     <span>
-                      {activeTaxRate?.name ?? 'VAT'} ({activeTaxRate?.rate ?? 0}%)
+                      {hasMixedTaxRates
+                        ? 'Mixed VAT rates'
+                        : uniformLineTaxRate != null
+                          ? `${uniformLineTaxRate === activeTaxRate?.rate ? (activeTaxRate?.name ?? 'VAT') : 'VAT'} (${uniformLineTaxRate}%)`
+                          : (activeTaxRate?.name ?? 'VAT')}
                     </span>
                     <span>{fmt(taxTotal)}</span>
                   </div>
-                </>
-              )}
+                )}
               {isTaxExempt && (
                 <div className="flex justify-between text-green-600 text-xs">
                   <span>Tax Exempt</span>
@@ -3223,7 +3248,8 @@ function SuccessScreen({
   cart,
   payments,
   promoDiscount,
-  effectiveTaxRate,
+  activeTaxRate,
+  inclusivePricing,
 }: {
   success: {
     transactionId: string
@@ -3244,7 +3270,8 @@ function SuccessScreen({
   cart: CartLine[]
   payments: PaymentRow[]
   promoDiscount: number
-  effectiveTaxRate: number | null
+  activeTaxRate: { rate: number; name: string } | null
+  inclusivePricing: boolean
 }) {
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
@@ -3513,14 +3540,12 @@ function SuccessScreen({
             {/* Items */}
             <div className="space-y-2.5 border-b border-dashed border-gray-200 px-5 py-3">
               {cart.map((line) => {
-                const displayUnitPrice =
-                  effectiveTaxRate != null
-                    ? line.unitPrice * (1 + effectiveTaxRate / 100)
-                    : line.unitPrice
-                const displayLineTotal =
-                  effectiveTaxRate != null
-                    ? lineTotal(line) * (1 + effectiveTaxRate / 100)
-                    : lineTotal(line)
+                const displayUnitPrice = displayUnitPriceWithTax(
+                  line,
+                  activeTaxRate,
+                  inclusivePricing
+                )
+                const displayLineTotal = displayUnitPrice * line.quantity
                 return (
                   <div key={line.itemId} className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -3669,16 +3694,21 @@ function CatalogCard({
   qty,
   onAdd,
   onAddMeasured,
-  effectiveTaxRate,
+  activeTaxRate,
+  inclusivePricing,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  effectiveTaxRate: number | null
+  activeTaxRate: { rate: number; name: string } | null
+  inclusivePricing: boolean
 }) {
-  const displayPrice =
-    effectiveTaxRate != null ? item.price * (1 + effectiveTaxRate / 100) : item.price
+  const displayPrice = displayUnitPriceWithTax(
+    { unitPrice: item.price, taxRate: item.taxRate, pricingMode: item.pricingMode },
+    activeTaxRate,
+    inclusivePricing
+  )
 
   return (
     <button
@@ -3733,12 +3763,16 @@ function NewCustomerModal({
       setError('First name is required.')
       return
     }
+    if (!form.phone.trim()) {
+      setError('Phone number is required.')
+      return
+    }
     setError('')
     setSubmitting(true)
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
-      lastName: form.lastName.trim() || undefined,
-      phoneNumber: form.phone.trim() || undefined,
+      lastName: form.lastName.trim(),
+      phoneNumber: form.phone.trim(),
       email: form.email.trim() || undefined,
     })
     setSubmitting(false)
@@ -3776,7 +3810,7 @@ function NewCustomerModal({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone</label>
+          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
           <input
             type="tel"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
@@ -3804,7 +3838,7 @@ function NewCustomerModal({
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !form.firstName.trim() || !form.phone.trim()}
           className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create Customer'}

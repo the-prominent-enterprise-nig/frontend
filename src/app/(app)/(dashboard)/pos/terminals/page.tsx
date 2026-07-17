@@ -259,11 +259,12 @@ function TerminalModal({
 }) {
   const { data: branchesData } = useBranches()
   const branches = branchesData?.data ?? []
+  const { branchId: activeBranchId } = usePosBranchContext()
 
   const [form, setForm] = useState({
     terminalCode: initial?.terminalCode ?? '',
     name: initial?.name ?? '',
-    branchId: initial?.branchId ?? '',
+    branchId: initial?.branchId ?? activeBranchId ?? '',
     status: (initial?.status ?? 'active') as 'active' | 'inactive',
     description: initial?.description ?? '',
   })
