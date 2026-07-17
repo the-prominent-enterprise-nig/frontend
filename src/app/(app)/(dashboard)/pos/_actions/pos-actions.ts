@@ -1842,18 +1842,66 @@ export async function getVoidRequests(
   }
 }
 
+/**
+ * Returns & Refunds Unification (Stage 2): void and cancellation requests are
+ * now sourced from the shared ReturnRefundRequestsController (filtered by
+ * `type`). These mappers reshape the new PosReturnRefundRequest wire shape
+ * back into the legacy PosVoidRequest / PosCancellationRequest shapes so the
+ * existing void-requests and cancellation-requests pages keep working
+ * unchanged.
+ */
+function toVoidRequest(row: PosReturnRefundRequest): PosVoidRequest {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    transactionId: row.transactionId ?? '',
+    requestType: 'void',
+    requestedById: row.requestedById,
+    reason: row.reason ?? '',
+    status: row.status as PosVoidRequest['status'],
+    reviewedById: row.reviewedById,
+    reviewNotes: row.reviewNotes,
+    createdAt: row.createdAt,
+    reviewedAt: row.reviewedAt,
+    transaction: row.transaction ?? undefined,
+    requestedBy: row.requestedBy,
+    reviewedBy: row.reviewedBy,
+  }
+}
+
+function toCancellationRequest(row: PosReturnRefundRequest): PosCancellationRequest {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    sessionId: row.sessionId,
+    requestedById: row.requestedById,
+    reason: row.reason ?? '',
+    // Wire field is `refundCartSnapshot` for both cancellation and refund
+    // types — despite its declared shape (PosReleaseFormCartSnapshot), the
+    // backend puts the raw cart-items array here for cancellations, matching
+    // what PosCancellationRequest.cartSnapshot has always expected.
+    cartSnapshot: (row.refundCartSnapshot as unknown as Record<string, unknown>[] | null) ?? null,
+    status: row.status as PosCancellationRequest['status'],
+    reviewedById: row.reviewedById,
+    reviewNotes: row.reviewNotes,
+    createdAt: row.createdAt,
+    reviewedAt: row.reviewedAt,
+    session: row.session ?? undefined,
+  }
+}
+
 export async function getVoidRequestHistory(
   branchId?: string
 ): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/history',
-      branchId ? { branchId } : undefined
-    )
+    const result = await api.get<PosReturnRefundRequest[]>('/pos/return-refund-requests/history', {
+      ...(branchId ? { branchId } : {}),
+      type: 'void',
+    })
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to load void request history' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to load void request history' }
   }
@@ -1861,15 +1909,15 @@ export async function getVoidRequestHistory(
 
 export async function getBranchVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/branch',
-      undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/mine',
+      { type: 'void' },
       { tags: [TAGS.voidRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch void requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch void requests' }
   }
@@ -1879,15 +1927,15 @@ export async function getPendingVoidRequests(
   branchId?: string
 ): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/pending',
-      branchId ? { branchId } : undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      { ...(branchId ? { branchId } : {}), type: 'void' },
       { tags: [TAGS.voidRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch pending void requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch pending void requests' }
   }
@@ -1920,43 +1968,36 @@ export async function getAvailableSerialNumbers(
   }
 }
 
+/**
+ * Void requests now resolve through the same approve/reject endpoints as the
+ * unified return/refund queue (approveReturnRefundRequest/
+ * rejectReturnRefundRequest already hit the correct, working endpoint) — this
+ * just delegates and reshapes the result back into PosVoidRequest.
+ */
 export async function approveVoidRequest(
   requestId: string,
   input: ReviewVoidRequestInput
 ): Promise<ApiResponse<PosVoidRequest>> {
-  try {
-    const result = await api.post<PosVoidRequest>(
-      `/pos/transactions/void-requests/${requestId}/approve`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve void request' }
-    }
-    revalidateTag(TAGS.voidRequests, 'max')
-    revalidateTag(TAGS.transactions, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve void request' }
+  const result = await approveReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to approve void request' }
   }
+  // approveReturnRefundRequest already revalidates returnRefundRequests/transactions —
+  // also revalidate the legacy void-requests tag these pages still read through.
+  revalidateTag(TAGS.voidRequests, 'max')
+  return { success: true, data: toVoidRequest(result.data) }
 }
 
 export async function rejectVoidRequest(
   requestId: string,
   input: ReviewVoidRequestInput
 ): Promise<ApiResponse<PosVoidRequest>> {
-  try {
-    const result = await api.post<PosVoidRequest>(
-      `/pos/transactions/void-requests/${requestId}/reject`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to reject void request' }
-    }
-    revalidateTag(TAGS.voidRequests, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to reject void request' }
+  const result = await rejectReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to reject void request' }
   }
+  revalidateTag(TAGS.voidRequests, 'max')
+  return { success: true, data: toVoidRequest(result.data) }
 }
 
 // ─── Cancellation Requests ────────────────────────────────────────────────────
@@ -1984,15 +2025,15 @@ export async function getPendingCancellationRequests(
   branchId?: string
 ): Promise<ApiResponse<PosCancellationRequest[]>> {
   try {
-    const result = await api.get<PosCancellationRequest[]>(
-      '/pos/cancellation-requests/pending',
-      branchId ? { branchId } : undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      { ...(branchId ? { branchId } : {}), type: 'cancellation' },
       { tags: [TAGS.cancellationRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch cancellation requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toCancellationRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch cancellation requests' }
   }
@@ -2016,44 +2057,37 @@ export async function getCancellationRequestStatus(
   }
 }
 
+/**
+ * Cancellation requests resolve through the same approve/reject endpoints as
+ * the unified return/refund queue — delegate and reshape back into
+ * PosCancellationRequest.
+ */
 export async function approveCancellationRequest(
   requestId: string,
   input: ReviewCancellationInput
 ): Promise<ApiResponse<PosCancellationRequest>> {
-  try {
-    const result = await api.post<PosCancellationRequest>(
-      `/pos/cancellation-requests/${requestId}/approve`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve cancellation request' }
-    }
-    revalidateTag(TAGS.cancellationRequests, 'max')
-    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve cancellation request' }
+  const result = await approveReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to approve cancellation request' }
   }
+  // approveReturnRefundRequest already revalidates returnRefundRequests/transactions —
+  // also revalidate the legacy cancellation-requests tags these pages still read through.
+  revalidateTag(TAGS.cancellationRequests, 'max')
+  revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+  return { success: true, data: toCancellationRequest(result.data) }
 }
 
 export async function rejectCancellationRequest(
   requestId: string,
   input: ReviewCancellationInput
 ): Promise<ApiResponse<PosCancellationRequest>> {
-  try {
-    const result = await api.post<PosCancellationRequest>(
-      `/pos/cancellation-requests/${requestId}/reject`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to reject cancellation request' }
-    }
-    revalidateTag(TAGS.cancellationRequests, 'max')
-    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to reject cancellation request' }
+  const result = await rejectReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to reject cancellation request' }
   }
+  revalidateTag(TAGS.cancellationRequests, 'max')
+  revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+  return { success: true, data: toCancellationRequest(result.data) }
 }
 
 // ─── Release Form Requests (serial-tracked sale approval) ────────────────────
