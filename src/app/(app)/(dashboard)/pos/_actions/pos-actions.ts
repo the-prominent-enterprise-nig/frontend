@@ -1448,6 +1448,28 @@ export async function getUsers(filters?: {
   }
 }
 
+export async function searchUsers(
+  q: string,
+  branchId?: string
+): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
+  try {
+    type UserRow = { id: string; name: string; email: string }
+    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users/search', {
+      q,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to search users' }
+    }
+    const users = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: UserRow[] }).data ?? [])
+    return { success: true, data: users }
+  } catch {
+    return { success: false, error: 'Failed to search users' }
+  }
+}
+
 export async function getSellingAgents(): Promise<
   ApiResponse<{ id: string; name: string; phone?: string | null; email?: string | null }[]>
 > {

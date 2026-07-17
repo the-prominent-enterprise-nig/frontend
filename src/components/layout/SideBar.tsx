@@ -340,7 +340,13 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/promo-codes',
         icon: Tag,
         requiredPermission: 'pos:promo-codes:read',
-        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty', '/pos/branch-pricing'],
+        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty'],
+      },
+      {
+        label: 'Branch Pricing',
+        href: '/pos/branch-pricing',
+        icon: HandCoins,
+        requiredPermission: 'pos:branch-pricing:read',
       },
       {
         label: 'Configuration',

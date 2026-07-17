@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
+import { TaxRates } from '@/src/libs/data/AccountingV2Data'
 
 export async function bulkAssignTaxRate(
   taxRateId: string
@@ -9,6 +10,14 @@ export async function bulkAssignTaxRate(
   if (!taxRateId) {
     return { success: false, error: 'Tax rate ID is required' }
   }
+
+  // Items carrying a taxRateId that points at a rate which is no longer
+  // active (deactivated, or from stale data) resolve to nothing at checkout
+  // — same as having no rate at all. Treating "has any id" as "already
+  // configured" would skip those items forever, so re-check against the
+  // currently active set instead of just presence.
+  const activeRatesRes = await TaxRates.list(true)
+  const activeRateIds = new Set((activeRatesRes.data ?? []).map((r) => r.id))
 
   const allItemIds: string[] = []
   let page = 1
@@ -22,7 +31,7 @@ export async function bulkAssignTaxRate(
     if (!res.success || !res.data) break
     const items = res.data.data ?? []
     for (const item of items) {
-      if (!item.taxRateId) allItemIds.push(item.id)
+      if (!item.taxRateId || !activeRateIds.has(item.taxRateId)) allItemIds.push(item.id)
     }
     if (items.length < limit) break
     page++
