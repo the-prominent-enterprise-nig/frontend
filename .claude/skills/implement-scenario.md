@@ -14,6 +14,17 @@ You implement one module-scenario gap-analysis plan end to end: re-verify it, qu
 - Archive/index: `frontend/docs/module-scenarios.md`
 - Seeded login accounts for manual testing: `frontend/docs/seed-data-reference.md`
 
+## Role access hierarchy
+
+Applies to every permission/role gate you add or touch, in every part. Hierarchy: **Business Owner > Branch Manager > Employee-level (Cashier, Stock Controller, etc.)**
+
+- **Business Owner has access to everything, no exceptions.** If a part adds or touches an Employee-level capability (Cashier, Stock Controller, etc.), Business Owner must also hold it. Never write a permission check that excludes Business Owner from something a lower role can do.
+- **A Branch-Manager-scoped capability is also available to Business Owner** — check this explicitly when writing the guard, don't assume it falls out automatically from the code.
+- **A Branch-Manager-scoped capability is NOT automatically available to Employee-level roles.** This direction does not cascade down. Confirm with the developer in Phase 2 whether Cashier/Stock Controller need it too — don't assume either way.
+- **An Employee-level capability IS automatically available to both Branch Manager and Business Owner** — cumulative upward (Employee ⊂ Branch Manager ⊂ Business Owner). This is also why this project's ClickUp backlog persona-splits tickets per role (see `frontend/docs/scenario-*` "Related ClickUp Tickets" sections) — those aren't duplicates, they're this same hierarchy tracked per role.
+
+Apply this whenever Phase 3a adds a new permission string, RBAC guard, or role-gated UI element — and raise it explicitly in Phase 2 if a closing-gap item's target persona/scope isn't already clear from the doc.
+
 ---
 
 ## Procedure
@@ -37,7 +48,7 @@ The doc is a snapshot from whenever it was written — code moves.
 
 Do this before writing any code.
 
-1. **Surface flagged decisions.** Scan the "Closing the gaps" section for language marking an open product/business decision (e.g. "confirm with the business," "this is a product decision, not a pure engineering one," "needs a decision," "define the actual... rule," "clarify with the business what this means"). Ask about each one explicitly — use `AskUserQuestion` where there are genuinely 2-4 concrete options, plain conversational questions otherwise. Do not pick a default and proceed.
+1. **Surface flagged decisions.** Scan the "Closing the gaps" section for language marking an open product/business decision (e.g. "confirm with the business," "this is a product decision, not a pure engineering one," "needs a decision," "define the actual... rule," "clarify with the business what this means"). Ask about each one explicitly — use `AskUserQuestion` where there are genuinely 2-4 concrete options, plain conversational questions otherwise. Do not pick a default and proceed. If an item adds or touches a role-gated capability, also apply the **Role access hierarchy** (above) — Business Owner is never optional; if the item is Branch-Manager-scoped, explicitly ask whether it should extend to Employee-level roles too, since that direction isn't automatic.
 2. **Confirm scope.** List every item in "Closing the gaps" with a number and ask whether to implement all of them this run or a specific subset (several scenarios — e.g. Reservation, Caravan, Aircool — are large net-new features with many sequenced steps; doing everything in one pass may not be wanted). Also ask about "Dead code" flags if any apply — delete, wire up, or leave as-is.
 3. **Confirm how the confirmed scope splits into parts.** Based on real precedent — a past scenario naturally split into 5+ parts across one implementation effort — **default to one part = one closing-gap item**, done one at a time, not batched. State that default plan back to the developer and let them regroup it (e.g. two trivially small items as one part) if they'd rather. Don't assume "scope approved" means "implement it all in one pass" — those are two different questions; Phase 3 runs as a loop over these parts regardless of how big the confirmed scope is.
 4. **Confirm branch/commit posture.** Ask whether to work on the current branch or create a new one. Never commit without explicit go-ahead at commit time, even if the developer approved the overall plan — approval of scope is not approval to commit.
@@ -52,6 +63,7 @@ Do this before writing any code.
 1. Follow the pattern this item's "Fix" cites (e.g. "mirror the pattern already used for X at `file:line`") rather than inventing a new one.
 2. Touch backend and/or frontend as this part requires.
 3. No unrelated refactors, no premature abstraction, no creep into other parts' scope.
+4. If this part adds or modifies a permission string, RBAC guard, or role-gated UI element, apply the **Role access hierarchy** (top of this doc) — Business Owner always included; Branch-Manager-scoped doesn't imply Employee-level access unless Phase 2 confirmed it should.
 
 **3b. E2E tests for this part, both sides**
 
@@ -145,6 +157,8 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 
 - [ ] Never trust the scenario doc's claims without spot-checking live code first (Phase 1)
 - [ ] Never implement a flagged product/business decision without asking first (Phase 2)
+- [ ] Never write a permission/role gate that excludes Business Owner from a capability a lower role has (Role access hierarchy)
+- [ ] Never assume a Branch-Manager-scoped capability should extend to Employee-level roles without confirming in Phase 2 — that direction doesn't cascade automatically
 - [ ] Never batch multiple parts' implementation together — one part's 3a-3d complete before the next part's 3a starts
 - [ ] Never start the next part without the developer's explicit confirmation that the current part's manual test passed (Phase 3d) — assume "keep going without testing each part" is never the default, only something the developer opts into explicitly
 - [ ] Never commit without explicit go-ahead, even after scope is approved
