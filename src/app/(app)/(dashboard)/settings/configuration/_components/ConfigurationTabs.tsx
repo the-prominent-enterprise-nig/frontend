@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { KeyRound, CreditCard, FileText } from 'lucide-react'
-import { PinSection } from './PinSection'
+import { CashierPinManager } from '@/src/components/pos/CashierPinManager'
 import { OwnerPaymentMethodsSection } from '@/src/components/settings/OwnerPaymentMethodsSection'
 import { ReceiptBrandingSection } from './ReceiptBrandingSection'
 import type { OwnerPaymentMethod } from '@/src/schema/pos'
@@ -49,7 +49,7 @@ export function ConfigurationTabs({
 
       {/* Content */}
       <div className="p-6">
-        {active === 'pin' && <PinSection initialHasPin={initialHasPin} />}
+        {active === 'pin' && <CashierPinManager initialHasPin={initialHasPin} />}
         {active === 'payment' && (
           <OwnerPaymentMethodsSection initialMethods={initialPaymentMethods} />
         )}

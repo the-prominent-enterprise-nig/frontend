@@ -307,7 +307,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/sessions',
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
-        activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
+        // already covered by that item's own activeWhen) — Management no
+        // longer has anything to do with Terminals.
+        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
         label: 'Cancellations',
@@ -380,7 +383,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         // approvals) — kept separate from the Configuration item above so
         // hiding that one from Cashier doesn't also remove their only way to
         // reach this.
-        label: 'Cashier PIN',
+        label: 'POS PIN',
         href: '/pos/pin',
         icon: Key,
       },

@@ -86,8 +86,8 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
     await expect(posNav.getByRole('link', { name: 'Cash Drawer' })).toBeVisible()
     await expect(posNav.getByRole('link', { name: 'Terminals' })).toHaveCount(0)
 
-    // Cashier PIN is also a standalone page — PosNav renders nothing there
-    // either, reachable only via the Sidebar's own separate "Cashier PIN"
+    // /pos/pin is also a standalone page — PosNav renders nothing there
+    // either, reachable only via the Sidebar's own separate "POS PIN"
     // item.
     await gotoReady(page, '/pos/pin')
     await expect(posNav).toHaveCount(0)

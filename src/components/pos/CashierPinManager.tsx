@@ -75,7 +75,7 @@ function Banner({ type, message }: { type: 'error' | 'success'; message: string 
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function PinSection({ initialHasPin }: { initialHasPin: boolean }) {
+export function CashierPinManager({ initialHasPin }: { initialHasPin: boolean }) {
   const [mode, setMode] = useState<Mode>(initialHasPin ? 'view' : 'set')
 
   return (
