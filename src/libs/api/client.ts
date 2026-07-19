@@ -122,11 +122,16 @@ export async function apiClient<T = any>(
     // Handle different response statuses
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      // NestJS's ValidationPipe returns `message` as a string[] (one entry per
+      // failed field) — join it into readable text so callers never have to
+      // guess whether `message`/`error` is a string or an array.
+      const rawMessage = errorData.message ?? errorData.error
+      const normalizedMessage = Array.isArray(rawMessage) ? rawMessage.join(' ') : rawMessage
 
       return {
         success: false,
-        error: errorData.message || errorData.error || `HTTP error ${response.status}`,
-        message: errorData.message || `Request failed with status ${response.status}`,
+        error: normalizedMessage || `HTTP error ${response.status}`,
+        message: normalizedMessage || `Request failed with status ${response.status}`,
         errorCode: errorData.errorCode,
       }
     }

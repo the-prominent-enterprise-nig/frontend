@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, PackageCheck, ArrowLeftRight, Pencil, ChevronLeft } from 'lucide-react'
+import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
@@ -121,13 +121,6 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />
               Transfer
-            </a>
-            <a
-              href={`/inventory/write-offs`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Adjust
             </a>
           </div>
         )}

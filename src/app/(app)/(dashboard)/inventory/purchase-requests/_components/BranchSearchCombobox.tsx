@@ -1,7 +1,7 @@
 'use client'
 
 import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
-import { getBranches } from '@/src/app/(app)/(dashboard)/inventory/stock-requisitions/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-branches'
 
 type Props = {
   value: string

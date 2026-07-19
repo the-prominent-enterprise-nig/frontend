@@ -13,6 +13,6 @@ test.describe('POS Checkout — Item Catalog', () => {
 
     await gotoReady(page, '/pos/checkout')
     await expect(page.getByRole('button', { name: 'Menu Items' })).toHaveCount(0)
-    await expect(page.getByPlaceholder('Search by name or SKU…')).toBeVisible()
+    await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible()
   })
 })

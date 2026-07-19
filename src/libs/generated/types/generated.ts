@@ -571,8 +571,25 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Cash-in-Transit report: per closed session, the amount moved from Undeposited Funds to Cash in Transit on close */
+    /** Outstanding Cash-in-Transit report: per closed, uncleared session, the amount still awaiting a bank deposit */
     get: operations['SessionsController_getCashInTransitReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/sessions/cash-in-transit/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cleared Cash-in-Transit history: sessions already deposited to a bank */
+    get: operations['SessionsController_getCashInTransitHistory']
     put?: never
     post?: never
     delete?: never
@@ -676,7 +693,7 @@ export interface paths {
     /** List transactions with optional filters (POS-09) */
     get: operations['TransactionsController_findAll']
     put?: never
-    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales); refunds are submitted as a pending return/refund request — all require manager approval. */
+    /** Create a POS transaction — sale, refund, or exchange (POS-02, POS-04, POS-16, POS-20). Serialized non-refund sales and every charge/installment (credit) sale are submitted as a pending release form request (an "Application Form" for credit sales), UNLESS the submitter already holds pos:transaction:override (e.g. a Branch Manager ringing up their own sale), in which case it posts directly — they already have the authority they would otherwise be asking themselves for. Refunds are always submitted as a pending return/refund request requiring manager approval. */
     post: operations['TransactionsController_create']
     delete?: never
     options?: never
@@ -1960,6 +1977,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/release-form-requests/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Manager fetches resolved (approved/rejected) release form requests — history view */
+    get: operations['ReleaseFormRequestsController_getHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/release-form-requests/own': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cashier fetches their own submitted release form requests (any status) — read-only status visibility, no approval capability */
+    get: operations['ReleaseFormRequestsController_getOwn']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/release-form-requests/{id}': {
     parameters: {
       query?: never
@@ -2079,6 +2130,40 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/return-refund-requests/history': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Manager fetches resolved (approved/rejected) cancellation/void/refund requests for their tenant/branch */
+    get: operations['ReturnRefundRequestsController_getHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/return-refund-requests/mine': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Cashier fetches their own submitted cancellation/void/refund requests — no manager permission required */
+    get: operations['ReturnRefundRequestsController_getMine']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/return-refund-requests/{id}': {
     parameters: {
       query?: never
@@ -2171,10 +2256,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List all installment financing terms */
+    /** List installment financing terms — a branch-assigned caller only sees their own branch's terms plus tenant-wide ones. */
     get: operations['FinancingTermsController_findAll']
     put?: never
-    /** Create an installment financing term */
+    /** Create an installment financing term. A branch-assigned caller (Branch Manager) is always scoped to their own branch, regardless of what branchId is submitted. */
     post: operations['FinancingTermsController_create']
     delete?: never
     options?: never
@@ -2230,7 +2315,7 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    /** Update a financing term (rate, active flag, notes) */
+    /** Update a financing term (rate, active flag, notes). A branch-assigned caller (Branch Manager) can only update terms scoped to their own branch. */
     patch: operations['FinancingTermsController_update']
     trace?: never
   }
@@ -2962,6 +3047,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/stock/withholding-summary': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Roll up withheld amounts across Receiving Reports, filterable by supplier and date range. */
+    get: operations['StockController_getWithholdingSummary']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/stock/reorder-rules': {
     parameters: {
       query?: never
@@ -3118,23 +3220,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/inventory/adjustments/write-off': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Write off inventory (damaged, expired, or write_off reason codes only) */
-    post: operations['AdjustmentsController_writeOff']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/inventory/adjustments/{id}': {
     parameters: {
       query?: never
@@ -3147,44 +3232,6 @@ export interface paths {
     put?: never
     post?: never
     delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/adjustments/{id}/attachments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List photos attached to a write-off / stock adjustment (INV-29) */
-    get: operations['AdjustmentsController_listPhotos']
-    put?: never
-    /**
-     * Attach a photo to a write-off / stock adjustment (INV-29)
-     * @description The file must already exist in the Files module. Supports multiple photos per write-off.
-     */
-    post: operations['AdjustmentsController_attachPhoto']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/adjustments/{id}/attachments/{attachmentId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /** Remove a photo attachment from a write-off (INV-29) */
-    delete: operations['AdjustmentsController_removePhoto']
     options?: never
     head?: never
     patch?: never
@@ -4104,7 +4151,8 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    patch?: never
+    /** Edit a draft purchase request */
+    patch: operations['PurchaseRequestController_update']
     trace?: never
   }
   '/procurement/purchase-requests/{id}/submit': {
@@ -4415,126 +4463,6 @@ export interface paths {
     head?: never
     /** Update a procurement quota (limit, active flag, notes) */
     patch: operations['ProcurementQuotaController_update']
-    trace?: never
-  }
-  '/inventory/stock-requisitions': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List branch stock requisitions */
-    get: operations['BranchStockRequisitionController_findAll']
-    put?: never
-    /** Create a branch stock requisition */
-    post: operations['BranchStockRequisitionController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single branch stock requisition */
-    get: operations['BranchStockRequisitionController_findOne']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}/submit': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Submit a draft requisition for approval */
-    post: operations['BranchStockRequisitionController_submit']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}/approve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Approve a submitted requisition and reserve stock */
-    post: operations['BranchStockRequisitionController_approve']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Reject a submitted requisition */
-    post: operations['BranchStockRequisitionController_reject']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}/cancel': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Cancel a draft or submitted requisition */
-    post: operations['BranchStockRequisitionController_cancel']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock-requisitions/{id}/fulfill': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Mark an approved requisition as fulfilled and release reservations */
-    post: operations['BranchStockRequisitionController_fulfill']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
     trace?: never
   }
   '/inventory/classification/groups': {
@@ -5796,6 +5724,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/bank-accounts/clear-cash-in-transit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Clear one or more closed sessions' Cash-in-Transit balance into an actual bank deposit */
+    post: operations['BankAccountsController_clearCashInTransit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/fixed-assets': {
     parameters: {
       query?: never
@@ -6762,6 +6707,23 @@ export interface paths {
     head?: never
     /** Update a sales agent */
     patch: operations['AgentController_update']
+    trace?: never
+  }
+  '/crm/agents/{id}/commissions': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List an agent's commission ledger — one row per completed sale, newest first */
+    get: operations['AgentController_findCommissions']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/branches': {
@@ -8836,6 +8798,23 @@ export interface components {
       receivedAt?: string
       /** @description General notes for this receipt */
       notes?: string
+      /** @description Supplier this receipt is from. Required when no line is linked to a PO (PO-linked receipts derive it from the PO if omitted). */
+      supplierId?: string
+      /**
+       * @description Date the linked PO was raised (auto-filled from the PO's orderDate on the client)
+       * @example 2026-07-01
+       */
+      poDate?: string
+      /**
+       * @description Free-text PO reference number for traceability
+       * @example PO-20260701-0001
+       */
+      purchaseOrderNumber?: string
+      /**
+       * @description Withholding tax flag for this receipt. Defaults to the supplier's configured default when omitted.
+       * @enum {string}
+       */
+      withholding?: 'none' | 'pct_1'
       /** @description Items being received */
       lines: components['schemas']['ReceiveStockLineDto'][]
     }
@@ -8998,39 +8977,6 @@ export interface components {
       notes?: string
       /** @description Adjustment lines (at least 1 required) */
       lines: components['schemas']['AdjustmentLineDto'][]
-    }
-    WriteOffDto: {
-      /** @description Warehouse UUID */
-      warehouseId: string
-      /** @description Item UUID */
-      itemId: string
-      /** @description Variant UUID */
-      variantId?: string
-      /** @description Batch UUID */
-      batchId?: string
-      /** @description Location UUID within the warehouse */
-      locationId?: string
-      /**
-       * @description Quantity to write off (must be positive)
-       * @example 5
-       */
-      quantity: number
-      /**
-       * @description Reason code — must be damaged, expired, or write_off
-       * @enum {string}
-       */
-      reasonCode: 'damaged' | 'expired' | 'write_off'
-      /** @description Required justification notes for write-offs */
-      notes: string
-      /**
-       * @description Unit cost for impact value calculation
-       * @example 25.5
-       */
-      unitCost?: number
-    }
-    AttachWriteOffPhotoDto: {
-      /** @description UUID of an already-uploaded File record */
-      fileId: string
     }
     CreateCountDto: {
       /** @description Warehouse UUID to count */
@@ -9502,6 +9448,12 @@ export interface components {
       notes?: string
       lines: components['schemas']['CreatePurchaseRequestLineDto'][]
     }
+    UpdatePurchaseRequestDto: {
+      branchId?: string
+      reason?: string
+      notes?: string
+      lines: components['schemas']['CreatePurchaseRequestLineDto'][]
+    }
     ApprovePrDto: {
       remarks?: string
     }
@@ -9604,29 +9556,6 @@ export interface components {
       limitAmount?: number
       isActive?: boolean
       notes?: string
-    }
-    CreateBsrLineDto: {
-      itemId: string
-      /** @example 10 */
-      requestedQty: number
-      notes?: string
-    }
-    CreateBsrDto: {
-      branchId: string
-      /** @description Warehouse to request stock from */
-      fromWarehouseId: string
-      notes?: string
-      lines: components['schemas']['CreateBsrLineDto'][]
-    }
-    ApproveBsrDto: {
-      /**
-       * @description Days to hold reservation
-       * @default 7
-       */
-      reservationDays: number
-    }
-    RejectBsrDto: {
-      reason: string
     }
     CreateItemGroupDto: {
       /** @example Mobile Phones */
@@ -9766,6 +9695,12 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       /** @example Preferred supplier for office supplies. */
       notes?: string
+      /**
+       * @description Default withholding tax to prefill on Receiving Reports for this supplier
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
     }
     SupplierBankAccountDto: {
       id: string
@@ -9814,6 +9749,11 @@ export interface components {
       taxId?: string
       address?: string
       discountTerms?: string
+      /**
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
       bankAccounts: components['schemas']['SupplierBankAccountDto'][]
       /** @example 500000 */
       creditLimit?: number
@@ -9891,6 +9831,12 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       /** @example Preferred supplier for office supplies. */
       notes?: string
+      /**
+       * @description Default withholding tax to prefill on Receiving Reports for this supplier
+       * @default none
+       * @enum {string}
+       */
+      defaultWithholding: 'none' | 'pct_1'
     }
     CreateSupplierDocumentDto: {
       /** @enum {string} */
@@ -10322,6 +10268,16 @@ export interface components {
       /** @description VAT, NON_VAT, EXEMPT */
       taxCode?: string
     }
+    ClearCashInTransitDto: {
+      /** @description Bank account the deposit was made to */
+      bankAccountId: string
+      /** @description Closed POS session ids being cleared into this deposit */
+      sessionIds: string[]
+      /** @example 2026-07-16 */
+      depositDate: string
+      /** @description Bank deposit slip / reference number */
+      reference?: string
+    }
     CreatePipelineStageDto: {
       /** @example tenant-001 */
       tenantId: string
@@ -10670,6 +10626,11 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description Flat commission rate on a sale's pre-VAT subtotal (0.05 = 5%). Omit/null for no commission.
+       * @example 0.05
+       */
+      commissionRate?: Record<string, never>
     }
     AgentDto: {
       id: string
@@ -10678,6 +10639,8 @@ export interface components {
       email?: string
       /** @enum {string} */
       status: 'active' | 'inactive'
+      /** @example 0.05 */
+      commissionRate?: Record<string, never>
       createdAt: string
       updatedAt: string
     }
@@ -10697,6 +10660,11 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description Flat commission rate on a sale's pre-VAT subtotal (0.05 = 5%). Omit/null for no commission.
+       * @example 0.05
+       */
+      commissionRate?: Record<string, never>
     }
     AssignManagerDto: {
       /** @example a1b2c3d4-... */
@@ -10942,6 +10910,7 @@ export interface operations {
         search: string
         status: string
         branchId: string
+        role: string
         page: string
         limit: string
       }
@@ -11826,6 +11795,28 @@ export interface operations {
       }
     }
   }
+  SessionsController_getCashInTransitHistory: {
+    parameters: {
+      query?: {
+        dateFrom?: string
+        dateTo?: string
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Cash-in-Transit history rows */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SessionsController_findOne: {
     parameters: {
       query?: never
@@ -12407,10 +12398,7 @@ export interface operations {
   }
   ParkedSalesController_findAll: {
     parameters: {
-      query: {
-        terminalId: string
-        branchId: string
-      }
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -12994,10 +12982,7 @@ export interface operations {
   }
   BranchPricingController_findAll: {
     parameters: {
-      query: {
-        branchId: string
-        itemId: string
-      }
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -13037,9 +13022,7 @@ export interface operations {
   }
   BranchPricingController_getForItem: {
     parameters: {
-      query: {
-        branchId: string
-      }
+      query?: never
       header?: never
       path: {
         /** @description Item ID */
@@ -13940,6 +13923,42 @@ export interface operations {
       }
     }
   }
+  ReleaseFormRequestsController_getHistory: {
+    parameters: {
+      query: {
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReleaseFormRequestsController_getOwn: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ReleaseFormRequestsController_getOne: {
     parameters: {
       query?: never
@@ -14064,6 +14083,46 @@ export interface operations {
     parameters: {
       query: {
         branchId: string
+        type: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReturnRefundRequestsController_getHistory: {
+    parameters: {
+      query: {
+        branchId: string
+        type: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReturnRefundRequestsController_getMine: {
+    parameters: {
+      query: {
+        type: string
       }
       header?: never
       path?: never
@@ -15940,6 +15999,35 @@ export interface operations {
       }
     }
   }
+  StockController_getWithholdingSummary: {
+    parameters: {
+      query?: {
+        /** @description Filter to a specific supplier */
+        supplierId?: string
+        /** @description Start of date range (inclusive) */
+        startDate?: string
+        /** @description End of date range (inclusive) */
+        endDate?: string
+        /** @description Page number */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated withholding rows plus a totalWithheld aggregate */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   StockController_getReorderRules: {
     parameters: {
       query?: {
@@ -16216,28 +16304,6 @@ export interface operations {
       }
     }
   }
-  AdjustmentsController_writeOff: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['WriteOffDto']
-      }
-    }
-    responses: {
-      /** @description Write-off recorded */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   AdjustmentsController_findOne: {
     parameters: {
       query?: never
@@ -16251,75 +16317,6 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock adjustment detail */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_listPhotos: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of photo attachments */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_attachPhoto: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['AttachWriteOffPhotoDto']
-      }
-    }
-    responses: {
-      /** @description Photo attached */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  AdjustmentsController_removePhoto: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Stock adjustment UUID */
-        id: string
-        /** @description FileAttachment UUID */
-        attachmentId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Photo detached */
       200: {
         headers: {
           [name: string]: unknown
@@ -17818,6 +17815,29 @@ export interface operations {
       }
     }
   }
+  PurchaseRequestController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdatePurchaseRequestDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   PurchaseRequestController_submit: {
     parameters: {
       query?: never
@@ -18280,172 +18300,6 @@ export interface operations {
         'application/json': components['schemas']['UpdateProcurementQuotaDto']
       }
     }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_findAll: {
-    parameters: {
-      query?: {
-        status?: string
-        branchId?: string
-        fromWarehouseId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateBsrDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_submit: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_approve: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ApproveBsrDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_reject: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectBsrDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_cancel: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  BranchStockRequisitionController_fulfill: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -20129,6 +19983,7 @@ export interface operations {
         limit: string
         search: string
         status: string
+        branchId?: string
       }
       header?: never
       path?: never
@@ -21084,6 +20939,27 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BankAccountsController_clearCashInTransit: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ClearCashInTransitDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -23142,6 +23018,25 @@ export interface operations {
           'application/json': components['schemas']['AgentDto']
         }
       }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AgentController_findCommissions: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
       404: {
         headers: {
           [name: string]: unknown

@@ -33,10 +33,6 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
 
-  // ── Write-offs ─────────────────────────────────────────────────────────────
-  WRITE_OFFS_READ: 'inventory:write-offs:read',
-  WRITE_OFFS_CREATE: 'inventory:write-offs:create',
-
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
   BUNDLES_CREATE: 'inventory:bundles:create',
@@ -112,11 +108,6 @@ export const INVENTORY_PERMISSIONS = {
   RESERVATIONS_CREATE: 'inventory:reservations:create',
   RESERVATIONS_RELEASE: 'inventory:reservations:release',
 
-  // ── Stock Requisitions ─────────────────────────────────────────────────────
-  STOCK_REQUISITIONS_READ: 'inventory:stock-requisitions:read',
-  STOCK_REQUISITIONS_CREATE: 'inventory:stock-requisitions:create',
-  STOCK_REQUISITIONS_APPROVE: 'inventory:stock-requisitions:approve',
-
   // ── Negative Stock Policy (INV-36) ─────────────────────────────────────────
   NEGATIVE_STOCK_READ: 'inventory:negative-stock:read',
   NEGATIVE_STOCK_CONFIGURE: 'inventory:negative-stock:configure',
@@ -177,8 +168,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:transfers:create': 'Create stock transfer requests',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:receive': 'Receive incoming stock transfers',
-  'inventory:write-offs:read': 'View write-off records',
-  'inventory:write-offs:create': 'Create stock write-offs',
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',
@@ -233,9 +222,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:attributes:manage': 'Create and manage custom item attributes',
   'inventory:projection:read': 'View forward stock projection',
   'inventory:*': 'Wildcard full Inventory access',
-  'inventory:stock-requisitions:read': 'View branch stock requisitions',
-  'inventory:stock-requisitions:create': 'Create branch stock requisitions',
-  'inventory:stock-requisitions:approve': 'Approve or reject branch stock requisitions',
 }
 
 export type InventoryPermission = (typeof INVENTORY_PERMISSIONS)[keyof typeof INVENTORY_PERMISSIONS]
