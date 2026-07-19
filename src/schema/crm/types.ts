@@ -12,6 +12,9 @@ export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 export const CustomerTypeEnum = z.enum(['individual', 'business'])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
 
+export const CustomerLifecycleStatusEnum = z.enum(['alive', 'dead', 'employed'])
+export type CustomerLifecycleStatus = z.infer<typeof CustomerLifecycleStatusEnum>
+
 export const InteractionTypeEnum = z.enum(['call', 'email', 'meeting', 'visit', 'message', 'other'])
 export type InteractionType = z.infer<typeof InteractionTypeEnum>
 
@@ -24,7 +27,7 @@ export type ReminderStatus = z.infer<typeof ReminderStatusEnum>
 export const CollectorStatusEnum = z.enum(['active', 'inactive'])
 export type CollectorStatus = z.infer<typeof CollectorStatusEnum>
 
-export const InstallmentAccountCategoryEnum = z.enum(['A', 'B', 'C'])
+export const InstallmentAccountCategoryEnum = z.enum(['A', 'B', 'C', 'D'])
 export type InstallmentAccountCategory = z.infer<typeof InstallmentAccountCategoryEnum>
 
 export const InstallmentAccountClassificationEnum = z.enum(['official', 'arrears', 'not_moving'])
@@ -40,6 +43,14 @@ export type InstallmentAccountStatus = z.infer<typeof InstallmentAccountStatusEn
 
 export const AgentStatusEnum = z.enum(['active', 'inactive'])
 export type AgentStatus = z.infer<typeof AgentStatusEnum>
+
+export const CollectionIncentiveStatusEnum = z.enum([
+  'auto_approved',
+  'pending_approval',
+  'approved',
+  'rejected',
+])
+export type CollectionIncentiveStatus = z.infer<typeof CollectionIncentiveStatusEnum>
 
 export interface PipelineStage {
   id: string
@@ -240,6 +251,26 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   branch?: { id: string; name: string; code: string } | null
   collector?: { id: string; stubNumber: string; name: string } | null
   arInvoice?: { id: string; invoiceNumber: string; status: string } | null
+}
+
+export interface CollectionIncentive {
+  id: string
+  collectorId: string
+  branchId?: string | null
+  installmentAccountId?: string | null
+  category: InstallmentAccountCategory
+  period: string
+  amount: number | string
+  status: CollectionIncentiveStatus
+  approvedById?: string | null
+  approvedAt?: string | null
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+  collector?: { id: string; stubNumber: string; name: string } | null
+  branch?: { id: string; name: string } | null
+  installmentAccount?: { id: string; accountNumber: string } | null
+  approvedBy?: { id: string; name: string; email?: string | null } | null
 }
 
 export interface PipelineColumn {

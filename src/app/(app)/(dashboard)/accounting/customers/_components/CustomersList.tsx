@@ -22,7 +22,14 @@ const FIELD_LIMITS = {
   phoneNumber: 50,
   address: 1000,
   note: 1000,
+  groupId: 50,
 } as const
+
+const LIFECYCLE_COLORS: Record<string, string> = {
+  alive: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  dead: 'bg-gray-100 text-gray-600 ring-gray-200',
+  employed: 'bg-blue-50 text-blue-700 ring-blue-200',
+}
 
 interface Props {
   session: SessionUser
@@ -164,6 +171,18 @@ export default function CustomersList({ session }: Props) {
                         <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
                           {c.customerType ?? 'individual'}
                         </span>
+                        <span
+                          className={`ml-2 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                            LIFECYCLE_COLORS[c.lifecycleStatus ?? 'alive']
+                          }`}
+                        >
+                          {c.lifecycleStatus ?? 'alive'}
+                        </span>
+                        {c.groupId && (
+                          <div className="mt-0.5 text-[11px] font-normal text-zinc-400">
+                            Group: {c.groupId}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <div className="text-zinc-700">{c.email || '-'}</div>
@@ -233,6 +252,8 @@ function customerToFormInput(customer: Customer | null): Partial<CustomerInput> 
       address: '',
       note: '',
       customerType: 'individual',
+      groupId: '',
+      lifecycleStatus: 'alive',
     }
   }
   // `name` is stored as a single field — split naively for the two-field
@@ -247,6 +268,8 @@ function customerToFormInput(customer: Customer | null): Partial<CustomerInput> 
     address: customer.billingAddress ?? '',
     note: customer.notes ?? '',
     customerType: customer.customerType ?? 'individual',
+    groupId: customer.groupId ?? '',
+    lifecycleStatus: customer.lifecycleStatus ?? 'alive',
   }
 }
 
@@ -354,6 +377,30 @@ function CustomerFormDialog({
                 onChange={(e) => set('phoneNumber', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Field label="Group ID" count={[form.groupId?.length ?? 0, FIELD_LIMITS.groupId]}>
+              <input
+                maxLength={FIELD_LIMITS.groupId}
+                value={form.groupId ?? ''}
+                onChange={(e) => set('groupId', e.target.value)}
+                placeholder="e.g. shared household ID"
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+              />
+            </Field>
+            <Field label="Status">
+              <select
+                value={form.lifecycleStatus ?? 'alive'}
+                onChange={(e) =>
+                  set('lifecycleStatus', e.target.value as CustomerInput['lifecycleStatus'])
+                }
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+              >
+                <option value="alive">Alive</option>
+                <option value="dead">Dead</option>
+                <option value="employed">Employed</option>
+              </select>
             </Field>
           </div>
           <Field label="Address" count={[form.address?.length ?? 0, FIELD_LIMITS.address]}>

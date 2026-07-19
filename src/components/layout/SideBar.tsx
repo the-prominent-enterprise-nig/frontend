@@ -415,6 +415,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
       },
       {
+        label: 'Collection Incentives',
+        href: '/crm/collection-incentives',
+        icon: Coins,
+        requiredPermission: CRM_PERMISSIONS.INCENTIVES_READ,
+      },
+      {
         label: 'Reminders',
         href: '/crm/reminders',
         icon: BellRing,

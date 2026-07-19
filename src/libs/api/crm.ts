@@ -15,6 +15,7 @@ import type {
   InstallmentAccountDetail,
   AccountingCustomerLite,
   Agent,
+  CollectionIncentive,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -33,6 +34,11 @@ import type {
 } from '@/src/schema/crm/installment-account'
 import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
 import type { InstallmentSchedule } from '@/src/schema/pos'
+import type {
+  CreateCollectionIncentiveInput,
+  RejectCollectionIncentiveInput,
+} from '@/src/schema/crm/collection-incentive'
+import type { PriceCheckInput, PriceCheckResult } from '@/src/schema/crm/installment-account'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -257,4 +263,37 @@ export const agentsApi = {
   create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
+}
+
+// ─── Collection Incentives ──────────────────────────────────
+
+export type CollectionIncentiveFilters = {
+  collectorId?: string
+  branchId?: string
+  period?: string
+  status?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const collectionIncentivesApi = {
+  list: (filters?: CollectionIncentiveFilters) =>
+    api.get<PaginatedResponse<CollectionIncentive>>('/crm/collection-incentives', filters, {
+      tags: ['crm:collection-incentives'],
+    }),
+  get: (id: string) => api.get<CollectionIncentive>(`/crm/collection-incentives/${id}`),
+  create: (body: CreateCollectionIncentiveInput) =>
+    api.post<CollectionIncentive>('/crm/collection-incentives', body),
+  remove: (id: string) => api.delete(`/crm/collection-incentives/${id}`),
+  approve: (id: string) =>
+    api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/approve`),
+  reject: (id: string, body: RejectCollectionIncentiveInput) =>
+    api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/reject`, body),
+}
+
+// ─── Installment Price Checker ──────────────────────────────
+
+export const priceCheckApi = {
+  check: (params: PriceCheckInput) =>
+    api.get<PriceCheckResult>('/crm/installment-accounts/price-check', params),
 }

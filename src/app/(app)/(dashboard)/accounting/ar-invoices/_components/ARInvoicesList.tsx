@@ -1,12 +1,24 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, Send, DollarSign, ReceiptText, X } from 'lucide-react'
+import {
+  Plus,
+  RefreshCw,
+  Pencil,
+  Trash2,
+  Send,
+  DollarSign,
+  ReceiptText,
+  History,
+  AlertTriangle,
+  X,
+} from 'lucide-react'
 import {
   ARInvoices,
   CreditMemos,
   TaxRates,
   type ARInvoice,
+  type ARPayment,
   type TaxRate,
   fmtMoney,
   fmtDate,
@@ -21,6 +33,7 @@ export default function ARInvoicesList() {
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
+  const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -122,13 +135,22 @@ export default function ARInvoicesList() {
                           <Send className="w-4 h-4" />
                         </button>
                       )}
-                      {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
+                      {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
                         <button
                           onClick={() => setPayingFor(i)}
                           title="Record payment"
                           className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
                         >
                           <DollarSign className="w-4 h-4" />
+                        </button>
+                      )}
+                      {(i.payments?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => setHistoryFor(i)}
+                          title="Payment history"
+                          className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                        >
+                          <History className="w-4 h-4" />
                         </button>
                       )}
                       {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
@@ -194,6 +216,13 @@ export default function ARInvoicesList() {
             setCreditingFor(null)
             load()
           }}
+        />
+      )}
+      {historyFor && (
+        <PaymentHistoryModal
+          invoice={historyFor}
+          onClose={() => setHistoryFor(null)}
+          onChanged={load}
         />
       )}
     </div>
@@ -509,9 +538,10 @@ function PaymentDialog({
   onClose: () => void
   onSaved: () => void
 }) {
-  const outstanding = invoice.totalAmount - invoice.amountPaid
+  const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
+  const isClosedAccount = invoice.status === 'PAID'
   const [form, setForm] = useState({
-    amount: String(outstanding),
+    amount: String(outstanding || ''),
     withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
     method: '',
@@ -520,7 +550,13 @@ function PaymentDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [overpaymentResult, setOverpaymentResult] = useState<{
+    overpaidAmount: number
+    wasClosedAccount: boolean
+  } | null>(null)
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
+  const wouldOverpay = totalApplied > outstanding + 0.01
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -535,8 +571,44 @@ function PaymentDialog({
       setError(res.message || res.error || 'Save failed')
       return
     }
+    if (res.data?.overpayment) {
+      setOverpaymentResult(res.data.overpayment)
+      return
+    }
     onSaved()
   }
+
+  if (overpaymentResult) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <AlertTriangle className="h-10 w-10 text-amber-500" />
+            <h3 className="text-lg font-semibold text-gray-900">
+              {overpaymentResult.wasClosedAccount
+                ? 'Overpayment on a closed account'
+                : 'Payment recorded as an overpayment'}
+            </h3>
+            <p className="text-sm text-gray-600">
+              This payment was <span className="font-semibold">not rejected</span> (to keep the
+              invoice numbering unbroken), but exceeds what was owed by{' '}
+              <span className="font-semibold">{fmtMoney(overpaymentResult.overpaidAmount)}</span>.
+              {overpaymentResult.wasClosedAccount &&
+                ' The invoice was already fully paid before this payment.'}{' '}
+              A manager can cancel this specific payment from the payment history view if needed.
+            </p>
+            <button
+              onClick={onSaved}
+              className="mt-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
@@ -547,6 +619,13 @@ function PaymentDialog({
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
+          {isClosedAccount && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              This invoice is already fully paid. Any amount recorded here will be flagged as a
+              closed-account overpayment.
+            </div>
+          )}
           <div className="text-sm text-gray-600">
             Outstanding: <span className="font-semibold">{fmtMoney(outstanding)}</span>
           </div>
@@ -572,6 +651,13 @@ function PaymentDialog({
           <div className="text-xs text-gray-500">
             Total applied to AR: <span className="font-semibold">{fmtMoney(totalApplied)}</span>
           </div>
+          {wouldOverpay && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              This exceeds the outstanding balance by {fmtMoney(totalApplied - outstanding)}. It
+              will still be recorded and flagged as an overpayment — it will not be rejected.
+            </div>
+          )}
           <Field label="Payment Date *">
             <input
               required
@@ -618,6 +704,96 @@ function PaymentDialog({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function PaymentHistoryModal({
+  invoice,
+  onClose,
+  onChanged,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [payments, setPayments] = useState<ARPayment[]>(invoice.payments ?? [])
+  const [cancelling, setCancelling] = useState<string | null>(null)
+
+  const cancel = async (payment: ARPayment) => {
+    const reason = prompt('Reason for cancelling this overpayment (optional):') ?? undefined
+    setCancelling(payment.id)
+    const res = await ARInvoices.cancelPayment(invoice.id, payment.id, reason)
+    setCancelling(null)
+    if (!res.success) {
+      alert(res.message || res.error || 'Cancel failed')
+      return
+    }
+    setPayments((prev) =>
+      prev.map((p) => (p.id === payment.id ? { ...p, cancelledAt: new Date().toISOString() } : p))
+    )
+    onChanged()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b px-5 py-4">
+          <h3 className="text-lg font-semibold">Payment history — {invoice.invoiceNumber}</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="max-h-[70vh] overflow-y-auto p-5">
+          {payments.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">No payments recorded yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {payments.map((p) => (
+                <li key={p.id} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {fmtMoney(p.amount + p.withholdingAmount)}
+                        {p.cancelledAt && (
+                          <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
+                            cancelled
+                          </span>
+                        )}
+                        {p.isOverpayment && !p.cancelledAt && (
+                          <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                            overpayment +{fmtMoney(p.overpaidAmount)}
+                            {p.wasClosedAccount ? ' · closed account' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {fmtDate(p.paymentDate)}
+                        {p.method ? ` · ${p.method}` : ''}
+                        {p.reference ? ` · ${p.reference}` : ''}
+                      </div>
+                      {p.cancelReason && (
+                        <div className="mt-0.5 text-xs text-gray-400">
+                          Cancel reason: {p.cancelReason}
+                        </div>
+                      )}
+                    </div>
+                    {p.isOverpayment && !p.cancelledAt && (
+                      <button
+                        onClick={() => cancel(p)}
+                        disabled={cancelling === p.id}
+                        className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {cancelling === p.id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )

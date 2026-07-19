@@ -254,6 +254,24 @@ export const Reports = {
 }
 
 // ============ AR Invoices ============
+export interface ARPayment {
+  id: string
+  arInvoiceId: string
+  amount: number
+  withholdingAmount: number
+  paymentDate: string
+  method?: string | null
+  reference?: string | null
+  notes?: string | null
+  isOverpayment: boolean
+  overpaidAmount: number
+  wasClosedAccount: boolean
+  cancelledAt?: string | null
+  cancelledById?: string | null
+  cancelReason?: string | null
+  createdAt: string
+}
+
 export interface ARInvoice {
   id: string
   invoiceNumber: string
@@ -268,8 +286,14 @@ export interface ARInvoice {
   amountPaid: number
   status: string
   costCenter?: string
-  payments?: any[]
+  payments?: ARPayment[]
 }
+
+export interface RecordPaymentResult extends ARInvoice {
+  payment: ARPayment
+  overpayment: { paymentId: string; overpaidAmount: number; wasClosedAccount: boolean } | null
+}
+
 export const ARInvoices = {
   list: (params?: { search?: string; status?: string; customerId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
@@ -278,7 +302,9 @@ export const ARInvoices = {
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
   recordPayment: (id: string, body: any) =>
-    api.post<ARInvoice>(`/ar-invoices/${id}/payments`, body),
+    api.post<RecordPaymentResult>(`/ar-invoices/${id}/payments`, body),
+  cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
+    api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
 }
 

@@ -1,5 +1,5 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
-import type { CustomerType } from '@/src/schema/crm/types'
+import type { CustomerType, CustomerLifecycleStatus } from '@/src/schema/crm/types'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -324,6 +324,8 @@ export interface Customer {
   phone?: string | null
   billingAddress?: string | null
   notes?: string | null
+  groupId?: string | null
+  lifecycleStatus?: CustomerLifecycleStatus
   deletedAt?: string | null
   createdAt?: string
   updatedAt?: string
@@ -339,6 +341,8 @@ export interface CustomerInput {
   address?: string | null
   note?: string | null
   customerType?: CustomerType
+  groupId?: string | null
+  lifecycleStatus?: CustomerLifecycleStatus
 }
 
 export function getVendors(params?: ListParams) {

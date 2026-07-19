@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Wallet } from 'lucide-react'
+import { Plus, Search, Wallet, Calculator } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
+import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   B: 'bg-blue-50 text-blue-700 ring-blue-200',
   C: 'bg-amber-50 text-amber-700 ring-amber-200',
+  D: 'bg-red-50 text-red-700 ring-red-200',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -63,6 +65,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
   const [collectorFilter, setCollectorFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [priceCheckOpen, setPriceCheckOpen] = useState(false)
 
   useEffect(() => {
     getBranches().then((res) => {
@@ -107,15 +110,24 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             Financing accounts, balances, categories, and aging.
           </p>
         </div>
-        {canCreate && (
-          <Link
-            href="/crm/installment-accounts/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <button
+            onClick={() => setPriceCheckOpen(true)}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
           >
-            <Plus className="h-4 w-4" />
-            New account
-          </Link>
-        )}
+            <Calculator className="h-4 w-4" />
+            Price checker
+          </button>
+          {canCreate && (
+            <Link
+              href="/crm/installment-accounts/new"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700 sm:flex-none"
+            >
+              <Plus className="h-4 w-4" />
+              New account
+            </Link>
+          )}
+        </div>
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -137,6 +149,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           <option value="A">A</option>
           <option value="B">B</option>
           <option value="C">C</option>
+          <option value="D">D</option>
         </select>
         <select
           value={classificationFilter}
@@ -290,6 +303,8 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
           </div>
         </>
       )}
+
+      {priceCheckOpen && <PriceCheckModal onClose={() => setPriceCheckOpen(false)} />}
     </div>
   )
 }
