@@ -9,6 +9,7 @@ export const PROCUREMENT_PERMISSIONS = {
   PR_APPROVE: 'procurement:purchase-requests:approve',
   PR_REJECT: 'procurement:purchase-requests:reject',
   PR_CANCEL: 'procurement:purchase-requests:cancel',
+  PR_UPDATE: 'procurement:purchase-requests:update',
   PO_READ: 'procurement:purchase-orders:read',
   PO_CREATE: 'procurement:purchase-orders:create',
   PO_UPDATE: 'procurement:purchase-orders:update',
