@@ -10,8 +10,8 @@ import {
   useTerminalCashiers,
   useAssignCashier,
   useRemoveCashier,
-} from '../_hooks/usePos'
-import { getUsers } from '../_actions/pos-actions'
+} from '../../_hooks/usePos'
+import { getUsers } from '../../_actions/pos-actions'
 import {
   RefreshCw,
   Plus,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useSessionDisplay } from '../_hooks/usePos'
+import { useSessionDisplay } from '../../_hooks/usePos'
 import { Monitor, ShoppingCart, RefreshCw } from 'lucide-react'
 
 function formatCurrency(n: number | string | undefined | null) {

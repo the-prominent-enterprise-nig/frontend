@@ -15,7 +15,7 @@ import {
   getBranchReceiptConfig,
   updateBranchReceiptConfig,
   uploadBranchReceiptLogo,
-} from '../../_actions/branch-receipt-config'
+} from '../../../_actions/branch-receipt-config'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import type { BranchReceiptConfig } from '@/src/schema/pos'
 import {

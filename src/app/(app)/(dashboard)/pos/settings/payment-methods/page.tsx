@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import {
   usePaymentMethods,
   useUpdatePaymentMethod,
   useCreateCustomPaymentMethod,
   useDeletePaymentMethod,
   useReorderPaymentMethods,
-} from '../_hooks/usePos'
-import { getGLAccounts, type GLAccount } from '../_actions/pos-actions'
+} from '../../_hooks/usePos'
+import { getGLAccounts, type GLAccount } from '../../_actions/pos-actions'
 import {
   RefreshCw,
   Plus,
@@ -465,6 +466,13 @@ function EditModal({
               className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
             />
           </div>
+          <p className="mt-1 text-xs text-gray-400">
+            Leave blank to use the tenant default set in{' '}
+            <Link href="/accounting/account-mapping" className="text-purple-600 hover:underline">
+              Accounting → Account Mapping
+            </Link>
+            .
+          </p>
         </Field>
       </div>
 

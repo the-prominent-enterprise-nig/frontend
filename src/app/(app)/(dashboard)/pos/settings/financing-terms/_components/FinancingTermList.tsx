@@ -7,7 +7,7 @@ import {
   useCreateFinancingTerm,
   useUpdateFinancingTerm,
   useBranches,
-} from '../../_hooks/usePos'
+} from '../../../_hooks/usePos'
 import type { CreateFinancingTermInput, FinancingTerm } from '@/src/schema/pos'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 

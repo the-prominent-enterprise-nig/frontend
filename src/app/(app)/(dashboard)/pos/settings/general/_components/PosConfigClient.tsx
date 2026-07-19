@@ -10,7 +10,7 @@ import {
   PackageX,
   ReceiptText,
 } from 'lucide-react'
-import { getActivePosConfig, upsertPosConfig } from '../../_actions/pos-actions'
+import { getActivePosConfig, upsertPosConfig } from '../../../_actions/pos-actions'
 import type { PosConfig } from '@/src/schema/pos'
 
 export default function PosConfigClient() {

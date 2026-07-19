@@ -355,14 +355,25 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:branch-pricing:read',
       },
       {
-        label: 'Configuration',
-        href: '/pos/gl-mapping',
+        label: 'Settings',
+        href: '/pos/settings',
         icon: Key,
         // Business Owner / Branch Manager only — pos:transactions:read (what
         // this used before) is also held by Cashier, which let them reach
         // GL Mapping / POS Config / Queue Categories.
         requiredPermission: 'pos:config:manage',
-        activeWhen: ['/pos/gl-mapping', '/pos/settings', '/pos/config', '/pos/queue-categories'],
+        // Exact-match list, not a prefix check (see isActive below) — every
+        // /pos/settings/* sub-route needs its own explicit entry.
+        activeWhen: [
+          '/pos/settings',
+          '/pos/settings/general',
+          '/pos/settings/payment-methods',
+          '/pos/settings/terminals',
+          '/pos/settings/receipt-branding',
+          '/pos/settings/financing-terms',
+          '/pos/settings/queue-categories',
+          '/pos/settings/customer-display',
+        ],
       },
       {
         label: 'Cash-in-Transit',
