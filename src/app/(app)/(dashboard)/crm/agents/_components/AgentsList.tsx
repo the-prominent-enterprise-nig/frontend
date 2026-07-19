@@ -117,6 +117,9 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Status
                   </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                    Commission
+                  </th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Actions
                   </th>
@@ -125,13 +128,13 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
               <tbody className="divide-y divide-zinc-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
                       Loading...
                     </td>
                   </tr>
                 ) : agents.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
                       No sales agents yet
                     </td>
                   </tr>
@@ -151,6 +154,9 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                         >
                           {a.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">
+                        {a.commissionRate != null ? `${(a.commissionRate * 100).toFixed(2)}%` : '-'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
@@ -213,6 +219,7 @@ function AgentFormDialog({
     name: agent?.name ?? '',
     phone: agent?.phone ?? '',
     email: agent?.email ?? '',
+    commissionRate: agent?.commissionRate ?? null,
   })
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof CreateAgentInput>(k: K, v: CreateAgentInput[K]) =>
@@ -263,6 +270,20 @@ function AgentFormDialog({
               maxLength={FIELD_LIMITS.email}
               value={form.email ?? ''}
               onChange={(e) => set('email', e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Commission Rate (%)">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              placeholder="e.g. 5 for 5%. Leave blank for no commission."
+              value={form.commissionRate != null ? form.commissionRate * 100 : ''}
+              onChange={(e) =>
+                set('commissionRate', e.target.value === '' ? null : Number(e.target.value) / 100)
+              }
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
           </Field>

@@ -33,8 +33,8 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   }
 
   const {
-    purchaseOrderNumber: _purchaseOrderNumber,
-    purchaseOrderDate: _purchaseOrderDate,
+    purchaseOrderNumber,
+    purchaseOrderDate,
     code,
     receivedAt,
     modeOfTransfer,
@@ -47,6 +47,10 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
     ...(code && code.trim() ? { code: code.trim() } : {}),
     ...(receivedAt && receivedAt.trim() ? { receivedAt: receivedAt.trim() } : {}),
     ...(modeOfTransfer && modeOfTransfer.trim() ? { modeOfTransfer: modeOfTransfer.trim() } : {}),
+    ...(purchaseOrderNumber && purchaseOrderNumber.trim()
+      ? { purchaseOrderNumber: purchaseOrderNumber.trim() }
+      : {}),
+    ...(purchaseOrderDate && purchaseOrderDate.trim() ? { poDate: purchaseOrderDate.trim() } : {}),
     lines: lines.map(({ itemId, expiryDate, batchNumber, autoGenerateSerials, ...lineRest }) => ({
       ...lineRest,
       itemId,

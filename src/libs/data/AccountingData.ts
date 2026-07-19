@@ -88,6 +88,8 @@ export interface JournalEntry {
   sourceModule?: string | null
   sourceDocumentNo?: string | null
   sourceDocumentId?: string | null
+  branchId?: string | null
+  branchName?: string | null
   postedBy?: string | null
   createdBy?: string | null
   transactions: Transaction[]
@@ -313,20 +315,6 @@ export interface Vendor {
   updatedAt?: string
 }
 
-export interface Supplier {
-  id: string | number
-  name: string
-  contactPerson?: string | null
-  contactNumber?: string | null
-  email?: string | null
-  address?: string | null
-  bankAccount?: string | null
-  taxIdNumber?: string | null
-  visibility?: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
 export interface Customer {
   id: string | number
   name: string
@@ -371,26 +359,6 @@ export function updateVendor(id: string | number, data: Partial<Vendor>) {
 }
 export function deleteVendor(id: string | number) {
   return api.delete(`/vendors/${id}`)
-}
-
-export function getSuppliers(params?: ListParams) {
-  return api.get<PaginatedResponse<Supplier> | Supplier[]>('/suppliers', params, {
-    tags: ['accounting-suppliers'],
-  })
-}
-export function getSupplierById(id: string | number) {
-  return api.get<Supplier>(`/suppliers/${id}`, undefined, {
-    tags: ['accounting-suppliers', `accounting-supplier-${id}`],
-  })
-}
-export function createSupplier(data: Partial<Supplier>) {
-  return api.post<Supplier>('/suppliers', data)
-}
-export function updateSupplier(id: string | number, data: Partial<Supplier>) {
-  return api.patch<Supplier>(`/suppliers/${id}`, data)
-}
-export function deleteSupplier(id: string | number) {
-  return api.delete(`/suppliers/${id}`)
 }
 
 export function getCustomers(params?: ListParams) {

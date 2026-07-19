@@ -43,6 +43,12 @@ import type {
   BranchPricing,
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
+  FinancingTerm,
+  CreateFinancingTermInput,
+  UpdateFinancingTermInput,
+  ComputeInstallmentPreviewInput,
+  InstallmentPreview,
+  InstallmentSchedule,
   ParkedSale,
   ParkSaleInput,
   HandoverSessionInput,
@@ -85,6 +91,7 @@ const TAGS = {
   loyaltyProgram: 'pos-loyalty-program',
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
   branchPricing: 'pos-branch-pricing',
+  financingTerms: 'pos-financing-terms',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
   receiptBranding: 'pos-receipt-branding',
@@ -96,6 +103,7 @@ const TAGS = {
   releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
   returnRefundRequests: 'pos-return-refund-requests',
   returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
+  cashInTransit: 'pos-cash-in-transit',
 }
 
 export async function getTerminals(filters?: {
@@ -843,6 +851,100 @@ export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>
   }
 }
 
+// ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
+
+export async function getFinancingTerms(): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>('/pos/financing-terms', undefined, {
+      tags: [TAGS.financingTerms],
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch financing terms' }
+  }
+}
+
+export async function getActiveFinancingTerms(
+  branchId?: string
+): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>(
+      '/pos/financing-terms/active',
+      branchId ? { branchId } : undefined
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch active financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch active financing terms' }
+  }
+}
+
+export async function createFinancingTerm(
+  input: CreateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.post<FinancingTerm>('/pos/financing-terms', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create financing term' }
+  }
+}
+
+export async function updateFinancingTerm(
+  id: string,
+  input: UpdateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.patch<FinancingTerm>(`/pos/financing-terms/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update financing term' }
+  }
+}
+
+export async function previewInstallment(
+  input: ComputeInstallmentPreviewInput
+): Promise<ApiResponse<InstallmentPreview>> {
+  try {
+    const result = await api.post<InstallmentPreview>('/pos/financing-terms/preview', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to compute installment preview' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function getCustomerInstallmentSchedules(
+  customerId: string
+): Promise<ApiResponse<InstallmentSchedule[]>> {
+  try {
+    const result = await api.get<InstallmentSchedule[]>(
+      `/pos/customers/${customerId}/installment-schedules`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch installment schedules' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch installment schedules' }
+  }
+}
+
 // â”€â”€â”€ Parked Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getParkedSales(
@@ -1324,12 +1426,16 @@ export async function changeCashierPin(
   }
 }
 
-export async function getUsers(): Promise<
-  ApiResponse<{ id: string; name: string; email: string }[]>
-> {
+export async function getUsers(filters?: {
+  role?: string
+  branchId?: string
+}): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
   try {
     type UserRow = { id: string; name: string; email: string }
-    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
+    const result = await api.get<UserRow[] | { data: UserRow[] }>(
+      '/users',
+      filters as Record<string, string>
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
@@ -1339,6 +1445,28 @@ export async function getUsers(): Promise<
     return { success: true, data: users }
   } catch {
     return { success: false, error: 'Failed to fetch users' }
+  }
+}
+
+export async function searchUsers(
+  q: string,
+  branchId?: string
+): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
+  try {
+    type UserRow = { id: string; name: string; email: string }
+    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users/search', {
+      q,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to search users' }
+    }
+    const users = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: UserRow[] }).data ?? [])
+    return { success: true, data: users }
+  } catch {
+    return { success: false, error: 'Failed to search users' }
   }
 }
 
@@ -1794,12 +1922,13 @@ export interface SerialNumberRecord {
 }
 
 export async function getAvailableSerialNumbers(
-  itemId: string
+  itemId: string,
+  branchId?: string
 ): Promise<ApiResponse<SerialNumberRecord[]>> {
   try {
     type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock`
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock${branchId ? `&branchId=${branchId}` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch serial numbers' }
@@ -2005,6 +2134,41 @@ export async function getPendingReleaseFormRequests(
   }
 }
 
+export async function getOwnReleaseFormRequests(): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/own',
+      undefined,
+      {
+        tags: [TAGS.releaseFormRequests],
+      }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch your release requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch your release requests' }
+  }
+}
+
+export async function getReleaseFormHistory(
+  branchId?: string
+): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/history',
+      branchId ? { branchId } : undefined
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load release form history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load release form history' }
+  }
+}
+
 export async function approveReleaseFormRequest(
   requestId: string,
   input?: ReviewReleaseFormInput
@@ -2144,5 +2308,97 @@ export async function rejectReturnRefundRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject request' }
+  }
+}
+
+export interface CashInTransitSessionRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  journalEntryId: string | null
+}
+
+export async function getCashInTransitReport(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitSessionRow[]>> {
+  try {
+    const result = await api.get<CashInTransitSessionRow[]>(
+      '/pos/sessions/cash-in-transit',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit report' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit report' }
+  }
+}
+
+export interface CashInTransitHistoryRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  citClearedAt: string | null
+  citClearingJournalEntryId: string | null
+  depositedTo: string | null
+  depositDate: string | null
+}
+
+export async function getCashInTransitHistory(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitHistoryRow[]>> {
+  try {
+    const result = await api.get<CashInTransitHistoryRow[]>(
+      '/pos/sessions/cash-in-transit/history',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit history' }
+  }
+}
+
+export interface ClearCashInTransitInput {
+  bankAccountId: string
+  sessionIds: string[]
+  depositDate: string
+  reference?: string
+}
+
+export interface ClearCashInTransitResult {
+  journalEntryId: string
+  amount: number
+  sessionsCleared: number
+}
+
+export async function clearCashInTransit(
+  input: ClearCashInTransitInput
+): Promise<ApiResponse<ClearCashInTransitResult>> {
+  try {
+    const result = await api.post<ClearCashInTransitResult>(
+      '/bank-accounts/clear-cash-in-transit',
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to clear Cash-in-Transit' }
+    }
+    revalidateTag(TAGS.cashInTransit, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to clear Cash-in-Transit' }
   }
 }

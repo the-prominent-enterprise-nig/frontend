@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { canManagePosSettings } from '@/src/libs/guards/permission'
 import Link from 'next/link'
 import {
   Monitor,
@@ -15,6 +14,7 @@ import {
   Settings,
   Palette,
   CreditCard,
+  HandCoins,
 } from 'lucide-react'
 
 export const metadata = { title: 'POS Settings' }
@@ -80,12 +80,18 @@ const sections = [
     href: '/pos/customer-display',
     icon: Tv2,
   },
+  {
+    label: 'Financing Terms',
+    description: 'Configure installment terms (months + markup) for checkout.',
+    href: '/pos/financing-terms',
+    icon: HandCoins,
+  },
 ]
 
 export default async function PosSettingsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.WILDCARD)) redirect('/403')
+  if (!canManagePosSettings(session)) redirect('/403')
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">

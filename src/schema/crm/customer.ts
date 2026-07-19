@@ -1,9 +1,27 @@
 import { z } from 'zod'
 import { CustomerSourceChannelEnum, CustomerStatusEnum, CustomerTypeEnum } from './types'
 
+/** Selectable payment-terms options. COD and "Net N" values are parsed by
+ * the backend's credit-eligibility check (assertCreditEligibility /
+ * computeCreditWarnings) — the billing-cadence values (Monthly, Bi-Monthly,
+ * etc.) have no automatic enforcement rule and are stored as-is. */
+export const PAYMENT_TERMS_OPTIONS = [
+  'COD',
+  'Net 15',
+  'Net 30',
+  'Net 45',
+  'Net 60',
+  'Net 90',
+  'Monthly',
+  'Bi-Monthly',
+  'Quarterly',
+  'Semi-Annual',
+  'Annual',
+] as const
+
 export const createCustomerSchema = z.object({
-  tenantId: z.string().min(1, 'Enterprise Owner is required'),
-  customerCode: z.string().min(1, 'Customer code is required').max(20),
+  tenantId: z.string().optional(),
+  customerCode: z.string().max(20).optional(),
   name: z.string().min(1, 'Name is required').max(255),
   customerType: CustomerTypeEnum.optional(),
   companyName: z.string().max(255).optional().or(z.literal('')),

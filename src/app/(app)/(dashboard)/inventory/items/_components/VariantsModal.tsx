@@ -17,7 +17,12 @@ import {
 } from 'lucide-react'
 import ItemImageGallery from './ItemImageGallery'
 import { CreateVariantFormSchema } from '@/src/schema/inventory/variants'
-import type { CreateVariantFormValues, VariantSummary } from '@/src/schema/inventory/variants'
+import type {
+  CreateVariantFormValues,
+  UpdateVariantFormValues,
+  VariantSummary,
+  AttributeRow,
+} from '@/src/schema/inventory/variants'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 
 type Props = {
@@ -29,10 +34,158 @@ type Props = {
   onCreateVariant: (itemId: string, data: CreateVariantFormValues) => Promise<unknown>
   isCreating: boolean
   onEditItem?: (item: ItemSummary) => void
+  canManage?: boolean
+  onUpdateVariant?: (
+    itemId: string,
+    variantId: string,
+    data: UpdateVariantFormValues
+  ) => Promise<unknown>
+  isUpdating?: boolean
+  onDeleteVariant?: (itemId: string, variantId: string) => Promise<unknown>
+  isDeleting?: boolean
 }
 
-function VariantCard({ variant, itemId }: { variant: VariantSummary; itemId: string }) {
+function attributesToRows(attributes: Record<string, string> | null | undefined): AttributeRow[] {
+  const entries = Object.entries(attributes ?? {})
+  return entries.length > 0
+    ? entries.map(([key, value]) => ({ key, value }))
+    : [{ key: '', value: '' }]
+}
+
+function VariantCard({
+  variant,
+  itemId,
+  canManage,
+  onUpdate,
+  isUpdating,
+  onDelete,
+  isDeleting,
+}: {
+  variant: VariantSummary
+  itemId: string
+  canManage: boolean
+  onUpdate?: (variantId: string, data: UpdateVariantFormValues) => Promise<unknown>
+  isUpdating: boolean
+  onDelete?: (variantId: string) => void
+  isDeleting: boolean
+}) {
   const [imagesOpen, setImagesOpen] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editSku, setEditSku] = useState(variant.variantSku)
+  const [editPrice, setEditPrice] = useState(
+    variant.priceOverride != null ? String(variant.priceOverride) : ''
+  )
+  const [editAttributes, setEditAttributes] = useState<AttributeRow[]>(
+    attributesToRows(variant.attributes)
+  )
+
+  function startEdit() {
+    setEditSku(variant.variantSku)
+    setEditPrice(variant.priceOverride != null ? String(variant.priceOverride) : '')
+    setEditAttributes(attributesToRows(variant.attributes))
+    setIsEditing(true)
+  }
+
+  async function saveEdit() {
+    if (!onUpdate || !editSku.trim()) return
+    await onUpdate(variant.id, {
+      variantSku: editSku.trim(),
+      attributes: editAttributes.filter((a) => a.key.trim() && a.value.trim()),
+      priceOverride: editPrice.trim() === '' ? undefined : Number(editPrice),
+    })
+    setIsEditing(false)
+  }
+
+  if (isEditing) {
+    return (
+      <div className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Variant SKU</label>
+            <input
+              value={editSku}
+              onChange={(e) => setEditSku(e.target.value)}
+              className="w-full rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-sm uppercase outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Price Override</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={editPrice}
+              onChange={(e) => setEditPrice(e.target.value)}
+              placeholder="Leave blank to use item price"
+              className="w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          <div className="mb-1 flex items-center justify-between">
+            <label className="text-xs font-medium text-zinc-600">Attributes</label>
+            <button
+              type="button"
+              onClick={() => setEditAttributes((rows) => [...rows, { key: '', value: '' }])}
+              className="flex items-center gap-1 text-xs font-medium text-prominent-purple-600 hover:text-prominent-purple-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          </div>
+          {editAttributes.map((row, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <input
+                value={row.key}
+                onChange={(e) =>
+                  setEditAttributes((rows) =>
+                    rows.map((r, i) => (i === index ? { ...r, key: e.target.value } : r))
+                  )
+                }
+                placeholder="e.g. Color"
+                className="flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+              <input
+                value={row.value}
+                onChange={(e) =>
+                  setEditAttributes((rows) =>
+                    rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r))
+                  )
+                }
+                placeholder="e.g. Red"
+                className="flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+              <button
+                type="button"
+                onClick={() => setEditAttributes((rows) => rows.filter((_, i) => i !== index))}
+                disabled={editAttributes.length <= 1}
+                className="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setIsEditing(false)}
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={saveEdit}
+            disabled={isUpdating || !editSku.trim()}
+            className="rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+          >
+            {isUpdating ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50">
@@ -87,6 +240,27 @@ function VariantCard({ variant, itemId }: { variant: VariantSummary; itemId: str
             Images
             {imagesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </button>
+          {canManage && onUpdate && (
+            <button
+              type="button"
+              onClick={startEdit}
+              title="Edit variant"
+              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+          {canManage && onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(variant.id)}
+              disabled={isDeleting}
+              title="Delete variant"
+              className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -108,8 +282,14 @@ export default function VariantsModal({
   onCreateVariant,
   isCreating,
   onEditItem,
+  canManage = false,
+  onUpdateVariant,
+  isUpdating = false,
+  onDeleteVariant,
+  isDeleting = false,
 }: Props) {
   const variantsEnabled = item?.hasVariants === true
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
   const {
     register,
     control,
@@ -214,14 +394,29 @@ export default function VariantsModal({
             ) : (
               <div className="space-y-2">
                 {variants.map((v) => (
-                  <VariantCard key={v.id} variant={v} itemId={item!.id} />
+                  <VariantCard
+                    key={v.id}
+                    variant={v}
+                    itemId={item!.id}
+                    canManage={canManage}
+                    onUpdate={
+                      onUpdateVariant
+                        ? (variantId, data) => onUpdateVariant(item!.id, variantId, data)
+                        : undefined
+                    }
+                    isUpdating={isUpdating}
+                    onDelete={
+                      onDeleteVariant ? (variantId) => setDeleteTargetId(variantId) : undefined
+                    }
+                    isDeleting={isDeleting}
+                  />
                 ))}
               </div>
             )}
           </section>
 
           {/* Add Variant Form */}
-          {variantsEnabled && (
+          {variantsEnabled && canManage && (
             <section>
               <h3 className="mb-3 text-sm font-semibold text-zinc-700">Add Variant</h3>
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -346,6 +541,39 @@ export default function VariantsModal({
           </button>
         </div>
       </div>
+
+      {/* Delete confirm */}
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-zinc-900">Delete Variant</h3>
+            <p className="mt-2 text-sm text-zinc-500">
+              Are you sure you want to delete this variant? This action cannot be undone. Variants
+              with stock on hand cannot be deleted.
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetId(null)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  if (onDeleteVariant && item) await onDeleteVariant(item.id, deleteTargetId)
+                  setDeleteTargetId(null)
+                }}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -14,7 +14,7 @@ export async function createBundle(input: unknown): Promise<ApiResponse<{ id: st
     }
   }
 
-  const { components, ...itemFields } = parsed.data
+  const { components, isSerialTracked, ...itemFields } = parsed.data
 
   // Step 1: create the item with isBundle=true
   const itemPayload = {
@@ -22,7 +22,7 @@ export async function createBundle(input: unknown): Promise<ApiResponse<{ id: st
     isBundle: true,
     hasVariants: false,
     isBatchTracked: false,
-    isSerialTracked: false,
+    isSerialTracked: isSerialTracked ?? false,
     isExpiryTracked: false,
     costingMethod: 'weighted_average' as const,
   }

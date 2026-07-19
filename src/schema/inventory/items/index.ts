@@ -89,6 +89,7 @@ export const CreateItemFormSchema = z.object({
   costingMethod: CostingMethodSchema,
   isBatchTracked: z.boolean(),
   isSerialTracked: z.boolean(),
+  requiresSecondarySerial: z.boolean(),
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   hasVariants: z.boolean(),
@@ -123,6 +124,7 @@ export const UpdateItemFormSchema = z.object({
   costingMethod: CostingMethodSchema,
   isBatchTracked: z.boolean(),
   isSerialTracked: z.boolean(),
+  requiresSecondarySerial: z.boolean(),
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   hasVariants: z.boolean(),
@@ -174,6 +176,11 @@ export const ItemSummarySchema = z.object({
     return undefined
   }, z.boolean().optional()),
   isSerialTracked: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return undefined
+  }, z.boolean().optional()),
+  requiresSecondarySerial: z.preprocess((v) => {
     if (v === true || v === 'true' || v === 1) return true
     if (v === false || v === 'false' || v === 0) return false
     return undefined

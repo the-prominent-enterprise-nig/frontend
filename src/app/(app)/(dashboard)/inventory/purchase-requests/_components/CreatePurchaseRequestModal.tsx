@@ -9,6 +9,8 @@ import {
   type CreatePurchaseRequestFormValues,
 } from '@/src/schema/inventory/purchase-requests'
 import { ItemSearchCombobox } from './ItemSearchCombobox'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 
 type Props = {
@@ -27,6 +29,7 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
   } = useForm<CreatePurchaseRequestFormValues>({
     resolver: zodResolver(CreatePurchaseRequestFormSchema),
     defaultValues: {
+      branchId: undefined,
       reason: '',
       notes: '',
       lines: [{ itemId: '', quantity: 1, suggestedSupplierId: '', notes: '' }],
@@ -41,6 +44,7 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
   useEffect(() => {
     if (!open) {
       reset({
+        branchId: undefined,
         reason: '',
         notes: '',
         lines: [
@@ -88,6 +92,25 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="px-6 py-4 space-y-4">
+            {/* Branch */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <Controller
+                name="branchId"
+                control={control}
+                render={({ field }) => (
+                  <BranchSearchCombobox
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.branchId?.message}
+                  />
+                )}
+              />
+              {errors.branchId && (
+                <p className="mt-1 text-xs text-red-600">{errors.branchId.message}</p>
+              )}
+            </div>
+
             {/* Reason */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Reason</label>
@@ -250,19 +273,13 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
                       {/* Suggested Supplier */}
                       <div className="col-span-2 sm:col-span-1">
                         <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Suggested Supplier ID
+                          Suggested Supplier
                         </label>
                         <Controller
                           name={`lines.${index}.suggestedSupplierId`}
                           control={control}
                           render={({ field: f }) => (
-                            <input
-                              {...f}
-                              value={f.value ?? ''}
-                              type="text"
-                              placeholder="Optional supplier ID"
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                            />
+                            <SupplierSearchCombobox value={f.value ?? ''} onChange={f.onChange} />
                           )}
                         />
                       </div>
