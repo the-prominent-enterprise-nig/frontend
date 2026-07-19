@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, Search, X, Layers, ImagePlus } from 'lucide-react'
+import { Plus, RefreshCw, Search, X, Layers, ImagePlus, FileUp } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
 import CreateItemModal from './CreateItemModal'
 import EditItemModal from './EditItemModal'
@@ -10,6 +10,7 @@ import CreateBundleModal from '../../bundles/_components/CreateBundleModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
 import VariantsModal from './VariantsModal'
 import BulkImageImportModal from './BulkImageImportModal'
+import BulkImportItemsModal from './BulkImportItemsModal'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -20,7 +21,11 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_DELETE)
+  const canManageLifecycle = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)
+  const canReadAttributes = hasPermission(session, INVENTORY_PERMISSIONS.ATTRIBUTES_READ)
   const canCreateBundle = hasPermission(session, INVENTORY_PERMISSIONS.BUNDLES_CREATE)
+  const canViewVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_READ)
+  const canManageVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_MANAGE)
 
   const {
     items,
@@ -41,6 +46,10 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     primaryCategoryId,
     setPrimaryCategoryId,
     resetFilters,
+    sortBy,
+    sortOrder,
+    setSortBy,
+    setSortOrder,
     page,
     setPage,
     createItem,
@@ -60,17 +69,26 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     itemOptions,
     createBundle,
     isCreatingBundle,
+    addBundleComponent,
+    isAddingBundleComponent,
+    removeBundleComponent,
+    removingComponentId,
     selectedVariantItem,
     setSelectedVariantItem,
     variants,
     isLoadingVariants,
     createVariant,
     isCreatingVariant,
+    updateVariant,
+    isUpdatingVariant,
+    deleteVariant,
+    isDeletingVariant,
   } = useItemMaster()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isBundleCreateOpen, setIsBundleCreateOpen] = useState(false)
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false)
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
 
@@ -129,6 +147,17 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
             {canCreate && (
               <button
                 type="button"
+                onClick={() => setIsCsvImportOpen(true)}
+                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                <FileUp className="h-4 w-4" />
+                <span className="hidden sm:inline">Import CSV</span>
+                <span className="sm:hidden">CSV</span>
+              </button>
+            )}
+            {canCreate && (
+              <button
+                type="button"
                 onClick={() => setIsCreateOpen(true)}
                 className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
               >
@@ -170,7 +199,30 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               className="min-w-[180px]"
             />
           )}
-          {(search || lifecycle || primaryCategoryId) && (
+          <select
+            value={`${sortBy}:${sortOrder}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split(':') as [typeof sortBy, typeof sortOrder]
+              setSortBy(field)
+              setSortOrder(order)
+            }}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+          >
+            <option value="createdAt:desc">Newest first</option>
+            <option value="createdAt:asc">Oldest first</option>
+            <option value="name:asc">Name A→Z</option>
+            <option value="name:desc">Name Z→A</option>
+            <option value="sku:asc">SKU A→Z</option>
+            <option value="costPrice:asc">Cost ↑</option>
+            <option value="costPrice:desc">Cost ↓</option>
+            <option value="sellingPrice:asc">Price ↑</option>
+            <option value="sellingPrice:desc">Price ↓</option>
+          </select>
+          {(search ||
+            lifecycle ||
+            primaryCategoryId ||
+            sortBy !== 'createdAt' ||
+            sortOrder !== 'desc') && (
             <button
               type="button"
               onClick={resetFilters}
@@ -197,11 +249,12 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           isFetching={isFetching}
           canUpdate={canUpdate}
           canDelete={canDelete}
+          canManageLifecycle={canManageLifecycle}
           onEdit={(item) => setEditTarget(item)}
           onDelete={handleDelete}
           onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
           onViewBundle={(item) => setSelectedBundleItem(item)}
-          onViewVariants={(item) => setSelectedVariantItem(item)}
+          onViewVariants={canViewVariants ? (item) => setSelectedVariantItem(item) : undefined}
         />
 
         {/* Pagination */}
@@ -261,6 +314,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         uomOptions={uomOptions}
         onAttributeSubmit={(attrs) => updateItemAttributes(editTarget!.id, attrs)}
         isAttributeSubmitting={isUpdatingAttributes}
+        canReadAttributes={canReadAttributes}
         groupOptions={groupOptions}
         subgroupOptions={subgroupOptions}
         brandOptions={brandOptions}
@@ -285,6 +339,12 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         components={bundleComponents}
         availableQty={bundleAvailableQty}
         isLoading={isLoadingComponents}
+        itemOptions={itemOptions}
+        onAddComponent={addBundleComponent}
+        isAddingComponent={isAddingBundleComponent}
+        onRemoveComponent={removeBundleComponent}
+        removingComponentId={removingComponentId}
+        canEdit={canCreateBundle}
         onClose={() => setSelectedBundleItem(null)}
       />
 
@@ -294,6 +354,9 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onClose={() => setIsBulkImportOpen(false)}
         items={itemOptions}
       />
+
+      {/* Bulk CSV Import Modal */}
+      <BulkImportItemsModal isOpen={isCsvImportOpen} onClose={() => setIsCsvImportOpen(false)} />
 
       {/* Variants Modal */}
       <VariantsModal
@@ -308,6 +371,11 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           setSelectedVariantItem(null)
           setEditTarget(item)
         }}
+        canManage={canManageVariants}
+        onUpdateVariant={updateVariant}
+        isUpdating={isUpdatingVariant}
+        onDeleteVariant={deleteVariant}
+        isDeleting={isDeletingVariant}
       />
 
       {/* Delete Confirm */}

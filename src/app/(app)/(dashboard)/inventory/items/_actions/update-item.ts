@@ -3,10 +3,23 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { UpdateItemFormSchema } from '@/src/schema/inventory/items'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function updateItem(id: string, input: unknown): Promise<ApiResponse<void>> {
   if (!id) {
     return { success: false, error: 'Invalid item ID', message: 'Item ID is required' }
+  }
+
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to update items',
+    }
   }
 
   const parsed = UpdateItemFormSchema.safeParse(input)
@@ -55,6 +68,16 @@ export async function updateItemLifecycle(
 ): Promise<ApiResponse<void>> {
   if (!id) {
     return { success: false, error: 'Invalid item ID', message: 'Item ID is required' }
+  }
+
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to change item lifecycle',
+    }
   }
 
   const result = await api.patch(`/inventory/items/${id}/lifecycle`, { lifecycle })

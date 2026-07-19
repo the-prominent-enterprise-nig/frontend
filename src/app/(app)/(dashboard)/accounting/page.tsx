@@ -944,9 +944,7 @@ export default function AccountingPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-900 truncate">
-                          {inv.customer
-                            ? `${inv.customer.firstName ?? ''} ${inv.customer.lastName ?? ''}`.trim()
-                            : inv.customerId}
+                          {inv.customer ? inv.customer.name : inv.customerId}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {inv.invoiceNumber} · {fmtDate(inv.invoiceDate)}
@@ -1060,9 +1058,7 @@ export default function AccountingPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <p className="text-xs font-semibold text-gray-900 truncate">
-                              {inv.customer
-                                ? `${inv.customer.firstName ?? ''} ${inv.customer.lastName ?? ''}`.trim()
-                                : inv.customerId}
+                              {inv.customer ? inv.customer.name : inv.customerId}
                             </p>
                             <p className="text-[11px] text-gray-500">
                               {inv.invoiceNumber} · Due {fmtDate(inv.dueDate)}

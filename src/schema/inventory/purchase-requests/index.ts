@@ -15,6 +15,8 @@ export const CreatePurchaseRequestFormSchema = z.object({
   lines: z.array(CreatePrLineSchema).min(1, 'At least one line item is required'),
 })
 
+export const UpdatePurchaseRequestFormSchema = CreatePurchaseRequestFormSchema
+
 export const ApprovePrFormSchema = z.object({
   remarks: z.string().max(500).optional(),
 })
@@ -55,7 +57,14 @@ export const PurchaseRequestSummarySchema = z.object({
   status: z.enum(['draft', 'submitted', 'approved', 'rejected', 'cancelled', 'converted']),
   requestedById: z.string(),
   branchId: z.string().nullable(),
-  branch: z.object({ id: z.string(), name: z.string() }).nullable(),
+  branch: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      addressLine1: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+    })
+    .nullable(),
   reason: z.string().nullable(),
   notes: z.string().nullable(),
   submittedAt: z.string().nullable(),
@@ -81,6 +90,7 @@ export const PurchaseRequestListResponseSchema = z.object({
 
 export type CreatePrLineValues = z.infer<typeof CreatePrLineSchema>
 export type CreatePurchaseRequestFormValues = z.infer<typeof CreatePurchaseRequestFormSchema>
+export type UpdatePurchaseRequestFormValues = z.infer<typeof UpdatePurchaseRequestFormSchema>
 export type ApprovePrFormValues = z.infer<typeof ApprovePrFormSchema>
 export type RejectPrFormValues = z.infer<typeof RejectPrFormSchema>
 export type PrApproval = z.infer<typeof PrApprovalSchema>

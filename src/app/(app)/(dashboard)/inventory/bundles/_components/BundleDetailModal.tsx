@@ -1,8 +1,16 @@
 'use client'
 
-import { X, Loader2, Layers, AlertCircle } from 'lucide-react'
+import { useEffect } from 'react'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { X, Loader2, Layers, AlertCircle, Plus, Trash2 } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
-import type { BundleComponentSummary } from '@/src/schema/inventory/bundles'
+import {
+  BundleComponentFormSchema,
+  type BundleComponentSummary,
+  type BundleComponentFormValues,
+} from '@/src/schema/inventory/bundles'
+import type { ApiResponse } from '@/src/libs/api/client'
 
 type Props = {
   isOpen: boolean
@@ -11,6 +19,12 @@ type Props = {
   availableQty: number | null | undefined
   isLoading: boolean
   onClose: () => void
+  itemOptions: ItemSummary[]
+  onAddComponent: (data: BundleComponentFormValues) => Promise<ApiResponse<unknown>>
+  isAddingComponent: boolean
+  onRemoveComponent: (componentId: string) => Promise<ApiResponse<unknown>>
+  removingComponentId: string | null
+  canEdit: boolean
 }
 
 export default function BundleDetailModal({
@@ -20,10 +34,43 @@ export default function BundleDetailModal({
   availableQty,
   isLoading,
   onClose,
+  itemOptions,
+  onAddComponent,
+  isAddingComponent,
+  onRemoveComponent,
+  removingComponentId,
+  canEdit,
 }: Props) {
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<BundleComponentFormValues>({
+    resolver: zodResolver(BundleComponentFormSchema),
+    defaultValues: { componentItemId: '', quantityPerBundle: 1 },
+  })
+
+  useEffect(() => {
+    if (!isOpen) reset({ componentItemId: '', quantityPerBundle: 1 })
+  }, [isOpen, reset])
+
   if (!isOpen) return null
 
   const isLowStock = availableQty !== null && availableQty !== undefined && availableQty <= 0
+
+  const existingComponentIds = new Set(components.map((c) => c.componentItemId).filter(Boolean))
+  const addableItems = itemOptions.filter(
+    (item) => item.id !== bundle?.id && !existingComponentIds.has(item.id)
+  )
+
+  async function handleAddComponent(data: BundleComponentFormValues) {
+    const result = await onAddComponent(data)
+    if (result.success) reset({ componentItemId: '', quantityPerBundle: 1 })
+  }
+
+  const fieldClass =
+    'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -151,6 +198,7 @@ export default function BundleDetailModal({
                           <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                             Contributes
                           </th>
+                          {canEdit && <th className="px-3 py-2.5" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
@@ -200,6 +248,23 @@ export default function BundleDetailModal({
                                   <span className="text-xs text-zinc-400">—</span>
                                 )}
                               </td>
+                              {canEdit && (
+                                <td className="px-3 py-2.5 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => comp.id && onRemoveComponent(comp.id)}
+                                    disabled={!comp.id || removingComponentId === comp.id}
+                                    title="Remove component"
+                                    className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600 disabled:opacity-30"
+                                  >
+                                    {removingComponentId === comp.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           )
                         })}
@@ -212,6 +277,83 @@ export default function BundleDetailModal({
                   ⚠ marks the bottleneck component limiting bundle availability.
                 </p>
               </div>
+
+              {/* Add component */}
+              {canEdit && (
+                <form
+                  onSubmit={handleSubmit(handleAddComponent)}
+                  noValidate
+                  className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
+                >
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+                    Add Component
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <Controller
+                        name="componentItemId"
+                        control={control}
+                        render={({ field }) => (
+                          <select {...field} className={`${fieldClass} bg-white`}>
+                            <option value="">Select item…</option>
+                            {addableItems.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.sku} — {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      />
+                      {errors.componentItemId && (
+                        <p className="mt-0.5 text-xs text-red-600">
+                          {errors.componentItemId.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="w-24 shrink-0">
+                      <Controller
+                        name="quantityPerBundle"
+                        control={control}
+                        render={({ field }) => (
+                          <input
+                            {...field}
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            placeholder="Qty"
+                            className={`${fieldClass} text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            onChange={(e) =>
+                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                            }
+                          />
+                        )}
+                      />
+                      {errors.quantityPerBundle && (
+                        <p className="mt-0.5 text-xs text-red-600">
+                          {errors.quantityPerBundle.message}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isAddingComponent || addableItems.length === 0}
+                      className="mt-0.5 flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-2 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                    >
+                      {isAddingComponent ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      Add
+                    </button>
+                  </div>
+                  {addableItems.length === 0 && (
+                    <p className="mt-1.5 text-xs text-zinc-400">
+                      Every eligible item is already a component of this bundle.
+                    </p>
+                  )}
+                </form>
+              )}
 
               {bundle.description && (
                 <div>

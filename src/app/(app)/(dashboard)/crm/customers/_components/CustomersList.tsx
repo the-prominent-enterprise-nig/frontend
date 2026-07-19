@@ -1,8 +1,9 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { BellPlus, Search } from 'lucide-react'
+import { BellPlus, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import type { Customer } from '@/src/schema/crm/types'
@@ -63,13 +64,16 @@ function initials(name: string): string {
 
 export default function CustomersList({
   canScheduleReminder,
+  canCreate,
   currentUserId,
   tenantId,
 }: {
   canScheduleReminder: boolean
+  canCreate: boolean
   currentUserId: string
   tenantId: string
 }) {
+  const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -97,11 +101,22 @@ export default function CustomersList({
 
   return (
     <div className="px-6 py-8 lg:px-10">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Customers</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Unified view across leads, orders, and POS history.
-        </p>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Customers</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Unified view across leads, orders, and POS history.
+          </p>
+        </div>
+        {canCreate && (
+          <Link
+            href="/crm/customers/new"
+            className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
+          >
+            <Plus className="h-4 w-4" />
+            Add Customer
+          </Link>
+        )}
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -174,7 +189,11 @@ export default function CustomersList({
             {!loading &&
               !error &&
               customers.map((c) => (
-                <tr key={c.id} className="group transition-colors hover:bg-gray-50">
+                <tr
+                  key={c.id}
+                  onClick={() => router.push(`/crm/customers/${c.id}`)}
+                  className="group cursor-pointer transition-colors hover:bg-gray-50"
+                >
                   <td className="px-4 py-3 font-mono text-[11.5px] text-gray-500">
                     {c.customerCode}
                   </td>
@@ -190,12 +209,9 @@ export default function CustomersList({
                         {initials(c.name)}
                       </span>
                       <div className="min-w-0">
-                        <Link
-                          href={`/crm/customers/${c.id}`}
-                          className="block font-medium text-gray-900 hover:text-prominent-orange-700 hover:underline"
-                        >
+                        <span className="block font-medium text-gray-900 group-hover:text-prominent-orange-700 group-hover:underline">
                           {c.name}
-                        </Link>
+                        </span>
                         <div className="truncate text-[12px] text-gray-500">
                           {c.companyName ?? <span className="capitalize">{c.customerType}</span>}
                         </div>
@@ -217,7 +233,10 @@ export default function CustomersList({
                   {canScheduleReminder && (
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => setReminderForCustomerId(c.id)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setReminderForCustomerId(c.id)
+                        }}
                         className="rounded-lg p-1.5 text-gray-400 opacity-0 transition-opacity hover:bg-prominent-orange-50 hover:text-prominent-orange-700 group-hover:opacity-100"
                         title="Schedule reminder"
                         aria-label="Schedule reminder"

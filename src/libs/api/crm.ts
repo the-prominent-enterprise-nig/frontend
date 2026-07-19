@@ -14,6 +14,7 @@ import type {
   InstallmentAccount,
   InstallmentAccountDetail,
   AccountingCustomerLite,
+  Agent,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -30,6 +31,8 @@ import type {
   EarlyPayoffInput,
   RecordPaymentInput,
 } from '@/src/schema/crm/installment-account'
+import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
+import type { InstallmentSchedule } from '@/src/schema/pos'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -108,6 +111,8 @@ export const customersApi = {
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   update: (id: string, body: UpdateCustomerInput) =>
     api.patch<Customer>(`/crm/customers/${id}`, body),
+  getInstallmentSchedules: (id: string) =>
+    api.get<InstallmentSchedule[]>(`/pos/customers/${id}/installment-schedules`),
   remove: (id: string) => api.delete(`/crm/customers/${id}`),
 }
 
@@ -232,4 +237,24 @@ export const segmentsApi = {
     api.patch<CustomerSegment>(`/crm/customer-segments/${id}`, body),
   refresh: (id: string) => api.post<CustomerSegment>(`/crm/customer-segments/${id}/refresh`),
   remove: (id: string) => api.delete(`/crm/customer-segments/${id}`),
+}
+
+// ─── Sales Agents ───────────────────────────────────────────
+
+export type AgentFilters = {
+  search?: string
+  status?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const agentsApi = {
+  list: (filters?: AgentFilters) =>
+    api.get<PaginatedResponse<Agent>>('/crm/agents', filters, {
+      tags: ['crm:agents'],
+    }),
+  get: (id: string) => api.get<Agent>(`/crm/agents/${id}`),
+  create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
+  update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
+  remove: (id: string) => api.delete(`/crm/agents/${id}`),
 }

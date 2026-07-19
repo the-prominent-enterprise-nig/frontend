@@ -6,7 +6,7 @@ import { accountingCustomersApi } from '@/src/libs/api/crm'
 import type { AccountingCustomerLite } from '@/src/schema/crm/types'
 
 function fullName(c: AccountingCustomerLite): string {
-  return [c.firstName, c.lastName].filter(Boolean).join(' ')
+  return c.name
 }
 
 export default function CustomerPicker({
@@ -108,7 +108,7 @@ export default function CustomerPicker({
                 className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-gray-50"
               >
                 <span className="font-medium text-gray-900">{fullName(c)}</span>
-                <span className="text-[12px] text-gray-500">{c.email || c.phoneNumber || '—'}</span>
+                <span className="text-[12px] text-gray-500">{c.email || c.phone || '—'}</span>
               </button>
             ))}
         </div>

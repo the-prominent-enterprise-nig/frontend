@@ -25,6 +25,7 @@ import {
   Funnel,
   HandCoins,
   House,
+  IdCard,
   Key,
   Layers,
   Library,
@@ -32,6 +33,7 @@ import {
   MoreHorizontal,
   TrendingUp,
   Package,
+  PackageCheck,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -41,6 +43,7 @@ import {
   ShoppingCart,
   Tag,
   Truck,
+  Undo2,
   Users,
   UsersRound,
   Wallet,
@@ -118,12 +121,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
       },
       {
-        label: 'Stock Requisitions',
-        href: '/inventory/stock-requisitions',
-        icon: ClipboardCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_READ,
-      },
-      {
         label: 'Purchase Requests',
         href: '/inventory/purchase-requests',
         icon: ClipboardList,
@@ -135,6 +132,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: ShoppingCart,
         requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
         activeWhen: ['/inventory/purchase-orders'],
+      },
+      {
+        label: 'Suppliers',
+        href: '/inventory/suppliers',
+        icon: Truck,
+        requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
       },
       {
         label: 'Counting',
@@ -211,6 +214,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'AP Bills',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+      },
+      {
+        label: 'Expenses',
+        href: '/accounting/expenses',
+        icon: Coins,
       },
       {
         label: 'Bank Accounts',
@@ -314,18 +322,56 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:transactions:read',
       },
       {
+        label: 'Release Approvals',
+        href: '/pos/release-approvals',
+        icon: PackageCheck,
+        // Cashiers can view (not approve) their own submitted requests here —
+        // matches the page's own guard (POS_PERMISSIONS.TRANSACTIONS_READ).
+        requiredPermission: 'pos:transactions:read',
+      },
+      {
+        label: 'Refund Approvals',
+        href: '/pos/return-refund-approvals',
+        icon: Undo2,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
         label: 'Promotions',
         href: '/pos/promo-codes',
         icon: Tag,
         requiredPermission: 'pos:promo-codes:read',
-        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty', '/pos/branch-pricing'],
+        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty'],
+      },
+      {
+        label: 'Branch Pricing',
+        href: '/pos/branch-pricing',
+        icon: HandCoins,
+        requiredPermission: 'pos:branch-pricing:read',
       },
       {
         label: 'Configuration',
         href: '/pos/gl-mapping',
         icon: Key,
-        requiredPermission: 'pos:transactions:read',
-        activeWhen: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
+        // Business Owner / Branch Manager only — pos:transactions:read (what
+        // this used before) is also held by Cashier, which let them reach
+        // GL Mapping / POS Config / Queue Categories.
+        requiredPermission: 'pos:config:manage',
+        activeWhen: ['/pos/gl-mapping', '/pos/settings', '/pos/config', '/pos/queue-categories'],
+      },
+      {
+        label: 'Cash-in-Transit',
+        href: '/pos/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: 'pos:cash-in-transit:read',
+      },
+      {
+        // Every POS role needs their own PIN (checkout PIN entry, manager
+        // approvals) — kept separate from the Configuration item above so
+        // hiding that one from Cashier doesn't also remove their only way to
+        // reach this.
+        label: 'Cashier PIN',
+        href: '/pos/pin',
+        icon: Key,
       },
     ],
     bottom: [],
@@ -379,6 +425,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/segments',
         icon: Layers,
         requiredPermission: CRM_PERMISSIONS.SEGMENTS_READ,
+      },
+      {
+        label: 'Sales Agents',
+        href: '/crm/agents',
+        icon: IdCard,
+        requiredPermission: CRM_PERMISSIONS.AGENTS_READ,
       },
       {
         label: 'Settings',
@@ -666,6 +718,16 @@ function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
           },
         ]
       : []),
+    // /settings/configuration's own page-level guard already allows Branch
+    // Manager (POS PIN self-service, payment methods, receipt branding) —
+    // without this the page was unreachable in practice since no nav link
+    // pointed to it for this role.
+    {
+      section: 'My Workspace' as const,
+      label: 'Configuration',
+      href: '/settings/configuration',
+      icon: Settings,
+    },
   ]
 }
 

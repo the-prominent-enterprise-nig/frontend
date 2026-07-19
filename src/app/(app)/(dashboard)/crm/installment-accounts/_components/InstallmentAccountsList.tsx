@@ -220,7 +220,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                       <CategoryBadge category={a.category} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
-                      {a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : '—'}
+                      {a.customer ? a.customer.name : '—'}
                     </div>
                     <div className="mt-1 flex items-center justify-between">
                       <StatusBadge status={a.status} />
@@ -262,7 +262,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">
-                        {a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : '—'}
+                        {a.customer ? a.customer.name : '—'}
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {a.branch?.name ?? <span className="text-gray-400">—</span>}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, PackageCheck, ArrowLeftRight, Pencil, ChevronLeft } from 'lucide-react'
+import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
@@ -44,15 +44,11 @@ function DrawerSkeleton() {
 
 function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const { item, stock, movements, substitutes, history } = useItem360(itemId, activeTab)
+  const { item, stock, substitutes, history } = useItem360(itemId, activeTab)
 
   type BalanceList = { data: import('@/src/schema/inventory/goods-receiving').StockBalance[] }
-  type LedgerList = { data: import('@/src/schema/inventory/goods-receiving').StockLedgerEntry[] }
   const itemData = item.data?.success ? item.data.data : null
   const stockData = stock.data?.success ? (stock.data.data as unknown as BalanceList) : null
-  const movementsData = movements.data?.success
-    ? (movements.data.data as unknown as LedgerList)
-    : null
   const substitutesData = substitutes.data?.success
     ? ((substitutes.data.data as unknown as { data: ItemSubstitute[] })?.data ??
       (substitutes.data.data as unknown as ItemSubstitute[]) ??
@@ -126,13 +122,6 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
               <ArrowLeftRight className="h-3.5 w-3.5" />
               Transfer
             </a>
-            <a
-              href={`/inventory/write-offs`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Adjust
-            </a>
           </div>
         )}
       </div>
@@ -168,13 +157,7 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         ) : activeTab === 'stock' ? (
           <StockTab balances={stockData?.data ?? []} isLoading={stock.isLoading} />
         ) : activeTab === 'movements' ? (
-          <MovementsTab
-            entries={
-              movementsData?.data ??
-              ([] as import('@/src/schema/inventory/goods-receiving').StockLedgerEntry[])
-            }
-            isLoading={movements.isLoading}
-          />
+          <MovementsTab itemId={itemId} />
         ) : activeTab === 'substitutes' ? (
           <SubstitutesTab
             itemId={itemId}

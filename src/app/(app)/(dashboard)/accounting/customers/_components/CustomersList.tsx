@@ -1,15 +1,28 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Search, RefreshCw, Pencil, Trash2, FileText, X } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   getCustomers,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
   Customer,
+  CustomerInput,
 } from '@/src/libs/data/AccountingData'
 import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+
+const FIELD_LIMITS = {
+  firstName: 150,
+  lastName: 150,
+  email: 255,
+  phoneNumber: 50,
+  address: 1000,
+  note: 1000,
+} as const
 
 interface Props {
   session: SessionUser
@@ -42,20 +55,26 @@ export default function CustomersList({ session }: Props) {
     load()
   }, [load])
 
-  const handleSave = async (data: Partial<Customer>) => {
-    if (editing) {
-      await updateCustomer(editing.id, data)
-    } else {
-      await createCustomer(data)
+  const handleSave = async (data: Partial<CustomerInput>) => {
+    const res = editing ? await updateCustomer(editing.id, data) : await createCustomer(data)
+    if (!res.success) {
+      toast.error(res.message || res.error || 'Could not save customer')
+      return
     }
+    toast.success(editing ? 'Customer updated' : 'Customer created')
     setDialogOpen(false)
     setEditing(null)
     load()
   }
 
   const handleDelete = async (c: Customer) => {
-    if (!confirm(`Delete customer "${c.firstName} ${c.lastName}"?`)) return
-    await updateCustomer(c.id, { visibility: false })
+    if (!confirm(`Delete customer "${c.name}"?`)) return
+    const res = await deleteCustomer(c.id)
+    if (!res.success) {
+      toast.error(res.message || res.error || 'Could not delete customer')
+      return
+    }
+    toast.success('Customer deleted')
     load()
   }
 
@@ -105,13 +124,13 @@ export default function CustomersList({ session }: Props) {
               <thead className="bg-zinc-50 border-b border-zinc-200">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                    Code
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Name
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Email
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                    Phone
+                    Email / Phone
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                     Address
@@ -137,14 +156,29 @@ export default function CustomersList({ session }: Props) {
                 ) : (
                   items.map((c) => (
                     <tr key={c.id} className="hover:bg-zinc-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {c.firstName} {c.lastName}
+                      <td className="px-4 py-3 font-mono text-xs text-zinc-500">
+                        {c.customerCode || '-'}
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.email || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.phoneNumber || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.address || '-'}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        {c.name}
+                        <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
+                          {c.customerType ?? 'individual'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="text-zinc-700">{c.email || '-'}</div>
+                        <div className="text-xs text-zinc-500">{c.phone || '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">{c.billingAddress || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/accounting/reports?tab=customer-statement&customerId=${c.id}`}
+                            title="View statement — open balance and payment history"
+                            className="p-1.5 text-purple-700 hover:bg-purple-50 rounded"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </Link>
                           {canUpdate && (
                             <button
                               onClick={() => {
@@ -189,6 +223,33 @@ export default function CustomersList({ session }: Props) {
   )
 }
 
+function customerToFormInput(customer: Customer | null): Partial<CustomerInput> {
+  if (!customer) {
+    return {
+      firstName: '',
+      lastName: '',
+      email: '',
+      phoneNumber: '',
+      address: '',
+      note: '',
+      customerType: 'individual',
+    }
+  }
+  // `name` is stored as a single field — split naively for the two-field
+  // form (mirrors the same split the backend does when merging partial
+  // firstName/lastName updates back onto the stored name).
+  const [firstName, ...rest] = (customer.name ?? '').split(' ')
+  return {
+    firstName: firstName ?? '',
+    lastName: rest.join(' '),
+    email: customer.email ?? '',
+    phoneNumber: customer.phone ?? '',
+    address: customer.billingAddress ?? '',
+    note: customer.notes ?? '',
+    customerType: customer.customerType ?? 'individual',
+  }
+}
+
 function CustomerFormDialog({
   customer,
   onClose,
@@ -196,25 +257,23 @@ function CustomerFormDialog({
 }: {
   customer: Customer | null
   onClose: () => void
-  onSave: (data: Partial<Customer>) => Promise<void> | void
+  onSave: (data: Partial<CustomerInput>) => Promise<void> | void
 }) {
-  const [form, setForm] = useState<Partial<Customer>>(
-    customer ?? {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phoneNumber: '',
-      address: '',
-      birthDate: '',
-      note: '',
-      visibility: true,
-    }
-  )
+  const [form, setForm] = useState<Partial<CustomerInput>>(customerToFormInput(customer))
   const [saving, setSaving] = useState(false)
-  const set = <K extends keyof Customer>(k: K, v: Customer[K]) => setForm((p) => ({ ...p, [k]: v }))
+  const [errors, setErrors] = useState<{ email?: string }>({})
+  const set = <K extends keyof CustomerInput>(k: K, v: CustomerInput[K]) => {
+    setForm((p) => ({ ...p, [k]: v }))
+    if (k === 'email') setErrors((p) => ({ ...p, email: undefined }))
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!form.email?.trim()) {
+      setErrors({ email: 'Email is required' })
+      toast.error('Email is required')
+      return
+    }
     setSaving(true)
     try {
       await onSave(form)
@@ -235,57 +294,80 @@ function CustomerFormDialog({
           </button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
+          <Field label="Customer Type">
+            <select
+              value={form.customerType ?? 'individual'}
+              onChange={(e) => set('customerType', e.target.value as CustomerInput['customerType'])}
+              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+            >
+              <option value="individual">Individual</option>
+              <option value="business">Business</option>
+            </select>
+          </Field>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Field label="First Name *">
+            <Field
+              label="First Name *"
+              count={[form.firstName?.length ?? 0, FIELD_LIMITS.firstName]}
+            >
               <input
                 required
+                maxLength={FIELD_LIMITS.firstName}
                 value={form.firstName ?? ''}
                 onChange={(e) => set('firstName', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
-            <Field label="Last Name *">
+            <Field label="Last Name *" count={[form.lastName?.length ?? 0, FIELD_LIMITS.lastName]}>
               <input
                 required
+                maxLength={FIELD_LIMITS.lastName}
                 value={form.lastName ?? ''}
                 onChange={(e) => set('lastName', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
-            <Field label="Email">
+            <Field
+              label="Email *"
+              count={[form.email?.length ?? 0, FIELD_LIMITS.email]}
+              error={errors.email}
+            >
               <input
                 type="email"
+                required
+                maxLength={FIELD_LIMITS.email}
                 value={form.email ?? ''}
                 onChange={(e) => set('email', e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                  errors.email
+                    ? 'border-red-400 focus:outline-none focus:ring-2 focus:ring-red-300'
+                    : 'border-zinc-200'
+                }`}
               />
             </Field>
-            <Field label="Phone Number">
+            <Field
+              label="Phone Number"
+              count={[form.phoneNumber?.length ?? 0, FIELD_LIMITS.phoneNumber]}
+            >
               <input
+                maxLength={FIELD_LIMITS.phoneNumber}
                 value={form.phoneNumber ?? ''}
                 onChange={(e) => set('phoneNumber', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
-            <Field label="Birth Date">
-              <input
-                type="date"
-                value={(form.birthDate ?? '').toString().slice(0, 10)}
-                onChange={(e) => set('birthDate', e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-              />
-            </Field>
           </div>
-          <Field label="Address">
+          <Field label="Address" count={[form.address?.length ?? 0, FIELD_LIMITS.address]}>
             <textarea
+              maxLength={FIELD_LIMITS.address}
               value={form.address ?? ''}
               onChange={(e) => set('address', e.target.value)}
               rows={2}
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
           </Field>
-          <Field label="Note">
+          <Field label="Note" count={[form.note?.length ?? 0, FIELD_LIMITS.note]}>
             <textarea
+              maxLength={FIELD_LIMITS.note}
               value={form.note ?? ''}
               onChange={(e) => set('note', e.target.value)}
               rows={2}
@@ -314,11 +396,33 @@ function CustomerFormDialog({
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  count,
+  error,
+  children,
+}: {
+  label: string
+  count?: [length: number, limit: number]
+  error?: string
+  children: React.ReactNode
+}) {
+  const atLimit = count ? count[0] >= count[1] : false
   return (
     <label className="block">
-      <span className="block text-xs font-medium text-zinc-600 mb-1">{label}</span>
+      <span className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-600">{label}</span>
+        {count && (
+          <span className={`text-[11px] ${atLimit ? 'font-medium text-red-500' : 'text-zinc-400'}`}>
+            {count[0]}/{count[1]}
+          </span>
+        )}
+      </span>
       {children}
+      {atLimit && (
+        <span className="mt-1 block text-[11px] text-red-500">Maximum length reached</span>
+      )}
+      {error && <span className="mt-1 block text-[11px] text-red-500">{error}</span>}
     </label>
   )
 }

@@ -7,8 +7,7 @@ import { OperationsHub } from './_components/OperationsHub'
 
 export const metadata = {
   title: 'Operations | Prominent Enterprise',
-  description:
-    'Stock transfers, goods receiving, returns, write-offs, quality hold, and backorders',
+  description: 'Stock transfers, goods receiving, returns, quality hold, and backorders',
 }
 
 export default async function OperationsPage() {
@@ -20,7 +19,6 @@ export default async function OperationsPage() {
     INVENTORY_PERMISSIONS.TRANSFERS_READ,
     INVENTORY_PERMISSIONS.RECEIVE_READ,
     INVENTORY_PERMISSIONS.RETURNS_READ,
-    INVENTORY_PERMISSIONS.WRITE_OFFS_READ,
     INVENTORY_PERMISSIONS.QUALITY_HOLD_READ,
     INVENTORY_PERMISSIONS.BACKORDERS_READ,
   ])

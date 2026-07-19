@@ -59,9 +59,7 @@ export default function OutstandingInvoicesWidget() {
     <div className="flex flex-col gap-0.5">
       {invoices.slice(0, limit).map((inv) => {
         const balance = (inv.totalAmount ?? 0) - (inv.amountPaid ?? 0)
-        const customer = inv.customer
-          ? `${inv.customer.firstName} ${inv.customer.lastName}`.trim()
-          : 'Unknown'
+        const customer = inv.customer ? inv.customer.name : 'Unknown'
         return (
           <div
             key={inv.id}

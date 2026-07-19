@@ -14,9 +14,26 @@ export function PosBranchSwitcher() {
 
   useEffect(() => {
     getSessionOrNull().then((session) => {
-      if (!session || !hasPrivilegedRole(session)) return
-      setVisible(true)
-      getBranches().then((res) => setBranches(res.data ?? []))
+      if (!session) return
+      const privileged = hasPrivilegedRole(session)
+      if (privileged) setVisible(true)
+
+      // Every POS page — regardless of role — filters its lists by this
+      // shared, localStorage-persisted branch id, but only privileged roles
+      // can see the switcher to change it. If the id was deleted, renamed, or
+      // the database was reseeded since it was picked, it silently matches no
+      // branch: the dropdown falls back to showing "All Branches" for owners,
+      // while every list (including for non-owners, who never see the
+      // dropdown at all) keeps filtering by the dead id and stays empty no
+      // matter how much you refresh. Validate and self-heal for everyone.
+      getBranches().then((res) => {
+        const list = res.data ?? []
+        if (privileged) setBranches(list)
+        const currentBranchId = usePosBranchContext.getState().branchId
+        if (currentBranchId && !list.some((b) => b.id === currentBranchId)) {
+          usePosBranchContext.getState().setBranch(null)
+        }
+      })
     })
   }, [])
 

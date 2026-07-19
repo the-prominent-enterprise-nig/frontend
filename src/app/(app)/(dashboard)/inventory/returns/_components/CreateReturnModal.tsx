@@ -258,7 +258,7 @@ export default function CreateReturnModal({
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
                 <p className="text-xs text-orange-700">
                   Damaged items are added to on-hand quantity only and will <strong>not</strong> be
-                  available for sale. Consider creating a write-off to expense the loss.
+                  available for sale.
                 </p>
               </div>
             )}

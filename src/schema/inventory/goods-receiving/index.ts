@@ -12,18 +12,25 @@ const ReceiveStockLineSchema = z.object({
   notes: z.string().optional(),
 })
 
-export const ReceiveStockFormSchema = z.object({
-  code: z.string().optional(),
-  purchaseOrderNumber: z.string().optional(),
-  purchaseOrderDate: z.string().optional(),
-  warehouseId: z.string().min(1, 'Destination warehouse is required'),
-  applicationType: z.enum(['new_stock', 'revert']),
-  modeOfTransfer: z.string().optional(),
-  nndpCost: z.number().positive().optional(),
-  receivedAt: z.string().optional(),
-  notes: z.string().max(1000).optional(),
-  lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
-})
+export const ReceiveStockFormSchema = z
+  .object({
+    code: z.string().optional(),
+    purchaseOrderNumber: z.string().optional(),
+    purchaseOrderDate: z.string().optional(),
+    supplierId: z.string().optional(),
+    withholding: z.enum(['none', 'pct_1']).optional(),
+    warehouseId: z.string().min(1, 'Destination warehouse is required'),
+    applicationType: z.enum(['new_stock', 'revert']),
+    modeOfTransfer: z.string().optional(),
+    nndpCost: z.number().positive().optional(),
+    receivedAt: z.string().optional(),
+    notes: z.string().max(1000).optional(),
+    lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
+  })
+  .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
+    message: 'Supplier is required when this receipt is not linked to a PO',
+    path: ['supplierId'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
@@ -135,6 +142,12 @@ const ReceivingReportWarehouseSchema = z.object({
   branch: BranchSchema.optional().nullable(),
 })
 
+const ReceivingReportSupplierSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+})
+
 export const ReceivingReportSchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -144,6 +157,12 @@ export const ReceivingReportSchema = z.object({
   receivedAt: z.string(),
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
+  supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  poDate: z.string().optional().nullable(),
+  purchaseOrderNumber: z.string().optional().nullable(),
+  journalEntryId: z.string().optional().nullable(),
+  withholding: z.enum(['none', 'pct_1']).optional(),
+  withheldAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
 })
@@ -160,3 +179,28 @@ export const ReceivingReportListResponseSchema = z.object({
 
 export type ReceivingReport = z.infer<typeof ReceivingReportSchema>
 export type ReceivingReportListResponse = z.infer<typeof ReceivingReportListResponseSchema>
+
+// ─── Withholding Summary ──────────────────────────────────────────────────────
+
+export const WithholdingSummaryRowSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  receivedAt: z.string(),
+  withholding: z.enum(['none', 'pct_1']),
+  withheldAmount: z.number().nullable(),
+  supplier: ReceivingReportSupplierSchema.optional().nullable(),
+})
+
+export const WithholdingSummaryResponseSchema = z.object({
+  data: z.array(WithholdingSummaryRowSchema),
+  meta: z.object({
+    total: z.number(),
+    page: z.number(),
+    limit: z.number(),
+    lastPage: z.number(),
+    totalWithheld: z.number(),
+  }),
+})
+
+export type WithholdingSummaryRow = z.infer<typeof WithholdingSummaryRowSchema>
+export type WithholdingSummaryResponse = z.infer<typeof WithholdingSummaryResponseSchema>

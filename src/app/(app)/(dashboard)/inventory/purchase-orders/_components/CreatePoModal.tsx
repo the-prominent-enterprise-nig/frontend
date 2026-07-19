@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
-import { getSuppliers, type SupplierOption } from '../_actions/get-suppliers'
-import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import type { ItemSummary } from '@/src/schema/inventory/items'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { BranchSearchCombobox } from '../../purchase-requests/_components/BranchSearchCombobox'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 type Props = {
   open: boolean
@@ -17,10 +17,6 @@ type Props = {
 }
 
 export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) {
-  const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
-  const [items, setItems] = useState<ItemSummary[]>([])
-  const [loadingOptions, setLoadingOptions] = useState(false)
-
   const {
     register,
     control,
@@ -53,24 +49,8 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
     return sum + qty * price
   }, 0)
 
-  // Load suppliers and items once when modal opens
   useEffect(() => {
-    if (!open) {
-      reset()
-      return
-    }
-
-    setLoadingOptions(true)
-    Promise.all([getSuppliers({ limit: 200 }), getItems({ limit: 200, lifecycle: 'active' })])
-      .then(([suppliersRes, itemsRes]) => {
-        setSuppliers(suppliersRes.data?.data ?? [])
-        setItems(itemsRes.data?.data ?? [])
-      })
-      .catch(() => {
-        setSuppliers([])
-        setItems([])
-      })
-      .finally(() => setLoadingOptions(false))
+    if (!open) reset()
   }, [open, reset])
 
   async function handleFormSubmit(data: CreatePoFormValues) {
@@ -81,7 +61,7 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
   if (!open) return null
 
   const fmtAmount = (n: number) =>
-    n.toLocaleString('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 })
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -113,22 +93,38 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Supplier <span className="text-red-500">*</span>
               </label>
-              <select
-                {...register('supplierId')}
-                disabled={loadingOptions}
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:opacity-60"
-              >
-                <option value="">
-                  {loadingOptions ? 'Loading suppliers…' : 'Select a supplier'}
-                </option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.code})
-                  </option>
-                ))}
-              </select>
+              <Controller
+                name="supplierId"
+                control={control}
+                render={({ field }) => (
+                  <SupplierSearchCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.supplierId?.message}
+                  />
+                )}
+              />
               {errors.supplierId && (
                 <p className="mt-1 text-xs text-red-500">{errors.supplierId.message}</p>
+              )}
+            </div>
+
+            {/* Branch */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <Controller
+                name="branchId"
+                control={control}
+                render={({ field }) => (
+                  <BranchSearchCombobox
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.branchId?.message}
+                  />
+                )}
+              />
+              {errors.branchId && (
+                <p className="mt-1 text-xs text-red-500">{errors.branchId.message}</p>
               )}
             </div>
 
@@ -229,20 +225,11 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
                           name={`lines.${index}.itemId`}
                           control={control}
                           render={({ field: f }) => (
-                            <select
-                              {...f}
-                              disabled={loadingOptions}
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:opacity-60"
-                            >
-                              <option value="">
-                                {loadingOptions ? 'Loading items…' : 'Select an item'}
-                              </option>
-                              {items.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name} ({item.sku})
-                                </option>
-                              ))}
-                            </select>
+                            <ItemSearchCombobox
+                              value={f.value}
+                              onChange={f.onChange}
+                              error={errors.lines?.[index]?.itemId?.message}
+                            />
                           )}
                         />
                         {errors.lines?.[index]?.itemId && (
@@ -347,7 +334,7 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || loadingOptions}
+              disabled={isSubmitting}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-700 disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}

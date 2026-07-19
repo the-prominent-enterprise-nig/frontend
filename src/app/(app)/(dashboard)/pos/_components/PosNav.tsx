@@ -10,7 +10,6 @@ import {
   Clock,
   Wallet,
   Monitor,
-  UtensilsCrossed,
   Tag,
   Gift,
   Star,
@@ -19,12 +18,20 @@ import {
   KeyRound,
   LayoutList,
   Settings,
+  HandCoins,
   type LucideIcon,
 } from 'lucide-react'
 
-type NavItem = { label: string; href: string; exact?: boolean; icon: LucideIcon }
+type NavItem = {
+  label: string
+  href: string
+  exact?: boolean
+  icon: LucideIcon
+  /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
+  configOnly?: boolean
+}
 
-const GROUPS = [
+const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
   {
     label: 'Operations',
     paths: ['/pos', '/pos/checkout', '/pos/parked-sales', '/pos/transactions'],
@@ -37,12 +44,11 @@ const GROUPS = [
   },
   {
     label: 'Management',
-    paths: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals', '/pos/menu-items'],
+    paths: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
     items: [
       { label: 'Sessions', href: '/pos/sessions', icon: Clock },
       { label: 'Cash Drawer', href: '/pos/cash-drawer', icon: Wallet },
       { label: 'Terminals', href: '/pos/terminals', icon: Monitor },
-      { label: 'Menu Items', href: '/pos/menu-items', icon: UtensilsCrossed },
     ] satisfies NavItem[],
   },
   {
@@ -57,24 +63,50 @@ const GROUPS = [
   },
   {
     label: 'Configuration',
-    paths: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config', '/pos/queue-categories'],
+    paths: [
+      '/pos/gl-mapping',
+      '/pos/pin',
+      '/pos/settings',
+      '/pos/config',
+      '/pos/queue-categories',
+      '/pos/financing-terms',
+    ],
     items: [
-      { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen },
+      { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen, configOnly: true },
       { label: 'Cashier PIN', href: '/pos/pin', icon: KeyRound },
-      { label: 'Queue Categories', href: '/pos/queue-categories', icon: LayoutList },
-      { label: 'Settings', href: '/pos/settings', icon: Settings },
+      {
+        label: 'Queue Categories',
+        href: '/pos/queue-categories',
+        icon: LayoutList,
+        configOnly: true,
+      },
+      {
+        label: 'Financing Terms',
+        href: '/pos/financing-terms',
+        icon: HandCoins,
+        configOnly: true,
+      },
+      { label: 'Settings', href: '/pos/settings', icon: Settings, configOnly: true },
     ] satisfies NavItem[],
   },
 ]
 
-export function PosNav() {
+export function PosNav({ canConfigurePos }: { canConfigurePos: boolean }) {
   const pathname = usePathname()
 
-  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname)) ?? GROUPS[0]
+  // Standalone pages (approvals, void/refund requests, cancellation
+  // requests, payment methods, receipt branding, customer display, etc.)
+  // aren't part of any group — they used to silently fall back to the
+  // Operations tabs (Overview/Checkout/Parked Sales/Transactions), which
+  // don't apply there. Show nothing instead.
+  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname))
+  if (!activeGroup) return null
+
+  const visibleItems = activeGroup.items.filter((item) => canConfigurePos || !item.configOnly)
 
   return (
     <nav className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {activeGroup.items.map((item) => {
+      {visibleItems.map((item) => {
         const { label, href, exact } = item
         const active = exact ? pathname === href : pathname.startsWith(href)
         return (

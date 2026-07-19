@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Barcode,
+  Trash2,
 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -36,26 +37,31 @@ function ManageBarcodesModal({
   isLoadingBarcodes,
   isAdding,
   isGenerating,
+  isDeleting,
   canManage,
   onClose,
   onGenerate,
   onAdd,
+  onDelete,
 }: {
   item: ItemSummary
   barcodes: { id: string; barcode: string; barcodeType: BarcodeType }[]
   isLoadingBarcodes: boolean
   isAdding: boolean
   isGenerating: boolean
+  isDeleting: boolean
   canManage: boolean
   onClose: () => void
   onGenerate: (barcodeType: BarcodeType) => void
   onAdd: (data: CreateBarcodeFormValues) => void
+  onDelete: (barcodeId: string) => void
 }) {
   const [tab, setTab] = useState<'list' | 'generate' | 'manual'>('list')
   const [genType, setGenType] = useState<BarcodeType>('ean13')
   const [manualValue, setManualValue] = useState('')
   const [manualType, setManualType] = useState<BarcodeType>('custom')
   const [manualError, setManualError] = useState('')
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   function handleManualSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -135,11 +141,53 @@ function ManageBarcodesModal({
                           {BARCODE_TYPE_LABELS[b.barcodeType]}
                         </p>
                       </div>
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTargetId(b.id)}
+                          title="Remove barcode"
+                          className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
             </>
+          )}
+
+          {/* Delete confirm */}
+          {deleteTargetId && (
+            <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+                <h3 className="text-base font-semibold text-zinc-900">Remove Barcode</h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Are you sure you want to remove this barcode? This action cannot be undone.
+                </p>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTargetId(null)}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => {
+                      onDelete(deleteTargetId)
+                      setDeleteTargetId(null)
+                    }}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {isDeleting ? 'Removing…' : 'Remove'}
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Auto-generate */}
@@ -321,6 +369,8 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
     isGenerating,
     addBarcode,
     isAdding,
+    deleteBarcode,
+    isDeleting,
     bulkGenerate,
     isBulkGenerating,
     refetch,
@@ -340,6 +390,11 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
   async function handleManageAdd(data: CreateBarcodeFormValues) {
     if (!selectedItem) return
     await addBarcode(selectedItem.id, data)
+  }
+
+  async function handleManageDelete(barcodeId: string) {
+    if (!selectedItem) return
+    await deleteBarcode(selectedItem.id, barcodeId)
   }
 
   async function handleBulkGenerate(barcodeType: BarcodeType) {
@@ -549,10 +604,12 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
           isLoadingBarcodes={isLoadingBarcodes}
           isAdding={isAdding}
           isGenerating={isGenerating}
+          isDeleting={isDeleting}
           canManage={canManage}
           onClose={() => setSelectedItem(null)}
           onGenerate={handleManageGenerate}
           onAdd={handleManageAdd}
+          onDelete={handleManageDelete}
         />
       )}
 

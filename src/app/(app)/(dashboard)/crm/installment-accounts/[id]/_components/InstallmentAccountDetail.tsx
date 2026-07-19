@@ -107,9 +107,7 @@ export default function InstallmentAccountDetail({
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">{account.accountNumber}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>
-              {account.customer.firstName} {account.customer.lastName}
-            </span>
+            <span>{account.customer.name}</span>
             <span>·</span>
             <Badge value={account.status} colors={STATUS_COLORS} />
             <Badge value={account.category} colors={CATEGORY_COLORS} />
@@ -150,11 +148,8 @@ export default function InstallmentAccountDetail({
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-1">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Customer & assignment</h2>
           <dl className="space-y-2 text-[13px]">
-            <Row
-              label="Customer"
-              value={`${account.customer.firstName} ${account.customer.lastName}`}
-            />
-            <Row label="Phone" value={account.customer.phoneNumber ?? '—'} />
+            <Row label="Customer" value={account.customer.name} />
+            <Row label="Phone" value={account.customer.phone ?? '—'} />
             <Row label="Email" value={account.customer.email ?? '—'} />
             <Row label="Branch" value={account.branch?.name ?? '—'} />
             <Row

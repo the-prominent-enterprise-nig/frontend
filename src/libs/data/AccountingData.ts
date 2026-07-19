@@ -1,4 +1,5 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
+import type { CustomerType } from '@/src/schema/crm/types'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -87,6 +88,8 @@ export interface JournalEntry {
   sourceModule?: string | null
   sourceDocumentNo?: string | null
   sourceDocumentId?: string | null
+  branchId?: string | null
+  branchName?: string | null
   postedBy?: string | null
   createdBy?: string | null
   transactions: Transaction[]
@@ -312,32 +315,30 @@ export interface Vendor {
   updatedAt?: string
 }
 
-export interface Supplier {
+export interface Customer {
   id: string | number
   name: string
-  contactPerson?: string | null
-  contactNumber?: string | null
+  customerCode?: string
+  customerType?: CustomerType
   email?: string | null
-  address?: string | null
-  bankAccount?: string | null
-  taxIdNumber?: string | null
-  visibility?: boolean
+  phone?: string | null
+  billingAddress?: string | null
+  notes?: string | null
+  deletedAt?: string | null
   createdAt?: string
   updatedAt?: string
 }
 
-export interface Customer {
-  id: string | number
+/** Create/update accepts firstName/lastName split — the backend joins them
+ * into the unified `name` field server-side; reads always return `name`. */
+export interface CustomerInput {
   firstName: string
   lastName: string
   email?: string | null
   phoneNumber?: string | null
   address?: string | null
-  birthDate?: string | null
   note?: string | null
-  visibility?: boolean
-  createdAt?: string
-  updatedAt?: string
+  customerType?: CustomerType
 }
 
 export function getVendors(params?: ListParams) {
@@ -360,26 +361,6 @@ export function deleteVendor(id: string | number) {
   return api.delete(`/vendors/${id}`)
 }
 
-export function getSuppliers(params?: ListParams) {
-  return api.get<PaginatedResponse<Supplier> | Supplier[]>('/suppliers', params, {
-    tags: ['accounting-suppliers'],
-  })
-}
-export function getSupplierById(id: string | number) {
-  return api.get<Supplier>(`/suppliers/${id}`, undefined, {
-    tags: ['accounting-suppliers', `accounting-supplier-${id}`],
-  })
-}
-export function createSupplier(data: Partial<Supplier>) {
-  return api.post<Supplier>('/suppliers', data)
-}
-export function updateSupplier(id: string | number, data: Partial<Supplier>) {
-  return api.patch<Supplier>(`/suppliers/${id}`, data)
-}
-export function deleteSupplier(id: string | number) {
-  return api.delete(`/suppliers/${id}`)
-}
-
 export function getCustomers(params?: ListParams) {
   return api.get<PaginatedResponse<Customer> | Customer[]>('/customers', params, {
     tags: ['accounting-customers'],
@@ -390,10 +371,10 @@ export function getCustomerById(id: string | number) {
     tags: ['accounting-customers', `accounting-customer-${id}`],
   })
 }
-export function createCustomer(data: Partial<Customer>) {
+export function createCustomer(data: Partial<CustomerInput>) {
   return api.post<Customer>('/customers', data)
 }
-export function updateCustomer(id: string | number, data: Partial<Customer>) {
+export function updateCustomer(id: string | number, data: Partial<CustomerInput>) {
   return api.patch<Customer>(`/customers/${id}`, data)
 }
 export function deleteCustomer(id: string | number) {

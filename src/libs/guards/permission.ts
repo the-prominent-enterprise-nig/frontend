@@ -58,6 +58,7 @@ export interface SessionUser {
   departmentId?: string | null
   positionId?: string | null
   branchId?: string | null
+  branchName?: string | null
   managerId?: string | null
   employee?: SessionEmployee | null
   branches: SessionBranch[]
@@ -86,10 +87,18 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
   const requiredParts = requiredPermission.split(':')
   const length = Math.max(userParts.length, requiredParts.length)
 
+  // A user's granted permission can end in '*' to cover everything under that
+  // prefix (e.g. granted 'inventory:*' matching required 'inventory:items:read')
+  // — a missing trailing segment on the USER side is treated as a wildcard.
+  // A shorter REQUIRED permission must NOT auto-match extra user segments —
+  // otherwise checking a broad 'module:*' requirement (as the WILDCARD
+  // fallback checks do) would be satisfied by any single specific
+  // 'module:x:y' grant, defeating the check entirely.
   for (let index = 0; index < length; index += 1) {
     const userPart = userParts[index] ?? '*'
-    const requiredPart = requiredParts[index] ?? '*'
+    const requiredPart = requiredParts[index]
 
+    if (requiredPart === undefined) return userPart === '*'
     if (userPart === '*' || requiredPart === '*') continue
     if (userPart !== requiredPart) return false
   }
@@ -146,4 +155,16 @@ const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'
 export function isAdmin(user: SessionUser): boolean {
   if (hasPrivilegedRole(user)) return true
   return ADMIN_ROLE_PERMISSIONS.some((p) => can(user, p))
+}
+
+/**
+ * Business Owner or Branch Manager only — the two roles allowed to configure
+ * POS-wide settings (GL mapping, discount/stock thresholds, financing terms,
+ * etc). Deliberately narrower than `can(user, 'pos:*')`, which loosely
+ * matches any single pos:x:y permission a Cashier also happens to hold.
+ */
+export function canManagePosSettings(user: SessionUser): boolean {
+  if (isAdmin(user)) return true
+  const allRoles = [user.primaryRole ?? '', ...user.roles]
+  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
 }

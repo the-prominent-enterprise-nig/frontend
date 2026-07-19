@@ -8,6 +8,7 @@ import {
   useSendReceipt,
   useVoidRequests,
   useSubmitVoidRequest,
+  useSessions,
 } from '../../_hooks/usePos'
 import {
   RefreshCw,
@@ -24,22 +25,27 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Undo2,
 } from 'lucide-react'
 import {
   getReceipt,
   logReprintEvent,
   validateManagerOverride,
   submitVoidRequest,
-  approveVoidRequest,
+  approveReturnRefundRequest,
   getTransaction,
   getCustomerById,
+  createTransaction,
 } from '../../_actions/pos-actions'
 import type { PosTransaction, PosVoidRequest } from '@/src/schema/pos'
+import { isRefundPendingApproval } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
 import { PosDateTime } from '../../_components/PosDate'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { type SessionUser, can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { showToast } from '@/src/components/ui/toast'
 
 const typeColor: Record<string, string> = {
   sale: 'bg-blue-100 text-blue-700',
@@ -65,6 +71,7 @@ interface Props {
 export default function TransactionsList({ session }: Props) {
   const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_READ)
   const canDirectVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+  const canRefund = can(session, POS_PERMISSIONS.TRANSACTIONS_CREATE)
   const { branchId } = usePosBranchContext()
 
   const [filters, setFilters] = useState({
@@ -148,7 +155,7 @@ export default function TransactionsList({ session }: Props) {
       return
     }
 
-    const approveRes = await approveVoidRequest(reqRes.data.id, {
+    const approveRes = await approveReturnRefundRequest(reqRes.data.id, {
       reviewNotes: `Authorized by ${managerName}`,
     })
     setVoidPending(false)
@@ -413,10 +420,12 @@ export default function TransactionsList({ session }: Props) {
           session={session}
           onClose={() => setDetail({ type: 'none' })}
           canVoid={canVoid}
+          canRefund={canRefund}
           onVoid={() => {
             setDetail({ type: 'none' })
             openVoidModal(detail.transaction)
           }}
+          onRefunded={() => refetch()}
         />
       )}
 
@@ -592,13 +601,17 @@ function TransactionDetail({
   session,
   onClose,
   canVoid,
+  canRefund,
   onVoid,
+  onRefunded,
 }: {
   transaction: PosTransaction
   session: SessionUser
   onClose: () => void
   canVoid?: boolean
+  canRefund?: boolean
   onVoid?: () => void
+  onRefunded?: () => void
 }) {
   const canRequestVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_VOID)
 
@@ -622,6 +635,8 @@ function TransactionDetail({
     : null
 
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
+  const [showRefund, setShowRefund] = useState(false)
+  const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
   const voidRequests: PosVoidRequest[] = voidReqRes?.data ?? []
@@ -979,6 +994,15 @@ function TransactionDetail({
                   <Printer size={12} />
                   {reprinting ? 'Loading…' : 'Reprint'}
                 </button>
+                {canRefund && isRefundable && (
+                  <button
+                    onClick={() => setShowRefund(true)}
+                    className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                  >
+                    <Undo2 size={12} />
+                    Refund
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -1063,6 +1087,230 @@ function TransactionDetail({
               )}
             </div>
           )}
+        </div>
+      </div>
+
+      {showRefund && (
+        <RefundModal
+          transaction={tx}
+          session={session}
+          onClose={() => setShowRefund(false)}
+          onSubmitted={() => {
+            setShowRefund(false)
+            onRefunded?.()
+            onClose()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+/** Full-transaction refund — the only refund flow this queue currently
+ * supports; per-line/partial refunds are a future enhancement. Posts a
+ * `transactionType: 'refund'` transaction against the current cashier's open
+ * session, referencing the original sale via `originalTransactionId`. Under
+ * the new unified ReturnRefundRequest model this always defers to manager
+ * approval instead of completing instantly. */
+function RefundModal({
+  transaction,
+  session,
+  onClose,
+  onSubmitted,
+}: {
+  transaction: PosTransaction
+  session: SessionUser
+  onClose: () => void
+  onSubmitted: () => void
+}) {
+  const { branchId } = usePosBranchContext()
+  const { data: openSessionsRes, isLoading: sessionsLoading } = useSessions({
+    status: 'open',
+    branchId: branchId ?? undefined,
+  })
+  const openSessions = openSessionsRes?.data ?? []
+
+  const [sessionId, setSessionId] = useState('')
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!sessionId && openSessions.length === 1) setSessionId(openSessions[0].id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSessions.length])
+
+  async function handleSubmit() {
+    if (!sessionId) {
+      setError('Select an open POS session to post the refund against.')
+      return
+    }
+    if (!reason.trim()) {
+      setError('A reason for the refund is required.')
+      return
+    }
+    setSubmitting(true)
+    setError('')
+
+    const lines = (transaction.lines ?? []).map((l) => ({
+      itemId: l.itemId,
+      itemName: l.itemName,
+      sku: l.sku ?? undefined,
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      discountAmount: l.discountAmount,
+      taxAmount: l.taxAmount,
+      notes: l.notes ?? undefined,
+    }))
+
+    const res = await createTransaction({
+      sessionId,
+      transactionType: 'refund',
+      originalTransactionId: transaction.id,
+      customerId: transaction.customerId ?? undefined,
+      subtotal: transaction.subtotal,
+      totalAmount: transaction.totalAmount,
+      discountAmount: transaction.discountTotal,
+      taxAmount: transaction.taxTotal,
+      currency: transaction.currency,
+      reason: reason.trim(),
+      lines,
+    })
+
+    if (!res.success || !res.data) {
+      setError(res.error ?? 'Failed to submit refund.')
+      setSubmitting(false)
+      return
+    }
+
+    if (isRefundPendingApproval(res.data)) {
+      const { returnRefundRequestId, sessionId: refundSessionId } = res.data
+      const itemNameSummary =
+        transaction.lines && transaction.lines.length === 1
+          ? transaction.lines[0].itemName
+          : `${transaction.transactionNumber} (${transaction.lines?.length ?? 0} items)`
+
+      usePosPendingRefundStore.getState().add({
+        returnRefundRequestId,
+        itemName: itemNameSummary,
+        totalAmount: transaction.totalAmount,
+        submittedAt: new Date().toISOString(),
+        sessionId: refundSessionId,
+        submittedByUserId: session.id,
+      })
+
+      showToast({
+        title: 'Refund submitted',
+        description: `${transaction.transactionNumber} — pending manager approval before funds are released.`,
+        status: 'info',
+      })
+      setSubmitting(false)
+      onSubmitted()
+      return
+    }
+
+    // Defensive fallback — the unified model always defers refunds to
+    // approval, but if a completed transaction ever comes back, don't strand
+    // the cashier on a stuck "submitting" state.
+    showToast({ title: 'Refund completed', status: 'success' })
+    setSubmitting(false)
+    onSubmitted()
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/30" onClick={() => !submitting && onClose()} />
+      <div className="fixed inset-0 z-51 flex items-center justify-center p-4">
+        <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
+              <Undo2 size={18} className="text-orange-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Refund Transaction</h2>
+              <p className="font-mono text-xs text-gray-500">{transaction.transactionNumber}</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+              Refunds the full amount of this transaction (
+              {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                transaction.totalAmount
+              )}
+              ). Submitting creates a return/refund request — funds are released only after a
+              manager approves it.
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">
+                Post refund against session
+              </label>
+              {sessionsLoading ? (
+                <Skeleton className="h-9 w-full rounded-lg" />
+              ) : openSessions.length === 0 ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                  No open POS session found for this branch. Open a session before processing a
+                  refund.
+                </p>
+              ) : (
+                <select
+                  className="select w-full"
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="">Select a session…</option>
+                  {openSessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {(s.terminal?.name ?? s.terminal?.terminalCode ?? 'Terminal') +
+                        (s.cashier?.name ? ` · ${s.cashier.name}` : '')}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-gray-600">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <input
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                placeholder="e.g. Customer returned item"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          {error && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+          )}
+
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || !sessionId}
+              className="flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" /> Submitting…
+                </>
+              ) : (
+                'Submit Refund Request'
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </>

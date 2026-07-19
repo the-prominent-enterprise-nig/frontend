@@ -10,6 +10,8 @@ import {
 } from '@/src/schema/inventory/goods-receiving'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 type WarehouseOption = { id: string; name: string; code: string }
 
@@ -42,6 +44,8 @@ const defaultValues: ReceiveStockFormValues = {
   code: '',
   purchaseOrderNumber: '',
   purchaseOrderDate: '',
+  supplierId: '',
+  withholding: 'none',
   warehouseId: '',
   applicationType: 'new_stock',
   modeOfTransfer: '',
@@ -85,6 +89,12 @@ export default function ReceiveStockModal({
   }
 
   const watchedLines = watch('lines')
+  const withholding = watch('withholding')
+  const totalCost = (watchedLines ?? []).reduce(
+    (sum, line) => sum + (line.quantityReceived || 0) * (line.unitCost || 0),
+    0
+  )
+  const withheldAmount = withholding === 'pct_1' ? Math.round(totalCost * 0.01 * 100) / 100 : 0
 
   function handleItemChange(idx: number, itemId: string): void {
     setValue(`lines.${idx}.itemId`, itemId)
@@ -100,7 +110,7 @@ export default function ReceiveStockModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+      <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         {/* Header */}
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
@@ -123,9 +133,6 @@ export default function ReceiveStockModal({
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Reference Number
-                  <span className="ml-1 text-xs font-normal text-zinc-400">
-                    (auto-generated if blank)
-                  </span>
                 </label>
                 <Controller
                   name="code"
@@ -133,13 +140,15 @@ export default function ReceiveStockModal({
                   render={({ field }) => (
                     <input
                       {...field}
-                      value={field.value ?? ''}
                       type="text"
-                      placeholder="GRN-YYYYMMDD-0001"
+                      placeholder="Auto-generated if blank"
                       className={fieldClass}
                     />
                   )}
                 />
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Leave blank to auto-generate (GRN-YYYYMMDD-NNNN)
+                </p>
               </div>
 
               <div>
@@ -184,6 +193,27 @@ export default function ReceiveStockModal({
                   render={({ field }) => <input {...field} type="date" className={fieldClass} />}
                 />
               </div>
+            </div>
+
+            {/* Supplier */}
+            <div className="sm:w-1/2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Supplier <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="supplierId"
+                control={control}
+                render={({ field }) => (
+                  <SupplierSearchCombobox
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.supplierId?.message}
+                  />
+                )}
+              />
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Required unless a line below is linked to a PO.
+              </p>
             </div>
 
             {/* Destination Warehouse */}
@@ -274,6 +304,41 @@ export default function ReceiveStockModal({
               )}
             </div>
 
+            {/* Withholding */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
+                <Controller
+                  name="withholding"
+                  control={control}
+                  render={({ field }) => (
+                    <select
+                      {...field}
+                      value={field.value ?? 'none'}
+                      className={`${fieldClass} bg-white`}
+                    >
+                      <option value="none">None</option>
+                      <option value="pct_1">1% Withholding</option>
+                    </select>
+                  )}
+                />
+              </div>
+
+              {withholding === 'pct_1' && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Withheld Amount
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={withheldAmount.toFixed(2)}
+                    className={`${fieldClass} bg-zinc-50 text-zinc-600`}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Items to Receive */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -309,30 +374,18 @@ export default function ReceiveStockModal({
                     <tbody className="divide-y divide-zinc-100">
                       {fields.map((field, idx) => (
                         <tr key={field.id} className="hover:bg-zinc-50">
-                          <td className="px-3 py-2 min-w-45">
+                          <td className="px-3 py-2 min-w-64">
                             <Controller
                               name={`lines.${idx}.itemId`}
                               control={control}
                               render={({ field: f }) => (
-                                <select
+                                <ItemSearchCombobox
                                   value={f.value}
-                                  onChange={(e) => handleItemChange(idx, e.target.value)}
-                                  className={`${cellInputClass} bg-white`}
-                                >
-                                  <option value="">Select item…</option>
-                                  {items.map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                      {item.sku} — {item.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  onChange={(itemId) => handleItemChange(idx, itemId)}
+                                  error={errors.lines?.[idx]?.itemId?.message}
+                                />
                               )}
                             />
-                            {errors.lines?.[idx]?.itemId && (
-                              <p className="mt-0.5 text-xs text-red-600">
-                                {errors.lines[idx]?.itemId?.message}
-                              </p>
-                            )}
                           </td>
                           <td className="px-3 py-2">
                             <Controller

@@ -7,18 +7,79 @@ import { X, Loader2, Plus, Trash2 } from 'lucide-react'
 import {
   CreatePurchaseRequestFormSchema,
   type CreatePurchaseRequestFormValues,
+  type PurchaseRequestSummary,
 } from '@/src/schema/inventory/purchase-requests'
 import { ItemSearchCombobox } from './ItemSearchCombobox'
+import { BranchSearchCombobox } from './BranchSearchCombobox'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
+
+type LockedBranch = { id: string; name: string } | null
 
 type Props = {
   open: boolean
   onClose: () => void
-  onCreate: (data: CreatePurchaseRequestFormValues) => Promise<void>
+  onCreate?: (data: CreatePurchaseRequestFormValues) => Promise<void>
   isCreating?: boolean
+  lockedBranch: LockedBranch
+  pr?: PurchaseRequestSummary | null
+  onUpdate?: (id: string, data: CreatePurchaseRequestFormValues) => Promise<void>
+  isSaving?: boolean
 }
 
-export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating }: Props) {
+// Computes the form's default values for either create mode (no pr) or edit
+// mode (pr provided). When lockedBranch is set (branch-scoped actor), the
+// branch is always pinned to it — the backend force-overrides branchId for
+// these actors regardless of what's submitted, so the UI shouldn't imply the
+// request could target any other branch.
+function getDefaultValues(
+  pr: PurchaseRequestSummary | null | undefined,
+  lockedBranch: LockedBranch
+): CreatePurchaseRequestFormValues {
+  if (pr) {
+    return {
+      branchId: lockedBranch ? lockedBranch.id : (pr.branchId ?? undefined),
+      reason: pr.reason ?? '',
+      notes: pr.notes ?? '',
+      lines: pr.lines.map((line) => ({
+        itemId: line.itemId,
+        quantity: Number(line.quantity),
+        estimatedUnitPrice:
+          line.estimatedUnitPrice != null ? Number(line.estimatedUnitPrice) : undefined,
+        suggestedSupplierId: line.suggestedSupplierId ?? '',
+        notes: line.notes ?? '',
+      })),
+    }
+  }
+
+  return {
+    branchId: lockedBranch ? lockedBranch.id : undefined,
+    reason: '',
+    notes: '',
+    lines: [
+      {
+        itemId: '',
+        quantity: 1,
+        estimatedUnitPrice: undefined,
+        suggestedSupplierId: '',
+        notes: '',
+      },
+    ],
+  }
+}
+
+export function CreatePurchaseRequestModal({
+  open,
+  onClose,
+  onCreate,
+  isCreating,
+  lockedBranch,
+  pr,
+  onUpdate,
+  isSaving,
+}: Props) {
+  const isEditMode = !!pr
+  const isBusy = isEditMode ? isSaving : isCreating
+
   const {
     control,
     handleSubmit,
@@ -26,11 +87,7 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
     formState: { errors },
   } = useForm<CreatePurchaseRequestFormValues>({
     resolver: zodResolver(CreatePurchaseRequestFormSchema),
-    defaultValues: {
-      reason: '',
-      notes: '',
-      lines: [{ itemId: '', quantity: 1, suggestedSupplierId: '', notes: '' }],
-    },
+    defaultValues: getDefaultValues(pr, lockedBranch),
   })
 
   const { fields, append, remove } = useFieldArray({
@@ -39,25 +96,19 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
   })
 
   useEffect(() => {
-    if (!open) {
-      reset({
-        reason: '',
-        notes: '',
-        lines: [
-          {
-            itemId: '',
-            quantity: 1,
-            estimatedUnitPrice: undefined,
-            suggestedSupplierId: '',
-            notes: '',
-          },
-        ],
-      })
+    if (open && pr) {
+      reset(getDefaultValues(pr, lockedBranch))
+    } else if (!open) {
+      reset(getDefaultValues(null, lockedBranch))
     }
-  }, [open, reset])
+  }, [open, pr, lockedBranch, reset])
 
   async function handleFormSubmit(data: CreatePurchaseRequestFormValues) {
-    await onCreate(data)
+    if (pr) {
+      await onUpdate?.(pr.id, data)
+    } else {
+      await onCreate?.(data)
+    }
     onClose()
   }
 
@@ -70,15 +121,19 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
         <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
           <div className="flex items-center justify-between px-6 py-4">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900">New Purchase Request</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">
+                {isEditMode ? 'Edit Purchase Request' : 'New Purchase Request'}
+              </h2>
               <p className="mt-0.5 text-sm text-zinc-500">
-                Fill in the details below to create a purchase request
+                {isEditMode
+                  ? 'Update the details below'
+                  : 'Fill in the details below to create a purchase request'}
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              disabled={isCreating}
+              disabled={isBusy}
               className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
             >
               <X className="h-5 w-5" />
@@ -88,6 +143,31 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="px-6 py-4 space-y-4">
+            {/* Branch */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              {lockedBranch ? (
+                <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+                  {lockedBranch.name}
+                </div>
+              ) : (
+                <Controller
+                  name="branchId"
+                  control={control}
+                  render={({ field }) => (
+                    <BranchSearchCombobox
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      error={errors.branchId?.message}
+                    />
+                  )}
+                />
+              )}
+              {errors.branchId && (
+                <p className="mt-1 text-xs text-red-600">{errors.branchId.message}</p>
+              )}
+            </div>
+
             {/* Reason */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Reason</label>
@@ -247,28 +327,8 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
                         />
                       </div>
 
-                      {/* Suggested Supplier */}
-                      <div className="col-span-2 sm:col-span-1">
-                        <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Suggested Supplier ID
-                        </label>
-                        <Controller
-                          name={`lines.${index}.suggestedSupplierId`}
-                          control={control}
-                          render={({ field: f }) => (
-                            <input
-                              {...f}
-                              value={f.value ?? ''}
-                              type="text"
-                              placeholder="Optional supplier ID"
-                              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                            />
-                          )}
-                        />
-                      </div>
-
                       {/* Line Notes */}
-                      <div className="col-span-2 sm:col-span-1">
+                      <div className="col-span-2">
                         <label className="mb-1 block text-xs font-medium text-zinc-600">
                           Line Notes
                         </label>
@@ -298,18 +358,24 @@ export function CreatePurchaseRequestModal({ open, onClose, onCreate, isCreating
             <button
               type="button"
               onClick={onClose}
-              disabled={isCreating}
+              disabled={isBusy}
               className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isCreating}
+              disabled={isBusy}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {isCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isCreating ? 'Creating…' : 'Create Request'}
+              {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isEditMode
+                ? isBusy
+                  ? 'Saving…'
+                  : 'Save Changes'
+                : isBusy
+                  ? 'Creating…'
+                  : 'Create Request'}
             </button>
           </div>
         </form>

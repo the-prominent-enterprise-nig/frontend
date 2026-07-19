@@ -38,6 +38,9 @@ export const InstallmentAccountStatusEnum = z.enum([
 ])
 export type InstallmentAccountStatus = z.infer<typeof InstallmentAccountStatusEnum>
 
+export const AgentStatusEnum = z.enum(['active', 'inactive'])
+export type AgentStatus = z.infer<typeof AgentStatusEnum>
+
 export interface PipelineStage {
   id: string
   tenantId: string
@@ -87,6 +90,18 @@ export interface Customer {
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Agent {
+  id: string
+  tenantId: string
+  name: string
+  phone?: string | null
+  email?: string | null
+  status: AgentStatus
+  commissionRate?: number | null
   createdAt: string
   updatedAt: string
 }
@@ -170,9 +185,8 @@ export interface CollectorDetail extends Collector {
 
 export interface AccountingCustomerLite {
   id: string
-  firstName: string
-  lastName: string
-  phoneNumber?: string | null
+  name: string
+  phone?: string | null
   email?: string | null
 }
 
@@ -188,7 +202,7 @@ export interface InstallmentAccount {
   agingBucket?: string | null
   status: InstallmentAccountStatus
   createdAt: string
-  customer?: { firstName: string; lastName: string } | null
+  customer?: { name: string } | null
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
 }

@@ -22,7 +22,7 @@ export default async function PurchaseRequestsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <PurchaseRequestList />
+      <PurchaseRequestList session={session} />
     </div>
   )
 }

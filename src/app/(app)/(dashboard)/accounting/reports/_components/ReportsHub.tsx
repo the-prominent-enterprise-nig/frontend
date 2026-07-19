@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 
 type Tab =
   | 'trial-balance'
@@ -12,6 +13,7 @@ type Tab =
   | 'cash-flow'
   | 'ar-aging'
   | 'ap-aging'
+  | 'customer-statement'
   | 'bi'
 
 const VALID_TABS: Tab[] = [
@@ -22,6 +24,7 @@ const VALID_TABS: Tab[] = [
   'cash-flow',
   'ar-aging',
   'ap-aging',
+  'customer-statement',
   'bi',
 ]
 
@@ -39,6 +42,9 @@ export default function ReportsHub() {
   const [endDate, setEndDate] = useState(TODAY)
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  // Customer statement: deep-linkable via ?tab=customer-statement&customerId=...
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [customerId, setCustomerId] = useState(searchParams.get('customerId') ?? '')
 
   const load = async () => {
     setLoading(true)
@@ -51,7 +57,13 @@ export default function ReportsHub() {
     else if (tab === 'cash-flow') res = await Reports.cashFlow(startDate, endDate)
     else if (tab === 'ar-aging') res = await Reports.aging('ar', asOf)
     else if (tab === 'ap-aging') res = await Reports.aging('ap', asOf)
-    else if (tab === 'bi') res = await Reports.biSummary()
+    else if (tab === 'customer-statement') {
+      if (!customerId) {
+        setLoading(false)
+        return
+      }
+      res = await Reports.customerStatement(customerId)
+    } else if (tab === 'bi') res = await Reports.biSummary()
     setData(res?.data ?? null)
     setLoading(false)
   }
@@ -59,8 +71,17 @@ export default function ReportsHub() {
     load()
   }, [tab])
 
+  // Customer list is only needed for the statement picker
+  useEffect(() => {
+    if (tab !== 'customer-statement' || customers.length) return
+    getCustomers({ limit: 500 }).then((r) =>
+      setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[])
+    )
+  }, [tab, customers.length])
+
   const needsDateRange = ['pnl', 'general-ledger', 'cash-flow'].includes(tab)
   const needsAsOf = ['trial-balance', 'balance-sheet', 'ar-aging', 'ap-aging'].includes(tab)
+  const needsCustomer = tab === 'customer-statement'
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -79,6 +100,7 @@ export default function ReportsHub() {
             ['general-ledger', 'General Ledger'],
             ['ar-aging', 'AR Aging'],
             ['ap-aging', 'AP Aging'],
+            ['customer-statement', 'Customer Statement'],
             ['bi', 'BI Summary'],
           ] as [Tab, string][]
         ).map(([k, l]) => (
@@ -126,9 +148,28 @@ export default function ReportsHub() {
             </div>
           </>
         )}
+        {needsCustomer && (
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Customer</label>
+            <select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-56"
+            >
+              <option value="">— Select a customer —</option>
+              {customers.map((c) => (
+                <option key={String(c.id)} value={String(c.id)}>
+                  {c.name}
+                  {c.customerCode ? ` (${c.customerCode})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           onClick={load}
-          className="px-4 py-2 text-sm font-medium bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+          disabled={needsCustomer && !customerId}
+          className="px-4 py-2 text-sm font-medium bg-purple-700 text-white rounded-lg hover:bg-purple-800 disabled:opacity-50"
         >
           {loading ? 'Loading...' : 'Run Report'}
         </button>
@@ -136,7 +177,13 @@ export default function ReportsHub() {
 
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         {!data ? (
-          <div className="text-center text-gray-400 py-8">Run the report to see data.</div>
+          <div className="text-center text-gray-400 py-8">
+            {needsCustomer && !customerId
+              ? 'Select a customer to view their statement.'
+              : 'Run the report to see data.'}
+          </div>
+        ) : tab === 'customer-statement' ? (
+          <CustomerStatementView data={data} />
         ) : tab === 'trial-balance' ? (
           <TrialBalanceView data={data} />
         ) : tab === 'pnl' ? (
@@ -173,6 +220,134 @@ function Table({ headers, children }: { headers: string[]; children: any }) {
       </thead>
       <tbody className="divide-y divide-gray-100">{children}</tbody>
     </table>
+  )
+}
+
+const STATEMENT_STATUS_STYLES: Record<string, string> = {
+  PAID: 'bg-emerald-50 text-emerald-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  SENT: 'bg-blue-50 text-blue-700',
+  DRAFT: 'bg-gray-100 text-gray-600',
+  CANCELLED: 'bg-gray-100 text-gray-500',
+}
+
+function CustomerStatementView({ data }: { data: any }) {
+  const invoices: any[] = Array.isArray(data?.invoices) ? data.invoices : []
+  const openBalance = data?.openBalance ?? data?.balance ?? 0
+
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{data?.customer?.name ?? '—'}</h3>
+          <p className="text-xs text-gray-500">
+            {data?.customer?.customerCode ?? ''}
+            {data?.customer?.email ? ` · ${data.customer.email}` : ''}
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-gray-500">Open Balance</div>
+          <div className="text-2xl font-bold text-purple-700">{fmtMoney(openBalance)}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <Stat label="Total Billed" value={data?.totalBilled ?? 0} />
+        <Stat label="Cash Received" value={data?.totalCashReceived ?? data?.totalPaid ?? 0} />
+        <Stat label="Credit Memos" value={data?.totalCredited ?? 0} />
+        <Stat label="Open Invoices" value={data?.openInvoices?.length ?? 0} isCount />
+      </div>
+
+      {invoices.length === 0 ? (
+        <div className="text-center text-gray-400 py-8">No invoices for this customer.</div>
+      ) : (
+        <div className="space-y-3">
+          {invoices.map((inv) => {
+            const open = inv.totalAmount - inv.amountPaid
+            const history = [
+              ...(inv.payments ?? []).map((p: any) => ({
+                kind: 'Payment',
+                date: p.paymentDate,
+                amount: p.amount + (p.withholdingAmount ?? 0),
+                detail: [p.method, p.reference].filter(Boolean).join(' · ') || 'Payment received',
+              })),
+              ...(inv.creditMemos ?? []).map((m: any) => ({
+                kind: 'Credit Memo',
+                date: m.memoDate,
+                amount: m.amount,
+                detail: [m.memoNumber, m.reason].filter(Boolean).join(' · '),
+              })),
+            ].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+
+            return (
+              <div key={inv.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{inv.invoiceNumber}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs ${STATEMENT_STATUS_STYLES[inv.status] ?? 'bg-gray-100 text-gray-600'}`}
+                    >
+                      {inv.status}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      Issued {fmtDate(inv.invoiceDate)} · Due {fmtDate(inv.dueDate)}
+                    </span>
+                  </div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-gray-500">
+                      Total <span className="text-gray-900">{fmtMoney(inv.totalAmount)}</span>
+                    </span>
+                    <span className="text-gray-500">
+                      Settled <span className="text-gray-900">{fmtMoney(inv.amountPaid)}</span>
+                    </span>
+                    <span className="text-gray-500">
+                      Open{' '}
+                      <span className={open > 0 ? 'font-semibold text-red-600' : 'text-gray-900'}>
+                        {fmtMoney(open)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                {history.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-gray-400">No payments yet.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-gray-100">
+                      {history.map((h, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 text-xs text-gray-500 w-24">
+                            {fmtDate(h.date)}
+                          </td>
+                          <td className="px-3 py-1.5 w-28">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs ${h.kind === 'Credit Memo' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                            >
+                              {h.kind}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-gray-600">{h.detail}</td>
+                          <td className="px-3 py-1.5 text-right">{fmtMoney(h.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+function Stat({ label, value, isCount }: { label: string; value: number; isCount?: boolean }) {
+  return (
+    <div className="border border-gray-200 rounded-lg p-3">
+      <div className="text-xs text-gray-500 mb-0.5">{label}</div>
+      <div className="text-lg font-semibold text-gray-900">{isCount ? value : fmtMoney(value)}</div>
+    </div>
   )
 }
 

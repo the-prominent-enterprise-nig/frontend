@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, Send, DollarSign, X } from 'lucide-react'
+import { Plus, RefreshCw, Pencil, Trash2, Send, DollarSign, ReceiptText, X } from 'lucide-react'
 import {
   ARInvoices,
+  CreditMemos,
   TaxRates,
   type ARInvoice,
   type TaxRate,
@@ -19,6 +20,7 @@ export default function ARInvoicesList() {
   const [editing, setEditing] = useState<ARInvoice | null>(null)
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
+  const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,9 +100,7 @@ export default function ARInvoicesList() {
               items.map((i) => (
                 <tr key={i.id}>
                   <td className="px-3 py-2 font-mono text-xs">{i.invoiceNumber}</td>
-                  <td className="px-3 py-2">
-                    {i.customer?.firstName} {i.customer?.lastName}
-                  </td>
+                  <td className="px-3 py-2">{i.customer?.name}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.invoiceDate)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.dueDate)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
@@ -129,6 +129,15 @@ export default function ARInvoicesList() {
                           className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
                         >
                           <DollarSign className="w-4 h-4" />
+                        </button>
+                      )}
+                      {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
+                        <button
+                          onClick={() => setCreditingFor(i)}
+                          title="Issue credit memo"
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                        >
+                          <ReceiptText className="w-4 h-4" />
                         </button>
                       )}
                       <button
@@ -177,6 +186,127 @@ export default function ARInvoicesList() {
           }}
         />
       )}
+      {creditingFor && (
+        <CreditMemoDialog
+          invoice={creditingFor}
+          onClose={() => setCreditingFor(null)}
+          onSaved={() => {
+            setCreditingFor(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CreditMemoDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const outstanding = invoice.totalAmount - invoice.amountPaid
+  const [form, setForm] = useState({
+    amount: String(outstanding),
+    reason: '',
+    memoDate: new Date().toISOString().slice(0, 10),
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const amount = Number(form.amount) || 0
+  const remaining = outstanding - amount
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setError(null)
+    const res = await CreditMemos.issue({
+      arInvoiceId: invoice.id,
+      amount,
+      reason: form.reason || undefined,
+      memoDate: form.memoDate,
+    })
+    setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to issue credit memo')
+      return
+    }
+    onSaved()
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-lg font-semibold">Issue Credit Memo</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Outstanding:{' '}
+            <span className="font-semibold">{fmtMoney(outstanding)}</span>
+          </div>
+          <Field label="Credit Amount *">
+            <input
+              required
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={outstanding}
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
+          <div className="text-xs text-gray-500">
+            Remaining after credit: <span className="font-semibold">{fmtMoney(remaining)}</span>
+          </div>
+          <Field label="Reason">
+            <textarea
+              value={form.reason}
+              onChange={(e) => setForm({ ...form, reason: e.target.value })}
+              placeholder="Returns, discount, billing adjustment..."
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
+          <Field label="Memo Date *">
+            <input
+              required
+              type="date"
+              value={form.memoDate}
+              onChange={(e) => setForm({ ...form, memoDate: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || amount <= 0 || amount > outstanding + 0.01}
+              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Issuing...' : 'Issue Credit Memo'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -262,7 +392,7 @@ function InvoiceFormDialog({
               <option value="">— Select —</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.firstName} {c.lastName}
+                  {c.name}
                 </option>
               ))}
             </select>
