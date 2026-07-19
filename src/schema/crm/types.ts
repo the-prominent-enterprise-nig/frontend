@@ -21,6 +21,23 @@ export type ReminderType = z.infer<typeof ReminderTypeEnum>
 export const ReminderStatusEnum = z.enum(['pending', 'completed', 'overdue', 'cancelled'])
 export type ReminderStatus = z.infer<typeof ReminderStatusEnum>
 
+export const CollectorStatusEnum = z.enum(['active', 'inactive'])
+export type CollectorStatus = z.infer<typeof CollectorStatusEnum>
+
+export const InstallmentAccountCategoryEnum = z.enum(['A', 'B', 'C'])
+export type InstallmentAccountCategory = z.infer<typeof InstallmentAccountCategoryEnum>
+
+export const InstallmentAccountClassificationEnum = z.enum(['official', 'arrears', 'not_moving'])
+export type InstallmentAccountClassification = z.infer<typeof InstallmentAccountClassificationEnum>
+
+export const InstallmentAccountStatusEnum = z.enum([
+  'active',
+  'closed',
+  'early_closed',
+  'written_off',
+])
+export type InstallmentAccountStatus = z.infer<typeof InstallmentAccountStatusEnum>
+
 export interface PipelineStage {
   id: string
   tenantId: string
@@ -112,6 +129,103 @@ export interface CustomerSegment {
   lastRefreshedAt?: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Collector {
+  id: string
+  stubNumber: string
+  name: string
+  branchId?: string | null
+  userId?: string | null
+  status: CollectorStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CollectorRemittance {
+  id: string
+  collectorId: string
+  amount: number | string
+  remittedAt: string
+  cashierId?: string | null
+  reference?: string | null
+  notes?: string | null
+  createdAt: string
+}
+
+export interface CollectorInstallmentAccountSummary {
+  id: string
+  accountNumber: string
+  category?: InstallmentAccountCategory | null
+  classification?: InstallmentAccountClassification | null
+  agingBucket?: string | null
+  currentBalance: number | string
+}
+
+export interface CollectorDetail extends Collector {
+  branch?: { id: string; name: string; code: string } | null
+  installmentAccounts: CollectorInstallmentAccountSummary[]
+  remittances: CollectorRemittance[]
+}
+
+export interface AccountingCustomerLite {
+  id: string
+  firstName: string
+  lastName: string
+  phoneNumber?: string | null
+  email?: string | null
+}
+
+export interface InstallmentAccount {
+  id: string
+  accountNumber: string
+  customerId: string
+  branchId?: string | null
+  collectorId?: string | null
+  currentBalance: number | string
+  category?: InstallmentAccountCategory | null
+  classification?: InstallmentAccountClassification | null
+  agingBucket?: string | null
+  status: InstallmentAccountStatus
+  createdAt: string
+  customer?: { firstName: string; lastName: string } | null
+  branch?: { name: string } | null
+  collector?: { stubNumber: string; name: string } | null
+}
+
+export interface InstallmentAccountDetail extends InstallmentAccount {
+  arInvoiceId?: string | null
+  listedCashPrice: number | string
+  downPayment: number | string
+  amountFinanced: number | string
+  termMonths: number
+  miFactor: number | string
+  monthlyInstallment: number | string
+  pnv: number | string
+  totalPrice: number | string
+  interestDifferential: number | string
+  ppd: number | string
+  openingBalance: number | string
+  dpBalance: number | string
+  lastOrNumber?: string | null
+  lastOrDate?: string | null
+  lastOrAmount?: number | string | null
+  notYetDue: number | string
+  totalDue: number | string
+  miDue: number | string
+  uncollected: number | string
+  arrears: number | string
+  penalty: number | string
+  monthsRun: number
+  points: number
+  noArsSince?: string | null
+  notMovingSince?: string | null
+  closedAt?: string | null
+  updatedAt: string
+  customer: AccountingCustomerLite
+  branch?: { id: string; name: string; code: string } | null
+  collector?: { id: string; stubNumber: string; name: string } | null
+  arInvoice?: { id: string; invoiceNumber: string; status: string } | null
 }
 
 export interface PipelineColumn {
