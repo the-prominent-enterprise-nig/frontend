@@ -9,12 +9,14 @@ import type {
   PipelineColumn,
   PaginatedResponse,
   Agent,
+  AgentCommission,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type { CreateReminderInput, UpdateReminderInput } from '@/src/schema/crm/reminder'
 import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
+import type { InstallmentSchedule } from '@/src/schema/pos'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -93,6 +95,8 @@ export const customersApi = {
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   update: (id: string, body: UpdateCustomerInput) =>
     api.patch<Customer>(`/crm/customers/${id}`, body),
+  getInstallmentSchedules: (id: string) =>
+    api.get<InstallmentSchedule[]>(`/pos/customers/${id}/installment-schedules`),
   remove: (id: string) => api.delete(`/crm/customers/${id}`),
 }
 
@@ -172,4 +176,5 @@ export const agentsApi = {
   create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
+  commissions: (id: string) => api.get<AgentCommission[]>(`/crm/agents/${id}/commissions`),
 }

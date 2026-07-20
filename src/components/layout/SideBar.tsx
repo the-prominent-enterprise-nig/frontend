@@ -121,12 +121,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
       },
       {
-        label: 'Stock Requisitions',
-        href: '/inventory/stock-requisitions',
-        icon: ClipboardCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCK_REQUISITIONS_READ,
-      },
-      {
         label: 'Purchase Requests',
         href: '/inventory/purchase-requests',
         icon: ClipboardList,
@@ -313,7 +307,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/sessions',
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
-        activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
+        // already covered by that item's own activeWhen) — Management no
+        // longer has anything to do with Terminals.
+        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
         label: 'Cancellations',
@@ -331,10 +328,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Release Approvals',
         href: '/pos/release-approvals',
         icon: PackageCheck,
-        requiredPermission: 'pos:transaction:override',
+        // Cashiers can view (not approve) their own submitted requests here —
+        // matches the page's own guard (POS_PERMISSIONS.TRANSACTIONS_READ).
+        requiredPermission: 'pos:transactions:read',
       },
       {
-        label: 'Return & Refund Approvals',
+        label: 'Refund Approvals',
         href: '/pos/return-refund-approvals',
         icon: Undo2,
         requiredPermission: 'pos:transaction:override',
@@ -344,14 +343,49 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/promo-codes',
         icon: Tag,
         requiredPermission: 'pos:promo-codes:read',
-        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty', '/pos/branch-pricing'],
+        activeWhen: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty'],
       },
       {
-        label: 'Configuration',
-        href: '/pos/gl-mapping',
+        label: 'Branch Pricing',
+        href: '/pos/branch-pricing',
+        icon: HandCoins,
+        requiredPermission: 'pos:branch-pricing:read',
+      },
+      {
+        label: 'Settings',
+        href: '/pos/settings',
         icon: Key,
-        requiredPermission: 'pos:transactions:read',
-        activeWhen: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config'],
+        // Business Owner / Branch Manager only — pos:transactions:read (what
+        // this used before) is also held by Cashier, which let them reach
+        // GL Mapping / POS Config / Queue Categories.
+        requiredPermission: 'pos:config:manage',
+        // Exact-match list, not a prefix check (see isActive below) — every
+        // /pos/settings/* sub-route needs its own explicit entry.
+        activeWhen: [
+          '/pos/settings',
+          '/pos/settings/general',
+          '/pos/settings/payment-methods',
+          '/pos/settings/terminals',
+          '/pos/settings/receipt-branding',
+          '/pos/settings/financing-terms',
+          '/pos/settings/queue-categories',
+          '/pos/settings/customer-display',
+        ],
+      },
+      {
+        label: 'Cash-in-Transit',
+        href: '/pos/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: 'pos:cash-in-transit:read',
+      },
+      {
+        // Every POS role needs their own PIN (checkout PIN entry, manager
+        // approvals) — kept separate from the Settings item above so hiding
+        // that one from Cashier doesn't also remove their only way to reach
+        // this.
+        label: 'POS PIN',
+        href: '/pos/pin',
+        icon: Key,
       },
     ],
     bottom: [],
@@ -666,27 +700,19 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requiredPermission: 'admin:audit-logs:read',
   },
-  {
-    section: 'My Workspace',
-    label: 'Configuration',
-    href: '/settings/configuration',
-    icon: Settings,
-  },
 ]
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
-  return [
-    ...(branchId
-      ? [
-          {
-            section: 'My Workspace' as const,
-            label: 'My Branch',
-            href: `/settings/branches/${branchId}`,
-            icon: Warehouse,
-          },
-        ]
-      : []),
-  ]
+  return branchId
+    ? [
+        {
+          section: 'My Workspace' as const,
+          label: 'My Branch',
+          href: `/settings/branches/${branchId}`,
+          icon: Warehouse,
+        },
+      ]
+    : []
 }
 
 const MODULE_SECTION_LABELS: Record<string, string> = {

@@ -59,6 +59,12 @@ import {
   getPendingVoidRequests,
   approveVoidRequest,
   rejectVoidRequest,
+  getFinancingTerms,
+  getActiveFinancingTerms,
+  createFinancingTerm,
+  updateFinancingTerm,
+  previewInstallment,
+  getCustomerInstallmentSchedules,
 } from '../_actions/pos-actions'
 import type {
   CreateTerminalInput,
@@ -82,6 +88,9 @@ import type {
   UpdateBranchPricingInput,
   SubmitVoidRequestInput,
   ReviewVoidRequestInput,
+  CreateFinancingTermInput,
+  UpdateFinancingTermInput,
+  ComputeInstallmentPreviewInput,
 } from '@/src/schema/pos'
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
@@ -221,7 +230,10 @@ export function useCreateTransaction() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: CreateTransactionInput) => createTransaction(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+      qc.invalidateQueries({ queryKey: ['pos-sessions'] })
+    },
   })
 }
 
@@ -269,7 +281,10 @@ export function useSyncTransactions() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (input: SyncTransactionsInput) => syncTransactions(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pos-transactions'] })
+      qc.invalidateQueries({ queryKey: ['pos-sessions'] })
+    },
   })
 }
 
@@ -429,6 +444,56 @@ export function useBranches() {
     queryKey: ['branches'],
     queryFn: getBranches,
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+// ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
+
+export function useFinancingTerms() {
+  return useQuery({
+    queryKey: ['pos-financing-terms'],
+    queryFn: getFinancingTerms,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function useActiveFinancingTerms(branchId?: string) {
+  return useQuery({
+    queryKey: ['pos-financing-terms-active', branchId],
+    queryFn: () => getActiveFinancingTerms(branchId),
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function useCreateFinancingTerm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateFinancingTermInput) => createFinancingTerm(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
+  })
+}
+
+export function useUpdateFinancingTerm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateFinancingTermInput }) =>
+      updateFinancingTerm(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
+  })
+}
+
+export function useInstallmentPreview() {
+  return useMutation({
+    mutationFn: (input: ComputeInstallmentPreviewInput) => previewInstallment(input),
+  })
+}
+
+export function useCustomerInstallmentSchedules(customerId?: string) {
+  return useQuery({
+    queryKey: ['pos-customer-installment-schedules', customerId],
+    queryFn: () => getCustomerInstallmentSchedules(customerId as string),
+    enabled: !!customerId,
+    staleTime: 60 * 1000,
   })
 }
 

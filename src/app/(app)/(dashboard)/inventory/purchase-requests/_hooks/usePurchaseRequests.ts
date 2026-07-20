@@ -6,12 +6,14 @@ import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getPurchaseRequests } from '../_actions/get-purchase-requests'
 import { createPurchaseRequest } from '../_actions/create-purchase-request'
+import { updatePurchaseRequest } from '../_actions/update-purchase-request'
 import { submitPurchaseRequest } from '../_actions/submit-purchase-request'
 import { approvePurchaseRequest } from '../_actions/approve-purchase-request'
 import { rejectPurchaseRequest } from '../_actions/reject-purchase-request'
 import { cancelPurchaseRequest } from '../_actions/cancel-purchase-request'
 import type {
   CreatePurchaseRequestFormValues,
+  UpdatePurchaseRequestFormValues,
   ApprovePrFormValues,
   RejectPrFormValues,
 } from '@/src/schema/inventory/purchase-requests'
@@ -48,6 +50,27 @@ export function usePurchaseRequests() {
       } else {
         showToast({
           title: 'Failed to create purchase request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseRequestFormValues }) =>
+      updatePurchaseRequest(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Purchase request updated',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
+      } else {
+        showToast({
+          title: 'Failed to update purchase request',
           description: result.message,
           status: 'error',
         })
@@ -162,6 +185,10 @@ export function usePurchaseRequests() {
 
     createPR: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+
+    updatePR: (id: string, data: UpdatePurchaseRequestFormValues) =>
+      updateMutation.mutateAsync({ id, data }),
+    isUpdating: updateMutation.isPending,
 
     submitPR: submitMutation.mutateAsync,
     isSubmitting: submitMutation.isPending,

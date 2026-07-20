@@ -43,6 +43,12 @@ import type {
   BranchPricing,
   CreateBranchPricingInput,
   UpdateBranchPricingInput,
+  FinancingTerm,
+  CreateFinancingTermInput,
+  UpdateFinancingTermInput,
+  ComputeInstallmentPreviewInput,
+  InstallmentPreview,
+  InstallmentSchedule,
   ParkedSale,
   ParkSaleInput,
   HandoverSessionInput,
@@ -85,6 +91,7 @@ const TAGS = {
   loyaltyProgram: 'pos-loyalty-program',
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
   branchPricing: 'pos-branch-pricing',
+  financingTerms: 'pos-financing-terms',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
   receiptBranding: 'pos-receipt-branding',
@@ -96,6 +103,7 @@ const TAGS = {
   releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
   returnRefundRequests: 'pos-return-refund-requests',
   returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
+  cashInTransit: 'pos-cash-in-transit',
 }
 
 export async function getTerminals(filters?: {
@@ -843,6 +851,100 @@ export async function deleteBranchPricing(id: string): Promise<ApiResponse<void>
   }
 }
 
+// ─── Financing Terms (Phase 3 — Installment Financing) ────────────────────────
+
+export async function getFinancingTerms(): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>('/pos/financing-terms', undefined, {
+      tags: [TAGS.financingTerms],
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch financing terms' }
+  }
+}
+
+export async function getActiveFinancingTerms(
+  branchId?: string
+): Promise<ApiResponse<FinancingTerm[]>> {
+  try {
+    const result = await api.get<FinancingTerm[]>(
+      '/pos/financing-terms/active',
+      branchId ? { branchId } : undefined
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch active financing terms' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch active financing terms' }
+  }
+}
+
+export async function createFinancingTerm(
+  input: CreateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.post<FinancingTerm>('/pos/financing-terms', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create financing term' }
+  }
+}
+
+export async function updateFinancingTerm(
+  id: string,
+  input: UpdateFinancingTermInput
+): Promise<ApiResponse<FinancingTerm>> {
+  try {
+    const result = await api.patch<FinancingTerm>(`/pos/financing-terms/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update financing term' }
+  }
+}
+
+export async function previewInstallment(
+  input: ComputeInstallmentPreviewInput
+): Promise<ApiResponse<InstallmentPreview>> {
+  try {
+    const result = await api.post<InstallmentPreview>('/pos/financing-terms/preview', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to compute installment preview' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function getCustomerInstallmentSchedules(
+  customerId: string
+): Promise<ApiResponse<InstallmentSchedule[]>> {
+  try {
+    const result = await api.get<InstallmentSchedule[]>(
+      `/pos/customers/${customerId}/installment-schedules`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch installment schedules' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch installment schedules' }
+  }
+}
+
 // â”€â”€â”€ Parked Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function getParkedSales(
@@ -1324,12 +1426,16 @@ export async function changeCashierPin(
   }
 }
 
-export async function getUsers(): Promise<
-  ApiResponse<{ id: string; name: string; email: string }[]>
-> {
+export async function getUsers(filters?: {
+  role?: string
+  branchId?: string
+}): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
   try {
     type UserRow = { id: string; name: string; email: string }
-    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users')
+    const result = await api.get<UserRow[] | { data: UserRow[] }>(
+      '/users',
+      filters as Record<string, string>
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch users' }
     }
@@ -1339,6 +1445,28 @@ export async function getUsers(): Promise<
     return { success: true, data: users }
   } catch {
     return { success: false, error: 'Failed to fetch users' }
+  }
+}
+
+export async function searchUsers(
+  q: string,
+  branchId?: string
+): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
+  try {
+    type UserRow = { id: string; name: string; email: string }
+    const result = await api.get<UserRow[] | { data: UserRow[] }>('/users/search', {
+      q,
+      ...(branchId ? { branchId } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to search users' }
+    }
+    const users = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: UserRow[] }).data ?? [])
+    return { success: true, data: users }
+  } catch {
+    return { success: false, error: 'Failed to search users' }
   }
 }
 
@@ -1604,13 +1732,20 @@ export async function getEnabledBranchPaymentMethods(
 ): Promise<ApiResponse<PosPaymentMethod[]>> {
   try {
     const result = await api.get<{ data: BranchPaymentMethod[] }>(
-      `/pos/branches/${branchId}/payment-methods`
+      `/pos/branches/${branchId}/payment-method-configs`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch payment methods' }
     }
-    const enabled = result.data.data.filter((m) => m.isEnabled).map((m) => m.method)
-    return { success: true, data: enabled }
+    // Standard configs map to their own enum key; any enabled custom config
+    // maps to the single 'custom' key (individual custom methods are then
+    // distinguished by configId, not by this enum list).
+    const enabled = new Set(
+      result.data.data
+        .filter((m) => m.isEnabled)
+        .map((m) => (m.key ?? 'custom') as PosPaymentMethod)
+    )
+    return { success: true, data: [...enabled] }
   } catch {
     return { success: false, error: 'Failed to fetch payment methods' }
   }
@@ -1736,18 +1871,66 @@ export async function getVoidRequests(
   }
 }
 
+/**
+ * Returns & Refunds Unification (Stage 2): void and cancellation requests are
+ * now sourced from the shared ReturnRefundRequestsController (filtered by
+ * `type`). These mappers reshape the new PosReturnRefundRequest wire shape
+ * back into the legacy PosVoidRequest / PosCancellationRequest shapes so the
+ * existing void-requests and cancellation-requests pages keep working
+ * unchanged.
+ */
+function toVoidRequest(row: PosReturnRefundRequest): PosVoidRequest {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    transactionId: row.transactionId ?? '',
+    requestType: 'void',
+    requestedById: row.requestedById,
+    reason: row.reason ?? '',
+    status: row.status as PosVoidRequest['status'],
+    reviewedById: row.reviewedById,
+    reviewNotes: row.reviewNotes,
+    createdAt: row.createdAt,
+    reviewedAt: row.reviewedAt,
+    transaction: row.transaction ?? undefined,
+    requestedBy: row.requestedBy,
+    reviewedBy: row.reviewedBy,
+  }
+}
+
+function toCancellationRequest(row: PosReturnRefundRequest): PosCancellationRequest {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    sessionId: row.sessionId,
+    requestedById: row.requestedById,
+    reason: row.reason ?? '',
+    // Wire field is `refundCartSnapshot` for both cancellation and refund
+    // types — despite its declared shape (PosReleaseFormCartSnapshot), the
+    // backend puts the raw cart-items array here for cancellations, matching
+    // what PosCancellationRequest.cartSnapshot has always expected.
+    cartSnapshot: (row.refundCartSnapshot as unknown as Record<string, unknown>[] | null) ?? null,
+    status: row.status as PosCancellationRequest['status'],
+    reviewedById: row.reviewedById,
+    reviewNotes: row.reviewNotes,
+    createdAt: row.createdAt,
+    reviewedAt: row.reviewedAt,
+    session: row.session ?? undefined,
+  }
+}
+
 export async function getVoidRequestHistory(
   branchId?: string
 ): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/history',
-      branchId ? { branchId } : undefined
-    )
+    const result = await api.get<PosReturnRefundRequest[]>('/pos/return-refund-requests/history', {
+      ...(branchId ? { branchId } : {}),
+      type: 'void',
+    })
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to load void request history' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to load void request history' }
   }
@@ -1755,15 +1938,15 @@ export async function getVoidRequestHistory(
 
 export async function getBranchVoidRequests(): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/branch',
-      undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/mine',
+      { type: 'void' },
       { tags: [TAGS.voidRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch void requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch void requests' }
   }
@@ -1773,15 +1956,15 @@ export async function getPendingVoidRequests(
   branchId?: string
 ): Promise<ApiResponse<PosVoidRequest[]>> {
   try {
-    const result = await api.get<PosVoidRequest[]>(
-      '/pos/transactions/void-requests/pending',
-      branchId ? { branchId } : undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      { ...(branchId ? { branchId } : {}), type: 'void' },
       { tags: [TAGS.voidRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch pending void requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toVoidRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch pending void requests' }
   }
@@ -1794,12 +1977,13 @@ export interface SerialNumberRecord {
 }
 
 export async function getAvailableSerialNumbers(
-  itemId: string
+  itemId: string,
+  branchId?: string
 ): Promise<ApiResponse<SerialNumberRecord[]>> {
   try {
     type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock`
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock${branchId ? `&branchId=${branchId}` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch serial numbers' }
@@ -1813,43 +1997,36 @@ export async function getAvailableSerialNumbers(
   }
 }
 
+/**
+ * Void requests now resolve through the same approve/reject endpoints as the
+ * unified return/refund queue (approveReturnRefundRequest/
+ * rejectReturnRefundRequest already hit the correct, working endpoint) — this
+ * just delegates and reshapes the result back into PosVoidRequest.
+ */
 export async function approveVoidRequest(
   requestId: string,
   input: ReviewVoidRequestInput
 ): Promise<ApiResponse<PosVoidRequest>> {
-  try {
-    const result = await api.post<PosVoidRequest>(
-      `/pos/transactions/void-requests/${requestId}/approve`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve void request' }
-    }
-    revalidateTag(TAGS.voidRequests, 'max')
-    revalidateTag(TAGS.transactions, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve void request' }
+  const result = await approveReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to approve void request' }
   }
+  // approveReturnRefundRequest already revalidates returnRefundRequests/transactions —
+  // also revalidate the legacy void-requests tag these pages still read through.
+  revalidateTag(TAGS.voidRequests, 'max')
+  return { success: true, data: toVoidRequest(result.data) }
 }
 
 export async function rejectVoidRequest(
   requestId: string,
   input: ReviewVoidRequestInput
 ): Promise<ApiResponse<PosVoidRequest>> {
-  try {
-    const result = await api.post<PosVoidRequest>(
-      `/pos/transactions/void-requests/${requestId}/reject`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to reject void request' }
-    }
-    revalidateTag(TAGS.voidRequests, 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to reject void request' }
+  const result = await rejectReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to reject void request' }
   }
+  revalidateTag(TAGS.voidRequests, 'max')
+  return { success: true, data: toVoidRequest(result.data) }
 }
 
 // ─── Cancellation Requests ────────────────────────────────────────────────────
@@ -1877,15 +2054,15 @@ export async function getPendingCancellationRequests(
   branchId?: string
 ): Promise<ApiResponse<PosCancellationRequest[]>> {
   try {
-    const result = await api.get<PosCancellationRequest[]>(
-      '/pos/cancellation-requests/pending',
-      branchId ? { branchId } : undefined,
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      { ...(branchId ? { branchId } : {}), type: 'cancellation' },
       { tags: [TAGS.cancellationRequests] }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch cancellation requests' }
     }
-    return { success: true, data: result.data }
+    return { success: true, data: result.data.map(toCancellationRequest) }
   } catch {
     return { success: false, error: 'Failed to fetch cancellation requests' }
   }
@@ -1909,44 +2086,37 @@ export async function getCancellationRequestStatus(
   }
 }
 
+/**
+ * Cancellation requests resolve through the same approve/reject endpoints as
+ * the unified return/refund queue — delegate and reshape back into
+ * PosCancellationRequest.
+ */
 export async function approveCancellationRequest(
   requestId: string,
   input: ReviewCancellationInput
 ): Promise<ApiResponse<PosCancellationRequest>> {
-  try {
-    const result = await api.post<PosCancellationRequest>(
-      `/pos/cancellation-requests/${requestId}/approve`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve cancellation request' }
-    }
-    revalidateTag(TAGS.cancellationRequests, 'max')
-    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve cancellation request' }
+  const result = await approveReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to approve cancellation request' }
   }
+  // approveReturnRefundRequest already revalidates returnRefundRequests/transactions —
+  // also revalidate the legacy cancellation-requests tags these pages still read through.
+  revalidateTag(TAGS.cancellationRequests, 'max')
+  revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+  return { success: true, data: toCancellationRequest(result.data) }
 }
 
 export async function rejectCancellationRequest(
   requestId: string,
   input: ReviewCancellationInput
 ): Promise<ApiResponse<PosCancellationRequest>> {
-  try {
-    const result = await api.post<PosCancellationRequest>(
-      `/pos/cancellation-requests/${requestId}/reject`,
-      input
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to reject cancellation request' }
-    }
-    revalidateTag(TAGS.cancellationRequests, 'max')
-    revalidateTag(TAGS.cancellationRequest(requestId), 'max')
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to reject cancellation request' }
+  const result = await rejectReturnRefundRequest(requestId, input)
+  if (!result.success || !result.data) {
+    return { success: false, error: result.error || 'Failed to reject cancellation request' }
   }
+  revalidateTag(TAGS.cancellationRequests, 'max')
+  revalidateTag(TAGS.cancellationRequest(requestId), 'max')
+  return { success: true, data: toCancellationRequest(result.data) }
 }
 
 // ─── Release Form Requests (serial-tracked sale approval) ────────────────────
@@ -2002,6 +2172,41 @@ export async function getPendingReleaseFormRequests(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch pending release requests' }
+  }
+}
+
+export async function getOwnReleaseFormRequests(): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/own',
+      undefined,
+      {
+        tags: [TAGS.releaseFormRequests],
+      }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch your release requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch your release requests' }
+  }
+}
+
+export async function getReleaseFormHistory(
+  branchId?: string
+): Promise<ApiResponse<PosReleaseFormRequest[]>> {
+  try {
+    const result = await api.get<PosReleaseFormRequest[]>(
+      '/pos/release-form-requests/history',
+      branchId ? { branchId } : undefined
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load release form history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load release form history' }
   }
 }
 
@@ -2144,5 +2349,123 @@ export async function rejectReturnRefundRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject request' }
+  }
+}
+
+export interface CashInTransitSessionRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  journalEntryId: string | null
+}
+
+export async function getCashInTransitReport(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitSessionRow[]>> {
+  try {
+    const result = await api.get<CashInTransitSessionRow[]>(
+      '/pos/sessions/cash-in-transit',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit report' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit report' }
+  }
+}
+
+export interface CashInTransitHistoryRow {
+  sessionId: string
+  branchName: string | null
+  terminalCode: string | null
+  cashierName: string | null
+  closedAt: string
+  amount: number
+  citClearedAt: string | null
+  citClearingJournalEntryId: string | null
+  depositedTo: string | null
+  depositDate: string | null
+}
+
+export async function getCashInTransitHistory(filters?: {
+  dateFrom?: string
+  dateTo?: string
+  branchId?: string
+}): Promise<ApiResponse<CashInTransitHistoryRow[]>> {
+  try {
+    const result = await api.get<CashInTransitHistoryRow[]>(
+      '/pos/sessions/cash-in-transit/history',
+      filters as Record<string, string>
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit history' }
+  }
+}
+
+export interface ClearCashInTransitInput {
+  bankAccountId: string
+  sessionIds: string[]
+  depositDate: string
+  reference?: string
+}
+
+export interface ClearCashInTransitResult {
+  journalEntryId: string
+  amount: number
+  sessionsCleared: number
+}
+
+export async function clearCashInTransit(
+  input: ClearCashInTransitInput
+): Promise<ApiResponse<ClearCashInTransitResult>> {
+  try {
+    const result = await api.post<ClearCashInTransitResult>(
+      '/bank-accounts/clear-cash-in-transit',
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to clear Cash-in-Transit' }
+    }
+    revalidateTag(TAGS.cashInTransit, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to clear Cash-in-Transit' }
+  }
+}
+
+export interface MissingCogsSale {
+  transactionId: string
+  transactionNumber: string
+  occurredAt: string
+}
+
+export interface MissingCogsReport {
+  count: number
+  sample: MissingCogsSale[]
+}
+
+// Scenario-01 COGS-visibility gap closure (Part 2): surfaces completed
+// sales whose lines never got a COGS/Inventory posting (computeCogs()
+// failed at sale time) instead of that failure staying silent.
+export async function getMissingCogsReport(): Promise<ApiResponse<MissingCogsReport>> {
+  try {
+    const result = await api.get<MissingCogsReport>('/pos/transactions/reports/missing-cogs')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch missing-COGS report' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch missing-COGS report' }
   }
 }

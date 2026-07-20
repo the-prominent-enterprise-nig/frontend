@@ -3,13 +3,13 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Button, Header } from 'react-aria-components'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { cn } from '@/src/libs/tailwind-merge/utils'
 import { MODULES } from '@/src/libs/guards/modules'
 import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
+import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
 
 interface SessionUser {
   id: string
@@ -46,12 +46,15 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="relative">
-      <Header className="w-full border-b border-gray-100 bg-white">
+      <header className="w-full border-b border-gray-100 bg-white">
         <div className="flex h-14 items-center justify-end px-4 lg:px-6">
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
             {/* Notification Bell */}
-            <Button className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50">
+            <button
+              type="button"
+              className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50"
+            >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5 text-gray-500"
@@ -71,17 +74,18 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                   {notificationCount}
                 </span>
               )}
-            </Button>
+            </button>
 
             {/* Avatar — gradient with profile dropdown */}
             {session && (
               <div className="relative">
-                <Button
-                  onPress={() => setProfileOpen((v) => !v)}
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen((v) => !v)}
                   className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[12px] font-bold tracking-wide text-white shadow-sm transition-opacity hover:opacity-90 prominent-gradient"
                 >
                   {initials}
-                </Button>
+                </button>
                 {profileOpen && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
@@ -160,6 +164,11 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                       <button
                         onClick={async () => {
                           setProfileOpen(false)
+                          // Persists to localStorage keyed by name only, not by
+                          // user — without this it'd leak the previous account's
+                          // pending-refund badge into the next login on the same
+                          // browser.
+                          usePosPendingRefundStore.getState().clear()
                           await logoutAndRedirect()
                         }}
                         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 cursor-pointer"
@@ -175,8 +184,9 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
 
             {/* Hamburger — mobile only, shown when 2+ modules accessible */}
             {navItems.length > 1 && (
-              <Button
-                onPress={() => setMobileMenuOpen((prev) => !prev)}
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
                 className="ml-1 flex cursor-pointer items-center justify-center rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800 md:hidden"
                 aria-label="Toggle navigation menu"
               >
@@ -207,11 +217,11 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                     />
                   </svg>
                 )}
-              </Button>
+              </button>
             )}
           </div>
         </div>
-      </Header>
+      </header>
 
       {/* Backdrop */}
       {mobileMenuOpen && (

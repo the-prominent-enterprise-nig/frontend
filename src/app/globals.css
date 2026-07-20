@@ -170,3 +170,30 @@
 .react-grid-item.resizing {
   box-shadow: 0 4px 20px -2px rgba(139, 92, 246, 0.2) !important;
 }
+
+/* ── react-phone-number-input overrides (blend with form inputs) ─────────── */
+.ph-phone-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+}
+
+.ph-phone-input.PhoneInput--focus {
+  border-color: #fb923c;
+}
+
+.ph-phone-input .PhoneInputCountry {
+  margin-right: 0.25rem;
+}
+
+.ph-phone-input .phone-input-field {
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  width: 100%;
+  background: transparent;
+}

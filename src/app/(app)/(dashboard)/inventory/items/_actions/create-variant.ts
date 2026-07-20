@@ -2,12 +2,25 @@
 
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateVariantFormSchema } from '@/src/schema/inventory/variants'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function createVariant(
   itemId: string,
   input: unknown
 ): Promise<ApiResponse<{ id: string }>> {
   if (!itemId) return { success: false, error: 'ID required', message: 'Item ID is required' }
+
+  const session = await getSessionOrNull()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  if (!can(session, INVENTORY_PERMISSIONS.VARIANTS_MANAGE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to manage variants',
+    }
+  }
 
   const parsed = CreateVariantFormSchema.safeParse(input)
   if (!parsed.success) {

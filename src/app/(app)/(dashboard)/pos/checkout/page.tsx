@@ -29,14 +29,17 @@ import {
   Send,
   Clock,
 } from 'lucide-react'
-import { computePricingTotals } from './_utils/calculations'
+import {
+  computePricingTotals,
+  resolveLineTaxRate,
+  displayUnitPriceWithTax,
+  lineTaxAmount,
+} from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
-import { usePosPendingRfdStore } from '@/src/stores/pos-pending-rfd.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
-import { getMenuItems } from '../menu-items/_actions/menu-item-actions'
 import {
   itemLookup,
   createTransaction,
@@ -64,6 +67,8 @@ import {
   submitCancellationRequest,
   getCancellationRequestStatus,
   cancelReleaseFormRequest,
+  getActiveFinancingTerms,
+  previewInstallment,
   type SerialNumberRecord,
 } from '../_actions/pos-actions'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
@@ -77,6 +82,8 @@ import type {
   PosTransaction,
   SyncTransactionItem,
   ScPwdDiscountInput,
+  FinancingTerm,
+  InstallmentPreview,
 } from '@/src/schema/pos'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -96,6 +103,7 @@ interface LookupItem {
   isBundle?: boolean
   pricingMode?: 'inclusive' | 'exclusive' | null
   isSerialTracked?: boolean
+  requiresSecondarySerial?: boolean
 }
 
 interface CartLine {
@@ -111,6 +119,9 @@ interface CartLine {
   isSerialTracked?: boolean
   serialNumberId?: string
   serialNumberLabel?: string
+  requiresSecondarySerial?: boolean
+  secondarySerialNumberId?: string
+  secondarySerialNumberLabel?: string
 }
 
 interface PaymentRow {
@@ -225,17 +236,11 @@ export default function CheckoutPage() {
     return session?.terminal?.branchId ?? (session?.terminal as any)?.branch?.id ?? null
   }, [openSessions, sessionId, isBranchManager, authBranchId])
 
-  // Menu items catalog (loaded separately — bundle items are excluded from pos/catalog)
-  const [menuItems, setMenuItems] = useState<LookupItem[]>([])
-  const [menuItemsLoading, setMenuItemsLoading] = useState(false)
-  const [menuItemsLoaded, setMenuItemsLoaded] = useState(false)
-
   // Cart
   const [cart, setCart] = useState<CartLine[]>([])
 
-  // Item search + catalog mode toggle
+  // Item search
   const [searchQuery, setSearchQuery] = useState('')
-  const [catalogMode, setCatalogMode] = useState<'items' | 'menu'>('items')
 
   // Selling agent — CRM-owned agent list, not system User accounts
   const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
@@ -247,8 +252,11 @@ export default function CheckoutPage() {
 
   // Serial number picker
   const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
+  const [serialPickerStage, setSerialPickerStage] = useState<'primary' | 'secondary'>('primary')
   const [serialNumbers, setSerialNumbers] = useState<SerialNumberRecord[]>([])
   const [serialLoading, setSerialLoading] = useState(false)
+  const [serialError, setSerialError] = useState('')
+  const [serialSearchQuery, setSerialSearchQuery] = useState('')
 
   // Customer
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
@@ -281,8 +289,17 @@ export default function CheckoutPage() {
   >([])
 
   // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
+  // | 'installment' (down payment now + the rest financed into an AR schedule)
   const [invoiceType, setInvoiceType] = useState<PosInvoiceType>('cash')
   const [chargeDueDays, setChargeDueDays] = useState(30)
+
+  // Installment financing
+  const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+  const [financingTermId, setFinancingTermId] = useState('')
+  const [downPaymentInput, setDownPaymentInput] = useState('0')
+  const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview | null>(null)
+  const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState(false)
+  const installmentPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -335,6 +352,7 @@ export default function CheckoutPage() {
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     invoiceType?: PosInvoiceType
+    installmentPreview?: InstallmentPreview | null
   } | null>(null)
 
   // Pending manager approval (serial-tracked sale awaiting Release Form review)
@@ -459,16 +477,26 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Fetch serial numbers when picker target changes
+  // Fetch serial numbers when picker target or stage (primary/secondary) changes
   useEffect(() => {
     if (!serialPickerTarget) return
     setSerialLoading(true)
     setSerialNumbers([])
-    getAvailableSerialNumbers(serialPickerTarget.itemId).then((res) => {
-      if (res.success && Array.isArray(res.data)) setSerialNumbers(res.data)
-      setSerialLoading(false)
-    })
-  }, [serialPickerTarget?.itemId])
+    setSerialError('')
+    setSerialSearchQuery('')
+    getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
+      (res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setSerialNumbers(res.data)
+        } else if (!res.success) {
+          // A failed fetch (e.g. missing permission) must not look like
+          // "zero serials in stock" — that's a data state, this is an error.
+          setSerialError(res.error || 'Failed to load serial numbers.')
+        }
+        setSerialLoading(false)
+      }
+    )
+  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
 
   // Fetch the active default accounting tax rate — controls global POS tax
   useEffect(() => {
@@ -562,28 +590,12 @@ export default function CheckoutPage() {
     [cart]
   )
 
-  // Lazy-load menu items the first time the menu tab is opened
-  useEffect(() => {
-    if (catalogMode !== 'menu' || menuItemsLoaded) return
-    setMenuItemsLoading(true)
-    getMenuItems().then((data) => {
-      const mapped = data.map((item) => ({
-        id: item.id,
-        name: item.name,
-        sku: item.sku ?? undefined,
-        price: item.sellingPrice ?? 0,
-        isBundle: true,
-        uomCode: undefined,
-      }))
-      setMenuItems(mapped)
-      setMenuItemsLoaded(true)
-      setMenuItemsLoading(false)
-    })
-  }, [catalogMode, menuItemsLoaded])
-
   const displayItems = useMemo(() => {
-    const source =
-      catalogMode === 'menu' ? menuItems : catalogItems.filter((item) => !item.isBundle)
+    // A plain (non-serialized) bundle has no single sellable unit and stays
+    // excluded; a serial-tracked bundle (e.g. a "Furniture Set") is sold and
+    // registered as one unit like any other serialized item, so it's allowed
+    // through here.
+    const source = catalogItems.filter((item) => !item.isBundle || item.isSerialTracked)
     const q = searchQuery.trim().toLowerCase()
     if (!q) return source
     return source.filter(
@@ -592,11 +604,11 @@ export default function CheckoutPage() {
         item.sku?.toLowerCase().includes(q) ||
         item.barcode?.toLowerCase().includes(q)
     )
-  }, [catalogItems, menuItems, searchQuery, catalogMode])
+  }, [catalogItems, searchQuery])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
 
-  const { vatExclSubtotalForBackend, effectiveTaxRate, taxTotal } = computePricingTotals({
+  const { vatExclSubtotalForBackend, additiveTax, taxTotal } = computePricingTotals({
     cart,
     rawSubtotal,
     inclusivePricing,
@@ -604,11 +616,25 @@ export default function CheckoutPage() {
     isTaxExempt,
   })
 
+  // Branch price overrides can give individual lines their own tax rate, so a
+  // cart can legitimately mix rates — the summary line below reflects that
+  // instead of always naming the tenant-wide default.
+  const distinctLineTaxRates = Array.from(
+    new Set(
+      cart.map((l) => resolveLineTaxRate(l, activeTaxRate)).filter((r): r is number => r != null)
+    )
+  )
+  const hasMixedTaxRates = distinctLineTaxRates.length > 1
+  const uniformLineTaxRate = distinctLineTaxRates.length === 1 ? distinctLineTaxRates[0] : null
+
   // promoDiscount is cleared when SC/PWD is active (cannot stack)
   const promoDiscount = promoResult?.valid && !scPwdData ? (promoResult.discountAmount ?? 0) : 0
 
-  // Display subtotal: inclusive mode shows tag prices as-is; exclusive adds tax
-  const subtotal = inclusivePricing ? rawSubtotal : rawSubtotal + taxTotal
+  // additiveTax is 0 for lines whose tax is already baked into unitPrice
+  // (inclusive), and the real per-line tax for lines that still need it added
+  // on top (exclusive) — correct for carts that mix both, not just carts that
+  // uniformly match the tenant's global pricing-mode default.
+  const subtotal = rawSubtotal + additiveTax
 
   // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
   const scPwdEstimatedDiscount = scPwdData
@@ -639,6 +665,33 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
+  // ─── Installment financing ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (invoiceType !== 'installment') return
+    getActiveFinancingTerms(activeBranchId ?? undefined).then((res) => {
+      setFinancingTerms(res.data ?? [])
+    })
+  }, [invoiceType, activeBranchId])
+
+  useEffect(() => {
+    if (invoiceType !== 'installment' || !financingTermId || totalAmount <= 0) {
+      setInstallmentPreview(null)
+      return
+    }
+    if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
+    installmentPreviewTimer.current = setTimeout(async () => {
+      setInstallmentPreviewLoading(true)
+      const downPayment = parseFloat(downPaymentInput) || 0
+      const res = await previewInstallment({ totalAmount, downPayment, financingTermId })
+      setInstallmentPreview(res.success ? (res.data ?? null) : null)
+      setInstallmentPreviewLoading(false)
+    }, 300)
+    return () => {
+      if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
+    }
+  }, [invoiceType, financingTermId, downPaymentInput, totalAmount])
+
   // ─── Push cart to customer display ────────────────────────────────────────
 
   const displayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -649,14 +702,15 @@ export default function CheckoutPage() {
     displayTimerRef.current = setTimeout(() => {
       updateSessionDisplay(sessionId, {
         status: cart.length > 0 ? 'active' : 'idle',
-        lines: cart.map((l) => ({
-          itemName: l.itemName,
-          quantity: l.quantity,
-          unitPrice:
-            effectiveTaxRate != null ? l.unitPrice * (1 + effectiveTaxRate / 100) : l.unitPrice,
-          lineTotal:
-            effectiveTaxRate != null ? lineTotal(l) * (1 + effectiveTaxRate / 100) : lineTotal(l),
-        })),
+        lines: cart.map((l) => {
+          const displayUnitPrice = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing)
+          return {
+            itemName: l.itemName,
+            quantity: l.quantity,
+            unitPrice: displayUnitPrice,
+            lineTotal: displayUnitPrice * l.quantity,
+          }
+        }),
         subtotal,
         discountTotal: promoDiscount,
         taxTotal,
@@ -725,16 +779,19 @@ export default function CheckoutPage() {
           allowDecimal: item.allowDecimal ?? false,
           pricingMode: item.pricingMode ?? null,
           isSerialTracked: item.isSerialTracked ?? false,
+          requiresSecondarySerial: item.requiresSecondarySerial ?? false,
         },
       ]
     })
     if (item.isSerialTracked) {
+      setSerialPickerStage('primary')
       setSerialPickerTarget({
         itemId: item.id,
         itemName: item.name,
         unitPrice: item.price,
         quantity: 1,
         isSerialTracked: true,
+        requiresSecondarySerial: item.requiresSecondarySerial ?? false,
       })
     }
   }
@@ -916,6 +973,24 @@ export default function CheckoutPage() {
         setError('Charge invoices require an active network connection.')
         return
       }
+    } else if (invoiceType === 'installment') {
+      if (!selectedCustomer) {
+        setError('A customer must be selected for an installment sale.')
+        return
+      }
+      if (!financingTermId) {
+        setError('Select a financing term for this installment sale.')
+        return
+      }
+      const downPayment = parseFloat(downPaymentInput) || 0
+      if (downPayment < 0 || downPayment > totalAmount) {
+        setError('Down payment must be between 0 and the total sale amount.')
+        return
+      }
+      if (isOffline) {
+        setError('Installment sales require an active network connection.')
+        return
+      }
     } else {
       if (payments.length === 0) {
         setError('Add at least one payment method.')
@@ -956,7 +1031,7 @@ export default function CheckoutPage() {
         promoCodeId: promoResult?.promoCode?.id,
         discountAmount: promoDiscount,
         taxAmount: taxTotal,
-        subtotal: rawSubtotal,
+        subtotal: vatExclSubtotalForBackend,
         totalAmount,
         isTaxExempt: isTaxExempt || !!scPwdData,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
@@ -969,7 +1044,7 @@ export default function CheckoutPage() {
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           discountAmount: 0,
-          taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
+          taxAmount: lineTaxAmount(l, activeTaxRate, inclusivePricing),
           pricingMode: l.pricingMode ?? undefined,
         })),
       }
@@ -1002,11 +1077,14 @@ export default function CheckoutPage() {
           transactionType: 'sale',
           invoiceType,
           chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
+          financingTermId: invoiceType === 'installment' ? financingTermId : undefined,
+          downPayment:
+            invoiceType === 'installment' ? parseFloat(downPaymentInput) || 0 : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
           taxAmount: taxTotal,
-          subtotal: rawSubtotal,
+          subtotal: vatExclSubtotalForBackend,
           totalAmount,
           isTaxExempt: isTaxExempt || !!scPwdData,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
@@ -1022,9 +1100,10 @@ export default function CheckoutPage() {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             discountAmount: 0,
-            taxAmount: effectiveTaxRate != null ? lineTotal(l) * (effectiveTaxRate / 100) : 0,
+            taxAmount: lineTaxAmount(l, activeTaxRate, inclusivePricing),
             pricingMode: l.pricingMode ?? undefined,
             serialNumberId: l.serialNumberId,
+            secondarySerialNumberId: l.secondarySerialNumberId,
           })),
         })
 
@@ -1084,22 +1163,22 @@ export default function CheckoutPage() {
         // instead of completing the sale. Show the pending screen and bail out
         // before any payment/loyalty steps run (there is no transaction yet).
         if (isPendingApproval(txRes.data)) {
-          const { releaseFormRequestId, sessionId: rfdSessionId } = txRes.data
+          const { releaseFormRequestId } = txRes.data
           const serialLines = cart
             .filter((l) => l.isSerialTracked)
             .map((l) => ({ itemName: l.itemName, serialNumberLabel: l.serialNumberLabel }))
-          const itemNameSummary =
-            serialLines.length === 1
-              ? serialLines[0].itemName
-              : `${serialLines.length} serial-tracked items`
-
-          usePosPendingRfdStore.getState().add({
-            releaseFormRequestId,
-            itemName: itemNameSummary,
-            totalAmount,
-            submittedAt: new Date().toISOString(),
-            sessionId: rfdSessionId,
-          })
+          // A charge/installment sale can reach pending-approval with zero
+          // serial-tracked lines (that's not just a serialized-item flow
+          // anymore) — fall back to describing/listing the cart itself
+          // rather than producing a nonsensical "0 serial-tracked items"
+          // label and an empty line-items area on the pending screen.
+          const displayLines =
+            serialLines.length > 0
+              ? serialLines
+              : cart.map((l) => ({
+                  itemName: l.itemName,
+                  serialNumberLabel: `×${l.quantity}`,
+                }))
 
           updateSessionDisplay(sessionId, {
             status: 'idle',
@@ -1112,7 +1191,7 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines })
+          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
           return
         }
 
@@ -1218,6 +1297,7 @@ export default function CheckoutPage() {
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
         invoiceType,
+        installmentPreview: invoiceType === 'installment' ? installmentPreview : null,
       })
     } catch (err) {
       console.error('[POS] handleConfirm error:', err)
@@ -1251,6 +1331,9 @@ export default function CheckoutPage() {
     setFromTab(null)
     setInvoiceType('cash')
     setChargeDueDays(30)
+    setFinancingTermId('')
+    setDownPaymentInput('0')
+    setInstallmentPreview(null)
     localStorage.removeItem(POS_FROM_TAB_KEY)
     setCancellationReqId(null)
     if (cancellationPollRef.current) {
@@ -1305,7 +1388,6 @@ export default function CheckoutPage() {
     return () => {
       if (cancellationPollRef.current) clearInterval(cancellationPollRef.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cancellationReqId])
 
   // ─── Success screen ────────────────────────────────────────────────────────
@@ -1322,7 +1404,8 @@ export default function CheckoutPage() {
         cart={cart}
         payments={payments}
         promoDiscount={promoDiscount}
-        effectiveTaxRate={effectiveTaxRate}
+        activeTaxRate={activeTaxRate}
+        inclusivePricing={inclusivePricing}
       />
     )
   }
@@ -1515,27 +1598,6 @@ export default function CheckoutPage() {
           {/* Search bar */}
           <div className="shrink-0 border-b border-gray-100 px-4 py-3 space-y-2">
             {/* Mode toggle */}
-            <div className="flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 text-xs font-semibold">
-              <button
-                onClick={() => {
-                  setCatalogMode('items')
-                  setSearchQuery('')
-                }}
-                className={`flex-1 rounded-md py-1.5 transition-colors ${catalogMode === 'items' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Items
-              </button>
-              <button
-                onClick={() => {
-                  setCatalogMode('menu')
-                  setSearchQuery('')
-                }}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors ${catalogMode === 'menu' ? 'bg-white text-purple-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                <UtensilsCrossed size={11} /> Menu Items
-              </button>
-            </div>
-
             <div className="relative">
               <Search
                 size={14}
@@ -1544,16 +1606,14 @@ export default function CheckoutPage() {
               <input
                 autoFocus
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-4 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                placeholder={
-                  catalogMode === 'menu' ? 'Search menu items…' : 'Search by name or SKU…'
-                }
+                placeholder="Search by name or serial"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             {catalogItems.length > 0 && (
               <p className="text-[10px] text-gray-400">
-                {displayItems.length} {catalogMode === 'menu' ? 'menu item' : 'item'}
+                {displayItems.length} item
                 {displayItems.length !== 1 ? 's' : ''}
                 {searchQuery && ` matching "${searchQuery}"`}
               </p>
@@ -1562,7 +1622,7 @@ export default function CheckoutPage() {
 
           {/* Catalog grid */}
           <div className="flex-1 overflow-y-auto bg-gray-50/60 p-3">
-            {catalogLoading || menuItemsLoading ? (
+            {catalogLoading ? (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <div
@@ -1593,7 +1653,8 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    effectiveTaxRate={effectiveTaxRate}
+                    activeTaxRate={activeTaxRate}
+                    inclusivePricing={inclusivePricing}
                   />
                 ))}
               </div>
@@ -1614,105 +1675,109 @@ export default function CheckoutPage() {
               </div>
               <table className="min-w-full text-sm">
                 <tbody className="divide-y divide-gray-50">
-                  {cart.map((line) => (
-                    <tr key={line.itemId} className="group hover:bg-gray-50">
-                      <td className="px-4 py-2">
-                        <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
-                        {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
-                        {line.isSerialTracked && (
-                          <button
-                            onClick={() => setSerialPickerTarget(line)}
-                            className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                          >
-                            {line.serialNumberId
-                              ? `SN: ${line.serialNumberLabel}`
-                              : '⚠ Select serial'}
-                          </button>
-                        )}
-                        {effectiveTaxRate != null ? (
-                          <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
-                            {activeTaxRate?.name ?? `VAT ${effectiveTaxRate}%`}
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
-                            No Tax
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() =>
-                              line.allowDecimal
-                                ? removeFromCart(line.itemId)
-                                : setQty(line.itemId, line.quantity - 1)
-                            }
-                            disabled={!!cancellationReqId}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                          >
-                            <Minus size={10} />
-                          </button>
-                          {line.allowDecimal ? (
-                            <div className="flex flex-col items-center gap-0.5">
-                              <input
-                                type="number"
-                                min="0.001"
-                                step="0.1"
-                                value={line.quantity}
-                                onChange={(e) => {
-                                  const v = parseFloat(e.target.value)
-                                  if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                }}
-                                className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                              {line.uomCode && (
-                                <span className="text-[9px] text-gray-400 uppercase">
-                                  {line.uomCode}
-                                </span>
-                              )}
-                            </div>
+                  {cart.map((line) => {
+                    const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
+                    return (
+                      <tr key={line.itemId} className="group hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
+                          {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                          {line.isSerialTracked && (
+                            <button
+                              onClick={() => setSerialPickerTarget(line)}
+                              className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                            >
+                              {line.serialNumberId
+                                ? `SN: ${line.serialNumberLabel}`
+                                : '⚠ Select serial'}
+                            </button>
+                          )}
+                          {lineTaxRate != null ? (
+                            <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                              {line.taxRate == null
+                                ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                : `VAT ${lineTaxRate}%`}
+                            </span>
                           ) : (
-                            <span className="w-6 text-center text-xs font-semibold">
-                              {line.quantity}
+                            <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
+                              No Tax
                             </span>
                           )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() =>
+                                line.allowDecimal
+                                  ? removeFromCart(line.itemId)
+                                  : setQty(line.itemId, line.quantity - 1)
+                              }
+                              disabled={!!cancellationReqId}
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
+                            >
+                              <Minus size={10} />
+                            </button>
+                            {line.allowDecimal ? (
+                              <div className="flex flex-col items-center gap-0.5">
+                                <input
+                                  type="number"
+                                  min="0.001"
+                                  step="0.1"
+                                  value={line.quantity}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value)
+                                    if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                  }}
+                                  className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                />
+                                {line.uomCode && (
+                                  <span className="text-[9px] text-gray-400 uppercase">
+                                    {line.uomCode}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="w-6 text-center text-xs font-semibold">
+                                {line.quantity}
+                              </span>
+                            )}
+                            <button
+                              onClick={() =>
+                                line.allowDecimal
+                                  ? setMeasuredItem({
+                                      id: line.itemId,
+                                      name: line.itemName,
+                                      sku: line.sku,
+                                      price: line.unitPrice,
+                                      taxRate: line.taxRate,
+                                      uomCode: line.uomCode,
+                                      allowDecimal: true,
+                                    })
+                                  : setQty(line.itemId, line.quantity + 1)
+                              }
+                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            >
+                              <Plus size={10} />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
+                          {fmt(
+                            displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                              line.quantity
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
                           <button
-                            onClick={() =>
-                              line.allowDecimal
-                                ? setMeasuredItem({
-                                    id: line.itemId,
-                                    name: line.itemName,
-                                    sku: line.sku,
-                                    price: line.unitPrice,
-                                    taxRate: line.taxRate,
-                                    uomCode: line.uomCode,
-                                    allowDecimal: true,
-                                  })
-                                : setQty(line.itemId, line.quantity + 1)
-                            }
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                            onClick={() => removeFromCart(line.itemId)}
+                            className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
                           >
-                            <Plus size={10} />
+                            <X size={12} />
                           </button>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                        {fmt(
-                          effectiveTaxRate != null
-                            ? lineTotal(line) * (1 + effectiveTaxRate / 100)
-                            : lineTotal(line)
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          onClick={() => removeFromCart(line.itemId)}
-                          className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-                        >
-                          <X size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1976,7 +2041,7 @@ export default function CheckoutPage() {
                 <span>
                   Subtotal ({cart.length} item{cart.length !== 1 ? 's' : ''})
                 </span>
-                <span>{fmt(subtotal)}</span>
+                <span>{fmt(vatExclSubtotalForBackend)}</span>
               </div>
               {promoDiscount > 0 && (
                 <div className="flex justify-between text-green-600">
@@ -1990,22 +2055,21 @@ export default function CheckoutPage() {
                   <span>−{fmt(scPwdEstimatedDiscount)}</span>
                 </div>
               )}
-              {taxTotal > 0 && !isTaxExempt && !scPwdData && (
-                <>
-                  {inclusivePricing && (
-                    <div className="flex justify-between text-gray-400 text-xs">
-                      <span>VATable Sales (net)</span>
-                      <span>{fmt(vatExclSubtotalForBackend)}</span>
-                    </div>
-                  )}
+              {cart.length > 0 &&
+                !isTaxExempt &&
+                !scPwdData &&
+                (hasMixedTaxRates || uniformLineTaxRate != null) && (
                   <div className="flex justify-between text-gray-400 text-xs">
                     <span>
-                      {activeTaxRate?.name ?? 'VAT'} ({activeTaxRate?.rate ?? 0}%)
+                      {hasMixedTaxRates
+                        ? 'Mixed VAT rates'
+                        : uniformLineTaxRate != null
+                          ? `${uniformLineTaxRate === activeTaxRate?.rate ? (activeTaxRate?.name ?? 'VAT') : 'VAT'} (${uniformLineTaxRate}%)`
+                          : (activeTaxRate?.name ?? 'VAT')}
                     </span>
                     <span>{fmt(taxTotal)}</span>
                   </div>
-                </>
-              )}
+                )}
               {isTaxExempt && (
                 <div className="flex justify-between text-green-600 text-xs">
                   <span>Tax Exempt</span>
@@ -2188,6 +2252,19 @@ export default function CheckoutPage() {
                   Bill to customer account
                 </span>
               </button>
+              <button
+                onClick={() => setInvoiceType('installment')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'installment'
+                    ? 'border-prominent-purple-500 bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Installment
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  Down payment + financed schedule
+                </span>
+              </button>
             </div>
             {invoiceType === 'charge' && (
               <div className="mt-2.5 space-y-2">
@@ -2208,6 +2285,86 @@ export default function CheckoutPage() {
                   />
                   <label className="text-xs text-gray-500">days</label>
                 </div>
+              </div>
+            )}
+            {invoiceType === 'installment' && (
+              <div className="mt-2.5 space-y-2">
+                {!selectedCustomer && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    A customer must be selected for an installment sale.
+                  </p>
+                )}
+                <div>
+                  <label className="mb-1 block text-[11px] text-gray-500">Financing Term</label>
+                  <div className="relative">
+                    <select
+                      value={financingTermId}
+                      onChange={(e) => setFinancingTermId(e.target.value)}
+                      className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                    >
+                      <option value="">Select a term…</option>
+                      {financingTerms.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
+                          {t.branch ? ` · ${t.branch.name}` : ' · Tenant-wide'}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={12}
+                      className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-500 whitespace-nowrap">Down payment</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    max={totalAmount}
+                    value={downPaymentInput}
+                    onChange={(e) => setDownPaymentInput(e.target.value)}
+                    className="w-28 rounded-lg border border-gray-200 px-2 py-1.5 text-right font-mono text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                  />
+                </div>
+                {financingTermId && (
+                  <div className="rounded-lg bg-prominent-purple-50 px-3 py-2 text-xs text-prominent-purple-700">
+                    {installmentPreviewLoading ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 size={11} className="animate-spin" /> Calculating…
+                      </span>
+                    ) : installmentPreview ? (
+                      <div className="space-y-0.5">
+                        <div className="flex justify-between">
+                          <span>Monthly Installment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(installmentPreview.monthlyInstallment)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Payable</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(installmentPreview.totalPayable)}
+                          </span>
+                        </div>
+                        {installmentPreview.lines[0] && (
+                          <div className="flex justify-between opacity-80">
+                            <span>First due</span>
+                            <span>
+                              {new Date(installmentPreview.lines[0].dueDate).toLocaleDateString(
+                                'en-PH',
+                                { month: 'short', day: 'numeric', year: 'numeric' }
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="opacity-70">Preview unavailable.</span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2240,6 +2397,23 @@ export default function CheckoutPage() {
                   <p className="mt-2 rounded-lg bg-blue-100 px-3 py-1.5 text-[11px] font-medium text-blue-700">
                     {customerDisplayName(selectedCustomer)} · Due in {chargeDueDays} day
                     {chargeDueDays !== 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+            ) : invoiceType === 'installment' ? (
+              <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-5 text-center">
+                <Receipt size={20} className="mx-auto mb-2 text-prominent-purple-400" />
+                <p className="text-xs font-medium text-prominent-purple-700">
+                  Installment plan will be created
+                </p>
+                <p className="mt-1 text-[11px] text-prominent-purple-500">
+                  The down payment (if any) is collected once approved; the rest is financed into an
+                  AR schedule of monthly dues.
+                </p>
+                {selectedCustomer && (
+                  <p className="mt-2 rounded-lg bg-prominent-purple-100 px-3 py-1.5 text-[11px] font-medium text-prominent-purple-700">
+                    {customerDisplayName(selectedCustomer)} · Down payment{' '}
+                    {fmt(parseFloat(downPaymentInput) || 0)}
                   </p>
                 )}
               </div>
@@ -2448,36 +2622,53 @@ export default function CheckoutPage() {
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
-                cart.some((l) => l.isSerialTracked && !l.serialNumberId) ||
+                cart.some(
+                  (l) =>
+                    (l.isSerialTracked && !l.serialNumberId) ||
+                    (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+                ) ||
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
+                (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
                 (needsManagerOverride && !managerOverrideApproved)
               }
               className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
                 invoiceType === 'charge'
                   ? 'bg-blue-600 hover:bg-blue-700'
-                  : 'bg-purple-700 hover:bg-purple-800'
+                  : invoiceType === 'installment'
+                    ? 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
+                    : 'bg-purple-700 hover:bg-purple-800'
               }`}
             >
               {submitting
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : cart.some((l) => l.isSerialTracked && !l.serialNumberId)
+                  : cart.some(
+                        (l) =>
+                          (l.isSerialTracked && !l.serialNumberId) ||
+                          (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+                      )
                     ? 'Select serial numbers to continue'
                     : invoiceType === 'charge' && !selectedCustomer
                       ? 'Select a customer to charge'
-                      : invoiceType === 'cash' && balance > 0.009
-                        ? `Underpaid by ${fmt(balance)}`
-                        : invoiceType === 'cash' && loyaltyOverBalance
-                          ? 'Insufficient loyalty points'
-                          : needsManagerOverride && !managerOverrideApproved
-                            ? 'Manager override required'
-                            : cart.some((l) => l.isSerialTracked)
-                              ? `Submit for Approval — ${fmt(totalAmount)}`
-                              : invoiceType === 'charge'
-                                ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                : `Confirm Sale — ${fmt(totalAmount)}`}
+                      : invoiceType === 'installment' && !selectedCustomer
+                        ? 'Select a customer for installment'
+                        : invoiceType === 'installment' && !financingTermId
+                          ? 'Select a financing term'
+                          : invoiceType === 'cash' && balance > 0.009
+                            ? `Underpaid by ${fmt(balance)}`
+                            : invoiceType === 'cash' && loyaltyOverBalance
+                              ? 'Insufficient loyalty points'
+                              : needsManagerOverride && !managerOverrideApproved
+                                ? 'Manager override required'
+                                : cart.some((l) => l.isSerialTracked)
+                                  ? `Submit for Approval — ${fmt(totalAmount)}`
+                                  : invoiceType === 'charge'
+                                    ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                    : invoiceType === 'installment'
+                                      ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                      : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -2770,70 +2961,143 @@ export default function CheckoutPage() {
       )}
 
       {/* Serial Number Picker */}
-      {serialPickerTarget && (
-        <Overlay onClose={() => setSerialPickerTarget(null)}>
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
-              <Tag size={18} className="text-purple-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Select Serial Number</h2>
-              <p className="text-xs text-gray-500">{serialPickerTarget.itemName}</p>
-            </div>
-          </div>
-          {serialLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={20} className="animate-spin text-purple-400" />
-            </div>
-          ) : serialNumbers.length === 0 ? (
-            <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
-              No available serial numbers in stock for this item.
-            </div>
-          ) : (
-            <div className="max-h-64 space-y-1.5 overflow-y-auto">
-              {serialNumbers.map((sn) => {
-                const isSelected =
-                  cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId === sn.id
-                return (
-                  <button
-                    key={sn.id}
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                      isSelected
-                        ? 'border-purple-500 bg-purple-50'
-                        : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
-                    }`}
-                    onClick={() => {
-                      setCart((prev) =>
-                        prev.map((l) =>
-                          l.itemId === serialPickerTarget.itemId
-                            ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
-                            : l
-                        )
-                      )
-                      setSerialPickerTarget(null)
-                    }}
-                  >
-                    <span className="font-mono text-sm font-semibold text-gray-900">
-                      {sn.serialNumber}
-                    </span>
-                    {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
-                  </button>
+      {serialPickerTarget &&
+        (() => {
+          const targetLine = cart.find((l) => l.itemId === serialPickerTarget.itemId)
+          const isSecondaryStage = serialPickerStage === 'secondary'
+          const selectedId = isSecondaryStage
+            ? targetLine?.secondarySerialNumberId
+            : targetLine?.serialNumberId
+          // The primary serial can't also be picked as the secondary — hide it
+          // from the secondary list (backend enforces distinctness regardless).
+          const visibleSerials = serialNumbers
+            .filter((sn) => !isSecondaryStage || sn.id !== targetLine?.serialNumberId)
+            .filter((sn) =>
+              serialSearchQuery.trim()
+                ? sn.serialNumber.toLowerCase().includes(serialSearchQuery.trim().toLowerCase())
+                : true
+            )
+
+          function pick(sn: SerialNumberRecord) {
+            if (isSecondaryStage) {
+              setCart((prev) =>
+                prev.map((l) =>
+                  l.itemId === serialPickerTarget!.itemId
+                    ? {
+                        ...l,
+                        secondarySerialNumberId: sn.id,
+                        secondarySerialNumberLabel: sn.serialNumber,
+                      }
+                    : l
                 )
-              })}
-            </div>
-          )}
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setSerialPickerTarget(null)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              )
+              setSerialPickerTarget(null)
+              setSerialPickerStage('primary')
+              return
+            }
+            setCart((prev) =>
+              prev.map((l) =>
+                l.itemId === serialPickerTarget!.itemId
+                  ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
+                  : l
+              )
+            )
+            if (targetLine?.requiresSecondarySerial) {
+              setSerialPickerStage('secondary')
+            } else {
+              setSerialPickerTarget(null)
+            }
+          }
+
+          return (
+            <Overlay
+              dismissible={false}
+              onClose={() => {
+                setSerialPickerTarget(null)
+                setSerialPickerStage('primary')
+              }}
             >
-              {cart.find((l) => l.itemId === serialPickerTarget.itemId)?.serialNumberId
-                ? 'Done'
-                : 'Skip for now'}
-            </button>
-          </div>
-        </Overlay>
-      )}
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
+                  <Tag size={18} className="text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    {isSecondaryStage ? 'Select Outdoor Unit Serial' : 'Select Serial Number'}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {serialPickerTarget.itemName}
+                    {isSecondaryStage && ' — Outdoor Unit'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    A serial number is required to continue with this item.
+                  </p>
+                </div>
+              </div>
+              <div className="relative mb-3">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  autoFocus
+                  value={serialSearchQuery}
+                  onChange={(e) => setSerialSearchQuery(e.target.value)}
+                  placeholder="Search serial number…"
+                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                />
+              </div>
+              {serialLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={20} className="animate-spin text-purple-400" />
+                </div>
+              ) : serialError ? (
+                <div className="rounded-lg bg-red-50 px-4 py-5 text-center text-sm text-red-700">
+                  {serialError}
+                </div>
+              ) : visibleSerials.length === 0 ? (
+                <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
+                  {serialSearchQuery
+                    ? `No serial numbers match "${serialSearchQuery}".`
+                    : 'No available serial numbers in stock for this item at this branch.'}
+                </div>
+              ) : (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {visibleSerials.map((sn) => {
+                    const isSelected = selectedId === sn.id
+                    return (
+                      <button
+                        key={sn.id}
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          isSelected
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                        }`}
+                        onClick={() => pick(sn)}
+                      >
+                        <span className="font-mono text-sm font-semibold text-gray-900">
+                          {sn.serialNumber}
+                        </span>
+                        {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => {
+                    setSerialPickerTarget(null)
+                    setSerialPickerStage('primary')
+                  }}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+            </Overlay>
+          )
+        })()}
 
       {/* Measured-item quantity picker */}
       {measuredItem &&
@@ -2996,7 +3260,8 @@ function SuccessScreen({
   cart,
   payments,
   promoDiscount,
-  effectiveTaxRate,
+  activeTaxRate,
+  inclusivePricing,
 }: {
   success: {
     transactionId: string
@@ -3007,6 +3272,7 @@ function SuccessScreen({
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     invoiceType?: PosInvoiceType
+    installmentPreview?: InstallmentPreview | null
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -3016,7 +3282,8 @@ function SuccessScreen({
   cart: CartLine[]
   payments: PaymentRow[]
   promoDiscount: number
-  effectiveTaxRate: number | null
+  activeTaxRate: { rate: number; name: string } | null
+  inclusivePricing: boolean
 }) {
   const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
   const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
@@ -3066,13 +3333,17 @@ function SuccessScreen({
     ? 'border-amber-200'
     : success.invoiceType === 'charge'
       ? 'border-blue-100'
-      : 'border-green-100'
+      : success.invoiceType === 'installment'
+        ? 'border-prominent-purple-100'
+        : 'border-green-100'
 
   const iconBg = success.offlineBuffered
     ? 'bg-amber-100'
     : success.invoiceType === 'charge'
       ? 'bg-blue-100'
-      : 'bg-green-100'
+      : success.invoiceType === 'installment'
+        ? 'bg-prominent-purple-100'
+        : 'bg-green-100'
 
   return (
     <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
@@ -3086,8 +3357,15 @@ function SuccessScreen({
             <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
               {success.offlineBuffered ? (
                 <WifiOff size={28} className="text-amber-600" />
-              ) : success.invoiceType === 'charge' ? (
-                <Receipt size={28} className="text-blue-600" />
+              ) : success.invoiceType === 'charge' || success.invoiceType === 'installment' ? (
+                <Receipt
+                  size={28}
+                  className={
+                    success.invoiceType === 'installment'
+                      ? 'text-prominent-purple-600'
+                      : 'text-blue-600'
+                  }
+                />
               ) : (
                 <CheckCircle2 size={28} className="text-green-600" />
               )}
@@ -3098,7 +3376,9 @@ function SuccessScreen({
                   ? 'Sale Buffered (Offline)'
                   : success.invoiceType === 'charge'
                     ? 'Charge Invoice Issued'
-                    : 'Sale Complete'}
+                    : success.invoiceType === 'installment'
+                      ? 'Installment Plan Created'
+                      : 'Sale Complete'}
               </p>
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
@@ -3106,11 +3386,32 @@ function SuccessScreen({
                 <p className="mt-1 text-sm text-blue-500">
                   AR invoice posted — payment due from customer.
                 </p>
+              ) : success.invoiceType === 'installment' ? (
+                <p className="mt-1 text-sm text-prominent-purple-500">
+                  Down payment collected; the rest is financed into an AR schedule.
+                </p>
               ) : (
                 <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
               )}
             </div>
           </div>
+
+          {success.invoiceType === 'installment' && success.installmentPreview && (
+            <div className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700">
+              <div className="flex justify-between">
+                <span>Monthly Installment</span>
+                <span className="font-mono font-semibold">
+                  {fmt(success.installmentPreview.monthlyInstallment)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Total Payable</span>
+                <span className="font-mono font-semibold">
+                  {fmt(success.installmentPreview.totalPayable)}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Total charged */}
           <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
@@ -3251,14 +3552,12 @@ function SuccessScreen({
             {/* Items */}
             <div className="space-y-2.5 border-b border-dashed border-gray-200 px-5 py-3">
               {cart.map((line) => {
-                const displayUnitPrice =
-                  effectiveTaxRate != null
-                    ? line.unitPrice * (1 + effectiveTaxRate / 100)
-                    : line.unitPrice
-                const displayLineTotal =
-                  effectiveTaxRate != null
-                    ? lineTotal(line) * (1 + effectiveTaxRate / 100)
-                    : lineTotal(line)
+                const displayUnitPrice = displayUnitPriceWithTax(
+                  line,
+                  activeTaxRate,
+                  inclusivePricing
+                )
+                const displayLineTotal = displayUnitPrice * line.quantity
                 return (
                   <div key={line.itemId} className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -3343,7 +3642,6 @@ function PendingApprovalScreen({
       setCancelError(res.error ?? 'Failed to cancel request.')
       return
     }
-    usePosPendingRfdStore.getState().remove(releaseFormRequestId)
     onReset()
   }
 
@@ -3408,16 +3706,21 @@ function CatalogCard({
   qty,
   onAdd,
   onAddMeasured,
-  effectiveTaxRate,
+  activeTaxRate,
+  inclusivePricing,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  effectiveTaxRate: number | null
+  activeTaxRate: { rate: number; name: string } | null
+  inclusivePricing: boolean
 }) {
-  const displayPrice =
-    effectiveTaxRate != null ? item.price * (1 + effectiveTaxRate / 100) : item.price
+  const displayPrice = displayUnitPriceWithTax(
+    { unitPrice: item.price, taxRate: item.taxRate, pricingMode: item.pricingMode },
+    activeTaxRate,
+    inclusivePricing
+  )
 
   return (
     <button
@@ -3472,12 +3775,16 @@ function NewCustomerModal({
       setError('First name is required.')
       return
     }
+    if (!form.phone.trim()) {
+      setError('Phone number is required.')
+      return
+    }
     setError('')
     setSubmitting(true)
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
-      lastName: form.lastName.trim() || undefined,
-      phoneNumber: form.phone.trim() || undefined,
+      lastName: form.lastName.trim(),
+      phoneNumber: form.phone.trim(),
       email: form.email.trim() || undefined,
     })
     setSubmitting(false)
@@ -3515,7 +3822,7 @@ function NewCustomerModal({
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone</label>
+          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
           <input
             type="tel"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
@@ -3543,7 +3850,7 @@ function NewCustomerModal({
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !form.firstName.trim() || !form.phone.trim()}
           className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
         >
           {submitting ? 'Creating…' : 'Create Customer'}
@@ -3555,18 +3862,30 @@ function NewCustomerModal({
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Overlay({
+  children,
+  onClose,
+  dismissible = true,
+}: {
+  children: React.ReactNode
+  onClose: () => void
+  /** When false, there's no backdrop-click or X close — the modal can only be
+   * dismissed by whatever action inside it programmatically closes it. */
+  dismissible?: boolean
+}) {
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={dismissible ? onClose : undefined} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-          <button
-            onClick={onClose}
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
-          >
-            <X size={18} />
-          </button>
+          {dismissible && (
+            <button
+              onClick={onClose}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+            >
+              <X size={18} />
+            </button>
+          )}
           {children}
         </div>
       </div>

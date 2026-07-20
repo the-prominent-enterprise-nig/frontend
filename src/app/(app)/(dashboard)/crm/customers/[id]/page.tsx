@@ -16,6 +16,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     <Customer360
       id={id}
       canEdit={can(session, CRM_PERMISSIONS.CUSTOMERS_UPDATE)}
+      canDelete={can(session, CRM_PERMISSIONS.CUSTOMERS_DELETE)}
       canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}

@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Search, RefreshCw, Pencil, Trash2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getCustomers,
@@ -171,6 +172,13 @@ export default function CustomersList({ session }: Props) {
                       <td className="px-4 py-3 text-sm text-zinc-700">{c.billingAddress || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/accounting/reports?tab=customer-statement&customerId=${c.id}`}
+                            title="View statement — open balance and payment history"
+                            className="p-1.5 text-purple-700 hover:bg-purple-50 rounded"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </Link>
                           {canUpdate && (
                             <button
                               onClick={() => {

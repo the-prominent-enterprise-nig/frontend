@@ -118,7 +118,7 @@ export interface CreateCustomPaymentMethodInput {
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
-export type PosInvoiceType = 'cash' | 'charge'
+export type PosInvoiceType = 'cash' | 'charge' | 'installment'
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
@@ -130,22 +130,9 @@ export type PosPaymentMethod =
   | 'bank_transfer'
   | 'custom'
 
-export interface OwnerPaymentMethod {
-  method: PosPaymentMethod
-  label: string
-  isEnabled: boolean
-}
-
-export interface OwnerPaymentMethodsResponse {
-  data: OwnerPaymentMethod[]
-}
-
-export interface BranchPaymentMethod {
-  method: PosPaymentMethod
-  label: string
-  isEnabled: boolean
+export interface BranchPaymentMethod extends PaymentMethodConfig {
   isOverridden: boolean
-  ownerDefault: boolean
+  tenantEnabled: boolean
 }
 
 export interface BranchPaymentMethodsResponse {
@@ -235,6 +222,7 @@ export interface CreateTransactionLineInput {
   pricingMode?: 'inclusive' | 'exclusive'
   notes?: string
   serialNumberId?: string
+  secondarySerialNumberId?: string
 }
 
 export interface ScPwdDiscountInput {
@@ -249,6 +237,10 @@ export interface CreateTransactionInput {
   transactionType?: PosTransactionType
   invoiceType?: PosInvoiceType
   chargeDueDays?: number
+  /** installment invoices only */
+  financingTermId?: string
+  /** installment invoices only — amount collected up front. Defaults to 0. */
+  downPayment?: number
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -286,8 +278,8 @@ export interface PosCustomer {
 
 export interface CreateWalkInCustomerInput {
   firstName: string
-  lastName?: string
-  phoneNumber?: string
+  lastName: string
+  phoneNumber: string
   email?: string
 }
 
@@ -645,6 +637,80 @@ export interface UpdateBranchPricingInput {
   notes?: string
 }
 
+// Financing Terms (Phase 3 — Installment Financing)
+export interface FinancingTerm {
+  id: string
+  tenantId: string
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
+  termMonths: number
+  factorRate: number
+  isActive: boolean
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateFinancingTermInput {
+  branchId?: string
+  termMonths: number
+  factorRate: number
+  notes?: string
+}
+
+export interface UpdateFinancingTermInput {
+  factorRate?: number
+  isActive?: boolean
+  notes?: string
+}
+
+export interface InstallmentPreviewLine {
+  lineNumber: number
+  dueDate: string
+  amount: number
+}
+
+export interface InstallmentPreview {
+  amountFinanced: number
+  totalPayable: number
+  monthlyInstallment: number
+  lines: InstallmentPreviewLine[]
+}
+
+export interface ComputeInstallmentPreviewInput {
+  totalAmount: number
+  downPayment?: number
+  financingTermId: string
+}
+
+export interface InstallmentScheduleLineWithInvoice {
+  lineNumber: number
+  dueDate: string
+  amount: number
+  arInvoice: {
+    id: string
+    invoiceNumber: string
+    dueDate: string
+    totalAmount: number
+    amountPaid: number
+    status: string
+  }
+}
+
+export interface InstallmentSchedule {
+  id: string
+  termMonths: number
+  factorRate: number
+  downPayment: number
+  amountFinanced: number
+  monthlyInstallment: number
+  totalPayable: number
+  createdAt: string
+  posTransaction?: { transactionNumber: string; occurredAt: string }
+  financingTerm?: { termMonths: number; factorRate: number }
+  lines: InstallmentScheduleLineWithInvoice[]
+}
+
 // Void Requests
 export type PosVoidRequestStatus = 'pending' | 'approved' | 'rejected'
 export type PosVoidRequestType = 'void' | 'edit'
@@ -764,6 +830,8 @@ export interface PosReleaseFormCartSnapshot {
   taxTotal?: number
   totalAmount?: number
   invoiceType?: PosInvoiceType
+  financingTermId?: string
+  downPayment?: number
 }
 
 export interface PosReleaseFormRequest {
@@ -790,6 +858,12 @@ export interface PosReleaseFormRequest {
     cashier?: { id: string; name: string } | null
     terminal?: { terminalCode: string; name?: string; branch?: { name: string } | null } | null
   } | null
+  /** Derived label — no dedicated model. Whether this is a plain RFD (serial
+   * hold), a credit-sale Application Form, or both. */
+  requestType?: 'RFD' | 'Application Form' | 'RFD + Application Form'
+  /** Live-computed credit/terms concerns for a charge sale (COD terms, over
+   * Net-N days, over credit limit) — advisory only, empty for cash sales. */
+  creditWarnings?: string[]
 }
 
 export interface ReleaseFormStatusResult {

@@ -43,7 +43,7 @@ export async function updateBranchReceiptConfig(
         errorCode: response.errorCode,
       }
     }
-    revalidatePath('/pos/receipt-branding')
+    revalidatePath('/pos/settings/receipt-branding')
     return response
   } catch {
     return { success: false, error: 'Failed to save receipt config' }
@@ -76,7 +76,7 @@ export async function uploadBranchReceiptLogo(
     }
 
     const json = await response.json()
-    revalidatePath('/pos/receipt-branding')
+    revalidatePath('/pos/settings/receipt-branding')
     return { success: true, data: json.data }
   } catch {
     return { success: false, error: 'Upload failed' }

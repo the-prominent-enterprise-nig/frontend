@@ -17,7 +17,6 @@ import {
   Activity,
   Layers,
   Truck,
-  RotateCcw,
   DollarSign,
   ShieldAlert,
   Snowflake,
@@ -31,7 +30,6 @@ import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
-import { getWriteOffs } from '@/src/app/(app)/(dashboard)/inventory/write-offs/_actions/get-write-offs'
 import { getProjection } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-projection'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
 import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/expiry/_actions/get-expiry-data'
@@ -312,8 +310,6 @@ const INIT = {
   activeBackorders: 0,
   negativeViolations: 0,
   returnsCount: 0,
-  writeOffCount: 0,
-  writeOffValue: 0,
   valuationByCategory: [] as { label: string; value: number; color: string }[],
   valuationByWarehouse: [] as { label: string; value: number; color: string; badge?: string }[],
   agingBreakdown: [] as { label: string; value: number; color: string }[],
@@ -322,7 +318,6 @@ const INIT = {
   stockoutAlertsList: [] as any[],
   expiringBatchesList: [] as any[],
   recentTransfersList: [] as any[],
-  recentWriteOffsList: [] as any[],
   negativeViolationsList: [] as any[],
   backordersList: [] as any[],
 }
@@ -343,16 +338,15 @@ export default function InventoryPage() {
       getValuationReport(), // 2
       getTurnoverReport({ periodDays: 90 }), // 3
       getTransfers({ limit: 20 }), // 4
-      getWriteOffs({ limit: 20 }), // 5
-      getProjection({ days: 30 }), // 6
-      getStockoutAlerts({ days: 30 }), // 7
-      getExpiringBatches({ days: 30, limit: 20 }), // 8
-      getStockBalances({ limit: 500 }), // 9
-      getWarehouses({ status: 'active', limit: 50 }), // 10
-      getReservations({ limit: 500 }), // 11
-      getNegativeStockViolations({ limit: 50 }), // 12
-      getBackorders({ limit: 50 }), // 13
-      getReturns({ limit: 20 }), // 14
+      getProjection({ days: 30 }), // 5
+      getStockoutAlerts({ days: 30 }), // 6
+      getExpiringBatches({ days: 30, limit: 20 }), // 7
+      getStockBalances({ limit: 500 }), // 8
+      getWarehouses({ status: 'active', limit: 50 }), // 9
+      getReservations({ limit: 500 }), // 10
+      getNegativeStockViolations({ limit: 50 }), // 11
+      getBackorders({ limit: 50 }), // 12
+      getReturns({ limit: 20 }), // 13
     ])
 
     function pick(i: number): any {
@@ -442,33 +436,25 @@ export default function InventoryPage() {
     const transferList = arr(4)
     const inTransitCount = transferList.filter((t) => t.status === 'in_transit').length
 
-    // Write-offs
-    const writeOffList = arr(5)
-    const writeOffCount = total(5)
-    const writeOffValue = writeOffList.reduce(
-      (sum, w) => sum + (w.quantity ?? 0) * (w.unitCost ?? 0),
-      0
-    )
-
     // Stockouts
-    const stockoutList = arr(7)
-    const projectedStockouts = total(7)
+    const stockoutList = arr(6)
+    const projectedStockouts = total(6)
 
     // Expiry
-    const expiryList = arr(8)
-    const expiringSoonCount = total(8)
+    const expiryList = arr(7)
+    const expiringSoonCount = total(7)
 
     // Stock balances
-    const balanceList = arr(9)
+    const balanceList = arr(8)
     const totalOnHand = balanceList.reduce((sum, b) => sum + (b.onHandQty ?? 0), 0)
     const totalAvailableQty = balanceList.reduce((sum, b) => sum + (b.availableQty ?? 0), 0)
 
     // Warehouses
-    const warehouseList = arr(10)
-    const activeWarehouses = total(10) || warehouseList.length
+    const warehouseList = arr(9)
+    const activeWarehouses = total(9) || warehouseList.length
 
     // Reservations — primary source for reserved qty (stock balance field is often unpopulated)
-    const reservationList = arr(11)
+    const reservationList = arr(10)
     const reservedFromReservations = reservationList.reduce(
       (sum, r) => sum + (Number(r.reservedQty ?? r.reserved_qty) || 0),
       0
@@ -477,18 +463,18 @@ export default function InventoryPage() {
       (sum, b) => sum + (Number(b.reservedQty ?? b.reserved_qty) || 0),
       0
     )
-    const reservedQty = reservedFromReservations || reservedFromBalances || total(11)
+    const reservedQty = reservedFromReservations || reservedFromBalances || total(10)
 
     // Negative stock
-    const negativeList = arr(12)
-    const negativeViolations = total(12)
+    const negativeList = arr(11)
+    const negativeViolations = total(11)
 
     // Backorders
-    const backorderList = arr(13)
-    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(13)
+    const backorderList = arr(12)
+    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(12)
 
     // Returns
-    const returnsCount = total(14)
+    const returnsCount = total(13)
 
     setS({
       loaded: true,
@@ -509,8 +495,6 @@ export default function InventoryPage() {
       activeBackorders,
       negativeViolations,
       returnsCount,
-      writeOffCount,
-      writeOffValue,
       valuationByCategory,
       valuationByWarehouse,
       agingBreakdown,
@@ -519,7 +503,6 @@ export default function InventoryPage() {
       stockoutAlertsList: stockoutList.slice(0, 8),
       expiringBatchesList: expiryList.slice(0, 8),
       recentTransfersList: transferList.slice(0, 8),
-      recentWriteOffsList: writeOffList.slice(0, 8),
       negativeViolationsList: negativeList.slice(0, 6),
       backordersList: backorderList.slice(0, 8),
     })
@@ -717,20 +700,6 @@ export default function InventoryPage() {
                 bg: 'bg-blue-50 border-blue-100',
               },
               {
-                label: 'Recent Write-offs',
-                val: s.writeOffCount,
-                href: '/inventory/write-offs',
-                accent: 'text-orange-700',
-                bg: 'bg-orange-50 border-orange-100',
-              },
-              {
-                label: 'Write-off Value',
-                display: fmtMoney(s.writeOffValue),
-                href: '/inventory/write-offs',
-                accent: 'text-red-700',
-                bg: 'bg-red-50 border-red-100',
-              },
-              {
                 label: 'Out of Stock',
                 val: s.outOfStockCount,
                 href: '/inventory/stock-levels',
@@ -746,7 +715,7 @@ export default function InventoryPage() {
             >
               <span className="text-xs text-gray-600 font-medium">{m.label}</span>
               <span className={`text-sm font-bold tabular-nums ${m.accent}`}>
-                {loading ? '—' : 'display' in m ? m.display : fmtNum(m.val)}
+                {loading ? '—' : fmtNum(m.val)}
               </span>
             </Link>
           ))}
@@ -1223,88 +1192,6 @@ export default function InventoryPage() {
                         }`}
                       >
                         {t.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <RotateCcw className="h-4 w-4 text-orange-500" />
-                  Write-offs &amp; Adjustments
-                </h3>
-                <Link
-                  href="/inventory/write-offs"
-                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-                >
-                  View all <ArrowUpRight className="h-3 w-3" />
-                </Link>
-              </div>
-              <div className="flex gap-1.5 mb-3 flex-wrap">
-                {(
-                  [
-                    { code: 'damaged', label: 'Damaged', cls: 'bg-red-100 text-red-700' },
-                    { code: 'expired', label: 'Expired', cls: 'bg-orange-100 text-orange-700' },
-                    { code: 'write_off', label: 'Write-off', cls: 'bg-gray-100 text-gray-700' },
-                  ] as const
-                ).map(({ code, label, cls }) => {
-                  const cnt = s.recentWriteOffsList.filter((w) => w.reasonCode === code).length
-                  return (
-                    <span
-                      key={code}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${cls}`}
-                    >
-                      {loading ? '—' : cnt} {label}
-                    </span>
-                  )
-                })}
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-11 w-full" />
-                  ))}
-                </div>
-              ) : s.recentWriteOffsList.length === 0 ? (
-                <div className="py-5 text-center text-xs text-gray-400">No recent write-offs</div>
-              ) : (
-                <div className="space-y-1">
-                  {s.recentWriteOffsList.map((w, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
-                    >
-                      <div
-                        className={`h-2 w-2 rounded-full shrink-0 ${
-                          w.reasonCode === 'damaged'
-                            ? 'bg-red-500'
-                            : w.reasonCode === 'expired'
-                              ? 'bg-orange-500'
-                              : 'bg-gray-400'
-                        }`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs text-gray-900 truncate">
-                          {w.item?.name ?? 'Unknown'}
-                        </p>
-                        <p className="text-[11px] text-gray-400">
-                          {w.warehouse?.name ?? '—'} · {w.quantity ?? 0} units ·{' '}
-                          {fmtMoney((w.quantity ?? 0) * (w.unitCost ?? 0))}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 text-[11px] font-medium capitalize rounded-full px-2 py-0.5 ${
-                          w.reasonCode === 'damaged'
-                            ? 'bg-red-50 text-red-700'
-                            : w.reasonCode === 'expired'
-                              ? 'bg-orange-50 text-orange-700'
-                              : 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {w.reasonCode.replace('_', ' ')}
                       </span>
                     </div>
                   ))}

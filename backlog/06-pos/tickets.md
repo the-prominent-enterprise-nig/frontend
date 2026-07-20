@@ -14,6 +14,7 @@ last_synced: '2026-06-10'
 | POS-56 | AA Manager, ISBAT paginate, sort, and filter the POS transactions table                                       | TO DO  | normal   |
 | POS-57 | AA Business Owner, ISBAT manage POS PIN and payment method settings from a centralized configuration page     | for QA | normal   |
 | POS-58 | AA Employee, ISBAT access profile, settings, and account actions from a single dropdown in the top navigation | for QA | low      |
+| POS-59 | AA Developer, ISBAT remove the unreachable legacy PosVoidRequest model and dead code                          | TO DO  | low      |
 
 ---
 
@@ -399,3 +400,96 @@ The system should:
 - Admin Settings section MUST only appear for users with `admin:roles:manage` and primaryRole !== 'Business Owner'
 - "My Profile" MUST NOT appear in the sidebar for any role
 - Logout MUST be reachable from the avatar dropdown
+
+---
+
+### [POS-59] — AA Developer, ISBAT remove the unreachable legacy PosVoidRequest model and dead code
+
+**Status:** TO DO
+**Priority:** low
+**ClickUp:** [pending — not yet pushed]
+
+---
+
+**Scenario:**
+The Void Requests page was migrated to read/write against the unified `ReturnRefundRequest` model (`type: 'void'`) instead of the legacy `PosVoidRequest` table, as part of the Returns & Refunds Unification effort. That migration deliberately left the old model and its now-unreachable service methods in place rather than deleting them inline, since table removal is a bigger, separate schema change. Confirmed via direct query that `PosVoidRequest` has zero rows — nothing depends on it going forward. This ticket is the follow-up cleanup: remove the dead code and drop the table cleanly.
+
+**Given:**
+
+- `TransactionsController` no longer routes any endpoint to `TransactionsService.submitVoidRequest()` / `approveVoidRequest()` / `rejectVoidRequest()` — those methods are unreachable from any HTTP route
+- The `PosVoidRequest` Prisma model currently has 0 rows in every known environment
+- No other code outside `transactions.service.ts` and its own regression test references `PosVoidRequest`
+
+**When:**
+
+- A developer picks up this cleanup ticket
+
+**Then:**
+The system should:
+
+- Have the `PosVoidRequest` model fully removed from `schema.prisma`, via a proper Prisma migration (not a manual DB edit)
+- Have `TransactionsService.submitVoidRequest()`, `approveVoidRequest()`, and `rejectVoidRequest()` deleted from `transactions.service.ts`
+- Have the corresponding regression tests removed from `transactions.service.spec.ts`
+- Have any now-unused DTOs/types tied only to the old void-request flow (e.g. `RequestVoidDto`, `ReviewVoidRequestDto`, `PosVoidRequestStatus`/`PosVoidRequestType` enums if not referenced elsewhere) cleaned up
+- Continue to pass the full test suite with no reference to `posVoidRequest` remaining anywhere in `src/`
+
+### Verification
+
+- **Row count check:** re-run a `prisma.posVoidRequest.count()` against the target environment immediately before migrating, to confirm it's still 0 and nothing was created in between
+- **Reference sweep:** `grep -rn "posVoidRequest\|PosVoidRequest" src/` should return nothing after cleanup
+
+### Buttons
+
+- N/A — backend/schema cleanup ticket, no UI surface
+
+---
+
+#### Empty States
+
+- N/A
+
+---
+
+#### Post-Action Behavior
+
+- Migration applied; `PosVoidRequest` table dropped; dead code removed; full test suite green
+
+---
+
+#### Figma Reference
+
+- N/A — no UI change
+
+---
+
+### SUBTASK (Backend) — BE-POS-59
+
+**Title:** BE: Drop `PosVoidRequest` model + remove dead void-request methods
+**Parent:** POS-59
+**Contract:** N/A — internal cleanup, no API contract change (routes were already migrated off this model)
+
+**Scope:**
+
+- [ ] Re-verify `PosVoidRequest` row count is 0 in the target environment before migrating
+- [ ] Write and apply a Prisma migration dropping the `PosVoidRequest` model/table
+- [ ] Remove `TransactionsService.submitVoidRequest()`, `approveVoidRequest()`, `rejectVoidRequest()`
+- [ ] Remove the corresponding tests in `transactions.service.spec.ts`
+- [ ] Remove now-dead DTOs/enums tied only to the old flow, if unused elsewhere
+- [ ] Full grep sweep for `posVoidRequest`/`PosVoidRequest` across `src/` returns nothing
+
+**Acceptance Criteria:**
+
+- No reference to `PosVoidRequest` remains anywhere in `src/` after cleanup
+- Migration is a proper Prisma migration file, not a manual schema edit
+- Full backend test suite passes after removal
+
+---
+
+### SUBTASK (Frontend) — FE-POS-59
+
+**Title:** FE: N/A — no frontend change
+**Parent:** POS-59
+
+**Scope:**
+
+- [ ] N/A — the frontend already reads/writes exclusively through the unified `ReturnRefundRequest` endpoints; this ticket is backend/schema-only

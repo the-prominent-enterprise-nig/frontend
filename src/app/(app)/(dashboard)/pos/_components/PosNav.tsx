@@ -9,22 +9,23 @@ import {
   ReceiptText,
   Clock,
   Wallet,
-  Monitor,
-  UtensilsCrossed,
   Tag,
   Gift,
   Star,
   GitBranch,
-  BookOpen,
-  KeyRound,
-  LayoutList,
-  Settings,
   type LucideIcon,
 } from 'lucide-react'
 
-type NavItem = { label: string; href: string; exact?: boolean; icon: LucideIcon }
+type NavItem = {
+  label: string
+  href: string
+  exact?: boolean
+  icon: LucideIcon
+  /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
+  configOnly?: boolean
+}
 
-const GROUPS = [
+const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
   {
     label: 'Operations',
     paths: ['/pos', '/pos/checkout', '/pos/parked-sales', '/pos/transactions'],
@@ -37,12 +38,10 @@ const GROUPS = [
   },
   {
     label: 'Management',
-    paths: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals', '/pos/menu-items'],
+    paths: ['/pos/sessions', '/pos/cash-drawer'],
     items: [
       { label: 'Sessions', href: '/pos/sessions', icon: Clock },
       { label: 'Cash Drawer', href: '/pos/cash-drawer', icon: Wallet },
-      { label: 'Terminals', href: '/pos/terminals', icon: Monitor },
-      { label: 'Menu Items', href: '/pos/menu-items', icon: UtensilsCrossed },
     ] satisfies NavItem[],
   },
   {
@@ -55,26 +54,40 @@ const GROUPS = [
       { label: 'Branch Pricing', href: '/pos/branch-pricing', icon: GitBranch },
     ] satisfies NavItem[],
   },
-  {
-    label: 'Configuration',
-    paths: ['/pos/gl-mapping', '/pos/pin', '/pos/settings', '/pos/config', '/pos/queue-categories'],
-    items: [
-      { label: 'GL Mapping', href: '/pos/gl-mapping', icon: BookOpen },
-      { label: 'Cashier PIN', href: '/pos/pin', icon: KeyRound },
-      { label: 'Queue Categories', href: '/pos/queue-categories', icon: LayoutList },
-      { label: 'Settings', href: '/pos/settings', icon: Settings },
-    ] satisfies NavItem[],
-  },
+  // No "Configuration" group: /pos/settings/* has its own left-rail tabs
+  // (PosSettingsTabs) and the Sidebar already highlights "Configuration" as
+  // active there — a single-item PosNav tab bar with nothing else to switch
+  // to had no navigational purpose, so these routes intentionally match no
+  // group here and PosNav renders nothing, same as /pos/pin below.
 ]
 
-export function PosNav() {
+/** Whether `pathname` belongs to one of PosNav's own tab groups — used by
+ * PosTopBar to decide whether the shared branch switcher belongs in this bar
+ * at all, since a page with no PosNav tabs usually surfaces it elsewhere
+ * (e.g. inline with its own page title) or doesn't need it. */
+export function isPosNavRoute(pathname: string): boolean {
+  return GROUPS.some((g) => g.paths.includes(pathname))
+}
+
+export function PosNav({ canConfigurePos }: { canConfigurePos: boolean }) {
   const pathname = usePathname()
 
-  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname)) ?? GROUPS[0]
+  // Standalone pages (approvals, void/refund requests, cancellation
+  // requests, payment methods, receipt branding, customer display, etc.)
+  // aren't part of any group — they used to silently fall back to the
+  // Operations tabs (Overview/Checkout/Parked Sales/Transactions), which
+  // don't apply there. Show nothing instead.
+  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname))
+  if (!activeGroup) return null
+
+  const visibleItems = activeGroup.items.filter((item) => canConfigurePos || !item.configOnly)
 
   return (
-    <nav className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {activeGroup.items.map((item) => {
+    <nav
+      aria-label="POS section tabs"
+      className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {visibleItems.map((item) => {
         const { label, href, exact } = item
         const active = exact ? pathname === href : pathname.startsWith(href)
         return (

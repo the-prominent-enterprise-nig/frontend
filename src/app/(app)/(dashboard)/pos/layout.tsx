@@ -1,26 +1,22 @@
 import ModuleGuard from '@/src/components/guards/ModuleGuard'
-import { PosNav } from './_components/PosNav'
-import { PosBranchSwitcher } from './_components/PosBranchSwitcher'
-import { PendingRfdIndicator } from './_components/PendingRfdIndicator'
-import { PendingRefundIndicator } from './_components/PendingRefundIndicator'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { canManagePosSettings } from '@/src/libs/guards/permission'
+import { PosTopBar } from './_components/PosTopBar'
 
 export const metadata = {
   title: 'Point of Sale - Prominent Enterprise',
   description: 'Point of Sale operations',
 }
 
-export default function PosLayout({ children }: { children: React.ReactNode }) {
+export default async function PosLayout({ children }: { children: React.ReactNode }) {
+  const session = await getSessionOrNull()
+  const userId = session?.id ?? null
+  const canConfigurePos = session ? canManagePosSettings(session) : false
+
   return (
     <ModuleGuard module="pos">
       <div className="flex h-full flex-col">
-        <div className="flex items-center justify-between border-b border-gray-100">
-          <PosNav />
-          <div className="flex items-center gap-2 pr-4 lg:pr-6">
-            <PendingRfdIndicator />
-            <PendingRefundIndicator />
-            <PosBranchSwitcher />
-          </div>
-        </div>
+        <PosTopBar canConfigurePos={canConfigurePos} userId={userId} />
         <div className="flex-1 overflow-auto">{children}</div>
       </div>
     </ModuleGuard>

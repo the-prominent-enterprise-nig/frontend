@@ -8,6 +8,10 @@ import { CreatePurchaseRequestModal } from './CreatePurchaseRequestModal'
 import { ApprovePrModal } from './ApprovePrModal'
 import { RejectPrModal } from './RejectPrModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
+import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import type { SessionUser } from '@/src/libs/guards/permission'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 
 const STATUS_TABS = [
@@ -47,12 +51,17 @@ function ApprovalTierBadges({ pr }: { pr: PurchaseRequestSummary }) {
           approved: 'bg-green-100 text-green-700 border border-green-200',
           rejected: 'bg-red-100 text-red-700 border border-red-200',
         }
+        const tierLabels: Record<string, string> = {
+          pending: 'Pending Approval',
+          approved: 'Approved',
+          rejected: 'Rejected',
+        }
         return (
           <span
             key={approval.id}
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${tierStyles[approval.status] ?? 'bg-zinc-100 text-zinc-600'}`}
           >
-            Tier {approval.tier}: {approval.status}
+            {tierLabels[approval.status] ?? approval.status}
           </span>
         )
       })}
@@ -60,7 +69,18 @@ function ApprovalTierBadges({ pr }: { pr: PurchaseRequestSummary }) {
   )
 }
 
-export function PurchaseRequestList() {
+export function PurchaseRequestList({ session }: { session: SessionUser }) {
+  const canCreate = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE)
+  const canEdit = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_UPDATE)
+  const canApprove = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_APPROVE)
+  const canReject = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_REJECT)
+  const canCancel = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CANCEL)
+  const canConvert = hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE)
+
+  const lockedBranch = session.branchId
+    ? { id: session.branchId, name: session.branchName ?? 'Your branch' }
+    : null
+
   const {
     items,
     pagination,
@@ -71,6 +91,8 @@ export function PurchaseRequestList() {
     setPage,
     createPR,
     isCreating,
+    updatePR,
+    isUpdating,
     submitPR,
     isSubmitting,
     approvePR,
@@ -84,9 +106,11 @@ export function PurchaseRequestList() {
   const { convertFromPr, isConverting } = usePurchaseOrders()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingPr, setEditingPr] = useState<PurchaseRequestSummary | null>(null)
   const [approvingPr, setApprovingPr] = useState<PurchaseRequestSummary | null>(null)
   const [rejectingPr, setRejectingPr] = useState<PurchaseRequestSummary | null>(null)
   const [convertingPr, setConvertingPr] = useState<PurchaseRequestSummary | null>(null)
+  const [viewingPr, setViewingPr] = useState<PurchaseRequestSummary | null>(null)
 
   return (
     <div className="p-6">
@@ -98,14 +122,16 @@ export function PurchaseRequestList() {
             Manage and track purchase requests across your organisation
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
-        >
-          <Plus className="h-4 w-4" />
-          New Purchase Request
-        </button>
+        {canCreate && (
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+          >
+            <Plus className="h-4 w-4" />
+            New Purchase Request
+          </button>
+        )}
       </div>
 
       {/* Status Filter Tabs */}
@@ -163,7 +189,11 @@ export function PurchaseRequestList() {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {items.map((pr) => (
-                  <tr key={pr.id} className="hover:bg-zinc-50/50 transition-colors">
+                  <tr
+                    key={pr.id}
+                    onClick={() => setViewingPr(pr)}
+                    className="cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                  >
                     <td className="px-4 py-3">
                       <span className="font-mono text-sm font-medium text-zinc-900">{pr.code}</span>
                       {pr.reason && (
@@ -181,57 +211,76 @@ export function PurchaseRequestList() {
                     <td className="px-4 py-3 text-zinc-500">
                       {new Date(pr.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-2">
                         {pr.status === 'draft' && (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => submitPR(pr.id)}
-                              disabled={isSubmitting}
-                              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              Submit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => cancelPR(pr.id)}
-                              disabled={isCancelling}
-                              className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingPr(pr)}
+                                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                              >
+                                Edit
+                              </button>
+                            )}
+                            {canCreate && (
+                              <button
+                                type="button"
+                                onClick={() => submitPR(pr.id)}
+                                disabled={isSubmitting}
+                                className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                Submit
+                              </button>
+                            )}
+                            {canCancel && (
+                              <button
+                                type="button"
+                                onClick={() => cancelPR(pr.id)}
+                                disabled={isCancelling}
+                                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </>
                         )}
                         {pr.status === 'submitted' && (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => setApprovingPr(pr)}
-                              disabled={isApproving}
-                              className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setRejectingPr(pr)}
-                              disabled={isRejecting}
-                              className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => cancelPR(pr.id)}
-                              disabled={isCancelling}
-                              className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
-                            >
-                              Cancel
-                            </button>
+                            {canApprove && (
+                              <button
+                                type="button"
+                                onClick={() => setApprovingPr(pr)}
+                                disabled={isApproving}
+                                className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {canReject && (
+                              <button
+                                type="button"
+                                onClick={() => setRejectingPr(pr)}
+                                disabled={isRejecting}
+                                className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            )}
+                            {canCancel && (
+                              <button
+                                type="button"
+                                onClick={() => cancelPR(pr.id)}
+                                disabled={isCancelling}
+                                className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </>
                         )}
-                        {pr.status === 'approved' && (
+                        {pr.status === 'approved' && canConvert && (
                           <button
                             type="button"
                             onClick={() => setConvertingPr(pr)}
@@ -292,6 +341,19 @@ export function PurchaseRequestList() {
           setShowCreateModal(false)
         }}
         isCreating={isCreating}
+        lockedBranch={lockedBranch}
+      />
+
+      <CreatePurchaseRequestModal
+        open={!!editingPr}
+        onClose={() => setEditingPr(null)}
+        pr={editingPr}
+        onUpdate={async (id, data) => {
+          await updatePR(id, data)
+          setEditingPr(null)
+        }}
+        isSaving={isUpdating}
+        lockedBranch={lockedBranch}
       />
 
       <ApprovePrModal
@@ -325,6 +387,12 @@ export function PurchaseRequestList() {
           setConvertingPr(null)
         }}
         isConverting={isConverting}
+      />
+
+      <ViewPurchaseRequestModal
+        open={!!viewingPr}
+        onClose={() => setViewingPr(null)}
+        pr={viewingPr}
       />
     </div>
   )

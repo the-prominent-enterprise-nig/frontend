@@ -35,6 +35,7 @@ const ReceivePoFormSchema = z.object({
   warehouseId: z.string().min(1, 'Destination warehouse is required'),
   receivedAt: z.string().optional(),
   notes: z.string().max(1000).optional(),
+  withholding: z.enum(['none', 'pct_1']).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
 
@@ -94,6 +95,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
       warehouseId: po?.warehouseId ?? '',
       receivedAt: '',
       notes: '',
+      withholding: 'none',
       lines: defaultLines(),
     },
   })
@@ -108,6 +110,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
       warehouseId: po.warehouseId ?? '',
       receivedAt: '',
       notes: '',
+      withholding: 'none',
       lines: defaultLines(),
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,12 +125,15 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
   }
 
   async function handleFormSubmit(data: ReceivePoFormValues) {
+    if (!po) return
     const result = await receiveStock({
       code: data.code || undefined,
       warehouseId: data.warehouseId,
       applicationType: 'new_stock',
       receivedAt: data.receivedAt || undefined,
       notes: data.notes || undefined,
+      supplierId: po.supplier.id,
+      withholding: data.withholding,
       lines: data.lines
         .filter((_, idx) => selectedLines[idx])
         .map((l) => ({
@@ -257,6 +263,25 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
               </div>
             </div>
 
+            {/* Withholding */}
+            <div className="sm:w-1/2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
+              <Controller
+                name="withholding"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? 'none'}
+                    className={`${fieldClass} bg-white`}
+                  >
+                    <option value="none">None</option>
+                    <option value="pct_1">1% Withholding</option>
+                  </select>
+                )}
+              />
+            </div>
+
             {/* Lines table */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -289,7 +314,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
                           Ordered
                         </th>
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                          Received
+                          Received to Date
                         </th>
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
                           Remaining

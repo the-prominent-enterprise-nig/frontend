@@ -84,8 +84,24 @@ export interface Agent {
   phone?: string | null
   email?: string | null
   status: AgentStatus
+  commissionRate?: number | null
   createdAt: string
   updatedAt: string
+}
+
+export interface AgentCommission {
+  id: string
+  agentId: string
+  posTransactionId: string
+  baseAmount: number
+  rate: number
+  commissionAmount: number
+  createdAt: string
+  posTransaction: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  }
 }
 
 export interface Interaction {
