@@ -493,6 +493,11 @@ export default function ReceiveStockModal({
                                   />
                                 )}
                               />
+                              {errors.lines?.[idx]?.unitCost && (
+                                <p className="mt-0.5 text-xs text-red-600">
+                                  {errors.lines[idx]?.unitCost?.message}
+                                </p>
+                              )}
                             </td>
                             <td className="px-3 py-2">
                               <Controller
