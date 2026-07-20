@@ -307,7 +307,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/sessions',
         icon: Monitor,
         requiredPermission: 'pos:sessions:read',
-        activeWhen: ['/pos/sessions', '/pos/cash-drawer', '/pos/terminals'],
+        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
+        // already covered by that item's own activeWhen) — Management no
+        // longer has anything to do with Terminals.
+        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
         label: 'Cancellations',
@@ -349,14 +352,25 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:branch-pricing:read',
       },
       {
-        label: 'Configuration',
-        href: '/pos/gl-mapping',
+        label: 'Settings',
+        href: '/pos/settings',
         icon: Key,
         // Business Owner / Branch Manager only — pos:transactions:read (what
         // this used before) is also held by Cashier, which let them reach
         // GL Mapping / POS Config / Queue Categories.
         requiredPermission: 'pos:config:manage',
-        activeWhen: ['/pos/gl-mapping', '/pos/settings', '/pos/config', '/pos/queue-categories'],
+        // Exact-match list, not a prefix check (see isActive below) — every
+        // /pos/settings/* sub-route needs its own explicit entry.
+        activeWhen: [
+          '/pos/settings',
+          '/pos/settings/general',
+          '/pos/settings/payment-methods',
+          '/pos/settings/terminals',
+          '/pos/settings/receipt-branding',
+          '/pos/settings/financing-terms',
+          '/pos/settings/queue-categories',
+          '/pos/settings/customer-display',
+        ],
       },
       {
         label: 'Cash-in-Transit',
@@ -366,10 +380,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
       },
       {
         // Every POS role needs their own PIN (checkout PIN entry, manager
-        // approvals) — kept separate from the Configuration item above so
-        // hiding that one from Cashier doesn't also remove their only way to
-        // reach this.
-        label: 'Cashier PIN',
+        // approvals) — kept separate from the Settings item above so hiding
+        // that one from Cashier doesn't also remove their only way to reach
+        // this.
+        label: 'POS PIN',
         href: '/pos/pin',
         icon: Key,
       },
@@ -704,37 +718,19 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requiredPermission: 'admin:audit-logs:read',
   },
-  {
-    section: 'My Workspace',
-    label: 'Configuration',
-    href: '/settings/configuration',
-    icon: Settings,
-  },
 ]
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
-  return [
-    ...(branchId
-      ? [
-          {
-            section: 'My Workspace' as const,
-            label: 'My Branch',
-            href: `/settings/branches/${branchId}`,
-            icon: Warehouse,
-          },
-        ]
-      : []),
-    // /settings/configuration's own page-level guard already allows Branch
-    // Manager (POS PIN self-service, payment methods, receipt branding) —
-    // without this the page was unreachable in practice since no nav link
-    // pointed to it for this role.
-    {
-      section: 'My Workspace' as const,
-      label: 'Configuration',
-      href: '/settings/configuration',
-      icon: Settings,
-    },
-  ]
+  return branchId
+    ? [
+        {
+          section: 'My Workspace' as const,
+          label: 'My Branch',
+          href: `/settings/branches/${branchId}`,
+          icon: Warehouse,
+        },
+      ]
+    : []
 }
 
 const MODULE_SECTION_LABELS: Record<string, string> = {

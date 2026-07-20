@@ -130,22 +130,9 @@ export type PosPaymentMethod =
   | 'bank_transfer'
   | 'custom'
 
-export interface OwnerPaymentMethod {
-  method: PosPaymentMethod
-  label: string
-  isEnabled: boolean
-}
-
-export interface OwnerPaymentMethodsResponse {
-  data: OwnerPaymentMethod[]
-}
-
-export interface BranchPaymentMethod {
-  method: PosPaymentMethod
-  label: string
-  isEnabled: boolean
+export interface BranchPaymentMethod extends PaymentMethodConfig {
   isOverridden: boolean
-  ownerDefault: boolean
+  tenantEnabled: boolean
 }
 
 export interface BranchPaymentMethodsResponse {

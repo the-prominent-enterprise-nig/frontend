@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Pencil, X, Save, RotateCcw } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
-import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
+import type { BranchPaymentMethod } from '@/src/schema/pos'
 import {
   saveBranchPaymentMethods,
   resetBranchPaymentMethods,
@@ -37,21 +37,19 @@ export function BranchPaymentMethodsSection({
     setIsEditing(false)
   }
 
-  const handleToggle = (method: PosPaymentMethod) => {
+  const handleToggle = (id: string) => {
     setEditMethods((prev) =>
-      prev.map((m) =>
-        m.method === method && m.ownerDefault ? { ...m, isEnabled: !m.isEnabled } : m
-      )
+      prev.map((m) => (m.id === id && m.tenantEnabled ? { ...m, isEnabled: !m.isEnabled } : m))
     )
   }
 
   const handleSave = () => {
     const changes = editMethods
       .filter((em) => {
-        const original = methods.find((m) => m.method === em.method)
+        const original = methods.find((m) => m.id === em.id)
         return original?.isEnabled !== em.isEnabled
       })
-      .map((m) => ({ method: m.method, isEnabled: m.isEnabled }))
+      .map((m) => ({ paymentMethodConfigId: m.id, isEnabled: m.isEnabled }))
 
     if (changes.length === 0) {
       setIsEditing(false)
@@ -76,7 +74,11 @@ export function BranchPaymentMethodsSection({
       if (!result.success) {
         showToast({ title: 'Failed to reset payment methods', status: 'error' })
       } else {
-        const reset = methods.map((m) => ({ ...m, isEnabled: m.ownerDefault, isOverridden: false }))
+        const reset = methods.map((m) => ({
+          ...m,
+          isEnabled: m.tenantEnabled,
+          isOverridden: false,
+        }))
         setMethods(reset)
         setEditMethods(reset.map((r) => ({ ...r })))
         setIsEditing(false)
@@ -144,16 +146,16 @@ export function BranchPaymentMethodsSection({
 
       <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white overflow-hidden">
         {displayed.map((m) => {
-          const disabledByOwner = !m.ownerDefault
+          const disabledByOwner = !m.tenantEnabled
           const canToggle = isEditing && !disabledByOwner && !readOnly
 
           return (
             <div
-              key={m.method}
+              key={m.id}
               className={`flex items-center justify-between px-4 py-3 ${disabledByOwner ? 'opacity-50' : ''}`}
             >
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-800">{m.label}</span>
+                <span className="text-sm font-medium text-gray-800">{m.name}</span>
                 {disabledByOwner && (
                   <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-400">
                     Disabled by Business Owner
@@ -166,7 +168,7 @@ export function BranchPaymentMethodsSection({
                 role="switch"
                 aria-checked={m.isEnabled && !disabledByOwner}
                 disabled={!canToggle || isPending}
-                onClick={() => canToggle && handleToggle(m.method)}
+                onClick={() => canToggle && handleToggle(m.id)}
                 className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:cursor-not-allowed ${
                   canToggle ? 'cursor-pointer' : 'cursor-default'
                 } ${m.isEnabled && !disabledByOwner ? 'bg-prominent-orange-500' : 'bg-gray-200'}`}
