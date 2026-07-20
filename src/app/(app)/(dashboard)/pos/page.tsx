@@ -94,7 +94,7 @@ export default function PosOverviewPage() {
     {
       label: 'Terminals',
       description: 'Configure POS terminals',
-      href: '/pos/terminals',
+      href: '/pos/settings/terminals',
       icon: ClipboardList,
       color: 'bg-orange-50 text-orange-600',
     },

@@ -9,6 +9,8 @@ type Params = {
   warehouseId?: string
   search?: string
   status?: 'healthy' | 'slow_moving' | 'dead_stock'
+  page?: number
+  limit?: number
 }
 
 export async function getTurnoverReport(params: Params = {}) {
@@ -18,6 +20,8 @@ export async function getTurnoverReport(params: Params = {}) {
     warehouseId: params.warehouseId,
     search: params.search,
     status: params.status,
+    page: params.page,
+    limit: params.limit,
   }
 
   return api.get<TurnoverReportResponse>('/inventory/reports/turnover', query, {

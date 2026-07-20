@@ -214,12 +214,29 @@ export const ItemSummarySchema = z.object({
   warrantyPeriodDays: z.coerce.number().nullable().optional(),
 })
 
-export const ItemListResponseSchema = z.object({
-  data: z.array(ItemSummarySchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level. This schema previously
+// expected total/page/limit flat, which never matched — safeParse always
+// failed and every caller silently fell back to raw, unvalidated backend
+// data (see get-items.ts), so ItemSummarySchema's z.coerce.number() fields
+// (costPrice, etc.) never actually ran and reached the client as strings.
+// Parsing the real shape and transforming it back to the flat shape keeps
+// every existing consumer of ItemListResponse unchanged.
+export const ItemListResponseSchema = z
+  .object({
+    data: z.array(ItemSummarySchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type ItemSummary = z.infer<typeof ItemSummarySchema>
 export type ItemListResponse = z.infer<typeof ItemListResponseSchema>

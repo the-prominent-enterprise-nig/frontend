@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, useFieldArray, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, AlertTriangle } from 'lucide-react'
 import type {
   CountSummary,
@@ -11,6 +12,7 @@ import type {
 import {
   ADJUSTMENT_REASON_LABELS,
   AdjustmentReasonCodeSchema,
+  CreateAdjustmentFormSchema,
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
@@ -52,6 +54,7 @@ export default function CountSessionView({
   >([])
 
   const adjustForm = useForm<CreateAdjustmentFormValues>({
+    resolver: zodResolver(CreateAdjustmentFormSchema),
     defaultValues: {
       warehouseId: count?.warehouse?.id ?? '',
       adjustmentDate: new Date().toISOString().slice(0, 10),
@@ -60,6 +63,7 @@ export default function CountSessionView({
       lines: [],
     },
   })
+  const adjustLines = useFieldArray({ control: adjustForm.control, name: 'lines' })
 
   useEffect(() => {
     if (count?.warehouse?.id) {
@@ -371,6 +375,99 @@ export default function CountSessionView({
                   )}
                 />
               </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Items <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => adjustLines.append({ itemId: '', expectedQty: 0, actualQty: 0 })}
+                    className="flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Line
+                  </button>
+                </div>
+
+                {adjustLines.fields.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-zinc-200 py-4 text-center text-sm text-zinc-400">
+                    Add at least one item to adjust.
+                  </p>
+                )}
+
+                {adjustLines.fields.map((line, i) => (
+                  <div key={line.id} className="grid grid-cols-12 items-start gap-2">
+                    <div className="col-span-5">
+                      <Controller
+                        name={`lines.${i}.itemId`}
+                        control={adjustForm.control}
+                        render={({ field }) => (
+                          <select {...field} className={`${fieldClass} bg-white`}>
+                            <option value="">Select item…</option>
+                            {items.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.sku} — {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Controller
+                        name={`lines.${i}.expectedQty`}
+                        control={adjustForm.control}
+                        render={({ field }) => (
+                          <input
+                            {...field}
+                            type="number"
+                            placeholder="Expected"
+                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            onChange={(e) =>
+                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                            }
+                          />
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Controller
+                        name={`lines.${i}.actualQty`}
+                        control={adjustForm.control}
+                        render={({ field }) => (
+                          <input
+                            {...field}
+                            type="number"
+                            min="0"
+                            placeholder="Actual"
+                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            onChange={(e) =>
+                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                            }
+                          />
+                        )}
+                      />
+                    </div>
+                    <div className="col-span-1 flex items-center justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => adjustLines.remove(i)}
+                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {typeof adjustForm.formState.errors.lines?.message === 'string' && (
+                  <p className="text-xs text-red-600">
+                    {adjustForm.formState.errors.lines.message}
+                  </p>
+                )}
+              </div>
+
               <div className="flex justify-end">
                 <button
                   type="submit"

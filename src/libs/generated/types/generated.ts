@@ -172,6 +172,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/users/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search users by name or email */
+    get: operations['UsersController_search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/users/{id}': {
     parameters: {
       query?: never
@@ -10972,6 +10989,30 @@ export interface operations {
       }
     }
   }
+  UsersController_search: {
+    parameters: {
+      query: {
+        q: string
+        search: string
+        branchId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of users matching the search query */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponseDto'][]
+        }
+      }
+    }
+  }
   UsersController_findOne: {
     parameters: {
       query?: never
@@ -12244,7 +12285,9 @@ export interface operations {
   }
   TransactionsController_getBranchVoidRequests: {
     parameters: {
-      query?: never
+      query: {
+        branchId: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -16720,8 +16763,11 @@ export interface operations {
       query?: {
         warehouseId?: string
         categoryId?: string
-        /** @description ISO date string. Note: historical point-in-time valuation requires ledger replay (not implemented); current balances are used instead. */
-        asOfDate?: string
+        search?: string
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never
@@ -16747,6 +16793,12 @@ export interface operations {
         endDate?: string
         /** @description Period length in days used to normalise turnover rate (default: 30) */
         periodDays?: number
+        search?: string
+        status?: 'healthy' | 'slow_moving' | 'dead_stock'
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never

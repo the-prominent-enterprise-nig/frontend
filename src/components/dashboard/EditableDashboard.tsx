@@ -34,6 +34,7 @@ import SalesByBranchWidget from './widgets/SalesByBranchWidget'
 import EnterpriseSummaryWidget from './widgets/EnterpriseSummaryWidget'
 import ModuleStatsWidget from './widgets/ModuleStatsWidget'
 import PendingApprovalsWidget from './widgets/PendingApprovalsWidget'
+import CogsGapsWidget from './widgets/CogsGapsWidget'
 
 // ── Widget component registry ─────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   'enterprise-summary': EnterpriseSummaryWidget,
   'module-stats': ModuleStatsWidget,
   'pending-approvals': PendingApprovalsWidget,
+  'cogs-gaps': CogsGapsWidget,
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
