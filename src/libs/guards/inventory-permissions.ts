@@ -26,6 +26,7 @@ export const INVENTORY_PERMISSIONS = {
   // ── Stock ──────────────────────────────────────────────────────────────────
   STOCKS_READ: 'inventory:stock:read',
   STOCKS_CREATE: 'inventory:stock:create',
+  STOCK_ADJUST: 'inventory:stock:adjust',
 
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
@@ -173,6 +174,7 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:uom:update': 'Edit units of measure and conversion rates',
   'inventory:stock:read': 'View real-time stock balances',
   'inventory:stock:create': 'Post stock entries',
+  'inventory:stock:adjust': 'Create stock adjustments with reason codes',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
