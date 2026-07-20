@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, selectStable } from './utils'
 
 // Scenario 06 — Stock Request & Inter-branch Transfer. Covers the closing
 // gaps as they land, one part per test. Currently covers Part 1: serial-level
@@ -38,11 +38,25 @@ async function confirmCancel(page: Page): Promise<void> {
  */
 async function resetToCleanSlate(page: Page): Promise<void> {
   const filters = page.locator('select')
-  await filters.nth(0).selectOption({ label: 'Draft' })
-  await filters.nth(1).selectOption({ label: 'WH-01 — Manila HQ Warehouse' })
-  await filters.nth(2).selectOption({ label: 'WH-02 — Cebu Office Warehouse' })
+  // Verifying the <select>'s own checked option isn't enough proof for a
+  // CONTROLLED select — the DOM can show the right option selected even when
+  // React's onChange handler missed the hydration window and the underlying
+  // filter state never actually changed. Retry until the visible rows
+  // themselves prove the draft filter took effect (no Cancelled/Received
+  // rows leaking through).
+  await expect(async () => {
+    await selectStable(filters.nth(0), 'Draft')
+    await selectStable(filters.nth(1), 'WH-01 — Manila HQ Warehouse')
+    await selectStable(filters.nth(2), 'WH-02 — Cebu Office Warehouse')
+    await expect(page.locator('tbody tr', { hasText: 'Cancelled' })).toHaveCount(0, {
+      timeout: 1_000,
+    })
+    await expect(page.locator('tbody tr', { hasText: 'Received' })).toHaveCount(0, {
+      timeout: 1_000,
+    })
+  }).toPass({ timeout: 20_000 })
 
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     const row = page.locator('tbody tr').first()
     if (!(await row.isVisible())) break
     await clickStable(
@@ -69,9 +83,9 @@ test.describe('Stock Request & Inter-branch Transfer', () => {
     const form = page.locator('form')
     const selects = form.locator('select')
 
-    await selects.nth(0).selectOption({ label: 'WH-01 — Manila HQ Warehouse' })
-    await selects.nth(1).selectOption({ label: 'WH-02 — Cebu Office Warehouse' })
-    await selects.nth(2).selectOption({ label: 'TN-FURN-SET-001 — TV Console Furniture Set' })
+    await selectStable(selects.nth(0), 'WH-01 — Manila HQ Warehouse')
+    await selectStable(selects.nth(1), 'WH-02 — Cebu Office Warehouse')
+    await selectStable(selects.nth(2), 'TN-FURN-SET-001 — TV Console Furniture Set')
 
     // Serial-tracked item: quantity is locked to 1 and a serial picker appears.
     await expect(form.getByText('Qty: 1')).toBeVisible()
@@ -83,7 +97,7 @@ test.describe('Stock Request & Inter-branch Transfer', () => {
       form.getByText('Select a serial number for this serial-tracked item')
     ).toBeVisible()
 
-    await selects.nth(3).selectOption({ label: 'FURNSET-WH-01-BULK-001' })
+    await selectStable(selects.nth(3), 'FURNSET-WH-01-BULK-001')
     await page.getByRole('button', { name: 'Save as Draft' }).click()
     await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toBeHidden({
       timeout: 15_000,
@@ -127,9 +141,9 @@ test.describe('Stock Request & Inter-branch Transfer', () => {
     const form = page.locator('form')
     const selects = form.locator('select')
 
-    await selects.nth(0).selectOption({ label: 'WH-01 — Manila HQ Warehouse' })
-    await selects.nth(1).selectOption({ label: 'WH-02 — Cebu Office Warehouse' })
-    await selects.nth(2).selectOption({ label: 'TN-FURN-TVSTAND-001 — TV Stand' })
+    await selectStable(selects.nth(0), 'WH-01 — Manila HQ Warehouse')
+    await selectStable(selects.nth(1), 'WH-02 — Cebu Office Warehouse')
+    await selectStable(selects.nth(2), 'TN-FURN-TVSTAND-001 — TV Stand')
 
     // Non-serial-tracked item: plain quantity input, no serial picker.
     await expect(form.getByText('Serial Number')).toBeHidden()

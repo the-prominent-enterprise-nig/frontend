@@ -47,6 +47,20 @@ export async function fillAllStable(fields: { locator: Locator; value: string }[
 }
 
 /**
+ * Same hydration race as fillStable, but for <select> elements: selectOption
+ * dispatches a native 'change' event that a not-yet-hydrated onChange handler
+ * silently misses, leaving React state at its default (e.g. an "All" filter
+ * never actually narrows). Retries until the selected option's visible text
+ * matches, rather than trusting the DOM value alone.
+ */
+export async function selectStable(select: Locator, label: string): Promise<void> {
+  await expect(async () => {
+    await select.selectOption({ label })
+    await expect(select.locator('option:checked')).toHaveText(label)
+  }).toPass({ timeout: 10_000 })
+}
+
+/**
  * Same hydration race as fillStable, but for buttons whose onClick opens
  * something (a modal, a navigation) rather than setting a form value: the DOM
  * node is clickable before React has attached its handler, so an early click
