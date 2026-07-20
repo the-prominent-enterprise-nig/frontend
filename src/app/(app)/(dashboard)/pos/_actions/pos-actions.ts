@@ -2443,3 +2443,29 @@ export async function clearCashInTransit(
     return { success: false, error: 'Failed to clear Cash-in-Transit' }
   }
 }
+
+export interface MissingCogsSale {
+  transactionId: string
+  transactionNumber: string
+  occurredAt: string
+}
+
+export interface MissingCogsReport {
+  count: number
+  sample: MissingCogsSale[]
+}
+
+// Scenario-01 COGS-visibility gap closure (Part 2): surfaces completed
+// sales whose lines never got a COGS/Inventory posting (computeCogs()
+// failed at sale time) instead of that failure staying silent.
+export async function getMissingCogsReport(): Promise<ApiResponse<MissingCogsReport>> {
+  try {
+    const result = await api.get<MissingCogsReport>('/pos/transactions/reports/missing-cogs')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch missing-COGS report' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch missing-COGS report' }
+  }
+}

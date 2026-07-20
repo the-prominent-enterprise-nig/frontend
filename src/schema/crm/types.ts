@@ -89,6 +89,21 @@ export interface Agent {
   updatedAt: string
 }
 
+export interface AgentCommission {
+  id: string
+  agentId: string
+  posTransactionId: string
+  baseAmount: number
+  rate: number
+  commissionAmount: number
+  createdAt: string
+  posTransaction: {
+    transactionNumber: string
+    totalAmount: number
+    occurredAt: string
+  }
+}
+
 export interface Interaction {
   id: string
   tenantId: string

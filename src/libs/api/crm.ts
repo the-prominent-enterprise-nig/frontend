@@ -9,6 +9,7 @@ import type {
   PipelineColumn,
   PaginatedResponse,
   Agent,
+  AgentCommission,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -175,4 +176,5 @@ export const agentsApi = {
   create: (body: CreateAgentInput) => api.post<Agent>('/crm/agents', body),
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
+  commissions: (id: string) => api.get<AgentCommission[]>(`/crm/agents/${id}/commissions`),
 }
