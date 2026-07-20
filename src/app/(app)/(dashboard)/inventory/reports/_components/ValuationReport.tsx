@@ -7,6 +7,8 @@ interface Props {
   data: ValuationReportResponse | null | undefined
   isLoading: boolean
   isFetching: boolean
+  page: number
+  setPage: (page: number) => void
 }
 
 function formatCurrency(value: number) {
@@ -44,8 +46,12 @@ function exportToCsv(data: ValuationReportResponse) {
   URL.revokeObjectURL(url)
 }
 
-export default function ValuationReport({ data, isLoading, isFetching }: Props) {
+export default function ValuationReport({ data, isLoading, isFetching, page, setPage }: Props) {
   const summary = data?.summary
+  const meta = data?.meta
+  const totalPages = meta?.lastPage ?? 1
+  const totalRows = meta?.total ?? 0
+  const pageSize = meta?.limit ?? 20
 
   return (
     <div className="space-y-6">
@@ -211,6 +217,36 @@ export default function ValuationReport({ data, isLoading, isFetching }: Props) 
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span>
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalRows)} of {totalRows}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page <= 1}
+              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-2 font-medium text-zinc-700">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages}
+              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

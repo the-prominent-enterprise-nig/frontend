@@ -62,3 +62,28 @@ export async function clickStable(
     await expect(expected).toBeVisible({ timeout: 1_000 })
   }).toPass({ timeout: opts.timeout ?? 10_000 })
 }
+
+/**
+ * Logs in as an arbitrary seeded user (prisma/seed.ts) rather than the shared
+ * Business Owner session every other spec inherits from playwright.config.ts's
+ * storageState — use this for specs that need to exercise a specific role's
+ * permissions. Callers must opt out of the default storageState first via
+ * `test.use({ storageState: { cookies: [], origins: [] } })`, otherwise the
+ * page is already authenticated as Business Owner before this ever runs.
+ * Same dev-only DEV_API_KEY bypass documented in auth.setup.ts.
+ */
+export async function loginAs(page: Page, email: string, password: string): Promise<void> {
+  await gotoReady(page, '/login')
+  // Re-fills on every retry, not just once up front: a hydration reconciliation
+  // can silently wipe fields *after* fillAllStable's own verification passes
+  // but *before* the click lands (same race fillAllStable's own docstring
+  // describes) — retrying fill+click together is the only way to close it.
+  await expect(async () => {
+    await fillAllStable([
+      { locator: page.locator('#email'), value: email },
+      { locator: page.locator('#password'), value: password },
+    ])
+    await page.click('button[type="submit"]')
+    await expect(page).not.toHaveURL('/login', { timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+}

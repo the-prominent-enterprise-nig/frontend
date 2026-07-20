@@ -25,7 +25,7 @@ const STATUS_COLORS: Record<CountStatus, string> = {
 
 export default function StockCountList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_COUNT_CREATE)
-  const canAdjust = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_COUNT_ADJUST)
+  const canAdjust = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const {

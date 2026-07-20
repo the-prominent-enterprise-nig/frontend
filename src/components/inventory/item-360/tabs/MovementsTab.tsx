@@ -52,11 +52,15 @@ export default function MovementsTab({ itemId }: Props) {
     setWarehouseId,
     transactionType,
     setTransactionType,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
     warehouseOptions,
     resetFilters,
   } = useItemLedger(itemId)
 
-  const hasFilters = !!warehouseId || !!transactionType
+  const hasFilters = !!warehouseId || !!transactionType || !!startDate || !!endDate
   const totalPages = meta?.lastPage ?? 1
   const total = meta?.total ?? 0
 
@@ -115,6 +119,28 @@ export default function MovementsTab({ itemId }: Props) {
             </option>
           ))}
         </select>
+
+        <label htmlFor="movements-start-date" className="sr-only">
+          From date
+        </label>
+        <input
+          id="movements-start-date"
+          type="date"
+          value={startDate ?? ''}
+          onChange={(e) => setStartDate(e.target.value || undefined)}
+          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
+        />
+        <span className="text-xs text-zinc-400">to</span>
+        <label htmlFor="movements-end-date" className="sr-only">
+          To date
+        </label>
+        <input
+          id="movements-end-date"
+          type="date"
+          value={endDate ?? ''}
+          onChange={(e) => setEndDate(e.target.value || undefined)}
+          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
+        />
 
         {hasFilters && (
           <button
