@@ -1450,13 +1450,15 @@ export async function getUsers(filters?: {
 
 export async function searchUsers(
   q: string,
-  branchId?: string
+  branchId?: string,
+  role?: string
 ): Promise<ApiResponse<{ id: string; name: string; email: string }[]>> {
   try {
     type UserRow = { id: string; name: string; email: string }
     const result = await api.get<UserRow[] | { data: UserRow[] }>('/users/search', {
       q,
       ...(branchId ? { branchId } : {}),
+      ...(role ? { role } : {}),
     })
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to search users' }
@@ -1485,6 +1487,28 @@ export async function getSellingAgents(): Promise<
     return { success: true, data: result.data.data ?? [] }
   } catch {
     return { success: false, error: 'Failed to fetch sales agents' }
+  }
+}
+
+export async function getCurrentSessionUser(): Promise<
+  ApiResponse<{ id: string; name: string; email: string }>
+> {
+  try {
+    const session = await getSessionOrNull()
+    if (!session) {
+      return { success: false, error: 'Not authenticated' }
+    }
+    // toSessionUser() never populates `name` for DB-backed accounts — only
+    // fullName/firstName/lastName. Mirror the fallback chain used elsewhere
+    // (e.g. EmployeeProfileView) instead of trusting `name` alone.
+    const name =
+      session.fullName ||
+      [session.firstName, session.lastName].filter(Boolean).join(' ') ||
+      session.name ||
+      session.email
+    return { success: true, data: { id: session.id, name, email: session.email } }
+  } catch {
+    return { success: false, error: 'Failed to load current user' }
   }
 }
 
