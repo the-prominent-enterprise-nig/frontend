@@ -1,15 +1,13 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoReady, fillAllStable, clickStable } from './utils'
 
-// Part 5 of docs/pos-configuration-consolidation-plan.md (Step 7): /pos/pin
-// and My Workspace > Configuration > POS PIN now both render the same shared
-// CashierPinManager component (4 modes: set/view/change/reset), instead of
-// two separately-maintained implementations — and both reflect the same
-// underlying PIN state since they read from the same backend endpoint.
+// Part 5 of docs/pos-configuration-consolidation-plan.md (Step 7) originally
+// unified /pos/pin and My Workspace > Configuration > POS PIN behind one
+// shared CashierPinManager component. Configuration was later removed
+// entirely (its Payment Methods/Receipt Branding tabs migrated into POS
+// Settings — see pos-config-migration.spec.ts), so /pos/pin is now the only
+// entry point. This still verifies its full set/view/change flow.
 
-// ViewPinCard vs SetPinCard have unique subtitle text — safer to match on
-// than "POS PIN", which also appears as the Configuration page's own tab
-// button label.
 const VIEW_MARKER = 'Your PIN is active and ready for POS approvals.'
 const SET_MARKER = "You don't have a PIN yet. Create one to enable POS approvals."
 
@@ -22,8 +20,8 @@ function pinInput(page: Page, label: string) {
   )
 }
 
-test.describe('POS PIN — shared component, both entry points (Part 5)', () => {
-  test('Business Owner: /pos/pin and Configuration POS PIN tab show the same 4-mode UI and the same underlying state', async ({
+test.describe('POS PIN — full set/view/change flow (Part 5)', () => {
+  test('Business Owner: /pos/pin resolves to the right mode and exposes the change flow', async ({
     page,
   }) => {
     await gotoReady(page, '/pos/pin')
@@ -44,14 +42,8 @@ test.describe('POS PIN — shared component, both entry points (Part 5)', () => 
       await clickStable(setButton, page.getByText(VIEW_MARKER))
     }
 
-    // Now /pos/pin is in "view" mode. Visit the other entry point and
-    // confirm it independently resolves to the same state — proving both
-    // read from the same getCashierPinStatus() call, not separate state.
-    await gotoReady(page, '/settings/configuration')
-    await page.getByRole('button', { name: 'POS PIN' }).click()
     await expect(page.getByText(VIEW_MARKER)).toBeVisible()
 
-    // Both entry points expose the same change/reset flow from here.
     await page.getByRole('button', { name: 'Change', exact: true }).click()
     await expect(pinInput(page, 'Current PIN')).toBeVisible()
     await expect(pinInput(page, 'New PIN')).toBeVisible()

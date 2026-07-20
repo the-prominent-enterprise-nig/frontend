@@ -1732,13 +1732,20 @@ export async function getEnabledBranchPaymentMethods(
 ): Promise<ApiResponse<PosPaymentMethod[]>> {
   try {
     const result = await api.get<{ data: BranchPaymentMethod[] }>(
-      `/pos/branches/${branchId}/payment-methods`
+      `/pos/branches/${branchId}/payment-method-configs`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch payment methods' }
     }
-    const enabled = result.data.data.filter((m) => m.isEnabled).map((m) => m.method)
-    return { success: true, data: enabled }
+    // Standard configs map to their own enum key; any enabled custom config
+    // maps to the single 'custom' key (individual custom methods are then
+    // distinguished by configId, not by this enum list).
+    const enabled = new Set(
+      result.data.data
+        .filter((m) => m.isEnabled)
+        .map((m) => (m.key ?? 'custom') as PosPaymentMethod)
+    )
+    return { success: true, data: [...enabled] }
   } catch {
     return { success: false, error: 'Failed to fetch payment methods' }
   }

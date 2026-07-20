@@ -105,7 +105,7 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
     // Open the edit panel for the first payment method row and confirm the
     // fallback note + link Part 2 added is actually there, not just present
     // in source.
-    await page.getByRole('button', { name: 'Edit' }).first().click()
+    await page.getByRole('table').getByRole('button', { name: 'Edit' }).first().click()
     await expect(page.getByRole('heading', { name: 'Edit Payment Method' })).toBeVisible()
     const fallbackLink = page.getByRole('link', { name: 'Accounting → Account Mapping' })
     await expect(fallbackLink).toBeVisible()

@@ -380,9 +380,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
       },
       {
         // Every POS role needs their own PIN (checkout PIN entry, manager
-        // approvals) — kept separate from the Configuration item above so
-        // hiding that one from Cashier doesn't also remove their only way to
-        // reach this.
+        // approvals) — kept separate from the Settings item above so hiding
+        // that one from Cashier doesn't also remove their only way to reach
+        // this.
         label: 'POS PIN',
         href: '/pos/pin',
         icon: Key,
@@ -700,37 +700,19 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requiredPermission: 'admin:audit-logs:read',
   },
-  {
-    section: 'My Workspace',
-    label: 'Configuration',
-    href: '/settings/configuration',
-    icon: Settings,
-  },
 ]
 
 function branchManagerWorkspaceItems(branchId?: string | null): NavItem[] {
-  return [
-    ...(branchId
-      ? [
-          {
-            section: 'My Workspace' as const,
-            label: 'My Branch',
-            href: `/settings/branches/${branchId}`,
-            icon: Warehouse,
-          },
-        ]
-      : []),
-    // /settings/configuration's own page-level guard already allows Branch
-    // Manager (POS PIN self-service, payment methods, receipt branding) —
-    // without this the page was unreachable in practice since no nav link
-    // pointed to it for this role.
-    {
-      section: 'My Workspace' as const,
-      label: 'Configuration',
-      href: '/settings/configuration',
-      icon: Settings,
-    },
-  ]
+  return branchId
+    ? [
+        {
+          section: 'My Workspace' as const,
+          label: 'My Branch',
+          href: `/settings/branches/${branchId}`,
+          icon: Warehouse,
+        },
+      ]
+    : []
 }
 
 const MODULE_SECTION_LABELS: Record<string, string> = {

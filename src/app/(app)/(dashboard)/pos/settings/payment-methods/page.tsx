@@ -7,7 +7,6 @@ import {
   useUpdatePaymentMethod,
   useCreateCustomPaymentMethod,
   useDeletePaymentMethod,
-  useReorderPaymentMethods,
 } from '../../_hooks/usePos'
 import { getGLAccounts, type GLAccount } from '../../_actions/pos-actions'
 import {
@@ -16,9 +15,7 @@ import {
   Pencil,
   Trash2,
   X,
-  Save,
   ChevronDown,
-  ChevronUp,
   AlertTriangle,
   CheckCircle2,
   CreditCard,
@@ -62,21 +59,11 @@ export default function PaymentMethodsPage() {
   const { data, isLoading, isFetching, refetch } = usePaymentMethods()
   const updateMutation = useUpdatePaymentMethod()
   const deleteMutation = useDeletePaymentMethod()
-  const reorderMutation = useReorderPaymentMethods()
 
-  const serverMethods: PaymentMethodConfig[] = useMemo(
+  const displayMethods: PaymentMethodConfig[] = useMemo(
     () => [...(data?.data?.data ?? [])].sort((a, b) => a.displayOrder - b.displayOrder),
     [data]
   )
-
-  // Local ordered copy for reorder dirty-tracking
-  const [orderedIds, setOrderedIds] = useState<string[] | null>(null)
-  const displayMethods =
-    orderedIds != null
-      ? orderedIds.map((id) => serverMethods.find((m) => m.id === id)!).filter(Boolean)
-      : serverMethods
-
-  const isOrderDirty = orderedIds != null
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
@@ -103,28 +90,6 @@ export default function PaymentMethodsPage() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<PaymentMethodConfig | null>(null)
-
-  // ─── Reorder helpers ──────────────────────────────────────────────────────
-
-  function move(id: string, dir: -1 | 1) {
-    const ids = (orderedIds ?? serverMethods.map((m) => m.id)).slice()
-    const idx = ids.indexOf(id)
-    const next = idx + dir
-    if (next < 0 || next >= ids.length) return
-    ;[ids[idx], ids[next]] = [ids[next], ids[idx]]
-    setOrderedIds(ids)
-  }
-
-  async function handleSaveOrder() {
-    if (!orderedIds) return
-    const res = await reorderMutation.mutateAsync(orderedIds)
-    if (!res.success) {
-      showToast(res.error ?? 'Failed to save order', false)
-      return
-    }
-    setOrderedIds(null)
-    showToast('Display order saved')
-  }
 
   // ─── Toggle ───────────────────────────────────────────────────────────────
 
@@ -157,21 +122,11 @@ export default function PaymentMethodsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Payment Methods</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Configure which payment methods cashiers can use, their display order, and GL account
-              mapping.
+              Toggle &ldquo;Visible at Checkout&rdquo; to enable or disable a method business-wide,
+              and configure each one&apos;s GL account mapping below.
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {isOrderDirty && (
-              <button
-                onClick={handleSaveOrder}
-                disabled={reorderMutation.isPending}
-                className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
-              >
-                <Save size={14} />
-                {reorderMutation.isPending ? 'Saving…' : 'Save Order'}
-              </button>
-            )}
             <button
               onClick={() => refetch()}
               disabled={isFetching}
@@ -229,9 +184,6 @@ export default function PaymentMethodsPage() {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
-                  <th className="w-16 px-4 py-3 text-center text-xs font-semibold uppercase text-gray-400">
-                    Order
-                  </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Name
                   </th>
@@ -242,34 +194,14 @@ export default function PaymentMethodsPage() {
                     GL Account
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Status
+                    Visible at Checkout
                   </th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {displayMethods.map((m, idx) => (
+                {displayMethods.map((m) => (
                   <tr key={m.id} className="hover:bg-gray-50">
-                    {/* Order controls */}
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <button
-                          onClick={() => move(m.id, -1)}
-                          disabled={idx === 0}
-                          className="rounded p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20"
-                        >
-                          <ChevronUp size={13} />
-                        </button>
-                        <button
-                          onClick={() => move(m.id, 1)}
-                          disabled={idx === displayMethods.length - 1}
-                          className="rounded p-0.5 text-gray-300 hover:text-gray-600 disabled:opacity-20"
-                        >
-                          <ChevronDown size={13} />
-                        </button>
-                      </div>
-                    </td>
-
                     {/* Name */}
                     <td className="px-5 py-3">
                       <div>
@@ -341,12 +273,6 @@ export default function PaymentMethodsPage() {
             </table>
           )}
         </div>
-
-        {isOrderDirty && (
-          <p className="text-xs text-amber-600 font-medium">
-            Order changed — click &ldquo;Save Order&rdquo; to persist.
-          </p>
-        )}
       </div>
 
       {/* Edit Panel */}
