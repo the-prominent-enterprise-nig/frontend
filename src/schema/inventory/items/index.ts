@@ -93,6 +93,7 @@ export const CreateItemFormSchema = z.object({
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   hasVariants: z.boolean(),
+  isService: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
   inventoryAccountId: z.string().optional(),
@@ -128,6 +129,7 @@ export const UpdateItemFormSchema = z.object({
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   hasVariants: z.boolean(),
+  isService: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
   inventoryAccountId: z.string().optional(),
@@ -196,6 +198,11 @@ export const ItemSummarySchema = z.object({
     return undefined
   }, z.boolean().optional()),
   hasVariants: z.preprocess((v) => {
+    if (v === true || v === 'true' || v === 1) return true
+    if (v === false || v === 'false' || v === 0) return false
+    return undefined
+  }, z.boolean().optional()),
+  isService: z.preprocess((v) => {
     if (v === true || v === 'true' || v === 1) return true
     if (v === false || v === 'false' || v === 0) return false
     return undefined

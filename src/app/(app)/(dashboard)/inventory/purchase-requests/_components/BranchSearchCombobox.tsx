@@ -7,17 +7,19 @@ type Props = {
   value: string
   onChange: (id: string) => void
   error?: string
+  initialLabel?: string
 }
 
 // Branches are a small, tenant-scoped list (physical locations, not paginated
 // server-side), so this searches client-side over the full fetched list
 // rather than hitting the API per keystroke.
-export function BranchSearchCombobox({ value, onChange, error }: Props) {
+export function BranchSearchCombobox({ value, onChange, error, initialLabel }: Props) {
   return (
     <SearchCombobox
       value={value}
       onChange={onChange}
       error={error}
+      initialLabel={initialLabel}
       queryKey="branches-search"
       placeholder="Search branch by name…"
       typeToSearchMessage="No specific branch (tenant-wide) — type to search…"
