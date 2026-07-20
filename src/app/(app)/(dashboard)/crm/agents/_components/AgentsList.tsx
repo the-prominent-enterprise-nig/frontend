@@ -1,10 +1,10 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Search, RefreshCw, Pencil, Trash2, X, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
-import type { Agent } from '@/src/schema/crm/types'
+import type { Agent, AgentCommission } from '@/src/schema/crm/types'
 import type { CreateAgentInput } from '@/src/schema/crm/agent'
 
 const FIELD_LIMITS = { name: 255, phone: 50, email: 255 } as const
@@ -21,6 +21,7 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
+  const [commissionsTarget, setCommissionsTarget] = useState<Agent | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -160,6 +161,13 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setCommissionsTarget(a)}
+                            className="p-1.5 text-zinc-500 hover:bg-zinc-100 rounded"
+                            title="View commissions"
+                          >
+                            <Wallet className="w-4 h-4" />
+                          </button>
                           {canUpdate && (
                             <button
                               onClick={() => {
@@ -200,6 +208,13 @@ export default function AgentsList({ canCreate, canUpdate, canDelete }: Props) {
             setEditing(null)
           }}
           onSave={handleSave}
+        />
+      )}
+
+      {commissionsTarget && (
+        <AgentCommissionsDialog
+          agent={commissionsTarget}
+          onClose={() => setCommissionsTarget(null)}
         />
       )}
     </div>
@@ -304,6 +319,123 @@ function AgentFormDialog({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function fmtMoney(n: number): string {
+  return `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Scenario-01 gap closure (Part 3): read-only commission ledger — the
+// backend has fired and recorded these correctly on every completed sale
+// all along (AgentCommission, one row per sale), but had no frontend
+// consumer at all beyond a raw JSON endpoint.
+function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  const [commissions, setCommissions] = useState<AgentCommission[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const res = await agentsApi.commissions(agent.id)
+      if (cancelled) return
+      if (res.success && res.data) {
+        setCommissions(res.data)
+      } else {
+        toast.error(res.message || res.error || 'Could not load commissions')
+        setCommissions([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [agent.id])
+
+  const total = (commissions ?? []).reduce((sum, c) => sum + c.commissionAmount, 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Commissions — {agent.name}</h3>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {agent.commissionRate != null
+                ? `${(agent.commissionRate * 100).toFixed(2)}% rate`
+                : 'No commission rate configured'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-800">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {commissions === null ? (
+            <div className="p-8 text-center text-sm text-zinc-400">Loading...</div>
+          ) : commissions.length === 0 ? (
+            <div className="p-8 text-center text-sm text-zinc-400">
+              No commissions recorded yet.
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead className="bg-zinc-50 border-b border-zinc-200 sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Date
+                  </th>
+                  <th className="text-left px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Sale
+                  </th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Sale Amount
+                  </th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Rate
+                  </th>
+                  <th className="text-right px-4 py-2 text-xs font-semibold text-zinc-600 uppercase">
+                    Commission
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {commissions.map((c) => (
+                  <tr key={c.id}>
+                    <td className="px-4 py-2 text-xs text-zinc-500">
+                      {new Date(c.posTransaction.occurredAt).toLocaleDateString('en-PH', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </td>
+                    <td className="px-4 py-2 text-sm font-medium text-zinc-800">
+                      {c.posTransaction.transactionNumber}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-right text-zinc-700">
+                      {fmtMoney(c.posTransaction.totalAmount)}
+                    </td>
+                    <td className="px-4 py-2 text-sm text-right text-zinc-500">
+                      {(c.rate * 100).toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-2 text-sm text-right font-semibold text-emerald-700">
+                      {fmtMoney(c.commissionAmount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {commissions !== null && commissions.length > 0 && (
+          <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200 bg-zinc-50">
+            <span className="text-sm font-medium text-zinc-600">
+              {commissions.length} sale{commissions.length === 1 ? '' : 's'}
+            </span>
+            <span className="text-sm font-bold text-zinc-900">Total: {fmtMoney(total)}</span>
+          </div>
+        )}
       </div>
     </div>
   )
