@@ -5,6 +5,7 @@ export const TransferStatusSchema = z.enum(['draft', 'in_transit', 'received', '
 export const CreateTransferLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
+  serialNumberId: z.string().optional(),
 })
 
 export const CreateTransferFormSchema = z
@@ -52,6 +53,7 @@ const TransferLineSchema = z.object({
   id: z.string().optional(),
   itemId: z.string().optional(),
   item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
+  serialNumber: z.object({ id: z.string(), serialNumber: z.string() }).nullable().optional(),
   quantity: z.number(),
 })
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2 } from 'lucide-react'
@@ -10,7 +10,9 @@ import {
 } from '@/src/schema/inventory/transfers'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { ItemSummary } from '@/src/schema/inventory/items'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 
 type Props = {
   isOpen: boolean
@@ -36,6 +38,9 @@ export default function CreateTransferModal({
     handleSubmit,
     reset,
     watch,
+    setValue,
+    getValues,
+    setError,
     formState: { errors },
   } = useForm<CreateTransferFormValues>({
     resolver: zodResolver(CreateTransferFormSchema),
@@ -48,15 +53,72 @@ export default function CreateTransferModal({
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const fromId = watch('fromWarehouseId')
 
+  const [serialOptions, setSerialOptions] = useState<Record<string, SerialNumberSummary[]>>({})
+  const [serialLoading, setSerialLoading] = useState<Record<string, boolean>>({})
+
+  function isSerialTracked(itemId: string): boolean {
+    return !!items.find((item) => item.id === itemId)?.isSerialTracked
+  }
+
+  const loadSerials = useCallback(async (fieldId: string, itemId: string, warehouseId: string) => {
+    if (!itemId || !warehouseId) {
+      setSerialOptions((prev) => ({ ...prev, [fieldId]: [] }))
+      return
+    }
+    setSerialLoading((prev) => ({ ...prev, [fieldId]: true }))
+    const result = await getSerialNumbers({ itemId, warehouseId, status: 'in_stock', limit: 100 })
+    setSerialOptions((prev) => ({
+      ...prev,
+      [fieldId]: result.success ? (result.data?.data ?? []) : [],
+    }))
+    setSerialLoading((prev) => ({ ...prev, [fieldId]: false }))
+  }, [])
+
   useEffect(() => {
-    if (!isOpen) reset({ transferDate: today, lines: [{ itemId: '', quantity: 1 }] })
+    if (!isOpen) {
+      reset({ transferDate: today, lines: [{ itemId: '', quantity: 1 }] })
+      setSerialOptions({})
+      setSerialLoading({})
+    }
   }, [isOpen, reset, today])
+
+  useEffect(() => {
+    fields.forEach((field, index) => {
+      const itemId = getValues(`lines.${index}.itemId`)
+      if (itemId && isSerialTracked(itemId)) {
+        setValue(`lines.${index}.serialNumberId`, '')
+        loadSerials(field.id, itemId, fromId)
+      }
+    })
+    // Re-check available serials whenever the source warehouse changes — a serial
+    // valid at the previous source is not necessarily valid at the new one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromId])
 
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateTransferFormValues) {
+    const missingSerialIndex = data.lines.findIndex(
+      (line) => isSerialTracked(line.itemId) && !line.serialNumberId
+    )
+    if (missingSerialIndex !== -1) {
+      setError(`lines.${missingSerialIndex}.serialNumberId`, {
+        message: 'Select a serial number for this serial-tracked item',
+      })
+      return
+    }
     const result = await onSubmit(data)
     if (result.success) onClose()
+  }
+
+  function handleItemChange(index: number, fieldId: string, itemId: string): void {
+    setValue(`lines.${index}.serialNumberId`, '')
+    if (isSerialTracked(itemId)) {
+      setValue(`lines.${index}.quantity`, 1)
+      loadSerials(fieldId, itemId, fromId)
+    } else {
+      setSerialOptions((prev) => ({ ...prev, [fieldId]: [] }))
+    }
   }
 
   const fieldClass =
@@ -203,65 +265,128 @@ export default function CreateTransferModal({
               )}
 
               <div className="space-y-2">
-                {fields.map((field, index) => (
-                  <div key={field.id} className="flex items-start gap-2">
-                    <div className="flex-1">
-                      <Controller
-                        name={`lines.${index}.itemId`}
-                        control={control}
-                        render={({ field: f }) => (
-                          <select {...f} className={`${fieldClass} bg-white`}>
-                            <option value="">Select item…</option>
-                            {items.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.sku} — {item.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      />
-                      {errors.lines?.[index]?.itemId && (
-                        <p className="mt-1 text-xs text-red-600">
-                          {errors.lines[index].itemId?.message}
-                        </p>
-                      )}
-                    </div>
+                {fields.map((field, index) => {
+                  const lineItemId = watch(`lines.${index}.itemId`)
+                  const serialTracked = isSerialTracked(lineItemId)
+                  const options = serialOptions[field.id] ?? []
+                  const loading = serialLoading[field.id] ?? false
 
-                    <div className="w-28 shrink-0">
-                      <Controller
-                        name={`lines.${index}.quantity`}
-                        control={control}
-                        render={({ field: f }) => (
-                          <input
-                            {...f}
-                            type="number"
-                            min="1"
-                            step="1"
-                            placeholder="Qty"
-                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                            onChange={(e) =>
-                              f.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                            }
+                  return (
+                    <div key={field.id} className="rounded-lg border border-zinc-100 p-2">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <Controller
+                            name={`lines.${index}.itemId`}
+                            control={control}
+                            render={({ field: f }) => (
+                              <select
+                                {...f}
+                                onChange={(e) => {
+                                  f.onChange(e)
+                                  handleItemChange(index, field.id, e.target.value)
+                                }}
+                                className={`${fieldClass} bg-white`}
+                              >
+                                <option value="">Select item…</option>
+                                {items.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.sku} — {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           />
-                        )}
-                      />
-                      {errors.lines?.[index]?.quantity && (
-                        <p className="mt-1 text-xs text-red-600">
-                          {errors.lines[index].quantity?.message}
-                        </p>
+                          {errors.lines?.[index]?.itemId && (
+                            <p className="mt-1 text-xs text-red-600">
+                              {errors.lines[index].itemId?.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="w-28 shrink-0">
+                          {serialTracked ? (
+                            <div
+                              className={`${fieldClass} flex items-center justify-center bg-zinc-50 text-zinc-500`}
+                            >
+                              Qty: 1
+                            </div>
+                          ) : (
+                            <Controller
+                              name={`lines.${index}.quantity`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  placeholder="Qty"
+                                  className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                                  onChange={(e) =>
+                                    f.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                                  }
+                                />
+                              )}
+                            />
+                          )}
+                          {errors.lines?.[index]?.quantity && (
+                            <p className="mt-1 text-xs text-red-600">
+                              {errors.lines[index].quantity?.message}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => fields.length > 1 && remove(index)}
+                          disabled={fields.length === 1}
+                          className="mt-0.5 rounded p-2 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {serialTracked && (
+                        <div className="mt-2">
+                          <label className="mb-1 block text-xs font-medium text-zinc-600">
+                            Serial Number <span className="text-red-500">*</span>
+                          </label>
+                          <Controller
+                            name={`lines.${index}.serialNumberId`}
+                            control={control}
+                            render={({ field: sf }) => (
+                              <select
+                                {...sf}
+                                disabled={loading || !fromId}
+                                className={`${fieldClass} bg-white`}
+                              >
+                                <option value="">
+                                  {!fromId
+                                    ? 'Select source warehouse first…'
+                                    : loading
+                                      ? 'Loading serials…'
+                                      : options.length === 0
+                                        ? 'No available serials at source'
+                                        : 'Select serial…'}
+                                </option>
+                                {options.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.serialNumber}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          />
+                          {errors.lines?.[index]?.serialNumberId && (
+                            <p className="mt-1 text-xs text-red-600">
+                              {errors.lines[index].serialNumberId?.message}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => fields.length > 1 && remove(index)}
-                      disabled={fields.length === 1}
-                      className="mt-0.5 rounded p-2 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>

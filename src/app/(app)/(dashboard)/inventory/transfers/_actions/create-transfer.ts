@@ -14,8 +14,18 @@ export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: 
     }
   }
 
+  // The form resets a line's serialNumberId to '' (not undefined) when the
+  // item/warehouse changes — normalize that to undefined here so the
+  // backend's @IsOptional()/@IsNotEmpty() combo doesn't reject an empty
+  // string as "provided but invalid".
+  const lines = parsed.data.lines.map((line) => ({
+    ...line,
+    serialNumberId: line.serialNumberId || undefined,
+  }))
+
   const result = await api.post<{ id: string }>('/inventory/transfers', {
     ...parsed.data,
+    lines,
   })
 
   if (!result.success) {

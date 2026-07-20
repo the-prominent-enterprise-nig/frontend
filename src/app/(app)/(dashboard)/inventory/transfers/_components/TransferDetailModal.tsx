@@ -68,10 +68,12 @@ function renderTransferBody(doc: PrintDocumentEnvelope): string {
   const d = doc.document as Record<string, unknown>
   const lines = (d.lines as Array<Record<string, unknown>>) ?? []
   const linesHtml = lines
-    .map(
-      (l) =>
-        `<tr><td>${(l.item as Record<string, unknown>)?.name ?? l.itemId ?? '—'}</td><td style="text-align:right">${l.quantity}</td></tr>`
-    )
+    .map((l) => {
+      const itemName = (l.item as Record<string, unknown>)?.name ?? l.itemId ?? '—'
+      const serial = (l.serialNumber as Record<string, unknown>)?.serialNumber as string | undefined
+      const label = serial ? `${itemName} (SN: ${serial})` : itemName
+      return `<tr><td>${label}</td><td style="text-align:right">${l.quantity}</td></tr>`
+    })
     .join('')
 
   const driverFields: string[] = []
@@ -304,6 +306,11 @@ export default function TransferDetailModal({
                             </p>
                             {line.item?.sku && (
                               <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
+                            )}
+                            {line.serialNumber && (
+                              <p className="font-mono text-xs text-prominent-purple-700">
+                                SN: {line.serialNumber.serialNumber}
+                              </p>
                             )}
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-zinc-700">

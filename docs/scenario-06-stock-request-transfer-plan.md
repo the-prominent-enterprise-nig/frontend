@@ -64,3 +64,16 @@ Sequenced — later steps build on earlier ones.
 ## Dead code / unused-feature flags
 
 None found — the existing `StockTransfer` mechanism is real, used, and simple by design; it's a legitimate foundation to extend, not something to remove.
+
+## Implementation Log — 2026-07-20
+
+**For this scenario, I have done:**
+
+- Closing Gap 1 (serial-level requesting): added optional `serialNumberId` to `StockTransferLine` (`backend/prisma/schema.prisma`, migration `20260720073033_add_serial_to_transfer_line`), validated in `TransfersService.create()` (belongs to the item, in-stock at the source warehouse, not reused across lines, quantity forced to 1). `CreateTransferModal.tsx` shows a serial picker whenever the selected item is serial-tracked, and the transfer detail view / print document show the captured serial.
+
+**Worth flagging:**
+
+- Confirmed decisions carried into this run (see conversation, not repeated here in full): HQ-approval toggle will be a simple scenario-06-specific `BusinessSettings` boolean built now rather than waiting on the Sprint-5 general approval-routing engine (ticket `86d3d19va`); the HQ approver is Business Owner only; source-branch accept/reject stays Branch Manager + Business Owner (no Stock Controller); raising a request is Branch Manager + Business Owner (inventory module) plus Cashier via the Gap-4 POS one-tap action only.
+- Mid-Part-2 scoping revision (not yet implemented): every new transfer will now go through the request/approval flow — there is no bypass to a directly-decided `draft`. A new `inventory:transfers:request` permission will gate raising a request (granted to Branch Manager + Business Owner), left alongside the existing `inventory:transfers:create` permission (still Business-Owner-only, now effectively redundant with `request` for that role) rather than repurposing it, so ticket `86d3p2vzz` ("serial number carried through a transfer and shown on the resulting Receiving Report") stays open until Part 3 adds the Receiving Report — Part 1 only carries the serial through creation and the detail view, not onto a Receiving Report yet.
+- Fixed a real bug caught during manual testing: the create form was resetting `serialNumberId` to `''` (not `undefined`) on item/warehouse change, and the backend DTO's `@IsOptional()` + `@IsNotEmpty()` combo rejected `''` as "provided but invalid." Fixed in `create-transfer.ts` (strip empty string before posting) with a regression e2e test covering a non-serial-tracked item submission.
+- `docs/seed-data-reference.md`'s serial-number counts for `TN-FURN-SET-001` had drifted badly (documented 6, actual 144 from repeated manual testing) — corrected the note in place rather than re-enumerate a moving target.
