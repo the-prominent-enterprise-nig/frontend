@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   ShoppingCart,
-  PauseCircle,
+  BookmarkCheck,
   ReceiptText,
   Clock,
   Wallet,
@@ -28,11 +28,14 @@ type NavItem = {
 const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
   {
     label: 'Operations',
-    paths: ['/pos', '/pos/checkout', '/pos/parked-sales', '/pos/transactions'],
+    // Parked Sales tab hidden for now (still a real, working feature — the
+    // route/controller/service are untouched, and Scenario 09 still depends
+    // on ParkedSalesService as-is — just no nav entry into it at the moment).
+    paths: ['/pos', '/pos/checkout', '/pos/reservations', '/pos/transactions'],
     items: [
       { label: 'Overview', href: '/pos', exact: true, icon: LayoutDashboard },
       { label: 'Checkout', href: '/pos/checkout', icon: ShoppingCart },
-      { label: 'Parked Sales', href: '/pos/parked-sales', icon: PauseCircle },
+      { label: 'Reservations', href: '/pos/reservations', icon: BookmarkCheck },
       { label: 'Transactions', href: '/pos/transactions', icon: ReceiptText },
     ] satisfies NavItem[],
   },

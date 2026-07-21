@@ -143,6 +143,13 @@ export const INVENTORY_PERMISSIONS = {
   // ── Stock Projection (INV-50) ──────────────────────────────────────────────
   PROJECTION_READ: 'inventory:projection:read',
 
+  // ── SKU Reservations (Scenario 03) ─────────────────────────────────────────
+  SKU_RESERVATIONS_READ: 'inventory:sku-reservations:read',
+  SKU_RESERVATIONS_CREATE: 'inventory:sku-reservations:create',
+  SKU_RESERVATIONS_FULFIL: 'inventory:sku-reservations:fulfil',
+  SKU_RESERVATIONS_CANCEL_REQUEST: 'inventory:sku-reservations:cancel-request',
+  SKU_RESERVATIONS_CANCEL_APPROVE: 'inventory:sku-reservations:cancel-approve',
+
   // ── Wildcard ───────────────────────────────────────────────────────────────
   WILDCARD: 'inventory:*',
 } as const
@@ -239,6 +246,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:attributes:read': 'View custom item attributes',
   'inventory:attributes:manage': 'Create and manage custom item attributes',
   'inventory:projection:read': 'View forward stock projection',
+  'inventory:sku-reservations:read': 'View SKU-level reservations',
+  'inventory:sku-reservations:create': 'Reserve an item by SKU ahead of stock arrival',
+  'inventory:sku-reservations:fulfil': 'Fulfil an earmarked reservation into a completed sale',
+  'inventory:sku-reservations:cancel-request': 'Request cancellation of a reservation',
+  'inventory:sku-reservations:cancel-approve':
+    'Approve or reject a reservation cancellation request',
   'inventory:*': 'Wildcard full Inventory access',
 }
 
