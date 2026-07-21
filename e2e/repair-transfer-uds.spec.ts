@@ -34,17 +34,22 @@ function rowByCode(page: Page, code: string) {
 
 // gotoReady only waits for domcontentloaded, not the client-side list fetch
 // — right after navigation the table can still be the loading skeleton (zero
-// <tr>s), so getNewestRowCode legitimately returns null for a beat. Retrying
-// here means callers always get a real "previous" code to compare against,
-// not null — a null previousCode would make waitForNewRowCode's "not equal
-// to previousCode" check trivially pass on the very first (possibly stale)
-// row that renders, which is exactly what caused each test to silently
-// operate on the row created by the test *before* it.
+// <tr>s, same as a genuinely empty result), so a bare row-count check can't
+// tell "still loading" apart from "done loading, zero rows" (e.g. right
+// after a fresh seed/reset). Settle on either a real row appearing or the
+// list's own empty-state message, so callers get an accurate "previous"
+// snapshot — including a legitimate null — instead of retrying forever
+// whenever the table starts out empty.
+async function isListSettled(page: Page): Promise<boolean> {
+  if ((await page.locator('tbody tr').count()) > 0) return true
+  return page.getByText('No Unit Document Sheets found').isVisible()
+}
+
 async function getSettledNewestRowCode(page: Page): Promise<string | null> {
   let code: string | null = null
   await expect(async () => {
+    expect(await isListSettled(page)).toBe(true)
     code = await getNewestRowCode(page)
-    expect(code).not.toBeNull()
   }).toPass({ timeout: 10_000 })
   return code
 }

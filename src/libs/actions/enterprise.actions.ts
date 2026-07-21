@@ -5,7 +5,6 @@ import { api } from '@/src/libs/api/client'
 export interface EnterpriseSummary {
   employeeCount: number
   userCount: number
-  pendingLeaveCount: number
 }
 
 export interface BusinessProfile {
@@ -14,6 +13,7 @@ export interface BusinessProfile {
   contactPerson: string | null
   mobileNumber: string | null
   fiscalYearStartMonth: number
+  requireHqApprovalForTransfers: boolean
 }
 
 export async function getEnterpriseSummary(): Promise<{

@@ -45,6 +45,7 @@ export const WarehouseSummarySchema = z.object({
   name: z.string(),
   address: z.string().nullable().optional(),
   status: WarehouseStatusSchema.optional(),
+  branchId: z.string().nullable().optional(),
   _count: z.object({ locations: z.number() }).optional(),
 })
 

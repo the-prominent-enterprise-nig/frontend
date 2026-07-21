@@ -16,7 +16,7 @@ export function ItemSearchCombobox({ value, onChange, error }: Props) {
       onChange={onChange}
       error={error}
       queryKey="items-search"
-      placeholder="Search item by name or SKU…"
+      placeholder="Search item"
       typeToSearchMessage="Type to search items…"
       emptyMessage="No items found"
       search={async (query) => {
