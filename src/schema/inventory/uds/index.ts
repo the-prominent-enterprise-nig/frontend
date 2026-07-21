@@ -64,6 +64,15 @@ export const AssessUdsFormSchema = z
 
 export type AssessUdsFormValues = z.infer<typeof AssessUdsFormSchema>
 
+// ─── Write Off UDS ────────────────────────────────────────────────────────────
+
+export const WriteOffUdsFormSchema = z.object({
+  unitCost: z.coerce.number().positive('Unit cost is required'),
+  notes: z.string().max(1000).optional(),
+})
+
+export type WriteOffUdsFormValues = z.infer<typeof WriteOffUdsFormSchema>
+
 // ─── Response Shapes ─────────────────────────────────────────────────────────
 
 const UdsSerialSchema = z.object({
@@ -137,6 +146,7 @@ export const UdsSchema = z.object({
   assessedById: z.string().optional().nullable(),
   repairEstimatedCost: z.coerce.number().optional().nullable(),
   repairDebitJournalEntryId: z.string().optional().nullable(),
+  writeOffAdjustmentId: z.string().optional().nullable(),
   lines: z.array(UdsLineSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
