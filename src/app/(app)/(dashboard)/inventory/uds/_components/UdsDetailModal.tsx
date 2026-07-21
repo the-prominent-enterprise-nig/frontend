@@ -153,6 +153,9 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
                           {uds.repairDebitJournalEntryId && ' · debit posted'}
                         </span>
                       )}
+                      {uds.assessment === 'unrepairable' && uds.writeOffAdjustmentId && (
+                        <span className="text-zinc-800">written off</span>
+                      )}
                       <span className="text-xs text-zinc-400">
                         assessed {formatDate(uds.assessedAt)}
                       </span>
