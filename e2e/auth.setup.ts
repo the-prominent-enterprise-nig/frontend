@@ -27,13 +27,10 @@ setup('authenticate as business owner', async ({ page }) => {
       { locator: page.locator('#password'), value: PASSWORD },
     ])
     await page.click('button[type="submit"]')
-    // login/page.tsx redirects to result.redirectTo ?? '/' — for Business
-    // Owner that currently lands on '/dashboard', not '/'. Asserting "left
-    // the login page" (same check the Cashier login flow elsewhere in this
-    // suite already uses) rather than one specific destination keeps this
-    // resilient to that redirect target changing again.
-    await expect(page).not.toHaveURL(/\/login$/, { timeout: 8_000 })
-  }).toPass({ timeout: 30_000 })
+    // LoginForm redirects to '/' on success, which RootPage then immediately
+    // server-redirects to '/dashboard' for admins (business owner included).
+    await expect(page).toHaveURL('/dashboard', { timeout: 8_000 })
+  }).toPass({ timeout: 20_000 })
 
   await page.context().storageState({ path: authFile })
 })
