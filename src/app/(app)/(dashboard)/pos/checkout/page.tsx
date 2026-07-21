@@ -69,6 +69,8 @@ import {
   cancelReleaseFormRequest,
   getActiveFinancingTerms,
   previewInstallment,
+  createSkuReservation,
+  createCustomerAdvance,
   type SerialNumberRecord,
 } from '../_actions/pos-actions'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
@@ -85,6 +87,11 @@ import type {
   FinancingTerm,
   InstallmentPreview,
 } from '@/src/schema/pos'
+
+// Scenario 03, Part 3 — "Reserve" is a checkout-page-local mode only. It
+// never becomes a real PosTransaction.invoiceType, so it's deliberately not
+// added to the shared PosInvoiceType union — widened here instead.
+type CheckoutMode = PosInvoiceType | 'reserve'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -290,7 +297,9 @@ export default function CheckoutPage() {
 
   // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
   // | 'installment' (down payment now + the rest financed into an AR schedule)
-  const [invoiceType, setInvoiceType] = useState<PosInvoiceType>('cash')
+  // | 'reserve' (Scenario 03 — reserve one item by SKU, no serial required yet,
+  //   with an optional deposit; never creates a PosTransaction at all)
+  const [invoiceType, setInvoiceType] = useState<CheckoutMode>('cash')
   const [chargeDueDays, setChargeDueDays] = useState(30)
 
   // Installment financing
@@ -360,6 +369,16 @@ export default function CheckoutPage() {
     releaseFormRequestId: string
     totalAmount: number
     serialLines: { itemName: string; serialNumberLabel?: string }[]
+  } | null>(null)
+
+  // Reserve mode success (Scenario 03, Part 3) — separate from `success`
+  // since a reservation is never a PosTransaction.
+  const [reservationSuccess, setReservationSuccess] = useState<{
+    reservationId: string
+    itemName: string
+    quantity: number
+    customerName: string
+    depositAmount: number
   } | null>(null)
 
   // Offline mode
@@ -649,6 +668,16 @@ export default function CheckoutPage() {
   const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
   const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
 
+  // Reserve mode has no tax/promo concept — SkuReservationsService values a
+  // reservation as a flat item.sellingPrice × quantity, so the deposit cap
+  // and "remaining at fulfilment" figure must track that instead of the
+  // shared VAT/promo-inclusive totalAmount above.
+  const reserveValue =
+    invoiceType === 'reserve' && cart.length === 1
+      ? Math.round(cart[0].unitPrice * cart[0].quantity * 100) / 100
+      : 0
+  const reserveBalance = Math.max(0, Math.round((reserveValue - totalPaid) * 100) / 100)
+
   // Loyalty balance check
   const loyaltyPointsValue = loyaltyProgram?.pointsValue || 1
   const loyaltyPaymentRow = payments.find((p) => p.method === 'loyalty_points')
@@ -758,32 +787,35 @@ export default function CheckoutPage() {
   // ─── Cart actions ──────────────────────────────────────────────────────────
 
   function addToCart(item: LookupItem, qty = 1) {
+    // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
+    // quantity, no serial required — treat every item as plain SKU+qty and
+    // cap the cart at a single line (a new pick replaces it, matching this
+    // page's no-toast convention of just updating the visible state).
+    const isReserveMode = invoiceType === 'reserve'
     setCart((prev) => {
       const existing = prev.find((l) => l.itemId === item.id)
-      if (existing) {
+      if (existing && !isReserveMode) {
         if (existing.isSerialTracked) return prev
         return prev.map((l) =>
           l.itemId === item.id ? { ...l, quantity: parseFloat((l.quantity + qty).toFixed(3)) } : l
         )
       }
-      return [
-        ...prev,
-        {
-          itemId: item.id,
-          itemName: item.name,
-          sku: item.sku,
-          unitPrice: item.price,
-          quantity: item.isSerialTracked ? 1 : qty,
-          taxRate: item.taxRate ?? null,
-          uomCode: item.uomCode,
-          allowDecimal: item.allowDecimal ?? false,
-          pricingMode: item.pricingMode ?? null,
-          isSerialTracked: item.isSerialTracked ?? false,
-          requiresSecondarySerial: item.requiresSecondarySerial ?? false,
-        },
-      ]
+      const newLine: CartLine = {
+        itemId: item.id,
+        itemName: item.name,
+        sku: item.sku,
+        unitPrice: item.price,
+        quantity: isReserveMode ? qty : item.isSerialTracked ? 1 : qty,
+        taxRate: item.taxRate ?? null,
+        uomCode: item.uomCode,
+        allowDecimal: item.allowDecimal ?? false,
+        pricingMode: item.pricingMode ?? null,
+        isSerialTracked: isReserveMode ? false : (item.isSerialTracked ?? false),
+        requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+      }
+      return isReserveMode ? [newLine] : [...prev, newLine]
     })
-    if (item.isSerialTracked) {
+    if (item.isSerialTracked && !isReserveMode) {
       setSerialPickerStage('primary')
       setSerialPickerTarget({
         itemId: item.id,
@@ -794,6 +826,15 @@ export default function CheckoutPage() {
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
       })
     }
+  }
+
+  // Cart lines carry mode-specific shape (e.g. addToCart forces
+  // isSerialTracked: false while in reserve mode) — a stale cart from a
+  // different mode could silently skip serial selection or trip the
+  // reserve mode's exactly-one-line check, so switching modes clears it.
+  function handleInvoiceTypeChange(mode: CheckoutMode) {
+    if (mode !== invoiceType) setCart([])
+    setInvoiceType(mode)
   }
 
   function setQty(itemId: string, qty: number) {
@@ -959,6 +1000,13 @@ export default function CheckoutPage() {
       setError('Cart is empty.')
       return
     }
+
+    // Reserve mode never creates a PosTransaction — its own submit path,
+    // bypassing every transaction-specific check/branch below.
+    if (invoiceType === 'reserve') {
+      return handleConfirmReserve()
+    }
+
     if (isTaxExempt && !taxExemptionRef.trim()) {
       setError('Enter a certificate or exemption reference for tax-exempt sales.')
       return
@@ -1322,6 +1370,7 @@ export default function CheckoutPage() {
     setTaxConfigError(false)
     setSuccess(null)
     setPendingApproval(null)
+    setReservationSuccess(null)
     setIsTaxExempt(false)
     setTaxExemptionRef('')
     setSearchQuery('')
@@ -1339,6 +1388,88 @@ export default function CheckoutPage() {
     if (cancellationPollRef.current) {
       clearInterval(cancellationPollRef.current)
       cancellationPollRef.current = null
+    }
+  }
+
+  // Scenario 03, Part 3 — Reserve mode's own submit path. Creates a
+  // SkuReservation (one item + quantity, no serial) and, only if a nonzero
+  // amount was entered in the Payment card, a CustomerAdvance deposit
+  // against it. Never touches /pos/transactions at all.
+  async function handleConfirmReserve() {
+    if (!selectedCustomer) {
+      setError('A customer must be selected to reserve an item.')
+      return
+    }
+    if (cart.length !== 1) {
+      setError('Reserve one item at a time.')
+      return
+    }
+    const line = cart[0]
+    if (!(line.quantity > 0)) {
+      setError('Enter a quantity greater than zero.')
+      return
+    }
+    if (totalPaid > reserveValue + 0.01) {
+      setError(
+        `Deposit (${fmt(totalPaid)}) cannot exceed the reservation's value (${fmt(reserveValue)}).`
+      )
+      return
+    }
+    const missingRef = payments.find(
+      (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
+    )
+    if (missingRef) {
+      setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+      return
+    }
+
+    setSubmitting(true)
+    setError('')
+    try {
+      const resResult = await createSkuReservation({
+        itemId: line.itemId,
+        customerId: selectedCustomer.id,
+        quantity: line.quantity,
+      })
+      if (!resResult.success || !resResult.data) {
+        setError(resResult.error || 'Failed to create reservation.')
+        return
+      }
+      const reservation = resResult.data
+
+      let depositAmount = 0
+      const firstPaidRow = payments.find((p) => p.amount > 0)
+      if (totalPaid > 0 && firstPaidRow) {
+        const advResult = await createCustomerAdvance({
+          customerId: selectedCustomer.id,
+          amount: totalPaid,
+          referenceType: 'sku_reservation',
+          referenceId: reservation.id,
+          paymentMethod: firstPaidRow.method,
+        })
+        if (!advResult.success || !advResult.data) {
+          // The reservation itself succeeded — don't lose it. Surface the
+          // deposit failure distinctly so the cashier knows to retry just
+          // the deposit, not the whole reservation.
+          setError(
+            `Reservation created (ref ${reservation.id.slice(0, 8)}), but recording the deposit failed: ${advResult.error || 'unknown error'}. The reservation stands — record the deposit separately.`
+          )
+          return
+        }
+        depositAmount = advResult.data.amount
+      }
+
+      setReservationSuccess({
+        reservationId: reservation.id,
+        itemName: line.itemName,
+        quantity: line.quantity,
+        customerName: customerDisplayName(selectedCustomer),
+        depositAmount,
+      })
+    } catch {
+      setError('Failed to create reservation.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -1419,6 +1550,12 @@ export default function CheckoutPage() {
         onReset={resetSale}
         fmt={fmt}
       />
+    )
+  }
+
+  if (reservationSuccess) {
+    return (
+      <ReserveSuccessScreen reservationSuccess={reservationSuccess} onReset={resetSale} fmt={fmt} />
     )
   }
 
@@ -2227,7 +2364,7 @@ export default function CheckoutPage() {
             </p>
             <div className="flex gap-2">
               <button
-                onClick={() => setInvoiceType('cash')}
+                onClick={() => handleInvoiceTypeChange('cash')}
                 className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
                   invoiceType === 'cash'
                     ? 'border-purple-500 bg-purple-50 text-purple-700'
@@ -2240,7 +2377,7 @@ export default function CheckoutPage() {
                 </span>
               </button>
               <button
-                onClick={() => setInvoiceType('charge')}
+                onClick={() => handleInvoiceTypeChange('charge')}
                 className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
                   invoiceType === 'charge'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -2253,7 +2390,7 @@ export default function CheckoutPage() {
                 </span>
               </button>
               <button
-                onClick={() => setInvoiceType('installment')}
+                onClick={() => handleInvoiceTypeChange('installment')}
                 className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
                   invoiceType === 'installment'
                     ? 'border-prominent-purple-500 bg-prominent-purple-50 text-prominent-purple-700'
@@ -2265,7 +2402,33 @@ export default function CheckoutPage() {
                   Down payment + financed schedule
                 </span>
               </button>
+              <button
+                onClick={() => handleInvoiceTypeChange('reserve')}
+                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors ${
+                  invoiceType === 'reserve'
+                    ? 'border-amber-500 bg-amber-50 text-amber-700'
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                Reserve
+                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                  No serial yet, optional deposit
+                </span>
+              </button>
             </div>
+            {invoiceType === 'reserve' && (
+              <div className="mt-2.5 space-y-2">
+                {!selectedCustomer && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    A customer must be selected to reserve an item.
+                  </p>
+                )}
+                <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  Reserves one item by SKU — picking another item replaces it. Serials aren&apos;t
+                  needed yet; one will be earmarked when stock arrives.
+                </p>
+              </div>
+            )}
             {invoiceType === 'charge' && (
               <div className="mt-2.5 space-y-2">
                 {!selectedCustomer && (
@@ -2373,9 +2536,9 @@ export default function CheckoutPage() {
           <div className="flex-1 p-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                Payment
+                {invoiceType === 'reserve' ? 'Deposit (optional)' : 'Payment'}
               </p>
-              {invoiceType === 'cash' && (
+              {(invoiceType === 'cash' || invoiceType === 'reserve') && (
                 <button
                   onClick={addPaymentRow}
                   className="flex items-center gap-1 rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-100"
@@ -2422,7 +2585,8 @@ export default function CheckoutPage() {
                 onClick={addPaymentRow}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-200 py-5 text-sm text-gray-400 hover:border-purple-300 hover:text-purple-500"
               >
-                <Plus size={14} /> Add payment method
+                <Plus size={14} />{' '}
+                {invoiceType === 'reserve' ? 'Add deposit (optional)' : 'Add payment method'}
               </button>
             ) : (
               <div className="space-y-2">
@@ -2582,20 +2746,31 @@ export default function CheckoutPage() {
             {payments.length > 0 && (
               <div className="mt-4 space-y-1.5 border-t border-gray-100 pt-4 text-sm">
                 <div className="flex justify-between text-gray-500">
-                  <span>Total Tendered</span>
+                  <span>{invoiceType === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
                   <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
                 </div>
-                {balance > 0.009 && (
-                  <div className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">
-                    <span>Still Needed</span>
-                    <span className="font-mono">{fmt(balance)}</span>
-                  </div>
-                )}
-                {change > 0.009 && (
-                  <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 font-bold text-green-700">
-                    <span>Change</span>
-                    <span className="font-mono">{fmt(change)}</span>
-                  </div>
+                {invoiceType === 'reserve' ? (
+                  reserveBalance > 0.009 && (
+                    <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-gray-500">
+                      <span>Remaining at fulfilment</span>
+                      <span className="font-mono">{fmt(reserveBalance)}</span>
+                    </div>
+                  )
+                ) : (
+                  <>
+                    {balance > 0.009 && (
+                      <div className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">
+                        <span>Still Needed</span>
+                        <span className="font-mono">{fmt(balance)}</span>
+                      </div>
+                    )}
+                    {change > 0.009 && (
+                      <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 font-bold text-green-700">
+                        <span>Change</span>
+                        <span className="font-mono">{fmt(change)}</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -2630,6 +2805,7 @@ export default function CheckoutPage() {
                 (invoiceType === 'cash' && (balance > 0.009 || loyaltyOverBalance)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
                 (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
+                (invoiceType === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
                 (needsManagerOverride && !managerOverrideApproved)
               }
               className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
@@ -2637,7 +2813,9 @@ export default function CheckoutPage() {
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : invoiceType === 'installment'
                     ? 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
-                    : 'bg-purple-700 hover:bg-purple-800'
+                    : invoiceType === 'reserve'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-purple-700 hover:bg-purple-800'
               }`}
             >
               {submitting
@@ -2656,19 +2834,25 @@ export default function CheckoutPage() {
                         ? 'Select a customer for installment'
                         : invoiceType === 'installment' && !financingTermId
                           ? 'Select a financing term'
-                          : invoiceType === 'cash' && balance > 0.009
-                            ? `Underpaid by ${fmt(balance)}`
-                            : invoiceType === 'cash' && loyaltyOverBalance
-                              ? 'Insufficient loyalty points'
-                              : needsManagerOverride && !managerOverrideApproved
-                                ? 'Manager override required'
-                                : cart.some((l) => l.isSerialTracked)
-                                  ? `Submit for Approval — ${fmt(totalAmount)}`
-                                  : invoiceType === 'charge'
-                                    ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                    : invoiceType === 'installment'
-                                      ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                      : `Confirm Sale — ${fmt(totalAmount)}`}
+                          : invoiceType === 'reserve' && !selectedCustomer
+                            ? 'Select a customer to reserve'
+                            : invoiceType === 'reserve' && cart.length !== 1
+                              ? 'Add one item to reserve'
+                              : invoiceType === 'cash' && balance > 0.009
+                                ? `Underpaid by ${fmt(balance)}`
+                                : invoiceType === 'cash' && loyaltyOverBalance
+                                  ? 'Insufficient loyalty points'
+                                  : needsManagerOverride && !managerOverrideApproved
+                                    ? 'Manager override required'
+                                    : cart.some((l) => l.isSerialTracked)
+                                      ? `Submit for Approval — ${fmt(totalAmount)}`
+                                      : invoiceType === 'charge'
+                                        ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                        : invoiceType === 'installment'
+                                          ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                          : invoiceType === 'reserve'
+                                            ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                            : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -3693,6 +3877,69 @@ function PendingApprovalScreen({
           className="text-xs font-medium text-gray-400 hover:text-red-500 disabled:opacity-50"
         >
           {cancelling ? 'Cancelling…' : 'Cancel this request'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Scenario 03, Part 3 — shown after a SkuReservation (+ optional
+// CustomerAdvance deposit) is created. Deliberately simple — no receipt,
+// no COGS/loyalty concepts, since nothing sold yet.
+function ReserveSuccessScreen({
+  reservationSuccess,
+  onReset,
+  fmt,
+}: {
+  reservationSuccess: {
+    reservationId: string
+    itemName: string
+    quantity: number
+    customerName: string
+    depositAmount: number
+  }
+  onReset: () => void
+  fmt: (n: number) => string
+}) {
+  return (
+    <div className="flex min-h-full items-center justify-center bg-zinc-50 p-6">
+      <div className="flex w-full max-w-sm flex-col items-center gap-5 rounded-2xl border border-amber-100 bg-white p-8 text-center shadow-sm">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+          <CheckCircle2 size={28} className="text-amber-600" />
+        </div>
+        <div>
+          <p className="text-xl font-bold text-gray-900">Reservation Created</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Held for {reservationSuccess.customerName} — no serial required yet.
+          </p>
+        </div>
+
+        <div className="w-full space-y-2 rounded-xl bg-gray-50 px-5 py-4 text-left">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="min-w-0 truncate font-medium text-gray-800">
+              {reservationSuccess.itemName}
+            </span>
+            <span className="shrink-0 font-mono text-xs text-gray-500">
+              Qty {reservationSuccess.quantity}
+            </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+            <span className="text-sm font-semibold text-gray-700">Deposit Collected</span>
+            <span className="text-lg font-bold text-gray-900">
+              {reservationSuccess.depositAmount > 0 ? fmt(reservationSuccess.depositAmount) : '—'}
+            </span>
+          </div>
+        </div>
+
+        <p className="break-all font-mono text-[10px] text-gray-400">
+          Ref: {reservationSuccess.reservationId}
+        </p>
+
+        <button
+          onClick={onReset}
+          className="w-full rounded-xl bg-purple-700 py-3 text-sm font-bold text-white hover:bg-purple-800"
+        >
+          Start New Sale
         </button>
       </div>
     </div>
