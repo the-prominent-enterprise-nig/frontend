@@ -16,12 +16,54 @@ import { gotoReady, clickStable } from './utils'
 // row you just created is still `.first()` by the time you check on it —
 // capture its code right after creation and scope all later lookups to that
 // code, same precedent inventory-stock-adjustment.spec.ts already documents.
-async function getNewestRowCode(page: Page): Promise<string> {
-  return page.locator('tbody tr').first().locator('td').first().innerText()
+async function getNewestRowCode(page: Page): Promise<string | null> {
+  const count = await page.locator('tbody tr').count()
+  if (count === 0) return null
+  return page
+    .locator('tbody tr')
+    .first()
+    .locator('td')
+    .first()
+    .locator('span.font-mono')
+    .innerText()
 }
 
 function rowByCode(page: Page, code: string) {
   return page.locator('tbody tr').filter({ hasText: code })
+}
+
+// gotoReady only waits for domcontentloaded, not the client-side list fetch
+// — right after navigation the table can still be the loading skeleton (zero
+// <tr>s), so getNewestRowCode legitimately returns null for a beat. Retrying
+// here means callers always get a real "previous" code to compare against,
+// not null — a null previousCode would make waitForNewRowCode's "not equal
+// to previousCode" check trivially pass on the very first (possibly stale)
+// row that renders, which is exactly what caused each test to silently
+// operate on the row created by the test *before* it.
+async function getSettledNewestRowCode(page: Page): Promise<string | null> {
+  let code: string | null = null
+  await expect(async () => {
+    code = await getNewestRowCode(page)
+    expect(code).not.toBeNull()
+  }).toPass({ timeout: 10_000 })
+  return code
+}
+
+// The create modal's onSuccess closes it immediately, but the list's
+// invalidateQueries refetch is async and isn't guaranteed to have landed by
+// then — reading "the newest row" right after the modal closes can still
+// return the *previous* top row. Capture the pre-creation top row's code
+// first, then poll until the top row's code actually changes, so we never
+// hand back a stale code and silently operate on the wrong UDS downstream.
+async function waitForNewRowCode(page: Page, previousCode: string | null): Promise<string> {
+  const captured: { code: string | null } = { code: null }
+  await expect(async () => {
+    const code = await getNewestRowCode(page)
+    expect(code).not.toBeNull()
+    expect(code).not.toBe(previousCode)
+    captured.code = code
+  }).toPass({ timeout: 10_000 })
+  return captured.code as string
 }
 
 test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', () => {
@@ -29,6 +71,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     page,
   }) => {
     await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
 
     const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
@@ -84,17 +127,29 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
     await expect(form.getByText('rfs-form-sample.txt')).toBeVisible({ timeout: 10_000 })
 
+    // Defensive re-verify/reapply on each retry attempt — cheap insurance
+    // against losing either field to a lost click, independent of the
+    // separate newest-row-capture race documented at waitForNewRowCode.
+    const rfsFileLabel = form.getByText('rfs-form-sample.txt')
     await expect(async () => {
+      if ((await repairProviderSelect.inputValue()) === '') {
+        await repairProviderSelect.selectOption({ index: 1 })
+      }
+      if (!(await rfsFileLabel.isVisible().catch(() => false))) {
+        await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
+      }
+      await expect(repairProviderSelect).not.toHaveValue('')
+      await expect(rfsFileLabel).toBeVisible({ timeout: 3_000 })
       await form.getByRole('button', { name: 'Issue UDS' }).click()
       await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 15_000 })
+    }).toPass({ timeout: 20_000 })
 
     await expect(modalHeading).toBeHidden({ timeout: 10_000 })
 
     // Capture this UDS's own code immediately — the newest row is `.first()`
     // right now, but the shared dev database (other runs, or the developer's
     // own manual testing in a separate browser tab) can push it down later.
-    const code = await getNewestRowCode(page)
+    const code = await waitForNewRowCode(page, previousCode)
     const row = rowByCode(page, code)
     await expect(row).toContainText(providerName, { timeout: 10_000 })
     await expect(row.locator('svg.lucide-paperclip')).toBeVisible()
@@ -146,6 +201,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     page,
   }) => {
     await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
 
     const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
@@ -173,7 +229,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     }).toPass({ timeout: 15_000 })
     await expect(modalHeading).toBeHidden({ timeout: 10_000 })
 
-    const code = await getNewestRowCode(page)
+    const code = await waitForNewRowCode(page, previousCode)
     const row = rowByCode(page, code)
     const transferBadge = row.locator('a', { hasText: 'TRF-' })
     await expect(transferBadge).toBeVisible({ timeout: 10_000 })
@@ -188,6 +244,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     page,
   }) => {
     await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
 
     const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
     await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
@@ -211,7 +268,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     }).toPass({ timeout: 15_000 })
     await expect(modalHeading).toBeHidden({ timeout: 10_000 })
 
-    const code = await getNewestRowCode(page)
+    const code = await waitForNewRowCode(page, previousCode)
     const row = rowByCode(page, code)
     await row.getByRole('button', { name: 'Update' }).click()
 
@@ -246,8 +303,190 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     }).toPass({ timeout: 15_000 })
     await expect(updateHeading).toBeHidden({ timeout: 10_000 })
 
-    await expect(row.locator('span', { hasText: 'Cancelled' })).toBeVisible({ timeout: 10_000 })
+    // .rounded-full scopes to the actual badge span, not the flex wrapper
+    // around it (which also "has" the same text and would otherwise be a
+    // second match under Playwright's strict mode).
+    await expect(row.locator('span.rounded-full', { hasText: 'Cancelled' })).toBeVisible({
+      timeout: 10_000,
+    })
     // Cancelled is a closed state — the row's Update action goes away.
     await expect(row.getByRole('button', { name: 'Update' })).toHaveCount(0)
+  })
+
+  // Part 3: assessing a received repair UDS as repairable posts a debit to
+  // the repair provider (Dr REPAIR_EXPENSE / Cr REPAIR_PROVIDER_PAYABLE) and
+  // surfaces the verdict + cost + "debit posted" in both the list row and
+  // the detail view.
+  test('assessing a received repair UDS as repairable records the verdict and debit', async ({
+    page,
+  }) => {
+    await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
+
+    const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
+    await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
+
+    const form = page.locator('form')
+    const warehouseSelect = form
+      .getByText('Warehouse', { exact: true })
+      .locator('..')
+      .locator('select')
+    await expect(async () => {
+      await warehouseSelect.selectOption({ index: 1 })
+      await expect(warehouseSelect).not.toHaveValue('')
+    }).toPass({ timeout: 10_000 })
+
+    const serialInput = form.locator('input[placeholder="Search serial number…"]')
+    const serialCombobox = serialInput.locator('..').locator('..')
+    await serialInput.click()
+    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
+    await serialCombobox.locator('button').first().click()
+
+    const repairProviderSelect = form.getByText('Repair Provider').locator('..').locator('select')
+    await expect(async () => {
+      await repairProviderSelect.selectOption({ index: 1 })
+      await expect(repairProviderSelect).not.toHaveValue('')
+      await form.getByRole('button', { name: 'Issue UDS' }).click()
+      await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+    await expect(modalHeading).toBeHidden({ timeout: 10_000 })
+
+    // waitForNewRowCode (not a bare read of the top row) matters here: the
+    // create modal's onSuccess closes it before the list's invalidateQueries
+    // refetch is guaranteed to have landed, so reading "the newest row"
+    // immediately after close can still return the *previous* top row —
+    // this was the actual cause of an earlier-observed "repairProviderId
+    // sometimes missing" symptom (it wasn't missing; the assertions were
+    // silently checking a different, older UDS).
+    const code = await waitForNewRowCode(page, previousCode)
+    const row = rowByCode(page, code)
+
+    // issued -> in_transit -> received: assess() requires 'received', and
+    // 'received' isn't directly reachable from 'issued' (matches the
+    // backend's ALLOWED_TRANSITIONS state machine).
+    for (const nextStatus of ['In Transit', 'Received']) {
+      await row.getByRole('button', { name: 'Update' }).click()
+      const updateHeading = page.getByRole('heading', { name: 'Update UDS Status' })
+      await expect(updateHeading).toBeVisible({ timeout: 10_000 })
+      await page.getByRole('button', { name: new RegExp(nextStatus) }).click()
+      await expect(async () => {
+        await page.getByRole('button', { name: 'Update Status' }).click()
+        await expect(page.getByText('Status updated').first()).toBeVisible({ timeout: 3_000 })
+      }).toPass({ timeout: 15_000 })
+      await expect(updateHeading).toBeHidden({ timeout: 10_000 })
+    }
+
+    const assessButton = row.getByRole('button', { name: 'Assess' })
+    await expect(assessButton).toBeVisible({ timeout: 10_000 })
+    await assessButton.click()
+
+    const assessHeading = page.getByRole('heading', { name: 'Assess Repair Transfer' })
+    await expect(assessHeading).toBeVisible({ timeout: 10_000 })
+
+    // "Repairable" is the default selection — the estimated-cost field and
+    // its "no repair provider on file" warning should already be visible.
+    await expect(page.getByRole('button', { name: /Repairable/ })).toBeVisible()
+    const costInput = page.locator('input[type="number"]')
+    await expect(costInput).toBeVisible()
+    await expect(page.getByText(/no repair provider is on file/i)).toHaveCount(0)
+    await costInput.fill('2500')
+
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Confirm Assessment' }).click()
+      await expect(page.getByText('UDS assessed').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(assessHeading).toBeHidden({ timeout: 10_000 })
+
+    // Row: verdict badge visible, Assess action gone (already assessed).
+    await expect(row.locator('span.rounded-full', { hasText: 'Repairable' })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(row.getByRole('button', { name: 'Assess' })).toHaveCount(0)
+
+    // Detail view: verdict, estimated cost, and "debit posted" all surfaced.
+    await row.click()
+    const detailHeading = page.getByRole('heading', { name: 'Unit Document Sheet', exact: true })
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    // Regex, not an exact string — the currency symbol Intl.NumberFormat
+    // renders for 'en-PH'/PHP can vary slightly by ICU data (₱ vs "PHP"), so
+    // this only pins the part that matters: the amount and the "estimated"/
+    // "debit posted" wording.
+    const detailModal = page.locator('div.max-w-3xl')
+    await expect(detailModal.getByText(/2,500\.00 estimated/)).toBeVisible()
+    await expect(detailModal.getByText(/debit posted/)).toBeVisible()
+    await detailModal.getByRole('button', { name: 'Close' }).click()
+    await expect(detailHeading).toBeHidden({ timeout: 10_000 })
+  })
+
+  // Repair Provider can only be chosen at issue time in the create form —
+  // this covers the follow-up path to set it afterwards from the detail view
+  // (e.g. a UDS issued without one, or one that needs correcting).
+  test('sets the repair provider afterwards from the detail view', async ({ page }) => {
+    await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
+
+    const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
+    await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
+
+    const form = page.locator('form')
+    const warehouseSelect = form
+      .getByText('Warehouse', { exact: true })
+      .locator('..')
+      .locator('select')
+    await warehouseSelect.selectOption({ index: 1 })
+
+    const serialInput = form.locator('input[placeholder="Search serial number…"]')
+    const serialCombobox = serialInput.locator('..').locator('..')
+    await serialInput.click()
+    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
+    await serialCombobox.locator('button').first().click()
+
+    // No repair provider selected on purpose — this test covers the "issued
+    // without one" recovery path.
+    await expect(async () => {
+      await form.getByRole('button', { name: 'Issue UDS' }).click()
+      await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(modalHeading).toBeHidden({ timeout: 10_000 })
+
+    const code = await waitForNewRowCode(page, previousCode)
+    const row = rowByCode(page, code)
+    const detailHeading = page.getByRole('heading', { name: 'Unit Document Sheet', exact: true })
+
+    await row.click()
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    const detailModal = page.locator('div.max-w-3xl')
+    const setProviderButton = detailModal.getByRole('button', { name: 'Set provider' })
+    await expect(setProviderButton).toBeVisible()
+    await setProviderButton.click()
+
+    const setProviderHeading = page.getByRole('heading', { name: 'Set Repair Provider' })
+    await expect(setProviderHeading).toBeVisible({ timeout: 10_000 })
+    // The detail view closes underneath so its stale (providerless) snapshot
+    // isn't left showing once this modal's own mutation succeeds.
+    await expect(detailHeading).toBeHidden()
+
+    const providerSelect = page.locator('form').getByRole('combobox')
+    await providerSelect.selectOption({ index: 1 })
+    const providerLabel = await providerSelect.locator('option:checked').innerText()
+    const providerName = providerLabel.split('—').slice(1).join('—').trim()
+
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Save' }).click()
+      await expect(page.getByText('Repair provider updated').first()).toBeVisible({
+        timeout: 3_000,
+      })
+    }).toPass({ timeout: 15_000 })
+    await expect(setProviderHeading).toBeHidden({ timeout: 10_000 })
+
+    await expect(row).toContainText(providerName, { timeout: 10_000 })
+
+    // Detail view now shows the provider with a "Change" affordance instead.
+    await row.click()
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    await expect(detailModal.getByText(providerName)).toBeVisible()
+    await expect(detailModal.getByRole('button', { name: 'Change' })).toBeVisible()
+    await detailModal.getByRole('button', { name: 'Close' }).click()
+    await expect(detailHeading).toBeHidden({ timeout: 10_000 })
   })
 })

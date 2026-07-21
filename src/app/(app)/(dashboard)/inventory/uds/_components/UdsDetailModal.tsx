@@ -7,8 +7,15 @@ import {
   UDS_STATUS_LABELS,
   UDS_STATUS_STYLES,
   UDS_REASON_STYLES,
+  UDS_ASSESSMENT_LABELS,
+  UDS_ASSESSMENT_STYLES,
   type Uds,
 } from '@/src/schema/inventory/uds'
+
+function formatCurrency(value?: number | null): string {
+  if (value == null) return '—'
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
+}
 
 const TRANSFER_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
@@ -21,6 +28,7 @@ type Props = {
   uds: Uds | null
   isOpen: boolean
   onClose: () => void
+  onEditProvider?: (uds: Uds) => void
 }
 
 function formatDate(iso?: string | null): string {
@@ -43,8 +51,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function UdsDetailModal({ uds, isOpen, onClose }: Props) {
+export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }: Props) {
   if (!isOpen || !uds) return null
+
+  const canEditProvider =
+    uds.reason === 'repair' &&
+    uds.status !== 'completed' &&
+    uds.status !== 'cancelled' &&
+    !uds.assessment
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -95,15 +109,58 @@ export default function UdsDetailModal({ uds, isOpen, onClose }: Props) {
           </div>
 
           {/* Repair details */}
-          {(uds.repairProvider || uds.rfsFormFile || uds.linkedStockTransfer) && (
+          {(uds.reason === 'repair' ||
+            uds.repairProvider ||
+            uds.rfsFormFile ||
+            uds.linkedStockTransfer ||
+            uds.assessment) && (
             <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
               <p className="mb-3 text-sm font-medium text-zinc-700">Repair Transfer</p>
               <div className="space-y-3 text-sm">
-                {uds.repairProvider && (
-                  <InfoRow
-                    label="Repair Provider"
-                    value={`${uds.repairProvider.code} — ${uds.repairProvider.name}`}
-                  />
+                {uds.reason === 'repair' && (
+                  <div>
+                    <p className="text-xs font-medium text-zinc-400">Repair Provider</p>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <p className="text-zinc-800">
+                        {uds.repairProvider
+                          ? `${uds.repairProvider.code} — ${uds.repairProvider.name}`
+                          : '—'}
+                      </p>
+                      {canEditProvider && onEditProvider && (
+                        <button
+                          type="button"
+                          onClick={() => onEditProvider(uds)}
+                          className="text-xs font-medium text-prominent-purple-700 hover:underline"
+                        >
+                          {uds.repairProvider ? 'Change' : 'Set provider'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {uds.assessment && (
+                  <div>
+                    <p className="text-xs font-medium text-zinc-400">Assessment</p>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UDS_ASSESSMENT_STYLES[uds.assessment]}`}
+                      >
+                        {UDS_ASSESSMENT_LABELS[uds.assessment]}
+                      </span>
+                      {uds.assessment === 'repairable' && (
+                        <span className="text-zinc-800">
+                          {formatCurrency(uds.repairEstimatedCost)} estimated
+                          {uds.repairDebitJournalEntryId && ' · debit posted'}
+                        </span>
+                      )}
+                      <span className="text-xs text-zinc-400">
+                        assessed {formatDate(uds.assessedAt)}
+                      </span>
+                    </div>
+                    {uds.assessmentNotes && (
+                      <p className="mt-1 text-zinc-600">{uds.assessmentNotes}</p>
+                    )}
+                  </div>
                 )}
                 {uds.rfsFormFile && (
                   <div>
