@@ -9,7 +9,7 @@ export type CustomerSourceChannel = z.infer<typeof CustomerSourceChannelEnum>
 export const CustomerStatusEnum = z.enum(['active', 'inactive', 'blocked'])
 export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 
-export const CustomerTypeEnum = z.enum(['individual', 'business'])
+export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
 
 export const InteractionTypeEnum = z.enum(['call', 'email', 'meeting', 'visit', 'message', 'other'])
@@ -54,6 +54,16 @@ export interface Lead {
   updatedAt: string
 }
 
+export interface CustomerBankAccount {
+  id: string
+  bankName: string
+  accountNumber: string
+  accountName?: string | null
+  isPrimary: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Customer {
   id: string
   tenantId: string
@@ -61,6 +71,7 @@ export interface Customer {
   name: string
   customerType: CustomerType
   companyName?: string | null
+  employeeNumber?: string | null
   taxId?: string | null
   isTaxExempt: boolean
   taxExemptionRef?: string | null
@@ -73,6 +84,7 @@ export interface Customer {
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
+  bankAccounts?: CustomerBankAccount[]
   createdAt: string
   updatedAt: string
 }

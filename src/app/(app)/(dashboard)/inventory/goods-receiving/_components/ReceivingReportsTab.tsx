@@ -35,11 +35,13 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
       const item = l.item as Record<string, unknown> | undefined
       const discrepancy = l.discrepancy as Record<string, unknown> | undefined
       const itemLabel = item?.sku ? `${item.name ?? '—'} (${item.sku})` : (item?.name ?? '—')
+      const serials = (l.serialNumbers as string[] | undefined) ?? []
       return `<tr>
         <td>${itemLabel}</td>
         <td style="text-align:right">${discrepancy?.qtyOrdered ?? '—'}</td>
         <td style="text-align:right">${l.quantityReceived}</td>
         <td>${l.batchNumber ?? '—'}</td>
+        <td>${serials.length > 0 ? serials.join(', ') : '—'}</td>
         <td>${l.qualityHold ? 'QC Hold' : 'OK'}</td>
       </tr>`
     })
@@ -53,6 +55,7 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
         <th style="text-align:right">Qty Ordered</th>
         <th style="text-align:right">Qty Received</th>
         <th>Batch</th>
+        <th>Serial #s</th>
         <th>Condition</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -199,6 +202,9 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
               <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Condition
               </th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Serial #s
+              </th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                 Notes
               </th>
@@ -250,6 +256,13 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
                         <CheckCircle2 className="h-3 w-3" />
                         OK
                       </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-600">
+                    {line.serialNumbers && line.serialNumbers.length > 0 ? (
+                      <span className="font-mono text-xs">{line.serialNumbers.join(', ')}</span>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-zinc-500 hidden md:table-cell max-w-xs truncate">
