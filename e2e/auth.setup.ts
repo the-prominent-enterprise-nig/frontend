@@ -27,8 +27,9 @@ setup('authenticate as business owner', async ({ page }) => {
   // one-shot click that can silently no-op.
   await expect(async () => {
     await page.click('button[type="submit"]')
-    // LoginForm redirects to '/' on success.
-    await expect(page).toHaveURL('/', { timeout: 8_000 })
+    // LoginForm redirects to '/' on success, which RootPage then immediately
+    // server-redirects to '/dashboard' for admins (business owner included).
+    await expect(page).toHaveURL('/dashboard', { timeout: 8_000 })
   }).toPass({ timeout: 20_000 })
 
   await page.context().storageState({ path: authFile })
