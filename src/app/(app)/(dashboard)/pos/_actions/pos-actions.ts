@@ -73,6 +73,13 @@ import type {
   PosReturnRefundRequest,
   ReturnRefundStatusResult,
   ReviewReturnRefundInput,
+  SkuReservation,
+  CreateSkuReservationInput,
+  SkuReservationFilters,
+  FulfilSkuReservationInput,
+  CustomerAdvance,
+  CreateCustomerAdvanceInput,
+  CustomerAdvanceFilters,
 } from '@/src/schema/pos'
 import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
@@ -104,6 +111,8 @@ const TAGS = {
   returnRefundRequests: 'pos-return-refund-requests',
   returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
   cashInTransit: 'pos-cash-in-transit',
+  skuReservations: 'inventory-sku-reservations',
+  skuReservation: (id: string) => `inventory-sku-reservation-${id}`,
 }
 
 export async function getTerminals(filters?: {
@@ -348,6 +357,151 @@ export async function addPayment(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to add payment' }
+  }
+}
+
+// Scenario 03, Part 3 — "Reserve" checkout mode never creates a
+// PosTransaction; it creates a SkuReservation (+ optional CustomerAdvance
+// deposit) instead. Surfaced at /pos/reservations (Part 7).
+export async function createSkuReservation(
+  input: CreateSkuReservationInput
+): Promise<ApiResponse<SkuReservation>> {
+  try {
+    const result = await api.post<SkuReservation>('/inventory/sku-reservations', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create reservation' }
+    }
+    revalidateTag(TAGS.skuReservations, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create reservation' }
+  }
+}
+
+export async function createCustomerAdvance(
+  input: CreateCustomerAdvanceInput
+): Promise<ApiResponse<CustomerAdvance>> {
+  try {
+    const result = await api.post<CustomerAdvance>('/accounting/customer-advances', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to record deposit' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to record deposit' }
+  }
+}
+
+// SkuReservation.depositAmount stays 0 until fulfilment (Part 1's own
+// design — see createSkuReservation's comment) — the actual deposit lives
+// on a separate CustomerAdvance row, which /pos/reservations (Part 7) needs
+// to join in itself to show what was really collected.
+export async function getCustomerAdvances(
+  filters?: CustomerAdvanceFilters
+): Promise<ApiResponse<CustomerAdvance[]>> {
+  try {
+    const params = filters
+      ? Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined))
+      : undefined
+    const result = await api.get<CustomerAdvance[]>('/accounting/customer-advances', params)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch customer advances' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch customer advances' }
+  }
+}
+
+// Scenario 03, Part 7 — reservations list/detail + the actions Part 4-6 only
+// ever exposed via raw API calls (fulfil, request/approve/reject cancel).
+export async function getSkuReservations(
+  filters?: SkuReservationFilters
+): Promise<ApiResponse<SkuReservation[]>> {
+  try {
+    const params = filters
+      ? Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined))
+      : undefined
+    const result = await api.get<SkuReservation[]>('/inventory/sku-reservations', params, {
+      tags: [TAGS.skuReservations],
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch reservations' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch reservations' }
+  }
+}
+
+export async function fulfilSkuReservation(
+  id: string,
+  input: FulfilSkuReservationInput
+): Promise<ApiResponse<SkuReservation>> {
+  try {
+    const result = await api.post<SkuReservation>(`/inventory/sku-reservations/${id}/fulfil`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fulfil reservation' }
+    }
+    revalidateTag(TAGS.skuReservations, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fulfil reservation' }
+  }
+}
+
+export async function requestCancelSkuReservation(
+  id: string,
+  reason: string
+): Promise<ApiResponse<SkuReservation>> {
+  try {
+    const result = await api.post<SkuReservation>(
+      `/inventory/sku-reservations/${id}/request-cancel`,
+      { reason }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to request cancellation' }
+    }
+    revalidateTag(TAGS.skuReservations, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to request cancellation' }
+  }
+}
+
+export async function approveCancelSkuReservation(
+  id: string
+): Promise<ApiResponse<SkuReservation>> {
+  try {
+    const result = await api.post<SkuReservation>(
+      `/inventory/sku-reservations/${id}/approve-cancel`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to approve cancellation' }
+    }
+    revalidateTag(TAGS.skuReservations, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to approve cancellation' }
+  }
+}
+
+export async function rejectCancelSkuReservation(
+  id: string,
+  reason: string
+): Promise<ApiResponse<SkuReservation>> {
+  try {
+    const result = await api.post<SkuReservation>(
+      `/inventory/sku-reservations/${id}/reject-cancel`,
+      { reason }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to reject cancellation' }
+    }
+    revalidateTag(TAGS.skuReservations, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to reject cancellation' }
   }
 }
 
