@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
@@ -11,6 +11,7 @@ import {
   createCustomerSchema,
   PAYMENT_TERMS_OPTIONS,
   type CreateCustomerInput,
+  type CustomerBankAccountFormValues,
 } from '@/src/schema/crm/customer'
 import type { CustomerType } from '@/src/schema/crm/types'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
@@ -20,6 +21,7 @@ type FormState = {
   lastName: string
   customerType: CustomerType
   companyName: string
+  employeeNumber: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -29,6 +31,7 @@ type FormState = {
   paymentTerms: string
   creditLimit: string
   notes: string
+  bankAccounts: CustomerBankAccountFormValues[]
 }
 
 const empty: FormState = {
@@ -36,6 +39,7 @@ const empty: FormState = {
   lastName: '',
   customerType: 'individual',
   companyName: '',
+  employeeNumber: '',
   taxId: '',
   isTaxExempt: false,
   taxExemptionRef: '',
@@ -45,6 +49,7 @@ const empty: FormState = {
   paymentTerms: '',
   creditLimit: '',
   notes: '',
+  bankAccounts: [],
 }
 
 export default function NewCustomerForm() {
@@ -66,6 +71,8 @@ export default function NewCustomerForm() {
       name,
       customerType: form.customerType,
       companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
+      employeeNumber:
+        form.customerType === 'employee' ? form.employeeNumber || undefined : undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
@@ -77,6 +84,7 @@ export default function NewCustomerForm() {
       // Fixed, not user-selectable — this form is a direct manual add under CRM.
       sourceChannel: 'sales',
       notes: form.notes || undefined,
+      bankAccounts: form.bankAccounts.length > 0 ? form.bankAccounts : undefined,
     }
 
     const parsed = createCustomerSchema.safeParse(payload)
@@ -142,6 +150,7 @@ export default function NewCustomerForm() {
           >
             <option value="individual">Individual</option>
             <option value="business">Business</option>
+            <option value="employee">Employee</option>
           </select>
         </div>
 
@@ -151,6 +160,15 @@ export default function NewCustomerForm() {
             value={form.companyName}
             maxLength={255}
             onChange={(v) => setField('companyName', v)}
+          />
+        )}
+
+        {form.customerType === 'employee' && (
+          <Field
+            label="Employee ID"
+            value={form.employeeNumber}
+            maxLength={50}
+            onChange={(v) => setField('employeeNumber', v)}
           />
         )}
 
@@ -234,6 +252,90 @@ export default function NewCustomerForm() {
             type="number"
             onChange={(v) => setField('creditLimit', v)}
           />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="block text-[13px] font-medium text-gray-700">Bank details</label>
+            <button
+              type="button"
+              onClick={() =>
+                setField('bankAccounts', [
+                  ...form.bankAccounts,
+                  { bankName: '', accountNumber: '', accountName: '', isPrimary: false },
+                ])
+              }
+              className="flex items-center gap-1 text-[12px] font-medium text-prominent-orange-700 hover:text-prominent-orange-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add bank account
+            </button>
+          </div>
+          <div className="mt-2 space-y-3">
+            {form.bankAccounts.map((acc, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
+              >
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Bank name</label>
+                  <input
+                    value={acc.bankName}
+                    maxLength={100}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], bankName: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Account number
+                  </label>
+                  <input
+                    value={acc.accountNumber}
+                    maxLength={50}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], accountNumber: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Account name
+                  </label>
+                  <input
+                    value={acc.accountName ?? ''}
+                    maxLength={150}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], accountName: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setField(
+                      'bankAccounts',
+                      form.bankAccounts.filter((_, i) => i !== idx)
+                    )
+                  }
+                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Remove bank account"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div>
