@@ -280,7 +280,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     id: 'enterprise-summary',
     label: 'Enterprise Summary',
     icon: Building,
-    description: 'Employee count, users, pending leave, active modules',
+    description: 'Employee and user counts',
     defaultW: 12,
     defaultH: 3,
     minW: 6,
