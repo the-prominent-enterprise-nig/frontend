@@ -21,6 +21,17 @@ type Props = {
   typeToSearchMessage?: string
   error?: string
   disabled?: boolean
+  /**
+   * Label to show for a `value` that arrives already populated (e.g. an
+   * edit form prefilled from a fetched record) — this component only ever
+   * learns a label by the user picking a search result, so without this the
+   * field renders blank even though `value` is a real, valid id. Only read
+   * once, as this component's initial state — later renders passing a
+   * different `initialLabel` while the id hasn't changed have no effect
+   * (matches the one-time-prefill use case; a real change under the user's
+   * feet in the same field is not something this component needs to chase).
+   */
+  initialLabel?: string
 }
 
 /**
@@ -40,9 +51,10 @@ export function SearchCombobox({
   typeToSearchMessage = 'Type to search…',
   error,
   disabled,
+  initialLabel,
 }: Props) {
   // confirmedLabel: what gets shown when the dropdown is closed (only changes on select/clear)
-  const [confirmedLabel, setConfirmedLabel] = useState('')
+  const [confirmedLabel, setConfirmedLabel] = useState(initialLabel ?? '')
   // searchQuery: what the user is typing while the dropdown is open
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -156,6 +168,7 @@ export function SearchCombobox({
           </button>
         )}
       </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
 
       {open &&
         position &&

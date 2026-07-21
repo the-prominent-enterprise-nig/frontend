@@ -11,6 +11,8 @@ interface Props {
   setPeriodDays: (v: number) => void
   statusFilter: 'healthy' | 'slow_moving' | 'dead_stock' | undefined
   setStatusFilter: (v: 'healthy' | 'slow_moving' | 'dead_stock' | undefined) => void
+  page: number
+  setPage: (page: number) => void
 }
 
 const STATUS_CONFIG = {
@@ -71,16 +73,25 @@ export default function TurnoverReport({
   setPeriodDays,
   statusFilter,
   setStatusFilter,
+  page,
+  setPage,
 }: Props) {
   const summary = data?.summary
+  const meta = data?.meta
+  const totalPages = meta?.lastPage ?? 1
+  const totalRows = meta?.total ?? 0
+  const pageSize = meta?.limit ?? 20
 
   return (
     <div className="space-y-6">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-zinc-600">Period:</label>
+          <label htmlFor="turnover-period" className="text-sm font-medium text-zinc-600">
+            Period:
+          </label>
           <select
+            id="turnover-period"
             value={periodDays}
             onChange={(e) => setPeriodDays(Number(e.target.value))}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
@@ -93,7 +104,12 @@ export default function TurnoverReport({
           </select>
         </div>
 
+        <label htmlFor="turnover-status-filter" className="sr-only">
+          Filter by status
+        </label>
         <select
+          id="turnover-status-filter"
+          aria-label="Filter by status"
           value={statusFilter ?? ''}
           onChange={(e) => setStatusFilter((e.target.value || undefined) as typeof statusFilter)}
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
@@ -271,6 +287,36 @@ export default function TurnoverReport({
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span>
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalRows)} of {totalRows}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page <= 1}
+              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-2 font-medium text-zinc-700">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages}
+              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

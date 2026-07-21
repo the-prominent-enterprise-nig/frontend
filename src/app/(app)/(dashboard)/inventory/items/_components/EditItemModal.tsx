@@ -31,6 +31,15 @@ import {
   FormSection,
 } from './item-form-shared'
 
+// Tracking checkboxes that don't apply to service items and get disabled + cleared
+// when "Service Item" is checked.
+const TRACKING_FIELDS_DISABLED_BY_SERVICE = [
+  'isBatchTracked',
+  'isSerialTracked',
+  'requiresSecondarySerial',
+  'isExpiryTracked',
+] as const
+
 type Props = {
   isOpen: boolean
   item: ItemSummary | null
@@ -101,6 +110,7 @@ export default function EditItemModal({
       isExpiryTracked: false,
       isBundle: false,
       hasVariants: false,
+      isService: false,
       taxRateId: undefined,
       lengthCm: undefined,
       widthCm: undefined,
@@ -131,6 +141,7 @@ export default function EditItemModal({
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         hasVariants: item.hasVariants ?? false,
+        isService: item.isService ?? false,
         taxRateId: item.taxRateId ?? undefined,
         lengthCm: item.lengthCm != null ? Number(item.lengthCm) : undefined,
         widthCm: item.widthCm != null ? Number(item.widthCm) : undefined,
@@ -163,6 +174,14 @@ export default function EditItemModal({
     const valid = filteredSubgroups.some((s) => s.id === currentSub)
     if (!valid) setValue('subgroupId', undefined)
   }, [selectedGroupId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Service items never carry stock/serial tracking — force-clear + disable those
+  // checkboxes whenever "Service Item" is checked.
+  const isServiceValue = useWatch({ control, name: 'isService' })
+  useEffect(() => {
+    if (!isServiceValue) return
+    TRACKING_FIELDS_DISABLED_BY_SERVICE.forEach((name) => setValue(name, false))
+  }, [isServiceValue, setValue])
 
   const { data: attrDefsData } = useQuery({
     queryKey: ['inventory-attribute-definitions', selectedCategoryId],
@@ -552,25 +571,38 @@ export default function EditItemModal({
                   { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
                   { name: 'isExpiryTracked', label: 'Expiry Tracking' },
                   { name: 'isBundle', label: 'Bundle Item' },
+                  { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
                 ] as const
-              ).map(({ name, label }) => (
-                <Controller
-                  key={name}
-                  name={name}
-                  control={control}
-                  render={({ field }) => (
-                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-                      <input
-                        type="checkbox"
-                        checked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
-                        className="accent-prominent-purple-600"
-                      />
-                      {label}
-                    </label>
-                  )}
-                />
-              ))}
+              ).map(({ name, label }) => {
+                const isDisabled =
+                  isServiceValue &&
+                  (TRACKING_FIELDS_DISABLED_BY_SERVICE as readonly string[]).includes(name)
+                return (
+                  <Controller
+                    key={name}
+                    name={name}
+                    control={control}
+                    render={({ field }) => (
+                      <label
+                        className={`flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 ${
+                          isDisabled
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'cursor-pointer hover:bg-zinc-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={field.value}
+                          disabled={isDisabled}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                          className="accent-prominent-purple-600"
+                        />
+                        {label}
+                      </label>
+                    )}
+                  />
+                )
+              })}
             </div>
           </FormSection>
 

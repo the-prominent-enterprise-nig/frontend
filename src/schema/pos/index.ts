@@ -266,6 +266,98 @@ export interface CreateTransactionInput {
   lines: CreateTransactionLineInput[]
 }
 
+// Scenario 03, Part 3 — SKU-level reservation ("Reserve" checkout mode).
+// Deliberately NOT a PosTransaction — reserving an item never creates a
+// sale; it creates a SkuReservation (+ optional CustomerAdvance deposit).
+// Full lifecycle (Parts 4-6): open -> earmarked -> fulfilled, or
+// open/earmarked -> cancel_requested -> cancelled/back.
+export type SkuReservationStatus =
+  | 'open'
+  | 'earmarked'
+  | 'fulfilled'
+  | 'cancel_requested'
+  | 'cancelled'
+
+export interface SkuReservation {
+  id: string
+  branchId: string
+  branch?: { id: string; name: string; code: string }
+  itemId: string
+  item?: { id: string; sku: string; name: string; sellingPrice: number }
+  variantId?: string | null
+  variant?: { id: string; variantSku: string } | null
+  customerId: string
+  customer?: { id: string; customerCode: string; name: string }
+  quantity: number
+  depositAmount: number
+  amountPaid: number
+  status: SkuReservationStatus
+  earmarkedSerialNumberId?: string | null
+  earmarkedAt?: string | null
+  earmarkedWarehouseId?: string | null
+  fulfilledAt?: string | null
+  fulfilledJournalEntryId?: string | null
+  cancelRequestedById?: string | null
+  cancelRequestedAt?: string | null
+  cancelReason?: string | null
+  cancelActedById?: string | null
+  cancelActedAt?: string | null
+  cancelRejectedReason?: string | null
+  notes?: string | null
+  createdAt: string
+}
+
+export interface CreateSkuReservationInput {
+  itemId: string
+  variantId?: string
+  customerId: string
+  quantity: number
+  notes?: string
+}
+
+export interface SkuReservationFilters {
+  status?: SkuReservationStatus
+  itemId?: string
+  customerId?: string
+  branchId?: string
+}
+
+export interface FulfilSkuReservationInput {
+  paymentMethod?: string
+}
+
+export type CustomerAdvanceStatus = 'ACTIVE' | 'APPLIED' | 'REFUNDED'
+
+export interface CustomerAdvance {
+  id: string
+  branchId: string
+  customerId: string
+  amount: number
+  unappliedAmount: number
+  referenceType: string
+  referenceId: string
+  paymentMethod?: string | null
+  status: CustomerAdvanceStatus
+  journalEntryId?: string | null
+  createdAt: string
+}
+
+export interface CreateCustomerAdvanceInput {
+  customerId: string
+  amount: number
+  referenceType: string
+  referenceId: string
+  paymentMethod?: string
+}
+
+export interface CustomerAdvanceFilters {
+  status?: CustomerAdvanceStatus
+  customerId?: string
+  referenceType?: string
+  referenceId?: string
+  branchId?: string
+}
+
 // Customer (lightweight shape used in POS checkout)
 export interface PosCustomer {
   id: string

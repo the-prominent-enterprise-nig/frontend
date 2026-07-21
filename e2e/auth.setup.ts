@@ -27,8 +27,10 @@ setup('authenticate as business owner', async ({ page }) => {
   // one-shot click that can silently no-op.
   await expect(async () => {
     await page.click('button[type="submit"]')
-    // LoginForm redirects to '/' on success.
-    await expect(page).toHaveURL('/', { timeout: 8_000 })
+    // LoginForm pushes '/' on success, but RootPage (src/app/(app)/(dashboard)/page.tsx)
+    // immediately server-redirects admins on to '/dashboard' — the URL settles
+    // there, not at '/'. Asserting '/' loses that race almost every time.
+    await expect(page).toHaveURL('/dashboard', { timeout: 8_000 })
   }).toPass({ timeout: 20_000 })
 
   await page.context().storageState({ path: authFile })

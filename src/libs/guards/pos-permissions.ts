@@ -22,6 +22,10 @@ export const POS_PERMISSIONS = {
   FINANCING_TERMS_MANAGE: 'pos:financing-terms:manage',
   CASH_IN_TRANSIT_READ: 'pos:cash-in-transit:read',
   CASH_IN_TRANSIT_MANAGE: 'pos:cash-in-transit:manage',
+  SERVICE_DRAFTS_CREATE: 'pos:service-drafts:create',
+  SERVICE_DRAFTS_READ: 'pos:service-drafts:read',
+  SERVICE_DRAFTS_UPDATE: 'pos:service-drafts:update',
+  SERVICE_DRAFTS_CANCEL: 'pos:service-drafts:cancel',
   WILDCARD: 'pos:*',
 } as const
 
@@ -53,6 +57,10 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:financing-terms:manage': 'Create and edit installment financing terms',
   'pos:cash-in-transit:read': 'View outstanding Cash-in-Transit sessions',
   'pos:cash-in-transit:manage': 'Clear Cash-in-Transit sessions into a bank deposit',
+  'pos:service-drafts:create': 'Create service job drafts (install material estimates)',
+  'pos:service-drafts:read': 'View service job drafts',
+  'pos:service-drafts:update': 'Edit service job drafts while still in draft status',
+  'pos:service-drafts:cancel': 'Cancel service job drafts',
   'pos:*': 'Wildcard full POS access',
 }
 

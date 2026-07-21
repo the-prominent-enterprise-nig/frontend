@@ -37,6 +37,7 @@ import {
   Receipt,
   ReceiptText,
   RefreshCcw,
+  ScrollText,
   Settings,
   ShieldCheck,
   ShoppingBag,
@@ -48,6 +49,7 @@ import {
   UsersRound,
   Wallet,
   Warehouse,
+  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -323,6 +325,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/void-requests',
         icon: ShieldCheck,
         requiredPermission: 'pos:transactions:read',
+      },
+      {
+        label: 'Service Jobs',
+        href: '/pos/service-jobs',
+        icon: Wrench,
+        requiredPermission: 'pos:service-drafts:read',
       },
       {
         label: 'Release Approvals',
@@ -687,6 +695,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Business Policies',
+    href: '/settings/business-policies',
+    icon: ScrollText,
+  },
   {
     section: 'My Workspace',
     label: 'Reports',

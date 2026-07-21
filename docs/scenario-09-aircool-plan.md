@@ -4,7 +4,7 @@ Source: `module-scenarios.md`, scenario "Aircool — aircon sale plus installati
 
 ## Related ClickUp Tickets (Sprint 3-5)
 
-- [86d3pg8v5](https://app.clickup.com/t/86d3pg8v5) — "AA Cashier, ISBAT open a reopenable service draft with estimated materials when selling an aircon install, so the job can be revisited and edited until it's done" — _Sprint 3, to do_ — direct match to step 2 (this doc's Closing Gap 2, the `ServiceDraft`/`JobEstimate` entity)
+- [86d3pg8v5](https://app.clickup.com/t/86d3pg8v5) — "AA Cashier, ISBAT open a reopenable service draft with estimated materials when selling an aircon install, so the job can be revisited and edited until it's done" — _Sprint 3, in review_ — direct match to step 2 (this doc's Closing Gap 2, the `ServiceDraft`/`JobEstimate` entity) — implemented 2026-07-20, see Implementation Log below
 - [86d3pg8vr](https://app.clickup.com/t/86d3pg8vr) — "AA Stock Controller, ISBAT raise a Purchase Request for materials missing from an aircon install job, so only what that job needs is ordered and tracked back to it" — _Sprint 3, to do_ — direct match to step 3 (Closing Gap 3)
 - [86d3pg8wx](https://app.clickup.com/t/86d3pg8wx) — "AA Warehouse Manager, ISBAT return unused install materials to inventory when an aircon job closes, so leftover stock doesn't disappear off the books" — _Sprint 3, to do_ — direct match to step 5 (Closing Gap 5)
 - [86d3p2w2z](https://app.clickup.com/t/86d3p2w2z) — "AA Cashier, ISBAT have POS automatically capture the correct serial/SKU set for a multi-part or bundled item at sale" — _Sprint 3, for qa_ — relates to step 1's dual-serial capture, already confirmed working in this doc's "What's already done"
@@ -69,3 +69,18 @@ This is a genuinely new, fairly large feature (job/work-order management layered
 ## Dead code / unused-feature flags
 
 None — this scenario's building blocks (dual-serial capture, PR/PO, ParkedSale) are all actively used for other purposes and should be extended, not touched destructively.
+
+## Implementation Log — 2026-07-20
+
+**For this scenario, I have done:**
+
+- **Closing Gap 1 (service item type):** added an `isService` boolean to `Item`, enforced server-side on both create and update that a service item is never batch/serial/expiry-tracked regardless of what the caller passes, and centralized the POS-side exclusion in `PosInventoryService.expandLine()` so service lines are skipped by stock checks, deduction, AND void/refund restock uniformly. Frontend: a "Service Item" checkbox (disables/clears the other tracking checkboxes when checked) on the item create/edit forms, and a "Service" badge in the item list. e2e-tested (`test/aircool.e2e-spec.ts`), including a regression test for a real bug found during review — voiding a same-day sale containing a service line was fabricating phantom stock for it.
+- **Closing Gap 2 (`ServiceDraft`/`JobEstimate` entity):** new `ServiceDraft`/`ServiceDraftLine` models with a reopenable-by-default lifecycle (`draft | sourcing | installing | completed | cancelled`), CRUD API (create with nested lines, list, detail, bulk-replace-while-draft update, dedicated cancel), and RBAC (`pos:service-drafts:{create,read,update,cancel}`, granted to Cashier, Branch Manager, and Business Owner). Frontend: a minimal "Service Jobs" module (POS sidebar) — list, create/edit modal with a dynamic materials-line array, read-only detail view, cancel action. e2e-tested (20 tests total across both gaps, in the same file, two mutation-tested for real teeth).
+
+**Worth flagging:**
+
+- Closing Gaps 3-5 (PR/PO shortfall linkage, technician actual-vs-estimate recording, return-unused-materials + finalize/bill) are **not implemented**. `ServiceDraft.status` only ever moves between `draft` and `cancelled` right now — `sourcing`/`installing`/`completed` exist in the schema (matching the doc's original field design) but have no driving business logic or UI action yet, deliberately, since that logic doesn't exist until Gaps 3-5 land. The Service Jobs UI has no "Cancel"-adjacent actions for those states for the same reason.
+- Role decision (confirmed with the developer, since the doc's own ClickUp tickets referenced a role — "Warehouse Manager" — that no longer exists in this codebase, having been removed as out-of-scope/redundant during an earlier RBAC cleanup, and "technician" was never a role at all): both Gap 4's job-execution actor and Gap 5's return/finalize actor were resolved to **Stock Controller**, the existing role whose description already covers "receiving, adjustments, counts, batch and serial tracking." This decision will need to be re-applied when Gaps 4-5 are actually built.
+- Item-type modeling choice: `isService` is a boolean matching the existing `isBatchTracked`/`isSerialTracked`/`isBundle` sibling-flag convention on `Item`, not the enum alternative the doc's own Fix text also considered — chosen to match established precedent in this codebase.
+- No ClickUp ticket exists for Gap 1 (the service item type itself) — the doc already flagged this ("Not found in Sprint 3-5"); still true, worth raising as a new ticket if it should be tracked.
+- Both repos are on branch `feat/aircool-install-jobs`; nothing has been committed in either repo — PR text for Gaps 1-2 was generated this same session and is ready to use once the developer commits/pushes.

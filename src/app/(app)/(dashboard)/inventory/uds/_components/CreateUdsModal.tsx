@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Plus, Trash2 } from 'lucide-react'
+import { X, Loader2, Plus, Trash2, Paperclip } from 'lucide-react'
 import {
   CreateUdsFormSchema,
   type CreateUdsFormValues,
@@ -11,6 +11,9 @@ import {
   UDS_REASON_LABELS,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { uploadRfsForm } from '../_actions/upload-rfs-form'
+import { showToast } from '@/src/components/ui/toast'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type WarehouseOption = { id: string; name: string; code: string }
 type SerialOption = {
@@ -18,6 +21,7 @@ type SerialOption = {
   serialNumber: string
   item?: { sku: string; name: string } | null
 }
+type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
   isOpen: boolean
@@ -26,6 +30,7 @@ type Props = {
   isSubmitting: boolean
   warehouseOptions: WarehouseOption[]
   serialOptions: SerialOption[]
+  supplierOptions: SupplierOption[]
 }
 
 const fieldClass =
@@ -36,6 +41,8 @@ const defaultValues: CreateUdsFormValues = {
   reason: 'repair',
   expectedReturnDate: '',
   notes: '',
+  rfsFormFileId: '',
+  repairProviderId: '',
   lines: [{ serialNumberId: '', issueReason: '', notes: '' }],
 }
 
@@ -46,11 +53,14 @@ export default function CreateUdsModal({
   isSubmitting,
   warehouseOptions,
   serialOptions,
+  supplierOptions,
 }: Props) {
   const {
     control,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<CreateUdsFormValues>({
     resolver: zodResolver(CreateUdsFormSchema),
@@ -58,9 +68,16 @@ export default function CreateUdsModal({
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const reason = watch('reason')
+
+  const [isUploading, setIsUploading] = useState(false)
+  const [rfsFormName, setRfsFormName] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isOpen) reset(defaultValues)
+    if (!isOpen) {
+      reset(defaultValues)
+      setRfsFormName(null)
+    }
   }, [isOpen, reset])
 
   if (!isOpen) return null
@@ -68,6 +85,29 @@ export default function CreateUdsModal({
   async function handleFormSubmit(data: CreateUdsFormValues) {
     const result = await onSubmit(data)
     if (result.success) onClose()
+  }
+
+  async function handleRfsFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(true)
+    const formData = new FormData()
+    formData.set('file', file)
+    const result = await uploadRfsForm(formData)
+    setIsUploading(false)
+
+    if (result.success && result.data) {
+      setValue('rfsFormFileId', result.data.id)
+      setRfsFormName(result.data.originalName)
+    } else {
+      showToast({
+        title: 'RFS form upload failed',
+        description: result.message,
+        status: 'error',
+      })
+      e.target.value = ''
+    }
   }
 
   return (
@@ -147,6 +187,53 @@ export default function CreateUdsModal({
               />
             </div>
 
+            {/* Repair-specific fields */}
+            {reason === 'repair' && (
+              <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Repair Provider
+                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <Controller
+                    name="repairProviderId"
+                    control={control}
+                    render={({ field }) => (
+                      <select {...field} className={fieldClass}>
+                        <option value="">— None —</option>
+                        {supplierOptions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.code} — {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    RFS Form
+                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <label
+                    className={`${fieldClass} flex cursor-pointer items-center gap-2 text-zinc-500`}
+                  >
+                    <Paperclip className="h-4 w-4 shrink-0" />
+                    <span className="truncate">
+                      {isUploading ? 'Uploading…' : (rfsFormName ?? 'Attach supporting document')}
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={isUploading}
+                      onChange={handleRfsFileChange}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Units */}
             <div>
               <div className="mb-2 flex items-center justify-between">
@@ -170,15 +257,15 @@ export default function CreateUdsModal({
                           name={`lines.${idx}.serialNumberId`}
                           control={control}
                           render={({ field: f }) => (
-                            <select {...f} className={fieldClass}>
-                              <option value="">Select serial number…</option>
-                              {serialOptions.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.serialNumber}
-                                  {s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}
-                                </option>
-                              ))}
-                            </select>
+                            <SearchableSelect
+                              value={f.value}
+                              onChange={f.onChange}
+                              placeholder="Search serial number…"
+                              options={serialOptions.map((s) => ({
+                                value: s.id,
+                                label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
+                              }))}
+                            />
                           )}
                         />
                         {errors.lines?.[idx]?.serialNumberId && (
