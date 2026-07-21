@@ -49,6 +49,7 @@ import {
   UsersRound,
   Wallet,
   Warehouse,
+  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -324,6 +325,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/void-requests',
         icon: ShieldCheck,
         requiredPermission: 'pos:transactions:read',
+      },
+      {
+        label: 'Service Jobs',
+        href: '/pos/service-jobs',
+        icon: Wrench,
+        requiredPermission: 'pos:service-drafts:read',
       },
       {
         label: 'Release Approvals',

@@ -1,5 +1,14 @@
 import { z } from 'zod'
 
+// ── Pagination ─────────────────────────────────────────────────────────────────
+export const ReportPaginationMetaSchema = z.object({
+  page: z.number(),
+  limit: z.number(),
+  total: z.number(),
+  lastPage: z.number(),
+})
+export type ReportPaginationMeta = z.infer<typeof ReportPaginationMetaSchema>
+
 // ── Valuation Report ──────────────────────────────────────────────────────────
 export const ValuationReportItemSchema = z.object({
   itemId: z.string(),
@@ -21,6 +30,7 @@ export const ValuationReportResponseSchema = z.object({
     totalQty: z.number(),
     totalValue: z.number(),
   }),
+  meta: ReportPaginationMetaSchema.optional(),
   generatedAt: z.string().optional(),
 })
 
@@ -59,6 +69,7 @@ export const TurnoverReportResponseSchema = z.object({
       '90+': z.number(),
     }),
   }),
+  meta: ReportPaginationMetaSchema.optional(),
   periodDays: z.number().optional(),
   generatedAt: z.string().optional(),
 })

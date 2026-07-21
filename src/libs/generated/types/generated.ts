@@ -1126,6 +1126,59 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/service-drafts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List service drafts (jobs / materials estimates) */
+    get: operations['ServiceDraftsController_findAll']
+    put?: never
+    /** Open a new service job / materials estimate */
+    post: operations['ServiceDraftsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/service-drafts/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a service draft */
+    get: operations['ServiceDraftsController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Edit a draft service job (replaces the lines array) */
+    patch: operations['ServiceDraftsController_update']
+    trace?: never
+  }
+  '/pos/service-drafts/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Cancel a service job */
+    post: operations['ServiceDraftsController_cancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/promo-codes': {
     parameters: {
       query?: never
@@ -7836,6 +7889,27 @@ export interface components {
       /** @description Serialized cart data (lines, totals, etc.) */
       cartData?: Record<string, never>
     }
+    CreateServiceDraftLineDto: {
+      itemId: string
+      estimatedQty: number
+      notes?: string
+    }
+    CreateServiceDraftDto: {
+      branchId?: string
+      title: string
+      customerId?: string
+      posTransactionId?: string
+      notes?: string
+      lines: components['schemas']['CreateServiceDraftLineDto'][]
+    }
+    UpdateServiceDraftDto: {
+      branchId?: string
+      title: string
+      customerId?: string
+      posTransactionId?: string
+      notes?: string
+      lines: components['schemas']['CreateServiceDraftLineDto'][]
+    }
     CreatePromoCodeDto: {
       /** @example SUMMER20 */
       code: string
@@ -8355,6 +8429,12 @@ export interface components {
        */
       costingMethod: 'fifo' | 'lifo' | 'weighted_average'
       /**
+       * @description Marks this item as a service (e.g. installation) rather than a physical stock item. Service items are never batch/serial/expiry tracked and are excluded from stock checks/deduction.
+       * @default false
+       * @example false
+       */
+      isService: boolean
+      /**
        * @default false
        * @example false
        */
@@ -8466,6 +8546,12 @@ export interface components {
        * @enum {string}
        */
       costingMethod: 'fifo' | 'lifo' | 'weighted_average'
+      /**
+       * @description Marks this item as a service (e.g. installation) rather than a physical stock item. Service items are never batch/serial/expiry tracked and are excluded from stock checks/deduction.
+       * @default false
+       * @example false
+       */
+      isService: boolean
       /**
        * @default false
        * @example false
@@ -12678,6 +12764,110 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Parked sale cancelled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ServiceDraftsController_findAll: {
+    parameters: {
+      query?: {
+        status?: 'draft' | 'sourcing' | 'installing' | 'completed' | 'cancelled'
+        branchId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ServiceDraftsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateServiceDraftDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ServiceDraftsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ServiceDraftsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateServiceDraftDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ServiceDraftsController_cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
       200: {
         headers: {
           [name: string]: unknown
@@ -17013,8 +17203,11 @@ export interface operations {
       query?: {
         warehouseId?: string
         categoryId?: string
-        /** @description ISO date string. Note: historical point-in-time valuation requires ledger replay (not implemented); current balances are used instead. */
-        asOfDate?: string
+        search?: string
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never
@@ -17040,6 +17233,12 @@ export interface operations {
         endDate?: string
         /** @description Period length in days used to normalise turnover rate (default: 30) */
         periodDays?: number
+        search?: string
+        status?: 'healthy' | 'slow_moving' | 'dead_stock'
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
       }
       header?: never
       path?: never

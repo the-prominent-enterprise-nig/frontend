@@ -16,10 +16,14 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
     tab: activeTab,
     setTab: setActiveTab,
     warehouseFilter,
+    categoryFilter,
     search,
     setWarehouseFilter,
+    setCategoryFilter,
     setSearch,
     resetFilters,
+    page,
+    setPage,
     valuationData,
     isValuationLoading,
     isValuationFetching,
@@ -35,9 +39,10 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
     turnoverError,
     refetchTurnover,
     warehouseOptions,
+    categoryOptions,
   } = useInventoryReports()
 
-  const hasFilters = !!warehouseFilter || !!search
+  const hasFilters = !!warehouseFilter || !!categoryFilter || !!search
   const isFetching = activeTab === 'valuation' ? isValuationFetching : isTurnoverFetching
   const hasError = activeTab === 'valuation' ? valuationError : turnoverError
 
@@ -101,17 +106,27 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
         {/* Shared Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <label htmlFor="report-search" className="sr-only">
+              Search item
+            </label>
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <input
+              id="report-search"
               type="text"
               placeholder="Search item…"
+              aria-label="Search item"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-4 text-sm outline-none focus:border-prominent-purple-500"
             />
           </div>
 
+          <label htmlFor="report-warehouse-filter" className="sr-only">
+            Filter by warehouse
+          </label>
           <select
+            id="report-warehouse-filter"
+            aria-label="Filter by warehouse"
             value={warehouseFilter ?? ''}
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
@@ -120,6 +135,24 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
                 {wh.code} — {wh.name}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="report-category-filter" className="sr-only">
+            Filter by category
+          </label>
+          <select
+            id="report-category-filter"
+            aria-label="Filter by category"
+            value={categoryFilter ?? ''}
+            onChange={(e) => setCategoryFilter(e.target.value || undefined)}
+            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+          >
+            <option value="">All Categories</option>
+            {categoryOptions.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
               </option>
             ))}
           </select>
@@ -149,6 +182,8 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             data={valuationData}
             isLoading={isValuationLoading}
             isFetching={isValuationFetching}
+            page={page}
+            setPage={setPage}
           />
         )}
 
@@ -161,6 +196,8 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             setPeriodDays={setPeriodDays}
             statusFilter={statusFilter}
             setStatusFilter={setStatusFilter}
+            page={page}
+            setPage={setPage}
           />
         )}
       </div>
