@@ -1,7 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, X, ArrowRight, Truck, CheckCircle, Clock, XCircle } from 'lucide-react'
+import {
+  Plus,
+  RefreshCw,
+  X,
+  ArrowRight,
+  Truck,
+  CheckCircle,
+  Clock,
+  XCircle,
+  Inbox,
+  Hourglass,
+  Ban,
+  UserCheck,
+} from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -14,7 +27,19 @@ const STATUS_CONFIG: Record<
   TransferStatus,
   { label: string; color: string; icon: React.ElementType }
 > = {
-  draft: { label: 'Draft', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
+  pending_manager_approval: {
+    label: 'Pending',
+    color: 'bg-indigo-100 text-indigo-700',
+    icon: UserCheck,
+  },
+  requested: { label: 'Requested', color: 'bg-purple-100 text-purple-700', icon: Inbox },
+  pending_hq_approval: {
+    label: 'Pending HQ Approval',
+    color: 'bg-amber-100 text-amber-700',
+    icon: Hourglass,
+  },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: Ban },
+  draft: { label: 'Accepted', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
   in_transit: { label: 'In Transit', color: 'bg-blue-100 text-blue-700', icon: Truck },
   received: { label: 'Received', color: 'bg-green-100 text-green-700', icon: CheckCircle },
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-500', icon: XCircle },
@@ -22,8 +47,22 @@ const STATUS_CONFIG: Record<
 
 export default function TransferList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
+  const canReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_REJECT)
   const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
   const canReceive = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_RECEIVE)
+  const canHqApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_HQ_APPROVE)
+  const canHqReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_HQ_REJECT)
+  const canManagerApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_APPROVE)
+  const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
+
+  // accept/reject/dispatch are source-branch-only and receive is
+  // destination-branch-only on the backend — a Branch Manager can hold the
+  // permission in general but still not be the right branch for a given
+  // row, so quick actions here must match what the detail modal actually
+  // allows (avoids showing a button that can only ever 403).
+  const inScope = (warehouseBranchId: string | null | undefined) =>
+    !session.branchId || warehouseBranchId === session.branchId
 
   const {
     transfers,
@@ -45,9 +84,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
     transferDetail,
     isLoadingDetail,
     warehouseOptions,
-    itemOptions,
     createTransfer,
     isCreating,
+    approveHqTransfer,
+    isApprovingHq,
+    rejectHqTransfer,
+    isRejectingHq,
+    approveManagerTransfer,
+    isApprovingManager,
+    rejectManagerTransfer,
+    isRejectingManager,
+    acceptTransfer,
+    isAccepting,
+    rejectTransfer,
+    isRejecting,
     dispatchTransfer,
     isDispatching,
     receiveTransfer,
@@ -109,7 +159,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
             <option value="">All Statuses</option>
-            <option value="draft">Draft</option>
+            <option value="pending_manager_approval">Pending</option>
+            <option value="requested">Requested</option>
+            <option value="pending_hq_approval">Pending HQ Approval</option>
+            <option value="rejected">Rejected</option>
+            <option value="draft">Accepted</option>
             <option value="in_transit">In Transit</option>
             <option value="received">Received</option>
             <option value="cancelled">Cancelled</option>
@@ -219,7 +273,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
                     const lineCount = tr._count?.lines ?? tr.lines?.length ?? 0
 
                     return (
-                      <tr key={tr.id} className="hover:bg-zinc-50">
+                      <tr
+                        key={tr.id}
+                        onClick={() => openDetail(tr)}
+                        className="cursor-pointer hover:bg-zinc-50"
+                      >
                         <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-500">
                           #{tr.id.slice(0, 8).toUpperCase()}
                         </td>
@@ -251,33 +309,62 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             {cfg.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openDetail(tr)}
-                              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                            >
-                              View
-                            </button>
-                            {tr.status === 'draft' && canDispatch && (
-                              <button
-                                type="button"
-                                onClick={() => openDetail(tr)}
-                                className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                              >
-                                Dispatch
-                              </button>
-                            )}
-                            {tr.status === 'in_transit' && canReceive && (
-                              <button
-                                type="button"
-                                onClick={() => openDetail(tr)}
-                                className="rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
-                              >
-                                Receive
-                              </button>
-                            )}
+                            {tr.status === 'pending_manager_approval' &&
+                              (canManagerApprove || canManagerReject) &&
+                              inScope(tr.toWarehouse?.branchId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                                >
+                                  Review
+                                </button>
+                              )}
+                            {tr.status === 'pending_hq_approval' &&
+                              (canHqApprove || canHqReject) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                                >
+                                  Review
+                                </button>
+                              )}
+                            {tr.status === 'requested' &&
+                              (canAccept || canReject) &&
+                              inScope(tr.fromWarehouse?.branchId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-purple-50 px-2.5 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100"
+                                >
+                                  Review
+                                </button>
+                              )}
+                            {tr.status === 'draft' &&
+                              canDispatch &&
+                              inScope(tr.fromWarehouse?.branchId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                >
+                                  Dispatch
+                                </button>
+                              )}
+                            {tr.status === 'in_transit' &&
+                              canReceive &&
+                              inScope(tr.toWarehouse?.branchId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+                                >
+                                  Receive
+                                </button>
+                              )}
                           </div>
                         </td>
                       </tr>
@@ -327,7 +414,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         onSubmit={createTransfer}
         isSubmitting={isCreating}
         warehouses={warehouseOptions}
-        items={itemOptions}
+        currentUserBranchId={session.branchId}
       />
 
       <TransferDetailModal
@@ -335,14 +422,33 @@ export default function TransferList({ session }: { session: SessionUser }) {
         transfer={transferDetail}
         isLoading={isLoadingDetail}
         onClose={() => setSelectedTransfer(null)}
+        canAccept={canAccept}
+        canReject={canReject}
         canDispatch={canDispatch}
         canReceive={canReceive}
+        canHqApprove={canHqApprove}
+        canHqReject={canHqReject}
+        canManagerApprove={canManagerApprove}
+        canManagerReject={canManagerReject}
+        currentUserBranchId={session.branchId}
+        onAccept={acceptTransfer}
+        onReject={rejectTransfer}
         onDispatch={dispatchTransfer}
         onReceive={receiveTransfer}
         onCancel={cancelTransfer}
+        onApproveHq={approveHqTransfer}
+        onRejectHq={rejectHqTransfer}
+        onApproveManager={approveManagerTransfer}
+        onRejectManager={rejectManagerTransfer}
+        isAccepting={isAccepting}
+        isRejecting={isRejecting}
         isDispatching={isDispatching}
         isReceiving={isReceiving}
         isCancelling={isCancelling}
+        isApprovingHq={isApprovingHq}
+        isRejectingHq={isRejectingHq}
+        isApprovingManager={isApprovingManager}
+        isRejectingManager={isRejectingManager}
       />
     </div>
   )

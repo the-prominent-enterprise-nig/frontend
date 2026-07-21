@@ -30,8 +30,14 @@ export const INVENTORY_PERMISSIONS = {
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
+  TRANSFERS_ACCEPT: 'inventory:transfers:accept',
+  TRANSFERS_REJECT: 'inventory:transfers:reject',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
+  TRANSFERS_HQ_APPROVE: 'inventory:transfers:hq-approve',
+  TRANSFERS_HQ_REJECT: 'inventory:transfers:hq-reject',
+  TRANSFERS_MANAGER_APPROVE: 'inventory:transfers:manager-approve',
+  TRANSFERS_MANAGER_REJECT: 'inventory:transfers:manager-reject',
 
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
@@ -166,8 +172,18 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock:create': 'Post stock entries',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
+  'inventory:transfers:accept':
+    'Accept an incoming transfer request on behalf of the source branch',
+  'inventory:transfers:reject':
+    'Reject an incoming transfer request on behalf of the source branch',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:receive': 'Receive incoming stock transfers',
+  'inventory:transfers:hq-approve': 'Approve stock transfer requests pending head-office review',
+  'inventory:transfers:hq-reject': 'Reject stock transfer requests pending head-office review',
+  'inventory:transfers:manager-approve':
+    "Approve a Stock-Controller-originated transfer request on behalf of the requester's own branch",
+  'inventory:transfers:manager-reject':
+    "Reject a Stock-Controller-originated transfer request on behalf of the requester's own branch",
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',

@@ -172,6 +172,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/users/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search users by name or email */
+    get: operations['UsersController_search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/users/{id}': {
     parameters: {
       query?: never
@@ -761,6 +778,23 @@ export interface paths {
     }
     /** Get customer purchase history (POS-09) */
     get: operations['TransactionsController_getCustomerHistory']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/reports/missing-cogs': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Count and list completed sales whose lines never got a COGS/Inventory posting (computeCogs() failed at sale time — e.g. a FIFO/LIFO item with no cost layers, or a missing GL mapping) — the visibility gate for a previously-silent posting gap. */
+    get: operations['TransactionsController_getMissingCogsReport']
     put?: never
     post?: never
     delete?: never
@@ -1752,7 +1786,7 @@ export interface paths {
     patch: operations['PaymentMethodsController_update']
     trace?: never
   }
-  '/pos/branches/{branchId}/payment-methods': {
+  '/pos/branches/{branchId}/payment-method-configs': {
     parameters: {
       query?: never
       header?: never
@@ -1760,17 +1794,17 @@ export interface paths {
       cookie?: never
     }
     /** List payment methods for a branch with override state */
-    get: operations['BranchPaymentMethodsController_getForBranch']
+    get: operations['BranchPaymentMethodConfigsController_getForBranch']
     put?: never
     post?: never
     delete?: never
     options?: never
     head?: never
     /** Batch-update payment method overrides for a branch */
-    patch: operations['BranchPaymentMethodsController_saveBatch']
+    patch: operations['BranchPaymentMethodConfigsController_saveBatch']
     trace?: never
   }
-  '/pos/branches/{branchId}/payment-methods/overrides': {
+  '/pos/branches/{branchId}/payment-method-configs/overrides': {
     parameters: {
       query?: never
       header?: never
@@ -1780,29 +1814,11 @@ export interface paths {
     get?: never
     put?: never
     post?: never
-    /** Reset branch payment methods to business owner defaults */
-    delete: operations['BranchPaymentMethodsController_resetToDefaults']
+    /** Reset a branch payment methods to tenant defaults */
+    delete: operations['BranchPaymentMethodConfigsController_resetToDefaults']
     options?: never
     head?: never
     patch?: never
-    trace?: never
-  }
-  '/pos/payment-methods': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get all payment methods at the business owner level */
-    get: operations['OwnerPaymentMethodsController_getForOwner']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** Batch-update payment methods at the business owner level */
-    patch: operations['OwnerPaymentMethodsController_saveBatch']
     trace?: never
   }
   '/pos/receipt-config/branding': {
@@ -3109,7 +3125,7 @@ export interface paths {
     /** List all stock transfers (paginated) */
     get: operations['TransfersController_findAll']
     put?: never
-    /** Create a new stock transfer (draft) */
+    /** Create a new stock transfer request — status is requested, or pending_hq_approval if BusinessSettings.requireHqApprovalForTransfers is on */
     post: operations['TransfersController_create']
     delete?: never
     options?: never
@@ -3151,6 +3167,108 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/transfers/{id}/approve-manager': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Approve a Stock-Controller-originated request on behalf of the requester's own branch — moves pending_manager_approval to requested or pending_hq_approval */
+    patch: operations['TransfersController_approveManager']
+    trace?: never
+  }
+  '/inventory/transfers/{id}/reject-manager': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Reject a Stock-Controller-originated request before it reaches the source branch — moves pending_manager_approval to rejected */
+    patch: operations['TransfersController_rejectManager']
+    trace?: never
+  }
+  '/inventory/transfers/{id}/approve-hq': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Approve a transfer request pending head-office review — moves pending_hq_approval to requested */
+    patch: operations['TransfersController_approveHq']
+    trace?: never
+  }
+  '/inventory/transfers/{id}/reject-hq': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Reject a transfer request pending head-office review — moves pending_hq_approval to rejected */
+    patch: operations['TransfersController_rejectHq']
+    trace?: never
+  }
+  '/inventory/transfers/{id}/accept': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** The source branch accepts an incoming request — moves requested to draft, ready to dispatch */
+    patch: operations['TransfersController_accept']
+    trace?: never
+  }
+  '/inventory/transfers/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** The source branch declines an incoming request — moves requested to rejected */
+    patch: operations['TransfersController_reject']
+    trace?: never
+  }
   '/inventory/transfers/{id}/dispatch': {
     parameters: {
       query?: never
@@ -3181,7 +3299,7 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    /** Receive a transfer — moves it from in_transit to received and updates destination stock */
+    /** Receive a transfer — moves it from in_transit to received, updates destination stock, and issues the receiving report (GRN) */
     patch: operations['TransfersController_receive']
     trace?: never
   }
@@ -8046,7 +8164,15 @@ export interface components {
       /** @description Display order position */
       displayOrder?: number
     }
-    BatchPaymentMethodDto: Record<string, never>
+    BranchPaymentMethodOverrideChangeDto: {
+      /** @description PosPaymentMethodConfig ID */
+      paymentMethodConfigId: string
+      /** @description Enable or disable this method for the branch */
+      isEnabled: boolean
+    }
+    BatchBranchPaymentMethodOverrideDto: {
+      changes: components['schemas']['BranchPaymentMethodOverrideChangeDto'][]
+    }
     UpdateReceiptBrandingDto: {
       /**
        * @description Logo URL; pass null to remove the logo
@@ -8841,6 +8967,8 @@ export interface components {
       condition: 'sellable' | 'damaged'
       /** @description Original sale ID this return is associated with */
       originalSaleId?: string
+      /** @description StockLedger id of the original sale-time deduction (FIFO/LIFO items only), used to restore the returned quantity as a fresh cost layer at that entry's unit cost. Distinct from originalSaleId, which is just a reference tag and is not guaranteed to be a StockLedger id. */
+      originalSaleLedgerId?: string
       /** @description Additional notes for this return */
       notes?: string
       /** @description SerialNumber record ID of the unit being returned (for serial-tracked items) */
@@ -8881,6 +9009,8 @@ export interface components {
       variantId?: string
       /** @description Batch UUID */
       batchId?: string
+      /** @description Specific serial number UUID to request/transfer (serial-tracked items only). Leave unset to transfer by quantity alone. */
+      serialNumberId?: string
       /**
        * @description Quantity to transfer (must be positive)
        * @example 10
@@ -8906,6 +9036,18 @@ export interface components {
       reason?: string
       /** @description Transfer line items (at least 1 required) */
       lines: components['schemas']['CreateTransferLineDto'][]
+    }
+    RejectManagerTransferDto: {
+      /** @description Reason the requester's own branch manager is rejecting this request */
+      reason: string
+    }
+    RejectHqTransferDto: {
+      /** @description Reason for rejecting the request at HQ */
+      reason: string
+    }
+    RejectTransferDto: {
+      /** @description Reason the source branch is rejecting this request */
+      reason: string
     }
     DispatchTransferDto: {
       /**
@@ -10972,6 +11114,31 @@ export interface operations {
       }
     }
   }
+  UsersController_search: {
+    parameters: {
+      query: {
+        q: string
+        search: string
+        branchId: string
+        role: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of users matching the search query */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UserResponseDto'][]
+        }
+      }
+    }
+  }
   UsersController_findOne: {
     parameters: {
       query?: never
@@ -12064,6 +12231,24 @@ export interface operations {
       }
     }
   }
+  TransactionsController_getMissingCogsReport: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Count of affected sales plus a recent sample */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   TransactionsController_findOne: {
     parameters: {
       query?: never
@@ -12244,7 +12429,9 @@ export interface operations {
   }
   TransactionsController_getBranchVoidRequests: {
     parameters: {
-      query?: never
+      query: {
+        branchId: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -13551,7 +13738,7 @@ export interface operations {
       }
     }
   }
-  BranchPaymentMethodsController_getForBranch: {
+  BranchPaymentMethodConfigsController_getForBranch: {
     parameters: {
       query?: never
       header?: never
@@ -13572,7 +13759,7 @@ export interface operations {
       }
     }
   }
-  BranchPaymentMethodsController_saveBatch: {
+  BranchPaymentMethodConfigsController_saveBatch: {
     parameters: {
       query?: never
       header?: never
@@ -13584,7 +13771,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['BatchPaymentMethodDto']
+        'application/json': components['schemas']['BatchBranchPaymentMethodOverrideDto']
       }
     }
     responses: {
@@ -13597,7 +13784,7 @@ export interface operations {
       }
     }
   }
-  BranchPaymentMethodsController_resetToDefaults: {
+  BranchPaymentMethodConfigsController_resetToDefaults: {
     parameters: {
       query?: never
       header?: never
@@ -13610,46 +13797,6 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description All branch overrides removed */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  OwnerPaymentMethodsController_getForOwner: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Payment methods with enabled state */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  OwnerPaymentMethodsController_saveBatch: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['BatchPaymentMethodDto']
-      }
-    }
-    responses: {
-      /** @description Updated payment methods */
       200: {
         headers: {
           [name: string]: unknown
@@ -16095,7 +16242,15 @@ export interface operations {
     parameters: {
       query?: {
         /** @description Filter by transfer status */
-        status?: 'draft' | 'in_transit' | 'received' | 'cancelled'
+        status?:
+          | 'pending_manager_approval'
+          | 'requested'
+          | 'pending_hq_approval'
+          | 'rejected'
+          | 'draft'
+          | 'in_transit'
+          | 'received'
+          | 'cancelled'
         /** @description Filter by source warehouse UUID */
         fromWarehouseId?: string
         /** @description Filter by destination warehouse UUID */
@@ -16133,7 +16288,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Stock transfer created in draft status */
+      /** @description Stock transfer request created */
       201: {
         headers: {
           [name: string]: unknown
@@ -16176,6 +16331,144 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock transfer document envelope */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_approveManager: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Transfer request approved by branch manager */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_rejectManager: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectManagerTransferDto']
+      }
+    }
+    responses: {
+      /** @description Transfer request rejected by branch manager */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_approveHq: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Transfer request approved at HQ */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_rejectHq: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectHqTransferDto']
+      }
+    }
+    responses: {
+      /** @description Transfer request rejected at HQ */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_accept: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Transfer request accepted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransfersController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock transfer UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectTransferDto']
+      }
+    }
+    responses: {
+      /** @description Transfer request rejected */
       200: {
         headers: {
           [name: string]: unknown
