@@ -24,6 +24,7 @@ import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
+import type { SessionUser } from '@/src/libs/guards/permission'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -76,7 +77,7 @@ const TRANSFER_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 }
 
-export default function UdsList() {
+export default function UdsList({ session }: { session: SessionUser }) {
   const {
     records,
     pagination,
@@ -426,6 +427,7 @@ export default function UdsList() {
         warehouseOptions={warehouseOptions}
         serialOptions={serialOptions}
         supplierOptions={supplierOptions}
+        currentUserBranchId={session.branchId}
       />
 
       {selectedUds && (

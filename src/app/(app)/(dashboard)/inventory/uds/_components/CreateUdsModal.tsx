@@ -15,7 +15,7 @@ import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = { id: string; name: string; code: string; branchId?: string | null }
 type SerialOption = {
   id: string
   serialNumber: string
@@ -31,6 +31,12 @@ type Props = {
   warehouseOptions: WarehouseOption[]
   serialOptions: SerialOption[]
   supplierOptions: SupplierOption[]
+  // A Branch Manager only ever issues a UDS against their own branch's
+  // warehouse — the list is scoped (and locked outright when it resolves to
+  // one warehouse) exactly like CreateTransferModal's "To Warehouse" field.
+  // null/undefined (head office / Business Owner) leaves the field fully
+  // open, matching this project's role-hierarchy convention.
+  currentUserBranchId?: string | null
 }
 
 const fieldClass =
@@ -54,7 +60,17 @@ export default function CreateUdsModal({
   warehouseOptions,
   serialOptions,
   supplierOptions,
+  currentUserBranchId,
 }: Props) {
+  const ownBranchWarehouses = currentUserBranchId
+    ? warehouseOptions.filter((w) => w.branchId === currentUserBranchId)
+    : []
+  // Only lock the field when it resolves to exactly one warehouse — if a
+  // branch ever has more than one, a Branch Manager still needs to choose
+  // among their own rather than have an arbitrary one silently picked.
+  const lockedToWarehouseId =
+    ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
+
   const {
     control,
     handleSubmit,
@@ -79,6 +95,18 @@ export default function CreateUdsModal({
       setRfsFormName(null)
     }
   }, [isOpen, reset])
+
+  // `warehouseOptions` (and therefore lockedToWarehouseId) resolves
+  // asynchronously and can still be empty at the moment the effect above
+  // runs on open, so the locked value wouldn't otherwise reach the form
+  // state until the next open/close cycle. This narrowly re-syncs just that
+  // one field — safe to depend on lockedToWarehouseId directly since a
+  // locked field is never something the user is actively editing.
+  useEffect(() => {
+    if (isOpen && lockedToWarehouseId) {
+      setValue('warehouseId', lockedToWarehouseId, { shouldValidate: true })
+    }
+  }, [isOpen, lockedToWarehouseId, setValue])
 
   if (!isOpen) return null
 
@@ -160,17 +188,34 @@ export default function CreateUdsModal({
                 <Controller
                   name="warehouseId"
                   control={control}
-                  render={({ field }) => (
-                    <select {...field} className={fieldClass}>
-                      <option value="">— None —</option>
-                      {warehouseOptions.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.code} — {w.name}
+                  render={({ field }) =>
+                    lockedToWarehouseId ? (
+                      <select
+                        {...field}
+                        disabled
+                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
+                      >
+                        <option value={lockedToWarehouseId}>
+                          {ownBranchWarehouses[0].code} — {ownBranchWarehouses[0].name}
                         </option>
-                      ))}
-                    </select>
-                  )}
+                      </select>
+                    ) : (
+                      <select {...field} className={fieldClass}>
+                        <option value="">— None —</option>
+                        {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.code} — {w.name}
+                          </option>
+                        ))}
+                      </select>
+                    )
+                  }
                 />
+                {lockedToWarehouseId && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    UDS are always issued from your own branch&apos;s warehouse.
+                  </p>
+                )}
               </div>
             </div>
 
