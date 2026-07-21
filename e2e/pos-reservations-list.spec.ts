@@ -20,10 +20,20 @@ test.describe('POS Reservations List', () => {
 
     const filter = page.getByRole('combobox', { name: 'Filter by status' })
     await expect(filter).toBeVisible()
-    // A status vanishingly unlikely to have any rows in a dev DB — proves
-    // the filter actually narrows the query rather than always showing all.
+    // Not asserting emptiness for a specific status — real manual-testing
+    // activity can land a reservation in any status at any time. Instead,
+    // prove the filter actually narrows the query (rather than always
+    // showing everything) by checking every visible status badge matches
+    // what was selected, whether that's zero rows or several.
     await filter.selectOption('cancel_requested')
-    await expect(page.getByText('No reservations')).toBeVisible()
+    const statusCells = page.getByRole('row').filter({ hasText: 'Cancel Requested' })
+    const otherStatusCells = page
+      .getByRole('cell')
+      .filter({ hasText: /^(Open|Earmarked|Fulfilled|Cancelled)$/ })
+    await expect(otherStatusCells).toHaveCount(0)
+    // Either genuinely empty, or every row shown is Cancel Requested.
+    const rowCount = await page.getByRole('row').count()
+    if (rowCount > 1) await expect(statusCells.first()).toBeVisible()
   })
 
   test('Reservations tab is reachable from the POS nav', async ({ page }) => {
