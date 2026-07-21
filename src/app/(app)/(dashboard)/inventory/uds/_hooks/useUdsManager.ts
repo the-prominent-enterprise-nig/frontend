@@ -7,12 +7,16 @@ import { STALE } from '@/src/libs/query/stale-times'
 import { getUdsList } from '../_actions/get-uds-list'
 import { createUds } from '../_actions/create-uds'
 import { updateUdsStatus } from '../_actions/update-uds-status'
+import { assessUds } from '../_actions/assess-uds'
+import { setRepairProvider } from '../_actions/set-repair-provider'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   CreateUdsFormValues,
   UpdateUdsStatusFormValues,
+  AssessUdsFormValues,
+  SetRepairProviderFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
 
@@ -92,6 +96,40 @@ export function useUdsManager() {
     },
   })
 
+  const assessMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: AssessUdsFormValues }) => assessUds(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'UDS assessed', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({ title: 'Failed to assess UDS', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const setRepairProviderMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: SetRepairProviderFormValues }) =>
+      setRepairProvider(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Repair provider updated',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+      } else {
+        showToast({
+          title: 'Failed to update repair provider',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const records = udsQuery.data?.data?.data ?? []
   const pagination = {
     total: udsQuery.data?.data?.meta.total ?? 0,
@@ -142,5 +180,12 @@ export function useUdsManager() {
     updateStatus: (id: string, data: UpdateUdsStatusFormValues) =>
       updateStatusMutation.mutateAsync({ id, data }),
     isUpdatingStatus: updateStatusMutation.isPending,
+
+    assessUds: (id: string, data: AssessUdsFormValues) => assessMutation.mutateAsync({ id, data }),
+    isAssessing: assessMutation.isPending,
+
+    setRepairProvider: (id: string, data: SetRepairProviderFormValues) =>
+      setRepairProviderMutation.mutateAsync({ id, data }),
+    isSettingRepairProvider: setRepairProviderMutation.isPending,
   }
 }

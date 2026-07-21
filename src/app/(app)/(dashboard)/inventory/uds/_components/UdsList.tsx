@@ -2,22 +2,67 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Plus, ClipboardCheck, ChevronLeft, ChevronRight, Paperclip, Truck } from 'lucide-react'
+import {
+  Plus,
+  ClipboardCheck,
+  ChevronLeft,
+  ChevronRight,
+  Paperclip,
+  Truck,
+  ArrowRight,
+  Clock,
+  PackageCheck,
+  CheckCircle2,
+  XCircle,
+  Wrench,
+  Ban,
+} from 'lucide-react'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
 import UpdateUdsStatusModal from './UpdateUdsStatusModal'
 import UdsDetailModal from './UdsDetailModal'
+import AssessUdsModal from './AssessUdsModal'
+import SetRepairProviderModal from './SetRepairProviderModal'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
-  UDS_STATUS_STYLES,
-  UDS_REASON_STYLES,
+  UDS_ASSESSMENT_LABELS,
   UDS_STATUSES,
   UDS_REASONS,
   type Uds,
   type UdsStatus,
+  type UdsReason,
+  type UdsAssessment,
 } from '@/src/schema/inventory/uds'
-import type { UpdateUdsStatusFormValues } from '@/src/schema/inventory/uds'
+import type {
+  UpdateUdsStatusFormValues,
+  AssessUdsFormValues,
+  SetRepairProviderFormValues,
+} from '@/src/schema/inventory/uds'
+
+// Icon + color per status/assessment, mirroring TransferList's own
+// STATUS_CONFIG pattern (not exported from there) for visual consistency
+// across the inventory module's list tables.
+const STATUS_CONFIG: Record<UdsStatus, { color: string; icon: React.ElementType }> = {
+  issued: { color: 'bg-blue-100 text-blue-700', icon: Clock },
+  in_transit: { color: 'bg-yellow-100 text-yellow-700', icon: Truck },
+  received: { color: 'bg-purple-100 text-purple-700', icon: PackageCheck },
+  completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  cancelled: { color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
+}
+
+const ASSESSMENT_CONFIG: Record<UdsAssessment, { color: string; icon: React.ElementType }> = {
+  repairable: { color: 'bg-green-100 text-green-700', icon: Wrench },
+  unrepairable: { color: 'bg-red-100 text-red-700', icon: Ban },
+}
+
+const REASON_DOT: Record<UdsReason, string> = {
+  repair: 'bg-red-500',
+  maintenance: 'bg-orange-500',
+  quality_check: 'bg-yellow-500',
+  pull_out: 'bg-purple-500',
+  loan: 'bg-blue-500',
+}
 
 // Mirrors TransferList's own STATUS_CONFIG colors (not exported from there) —
 // kept minimal since this is just an inline reference badge, not the transfers
@@ -50,17 +95,33 @@ export default function UdsList() {
     isCreating,
     updateStatus,
     isUpdatingStatus,
+    assessUds,
+    isAssessing,
+    setRepairProvider,
+    isSettingRepairProvider,
   } = useUdsManager()
 
   const [isCreateOpen, setCreateOpen] = useState(false)
   const [selectedUds, setSelectedUds] = useState<Uds | null>(null)
   const [viewUds, setViewUds] = useState<Uds | null>(null)
+  const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
+  const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
 
   const hasFilters = !!statusFilter || !!reasonFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
     if (!selectedUds) return { success: false, error: 'No UDS selected', message: '' }
     return updateStatus(selectedUds.id, data)
+  }
+
+  async function handleAssess(data: AssessUdsFormValues) {
+    if (!assessingUds) return { success: false, error: 'No UDS selected', message: '' }
+    return assessUds(assessingUds.id, data)
+  }
+
+  async function handleSetRepairProvider(data: SetRepairProviderFormValues) {
+    if (!settingProviderUds) return { success: false, error: 'No UDS selected', message: '' }
+    return setRepairProvider(settingProviderUds.id, data)
   }
 
   return (
@@ -156,100 +217,150 @@ export default function UdsList() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  <tr>
-                    <th className="px-5 py-3">Code</th>
-                    <th className="px-5 py-3">Reason</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3">Units</th>
-                    <th className="px-5 py-3">Repair Provider</th>
-                    <th className="px-5 py-3">Transfer to Main</th>
-                    <th className="px-5 py-3">Warehouse</th>
-                    <th className="px-5 py-3">Exp. Return</th>
-                    <th className="px-5 py-3">Issued</th>
-                    <th className="px-5 py-3" />
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Document
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Units / Provider
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Route
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                      Issued
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {records.map((uds) => (
-                    <tr
-                      key={uds.id}
-                      onClick={() => setViewUds(uds)}
-                      className="cursor-pointer hover:bg-zinc-50"
-                    >
-                      <td className="px-5 py-3.5 font-mono text-xs font-semibold text-zinc-800">
-                        {uds.code}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UDS_REASON_STYLES[uds.reason]}`}
-                        >
-                          {UDS_REASON_LABELS[uds.reason]}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UDS_STATUS_STYLES[uds.status]}`}
-                        >
-                          {UDS_STATUS_LABELS[uds.status]}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-zinc-600">
-                        {uds.lines.length} unit{uds.lines.length !== 1 ? 's' : ''}
-                      </td>
-                      <td className="px-5 py-3.5 text-zinc-600">
-                        <span className="inline-flex items-center gap-1.5">
-                          {uds.repairProvider?.name ?? '—'}
-                          {uds.rfsFormFile && (
-                            <Paperclip
-                              className="h-3.5 w-3.5 text-zinc-400"
-                              aria-label={`RFS form attached: ${uds.rfsFormFile.originalName}`}
+                  {records.map((uds) => {
+                    const statusCfg = STATUS_CONFIG[uds.status]
+                    const StatusIcon = statusCfg.icon
+                    const assessmentCfg = uds.assessment ? ASSESSMENT_CONFIG[uds.assessment] : null
+                    const AssessmentIcon = assessmentCfg?.icon
+
+                    return (
+                      <tr
+                        key={uds.id}
+                        onClick={() => setViewUds(uds)}
+                        className="cursor-pointer hover:bg-zinc-50"
+                      >
+                        {/* Document: code + reason dot, primary/secondary line */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${REASON_DOT[uds.reason]}`}
+                              aria-hidden
                             />
+                            <span className="font-mono text-xs font-semibold text-zinc-800">
+                              {uds.code}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-zinc-400">
+                            {UDS_REASON_LABELS[uds.reason]}
+                          </p>
+                        </td>
+
+                        {/* Status: lifecycle + assessment verdict stacked */}
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.color}`}
+                          >
+                            <StatusIcon className="h-3 w-3" />
+                            {UDS_STATUS_LABELS[uds.status]}
+                          </span>
+                          {uds.assessment && assessmentCfg && AssessmentIcon && (
+                            <span
+                              className={`mt-1 flex w-fit items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${assessmentCfg.color}`}
+                            >
+                              <AssessmentIcon className="h-3 w-3" />
+                              {UDS_ASSESSMENT_LABELS[uds.assessment]}
+                            </span>
                           )}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        {uds.linkedStockTransfer ? (
-                          <Link
-                            href="/inventory/transfers"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                          >
-                            <Truck className="h-3 w-3" />
-                            {uds.linkedStockTransfer.transferNumber} —{' '}
-                            {TRANSFER_STATUS_LABELS[uds.linkedStockTransfer.status] ??
-                              uds.linkedStockTransfer.status}
-                          </Link>
-                        ) : (
-                          <span className="text-zinc-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-zinc-600">
-                        {uds.warehouse ? `${uds.warehouse.code} — ${uds.warehouse.name}` : '—'}
-                      </td>
-                      <td className="px-5 py-3.5 text-zinc-600">
-                        {uds.expectedReturnDate
-                          ? new Date(uds.expectedReturnDate).toLocaleDateString()
-                          : '—'}
-                      </td>
-                      <td className="px-5 py-3.5 text-zinc-500 text-xs">
-                        {new Date(uds.createdAt).toLocaleDateString()}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        {uds.status !== 'completed' && uds.status !== 'cancelled' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setSelectedUds(uds)
-                            }}
-                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                          >
-                            Update
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+
+                        {/* Units / Provider: count on top, provider + RFS attachment below */}
+                        <td className="px-4 py-3">
+                          <p className="text-zinc-700">
+                            {uds.lines.length} unit{uds.lines.length !== 1 ? 's' : ''}
+                          </p>
+                          {(uds.repairProvider || uds.rfsFormFile) && (
+                            <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-zinc-400">
+                              {uds.repairProvider?.name}
+                              {uds.rfsFormFile && (
+                                <Paperclip
+                                  className="h-3 w-3 shrink-0"
+                                  aria-label={`RFS form attached: ${uds.rfsFormFile.originalName}`}
+                                />
+                              )}
+                            </p>
+                          )}
+                        </td>
+
+                        {/* Route: warehouse, with an arrow to the auto-paired transfer if any */}
+                        <td className="px-4 py-3">
+                          <p className="text-zinc-700">{uds.warehouse?.code ?? '—'}</p>
+                          {uds.linkedStockTransfer && (
+                            <Link
+                              href="/inventory/transfers"
+                              onClick={(e) => e.stopPropagation()}
+                              className="mt-0.5 flex items-center gap-1 text-xs text-blue-700 hover:underline"
+                            >
+                              <ArrowRight className="h-3 w-3 shrink-0" />
+                              {uds.linkedStockTransfer.transferNumber} (
+                              {TRANSFER_STATUS_LABELS[uds.linkedStockTransfer.status] ??
+                                uds.linkedStockTransfer.status}
+                              )
+                            </Link>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
+                          {new Date(uds.createdAt).toLocaleDateString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </td>
+
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {uds.reason === 'repair' &&
+                              uds.status === 'received' &&
+                              !uds.assessment && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setAssessingUds(uds)
+                                  }}
+                                  className="rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+                                >
+                                  Assess
+                                </button>
+                              )}
+                            {uds.status !== 'completed' && uds.status !== 'cancelled' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedUds(uds)
+                                }}
+                                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                              >
+                                Update
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -306,7 +417,32 @@ export default function UdsList() {
         />
       )}
 
-      <UdsDetailModal uds={viewUds} isOpen={!!viewUds} onClose={() => setViewUds(null)} />
+      <UdsDetailModal
+        uds={viewUds}
+        isOpen={!!viewUds}
+        onClose={() => setViewUds(null)}
+        onEditProvider={(u) => {
+          setViewUds(null)
+          setSettingProviderUds(u)
+        }}
+      />
+
+      <AssessUdsModal
+        uds={assessingUds}
+        isOpen={!!assessingUds}
+        onClose={() => setAssessingUds(null)}
+        onSubmit={handleAssess}
+        isSubmitting={isAssessing}
+      />
+
+      <SetRepairProviderModal
+        uds={settingProviderUds}
+        isOpen={!!settingProviderUds}
+        onClose={() => setSettingProviderUds(null)}
+        onSubmit={handleSetRepairProvider}
+        isSubmitting={isSettingRepairProvider}
+        supplierOptions={supplierOptions}
+      />
     </div>
   )
 }
