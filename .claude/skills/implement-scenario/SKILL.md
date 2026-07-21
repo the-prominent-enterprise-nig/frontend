@@ -1,12 +1,12 @@
 ---
 name: implement-scenario
-description: "Reads one scenario gap-analysis doc (frontend/docs/scenario-NN-*-plan.md), re-verifies it against current code, questions the developer on open decisions and scope, then implements the confirmed closing-gap items ONE PART AT A TIME — each part gets its own e2e tests and manual testing instructions, and the skill stops and waits for the developer to confirm each part before starting the next. Logs progress into the scenario doc, and — once confirmed done — fills in both repos' real PR templates ready to copy-paste and moves the matching ClickUp ticket(s) to 'in review'."
-argument-hint: "Scenario number or slug, e.g. '05' or 'receiving' — resolves to frontend/docs/scenario-NN-*-plan.md"
+description: "Reads one scenario gap-analysis doc (frontend/docs/scenario-NN-*-plan.md), re-verifies it against current code, questions the developer on open decisions and scope, then implements the confirmed closing-gap items ONE PART AT A TIME — each part gets its own e2e tests and manual testing instructions, and the skill stops and waits for the developer to confirm each part before starting the next. Logs progress into the scenario doc, and — once confirmed done — fills in both repos' real PR templates ready to copy-paste and moves the matching ClickUp ticket(s) to 'in review', assigned to the developer who did the work."
+argument-hint: "Scenario number or slug, e.g. '05' or 'receiving' — resolves to frontend/docs/scenario-NN-*-plan.md. Pass --no-assign to skip assignee update."
 ---
 
 # Implement Scenario — TPE
 
-You implement one module-scenario gap-analysis plan end to end: re-verify it, question the developer on anything ambiguous, then build it **one part at a time** — test each part on both sides, hand the developer manual test steps for just that part, and stop until they confirm before starting the next. This is based on real precedent: a past scenario naturally split into 5+ parts across one implementation effort, and a developer using this skill shouldn't assume it all lands in one go. Once every confirmed part is done and verified, document it, hand back copy-paste-ready PRs, and move the matching ClickUp ticket(s) to "in review."
+You implement one module-scenario gap-analysis plan end to end: re-verify it, question the developer on anything ambiguous, then build it **one part at a time** — test each part on both sides, hand the developer manual test steps for just that part, and stop until they confirm before starting the next. This is based on real precedent: a past scenario naturally split into 5+ parts across one implementation effort, and a developer using this skill shouldn't assume it all lands in one go. Once every confirmed part is done and verified, document it, hand back copy-paste-ready PRs, and move the matching ClickUp ticket(s) to "in review," assigned to the developer who did the work.
 
 ## Source docs
 
@@ -149,12 +149,18 @@ Backend and frontend are separate git repositories — produce two independent, 
 
 Do this at the same time as Phase 6 — presenting the PR text is what triggers it.
 
+0. **Resolve the current user for assignment**, unless `--no-assign` was passed as an argument to this skill — same mechanism `clickup-push.md` uses in this same skills folder:
+   1. Call `clickup_get_workspace_members` with `workspace_id: "90167097004"`.
+   2. Run `git config user.email` to get the current git email and match it against the members list.
+   3. Store the matched `id` as `CURRENT_USER_ID` for use in step 2 below.
+   4. If no match found, skip assignment silently — do not error, do not block the ticket status move over it.
 1. From the scenario doc's `## Related ClickUp Tickets (Sprint 3-5)` section, identify the ticket(s) that correspond to the parts actually implemented and confirmed this run — not the whole list (some entries there cover deferred items, or are the intentional persona-split variants for a role you didn't touch this run).
-2. For each matching ticket, call `clickup_update_task` with `status: "in review"` — same status string and mechanism `clickup-push.md` already uses in this same skills folder.
-3. **Never downgrade a ticket.** If a ticket is already further along (`for qa`, `in review`, `done`, etc.), leave it — only move a ticket forward, exactly matching `clickup-push.md`'s own rule.
+2. For each matching ticket, call `clickup_update_task` with `status: "in review"` and, if `CURRENT_USER_ID` was resolved and `--no-assign` was not passed, `assignees: [CURRENT_USER_ID]` — same status string and mechanism `clickup-push.md` already uses in this same skills folder.
+3. **Never downgrade a ticket.** If a ticket is already further along (`for qa`, `in review`, `done`, etc.), leave the status alone — but still apply the assignee update (if applicable), exactly matching `clickup-push.md`'s own rule. Only move a ticket's status forward, never backward.
 4. Update the ticket's line in the scenario doc's "Related ClickUp Tickets" section to reflect the new status (e.g. change `*Sprint 3, to do*` to `*Sprint 3, in review*`) so the doc doesn't silently go stale the moment you move something in ClickUp.
 5. If an implemented part has no matching ticket at all (already called out under that scenario's "Not found in Sprint 3-5"), there's nothing to move — skip it silently, don't treat it as an error.
 6. If ClickUp is unreachable or a ticket ID no longer resolves, report it to the developer rather than failing the whole phase silently — the PR text from Phase 6 still stands either way.
+7. Note the assignment outcome in the Phase 6/7 report to the developer, e.g. "Assigned: Chloe Belle Estilo" or "Assigned: skipped — no member match" / "skipped — --no-assign".
 
 ---
 
@@ -179,6 +185,8 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - [ ] Never move a ClickUp ticket for a part that wasn't actually implemented and confirmed this run
 - [ ] Never downgrade a ClickUp ticket's status when moving it to "in review"
 - [ ] Never move the persona-split ticket variants for a role you didn't touch this run — they're intentional, not duplicates (see `frontend/docs/scenario-*` "Related ClickUp Tickets" sections for which ones are confirmed intentional vs. flagged for review)
+- [ ] If member lookup fails when resolving the assignee, skip assignment silently — never block the status move or fail the phase over it
+- [ ] Still apply the assignee update on an already-further-along ticket even though its status isn't moved (assignment and status-forward are independent rules)
 
 ## Tools Used
 
@@ -186,5 +194,6 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - `Agent` (Explore) — for larger re-verification passes across many citations
 - `AskUserQuestion` — surface flagged decisions and confirm scope/branch posture
 - `Edit` / `Write` — implement code changes, add e2e specs, update the scenario doc, no-op the PR templates into filled copies (output only, not committed as files)
-- `Bash` — run `npx jest --config test/jest-e2e.json --testPathPatterns <slug>` and `npm run test:e2e`
-- `clickup_update_task` — move the matching ticket(s) to "in review" once the PR text is handed back (Phase 9)
+- `Bash` — run `npx jest --config test/jest-e2e.json --testPathPatterns <slug>` and `npm run test:e2e`, plus `git config user.email` to resolve the current user
+- `clickup_get_workspace_members` — resolve the current user's ClickUp member ID for assignment (Phase 7)
+- `clickup_update_task` — move the matching ticket(s) to "in review" and assign to the current user once the PR text is handed back (Phase 7)

@@ -1,12 +1,16 @@
 'use server'
 
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { TransferListResponse, TransferListResponseSchema } from '@/src/schema/inventory/transfers'
+import {
+  TransferListResponse,
+  TransferListResponseSchema,
+  TransferStatus,
+} from '@/src/schema/inventory/transfers'
 
 export async function getTransfers(params?: {
   page?: number
   limit?: number
-  status?: 'draft' | 'in_transit' | 'received' | 'cancelled'
+  status?: TransferStatus
   fromWarehouseId?: string
   toWarehouseId?: string
 }): Promise<ApiResponse<TransferListResponse>> {

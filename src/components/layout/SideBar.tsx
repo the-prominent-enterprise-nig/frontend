@@ -37,6 +37,7 @@ import {
   Receipt,
   ReceiptText,
   RefreshCcw,
+  ScrollText,
   Settings,
   ShieldCheck,
   ShoppingBag,
@@ -694,6 +695,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Business Policies',
+    href: '/settings/business-policies',
+    icon: ScrollText,
+  },
   {
     section: 'My Workspace',
     label: 'Reports',

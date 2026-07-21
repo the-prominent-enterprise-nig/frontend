@@ -9,12 +9,20 @@ import { createTransfer } from '../_actions/create-transfer'
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
+import { approveHqTransfer } from '../_actions/approve-hq-transfer'
+import { rejectHqTransfer } from '../_actions/reject-hq-transfer'
+import { acceptTransfer } from '../_actions/accept-transfer'
+import { rejectTransfer } from '../_actions/reject-transfer'
+import { approveManagerTransfer } from '../_actions/approve-manager-transfer'
+import { rejectManagerTransfer } from '../_actions/reject-manager-transfer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getItems } from '../../items/_actions/get-items'
 import type {
   CreateTransferFormValues,
   DispatchTransferFormValues,
   ReceiveTransferFormValues,
+  RejectHqTransferFormValues,
+  RejectTransferFormValues,
+  RejectManagerTransferFormValues,
   TransferStatus,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
@@ -60,18 +68,12 @@ export function useTransferManager() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const itemsLookupQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   const createMutation = useMutation({
     mutationFn: (data: CreateTransferFormValues) => createTransfer(data),
     onSuccess: (result) => {
       if (result.success) {
         showToast({
-          title: 'Transfer saved as draft',
+          title: 'Transfer request submitted',
           description: result.message,
           status: 'success',
         })
@@ -79,6 +81,129 @@ export function useTransferManager() {
       } else {
         showToast({
           title: 'Failed to create transfer',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const approveManagerMutation = useMutation({
+    mutationFn: (id: string) => approveManagerTransfer(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request approved', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        // No optimistic status set here — approving routes to either
+        // 'requested' or 'pending_hq_approval' depending on the HQ-approval
+        // toggle, so the refetch above is what actually reflects it.
+      } else {
+        showToast({
+          title: 'Failed to approve request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectManagerMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectManagerTransferFormValues }) =>
+      rejectManagerTransfer(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to reject request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const approveHqMutation = useMutation({
+    mutationFn: (id: string) => approveHqTransfer(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request approved', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'requested' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to approve request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectHqMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectHqTransferFormValues }) =>
+      rejectHqTransfer(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to reject request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const acceptMutation = useMutation({
+    mutationFn: (id: string) => acceptTransfer(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request accepted', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'draft' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to accept request',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectTransferFormValues }) =>
+      rejectTransfer(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Request rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
+        if (selectedTransfer) {
+          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
+        }
+      } else {
+        showToast({
+          title: 'Failed to reject request',
           description: result.message,
           status: 'error',
         })
@@ -154,7 +279,6 @@ export function useTransferManager() {
   }
 
   const warehouseOptions = warehousesQuery.data?.data?.data ?? []
-  const itemOptions = itemsLookupQuery.data?.data?.data ?? []
 
   return {
     transfers,
@@ -194,10 +318,30 @@ export function useTransferManager() {
     isLoadingDetail: transferDetailQuery.isLoading,
 
     warehouseOptions,
-    itemOptions,
 
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+
+    approveHqTransfer: approveHqMutation.mutateAsync,
+    isApprovingHq: approveHqMutation.isPending,
+
+    rejectHqTransfer: (id: string, data: RejectHqTransferFormValues) =>
+      rejectHqMutation.mutateAsync({ id, data }),
+    isRejectingHq: rejectHqMutation.isPending,
+
+    approveManagerTransfer: approveManagerMutation.mutateAsync,
+    isApprovingManager: approveManagerMutation.isPending,
+
+    rejectManagerTransfer: (id: string, data: RejectManagerTransferFormValues) =>
+      rejectManagerMutation.mutateAsync({ id, data }),
+    isRejectingManager: rejectManagerMutation.isPending,
+
+    acceptTransfer: acceptMutation.mutateAsync,
+    isAccepting: acceptMutation.isPending,
+
+    rejectTransfer: (id: string, data: RejectTransferFormValues) =>
+      rejectMutation.mutateAsync({ id, data }),
+    isRejecting: rejectMutation.isPending,
 
     dispatchTransfer: (id: string, data?: DispatchTransferFormValues) =>
       dispatchMutation.mutateAsync({ id, data }),
