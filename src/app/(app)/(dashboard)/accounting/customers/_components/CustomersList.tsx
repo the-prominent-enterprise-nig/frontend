@@ -302,6 +302,7 @@ function CustomerFormDialog({
             >
               <option value="individual">Individual</option>
               <option value="business">Business</option>
+              <option value="employee">Employee</option>
             </select>
           </Field>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

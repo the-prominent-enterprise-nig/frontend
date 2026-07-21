@@ -9,6 +9,7 @@ import { createUds } from '../_actions/create-uds'
 import { updateUdsStatus } from '../_actions/update-uds-status'
 import { assessUds } from '../_actions/assess-uds'
 import { setRepairProvider } from '../_actions/set-repair-provider'
+import { writeOffUds } from '../_actions/write-off-uds'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
@@ -17,6 +18,7 @@ import type {
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
   SetRepairProviderFormValues,
+  WriteOffUdsFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
 
@@ -130,6 +132,24 @@ export function useUdsManager() {
     },
   })
 
+  const writeOffMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: WriteOffUdsFormValues }) =>
+      writeOffUds(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'UDS written off', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({
+          title: 'Failed to write off UDS',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const records = udsQuery.data?.data?.data ?? []
   const pagination = {
     total: udsQuery.data?.data?.meta.total ?? 0,
@@ -187,5 +207,9 @@ export function useUdsManager() {
     setRepairProvider: (id: string, data: SetRepairProviderFormValues) =>
       setRepairProviderMutation.mutateAsync({ id, data }),
     isSettingRepairProvider: setRepairProviderMutation.isPending,
+
+    writeOffUds: (id: string, data: WriteOffUdsFormValues) =>
+      writeOffMutation.mutateAsync({ id, data }),
+    isWritingOff: writeOffMutation.isPending,
   }
 }

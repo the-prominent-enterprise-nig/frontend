@@ -23,6 +23,7 @@ import UpdateUdsStatusModal from './UpdateUdsStatusModal'
 import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
+import WriteOffUdsModal from './WriteOffUdsModal'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -38,6 +39,7 @@ import type {
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
   SetRepairProviderFormValues,
+  WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
 
 // Icon + color per status/assessment, mirroring TransferList's own
@@ -99,6 +101,8 @@ export default function UdsList() {
     isAssessing,
     setRepairProvider,
     isSettingRepairProvider,
+    writeOffUds,
+    isWritingOff,
   } = useUdsManager()
 
   const [isCreateOpen, setCreateOpen] = useState(false)
@@ -106,6 +110,7 @@ export default function UdsList() {
   const [viewUds, setViewUds] = useState<Uds | null>(null)
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
+  const [writingOffUds, setWritingOffUds] = useState<Uds | null>(null)
 
   const hasFilters = !!statusFilter || !!reasonFilter
 
@@ -122,6 +127,11 @@ export default function UdsList() {
   async function handleSetRepairProvider(data: SetRepairProviderFormValues) {
     if (!settingProviderUds) return { success: false, error: 'No UDS selected', message: '' }
     return setRepairProvider(settingProviderUds.id, data)
+  }
+
+  async function handleWriteOff(data: WriteOffUdsFormValues) {
+    if (!writingOffUds) return { success: false, error: 'No UDS selected', message: '' }
+    return writeOffUds(writingOffUds.id, data)
   }
 
   return (
@@ -345,6 +355,17 @@ export default function UdsList() {
                                   Assess
                                 </button>
                               )}
+                            {uds.assessment === 'unrepairable' && !uds.writeOffAdjustmentId && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setWritingOffUds(uds)
+                                }}
+                                className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                Write Off
+                              </button>
+                            )}
                             {uds.status !== 'completed' && uds.status !== 'cancelled' && (
                               <button
                                 onClick={(e) => {
@@ -442,6 +463,14 @@ export default function UdsList() {
         onSubmit={handleSetRepairProvider}
         isSubmitting={isSettingRepairProvider}
         supplierOptions={supplierOptions}
+      />
+
+      <WriteOffUdsModal
+        uds={writingOffUds}
+        isOpen={!!writingOffUds}
+        onClose={() => setWritingOffUds(null)}
+        onSubmit={handleWriteOff}
+        isSubmitting={isWritingOff}
       />
     </div>
   )

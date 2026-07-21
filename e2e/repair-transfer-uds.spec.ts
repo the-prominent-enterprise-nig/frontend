@@ -494,4 +494,95 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await detailModal.getByRole('button', { name: 'Close' }).click()
     await expect(detailHeading).toBeHidden({ timeout: 10_000 })
   })
+
+  // Part 4 (Closing Gap 4): an unrepairable unit's disposal reuses the
+  // generic createAdjustment() (reasonCode: write_off), surfaced here as a
+  // dedicated "Write Off" row action rather than sending the user off to
+  // Stock Counts to do it manually.
+  test('writing off an unrepairable UDS scraps the unit and surfaces it in the detail view', async ({
+    page,
+  }) => {
+    await gotoReady(page, '/inventory/uds')
+    const previousCode = await getSettledNewestRowCode(page)
+
+    const modalHeading = page.getByRole('heading', { name: 'Issue Unit Document Sheet' })
+    await clickStable(page.getByRole('button', { name: 'Issue UDS' }), modalHeading)
+
+    const form = page.locator('form')
+    const warehouseSelect = form
+      .getByText('Warehouse', { exact: true })
+      .locator('..')
+      .locator('select')
+    await expect(async () => {
+      await warehouseSelect.selectOption({ index: 1 })
+      await expect(warehouseSelect).not.toHaveValue('')
+    }).toPass({ timeout: 10_000 })
+
+    const serialInput = form.locator('input[placeholder="Search serial number…"]')
+    const serialCombobox = serialInput.locator('..').locator('..')
+    await serialInput.click()
+    await expect(serialCombobox.locator('button').first()).toBeVisible({ timeout: 10_000 })
+    await serialCombobox.locator('button').first().click()
+
+    await expect(async () => {
+      await form.getByRole('button', { name: 'Issue UDS' }).click()
+      await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(modalHeading).toBeHidden({ timeout: 10_000 })
+
+    const code = await waitForNewRowCode(page, previousCode)
+    const row = rowByCode(page, code)
+
+    for (const nextStatus of ['In Transit', 'Received']) {
+      await row.getByRole('button', { name: 'Update' }).click()
+      const updateHeading = page.getByRole('heading', { name: 'Update UDS Status' })
+      await expect(updateHeading).toBeVisible({ timeout: 10_000 })
+      await page.getByRole('button', { name: new RegExp(nextStatus) }).click()
+      await expect(async () => {
+        await page.getByRole('button', { name: 'Update Status' }).click()
+        await expect(page.getByText('Status updated').first()).toBeVisible({ timeout: 3_000 })
+      }).toPass({ timeout: 15_000 })
+      await expect(updateHeading).toBeHidden({ timeout: 10_000 })
+    }
+
+    await row.getByRole('button', { name: 'Assess' }).click()
+    const assessHeading = page.getByRole('heading', { name: 'Assess Repair Transfer' })
+    await expect(assessHeading).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: /Unrepairable/ }).click()
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Confirm Assessment' }).click()
+      await expect(page.getByText('UDS assessed').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(assessHeading).toBeHidden({ timeout: 10_000 })
+
+    // Row: Unrepairable badge, Assess gone, Write Off now available.
+    await expect(row.locator('span.rounded-full', { hasText: 'Unrepairable' })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(row.getByRole('button', { name: 'Assess' })).toHaveCount(0)
+    const writeOffButton = row.getByRole('button', { name: 'Write Off' })
+    await expect(writeOffButton).toBeVisible()
+    await writeOffButton.click()
+
+    const writeOffHeading = page.getByRole('heading', { name: 'Write Off Unit' })
+    await expect(writeOffHeading).toBeVisible({ timeout: 10_000 })
+    await page.locator('input[type="number"]').fill('300')
+
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Confirm Write Off' }).click()
+      await expect(page.getByText('UDS written off').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+    await expect(writeOffHeading).toBeHidden({ timeout: 10_000 })
+
+    // Write Off action is gone once written off (no double write-off route in the UI).
+    await expect(row.getByRole('button', { name: 'Write Off' })).toHaveCount(0)
+
+    await row.click()
+    const detailHeading = page.getByRole('heading', { name: 'Unit Document Sheet', exact: true })
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    const detailModal = page.locator('div.max-w-3xl')
+    await expect(detailModal.getByText('written off')).toBeVisible()
+    await detailModal.getByRole('button', { name: 'Close' }).click()
+    await expect(detailHeading).toBeHidden({ timeout: 10_000 })
+  })
 })

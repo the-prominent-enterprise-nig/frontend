@@ -4149,6 +4149,109 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/sku-reservations': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List SKU-level reservations (Scenario 03) — no serial/stock required */
+    get: operations['SkuReservationsController_findAll']
+    put?: never
+    /** Reserve an item by SKU/model before any specific serial is in stock */
+    post: operations['SkuReservationsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/sku-reservations/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single SKU-level reservation */
+    get: operations['SkuReservationsController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/sku-reservations/{id}/fulfil': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Fulfil an earmarked reservation — applies the deposit, collects any remaining balance, deducts inventory */
+    post: operations['SkuReservationsController_fulfil']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/sku-reservations/{id}/request-cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Request cancellation of an open/earmarked reservation — awaits Branch Manager/Business Owner approval */
+    post: operations['SkuReservationsController_requestCancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/sku-reservations/{id}/approve-cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve a cancellation request — refunds the deposit (if any) and marks the reservation cancelled */
+    post: operations['SkuReservationsController_approveCancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/sku-reservations/{id}/reject-cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a cancellation request — reverts to open/earmarked, whichever it was before the request */
+    post: operations['SkuReservationsController_rejectCancel']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/landed-costs': {
     parameters: {
       query?: never
@@ -4584,6 +4687,40 @@ export interface paths {
     patch: operations['UdsController_updateStatus']
     trace?: never
   }
+  '/inventory/uds/{id}/assess': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Assess a received repair-reason UDS as repairable (posts the estimated-cost debit to the repair provider) or unrepairable */
+    patch: operations['UdsController_assess']
+    trace?: never
+  }
+  '/inventory/uds/{id}/repair-provider': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Set or change the repair provider on a repair-reason UDS that has not been closed or assessed yet */
+    patch: operations['UdsController_setRepairProvider']
+    trace?: never
+  }
   '/procurement/quotas': {
     parameters: {
       query?: never
@@ -4782,6 +4919,75 @@ export interface paths {
     head?: never
     /** Update an item type */
     patch: operations['ItemClassificationController_updateType']
+    trace?: never
+  }
+  '/accounting/customer-advances': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List customer advances (Scenario 03, Part 2) — deposits held against a future obligation */
+    get: operations['CustomerAdvancesController_findAll']
+    put?: never
+    /** Record a customer deposit/advance — posts Dr Cash / Cr Customer Advances Payable */
+    post: operations['CustomerAdvancesController_record']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/customer-advances/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single customer advance */
+    get: operations['CustomerAdvancesController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/customer-advances/{id}/apply': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Apply an ACTIVE advance against a sale/invoice — posts Dr Customer Advances Payable / Cr the resolved target account */
+    post: operations['CustomerAdvancesController_apply']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/customer-advances/{id}/refund': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Refund an ACTIVE advance — posts Dr Customer Advances Payable / Cr Cash. Branch Manager/Business Owner only — a Cashier cannot self-approve a refund. */
+    post: operations['CustomerAdvancesController_refund']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/accounting/tax-rates': {
@@ -9559,6 +9765,35 @@ export interface components {
       /** @description Quantity being fulfilled in this operation (partial or full) */
       fulfilledQty: number
     }
+    CreateSkuReservationDto: {
+      /** @description Item UUID (SKU-level — no serial required) */
+      itemId: string
+      /** @description Variant UUID */
+      variantId?: string
+      /** @description Branch UUID. Ignored/overridden for a branch-assigned caller — they always reserve for their own branch, regardless of what's submitted here. Required for a non-branch-assigned caller (e.g. Business Owner) creating on behalf of a branch. */
+      branchId?: string
+      /** @description Customer UUID */
+      customerId: string
+      /**
+       * @description Quantity to reserve
+       * @example 1
+       */
+      quantity: number
+      /** @description Optional free-text note */
+      notes?: string
+    }
+    FulfilReservationDto: {
+      /** @description Tender for any remaining balance not already covered by the deposit. Required only if a balance remains after applying the deposit. */
+      paymentMethod?: string
+    }
+    RequestCancelReservationDto: {
+      /** @description Why this reservation is being cancelled */
+      reason: string
+    }
+    RejectCancelReservationDto: {
+      /** @description Why the cancellation request is being rejected */
+      reason: string
+    }
     LandedCostLineDto: {
       /**
        * @description freight | duty | insurance | broker | other
@@ -9759,12 +9994,27 @@ export interface components {
       /** @example 2026-08-01 */
       expectedReturnDate?: string
       notes?: string
+      /** @description File ID (from POST /files/upload) of the attached RFS form — supporting document for repair-reason UDS */
+      rfsFormFileId?: string
+      /** @description Supplier ID of the external repair provider this unit is bound for */
+      repairProviderId?: string
       lines: components['schemas']['UdsLineDto'][]
     }
     UpdateUdsStatusDto: {
       /** @enum {string} */
       status: 'issued' | 'in_transit' | 'received' | 'completed' | 'cancelled'
       notes?: string
+    }
+    AssessUdsDto: {
+      /** @enum {string} */
+      assessment: 'repairable' | 'unrepairable'
+      /** @description Estimated repair cost — required when assessment is "repairable"; posts a debit to REPAIR_EXPENSE / REPAIR_PROVIDER_PAYABLE */
+      estimatedCost?: number
+      notes?: string
+    }
+    SetRepairProviderDto: {
+      /** @description Supplier ID of the external repair provider this unit is bound for */
+      repairProviderId: string
     }
     CreateProcurementQuotaDto: {
       /** @description Leave empty for a tenant-wide quota */
@@ -9830,6 +10080,43 @@ export interface components {
       /** @example New Unit */
       name?: string
       description?: string
+    }
+    CreateCustomerAdvanceDto: {
+      /** @description Customer UUID */
+      customerId: string
+      /**
+       * @description Deposit amount
+       * @example 1000
+       */
+      amount: number
+      /**
+       * @description What kind of document this advance is held against
+       * @example sku_reservation
+       */
+      referenceType: string
+      /** @description The referenced document's id */
+      referenceId: string
+      /** @description Which cash/bank account received the money (mirrors POS's PosPaymentMethod values). Defaults to the DEFAULT_CASH mapping when omitted. */
+      paymentMethod?: string
+      /** @description Branch UUID. Ignored/overridden for a branch-assigned caller — always recorded for their own branch. Required for a non-branch-assigned caller (e.g. Business Owner). */
+      branchId?: string
+    }
+    ApplyCustomerAdvanceDto: {
+      /** @description How much of the unapplied balance to apply. Defaults to the full unapplied balance when omitted. */
+      amount?: number
+      /**
+       * @description Which account to credit — AR when applied to an open invoice, Sales Revenue when applied directly into a completed sale.
+       * @enum {string}
+       */
+      targetMappingKey: 'AR_RECEIVABLE' | 'SALES_REVENUE'
+      /** @description What this application is for — the JE description/reference. */
+      description?: string
+    }
+    RefundCustomerAdvanceDto: {
+      /** @description How much to refund. Defaults to the full unapplied balance when omitted. */
+      amount?: number
+      /** @description Why this is being refunded — the JE description/reference. */
+      reason?: string
     }
     CreateTaxRateDto: {
       /** @example VAT 12% */
@@ -10321,9 +10608,15 @@ export interface components {
        * @default individual
        * @enum {string}
        */
-      customerType: 'individual' | 'business'
+      customerType: 'individual' | 'business' | 'employee'
       /** @example Santos Trading Inc. */
       companyName?: string
+      /**
+       * @description NIG employee ID, for customerType employee only
+       * @example EMP-0042
+       */
+      employeeNumber?: string
+      bankAccounts?: components['schemas']['CustomerBankAccountInputDto'][]
       /** @example 009-123-456-000 */
       taxId?: string
       /**
@@ -10371,9 +10664,15 @@ export interface components {
        * @default individual
        * @enum {string}
        */
-      customerType: 'individual' | 'business'
+      customerType: 'individual' | 'business' | 'employee'
       /** @example Santos Trading Inc. */
       companyName?: string
+      /**
+       * @description NIG employee ID, for customerType employee only
+       * @example EMP-0042
+       */
+      employeeNumber?: string
+      bankAccounts?: components['schemas']['CustomerBankAccountInputDto'][]
       /** @example 009-123-456-000 */
       taxId?: string
       /**
@@ -10552,12 +10851,32 @@ export interface components {
        */
       isLostStage: boolean
     }
+    CustomerBankAccountInputDto: {
+      /** @example BPI */
+      bankName: string
+      /** @example 1234-5678-9012 */
+      accountNumber: string
+      /** @example Maria Santos */
+      accountName?: string
+      /** @default false */
+      isPrimary: boolean
+    }
+    CustomerBankAccountDto: {
+      id: string
+      bankName: string
+      accountNumber: string
+      accountName?: string
+      /** @default false */
+      isPrimary: boolean
+      createdAt: string
+      updatedAt: string
+    }
     CustomerDetailDto: {
       id: string
       customerCode: string
       name: string
       /** @enum {string} */
-      customerType: 'individual' | 'business'
+      customerType: 'individual' | 'business' | 'employee'
       email?: string
       phone?: string
       /** @enum {string} */
@@ -10566,6 +10885,7 @@ export interface components {
       status: 'active' | 'inactive' | 'blocked'
       createdAt: string
       companyName?: string
+      employeeNumber?: string
       taxId?: string
       isTaxExempt: boolean
       taxExemptionRef?: string
@@ -10574,6 +10894,7 @@ export interface components {
       paymentTerms?: string
       creditLimit?: number
       notes?: string
+      bankAccounts: components['schemas']['CustomerBankAccountDto'][]
       updatedAt: string
     }
     CustomerListItemDto: {
@@ -10581,7 +10902,7 @@ export interface components {
       customerCode: string
       name: string
       /** @enum {string} */
-      customerType: 'individual' | 'business'
+      customerType: 'individual' | 'business' | 'employee'
       email?: string
       phone?: string
       /** @enum {string} */
@@ -17976,6 +18297,157 @@ export interface operations {
       }
     }
   }
+  SkuReservationsController_findAll: {
+    parameters: {
+      query?: {
+        status?: 'open' | 'earmarked' | 'fulfilled' | 'cancel_requested' | 'cancelled'
+        itemId?: string
+        customerId?: string
+        /** @description Branch UUID. Ignored for a branch-assigned caller — always scoped to their own branch. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSkuReservationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_fulfil: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FulfilReservationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_requestCancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestCancelReservationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_approveCancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SkuReservationsController_rejectCancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectCancelReservationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   LandedCostController_findAll: {
     parameters: {
       query?: {
@@ -18721,6 +19193,52 @@ export interface operations {
       }
     }
   }
+  UdsController_assess: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AssessUdsDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UdsController_setRepairProvider: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SetRepairProviderDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ProcurementQuotaController_findAll: {
     parameters: {
       query?: never
@@ -19192,6 +19710,116 @@ export interface operations {
     }
     responses: {
       200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerAdvancesController_findAll: {
+    parameters: {
+      query?: {
+        status?: 'ACTIVE' | 'APPLIED' | 'REFUNDED'
+        customerId?: string
+        referenceType?: string
+        referenceId?: string
+        /** @description Branch UUID. Ignored for a branch-assigned caller — always scoped to their own branch. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerAdvancesController_record: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCustomerAdvanceDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerAdvancesController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerAdvancesController_apply: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApplyCustomerAdvanceDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerAdvancesController_refund: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RefundCustomerAdvanceDto']
+      }
+    }
+    responses: {
+      201: {
         headers: {
           [name: string]: unknown
         }
