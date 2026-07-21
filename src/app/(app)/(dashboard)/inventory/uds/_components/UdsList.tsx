@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, ClipboardCheck, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, ClipboardCheck, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
 import UpdateUdsStatusModal from './UpdateUdsStatusModal'
@@ -33,6 +33,7 @@ export default function UdsList() {
     setPage,
     warehouseOptions,
     serialOptions,
+    supplierOptions,
     createUds,
     isCreating,
     updateStatus,
@@ -148,6 +149,7 @@ export default function UdsList() {
                     <th className="px-5 py-3">Reason</th>
                     <th className="px-5 py-3">Status</th>
                     <th className="px-5 py-3">Units</th>
+                    <th className="px-5 py-3">Repair Provider</th>
                     <th className="px-5 py-3">Warehouse</th>
                     <th className="px-5 py-3">Exp. Return</th>
                     <th className="px-5 py-3">Issued</th>
@@ -176,6 +178,17 @@ export default function UdsList() {
                       </td>
                       <td className="px-5 py-3.5 text-zinc-600">
                         {uds.lines.length} unit{uds.lines.length !== 1 ? 's' : ''}
+                      </td>
+                      <td className="px-5 py-3.5 text-zinc-600">
+                        <span className="inline-flex items-center gap-1.5">
+                          {uds.repairProvider?.name ?? '—'}
+                          {uds.rfsFormFile && (
+                            <Paperclip
+                              className="h-3.5 w-3.5 text-zinc-400"
+                              aria-label={`RFS form attached: ${uds.rfsFormFile.originalName}`}
+                            />
+                          )}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5 text-zinc-600">
                         {uds.warehouse ? `${uds.warehouse.code} — ${uds.warehouse.name}` : '—'}
@@ -243,6 +256,7 @@ export default function UdsList() {
         isSubmitting={isCreating}
         warehouseOptions={warehouseOptions}
         serialOptions={serialOptions}
+        supplierOptions={supplierOptions}
       />
 
       {selectedUds && (

@@ -33,6 +33,8 @@ export async function createUds(input: unknown): Promise<ApiResponse<{ id: strin
     ...parsed.data,
     expectedReturnDate: parsed.data.expectedReturnDate || undefined,
     warehouseId: parsed.data.warehouseId || undefined,
+    rfsFormFileId: parsed.data.rfsFormFileId || undefined,
+    repairProviderId: parsed.data.repairProviderId || undefined,
   })
 
   if (!result.success) {

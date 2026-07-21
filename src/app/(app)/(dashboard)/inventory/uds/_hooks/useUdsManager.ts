@@ -9,6 +9,7 @@ import { createUds } from '../_actions/create-uds'
 import { updateUdsStatus } from '../_actions/update-uds-status'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   CreateUdsFormValues,
   UpdateUdsStatusFormValues,
@@ -51,6 +52,12 @@ export function useUdsManager() {
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock'],
     queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
+    staleTime: STALE.LOOKUP,
+  })
+
+  const suppliersQuery = useQuery({
+    queryKey: ['inventory-uds-repair-providers'],
+    queryFn: () => getSuppliers({ limit: 200 }),
     staleTime: STALE.LOOKUP,
   })
 
@@ -127,6 +134,7 @@ export function useUdsManager() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     serialOptions: serialsQuery.data?.data?.data ?? [],
+    supplierOptions: suppliersQuery.data?.data?.data ?? [],
 
     createUds: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

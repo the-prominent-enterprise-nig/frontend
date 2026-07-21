@@ -22,6 +22,8 @@ export const CreateUdsFormSchema = z.object({
   reason: UdsReasonSchema,
   expectedReturnDate: z.string().optional(),
   notes: z.string().max(1000).optional(),
+  rfsFormFileId: z.string().optional(),
+  repairProviderId: z.string().optional(),
   lines: z.array(UdsLineFormSchema).min(1, 'At least one unit is required'),
 })
 
@@ -67,6 +69,25 @@ const UdsWarehouseSchema = z.object({
   name: z.string(),
 })
 
+const UdsRfsFormFileSchema = z.object({
+  id: z.string(),
+  originalName: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+})
+
+const UdsRepairProviderSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+})
+
+const UdsLinkedStockTransferSchema = z.object({
+  id: z.string(),
+  transferNumber: z.string(),
+  status: z.string(),
+})
+
 export const UdsSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -78,6 +99,12 @@ export const UdsSchema = z.object({
   issuedById: z.string(),
   expectedReturnDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  rfsFormFileId: z.string().optional().nullable(),
+  rfsFormFile: UdsRfsFormFileSchema.optional().nullable(),
+  repairProviderId: z.string().optional().nullable(),
+  repairProvider: UdsRepairProviderSchema.optional().nullable(),
+  linkedStockTransferId: z.string().optional().nullable(),
+  linkedStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
   lines: z.array(UdsLineSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
