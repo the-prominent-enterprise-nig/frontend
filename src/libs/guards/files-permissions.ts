@@ -1,11 +1,13 @@
 export const FILES_PERMISSIONS = {
   // ── Files ──────────────────────────────────────────────────────────────────
-  FILES_VIEW: 'files:files:view',
-  FILES_LIST: 'files:files:list',
-  FILES_DOWNLOAD: 'files:files:download',
-  FILES_UPLOAD: 'files:files:upload',
+  FILES_READ: 'files:files:read',
+  FILES_CREATE: 'files:files:create',
   FILES_DELETE: 'files:files:delete',
-  FILES_MANAGE: 'files:files:manage',
+
+  // ── Attachments ────────────────────────────────────────────────────────────
+  ATTACHMENTS_READ: 'files:attachments:read',
+  ATTACHMENTS_CREATE: 'files:attachments:create',
+  ATTACHMENTS_DELETE: 'files:attachments:delete',
 
   // ── Wildcard ───────────────────────────────────────────────────────────────
   WILDCARD: 'files:*',
@@ -15,12 +17,12 @@ export const FILES_PERMISSION_DESCRIPTIONS: Record<
   (typeof FILES_PERMISSIONS)[keyof typeof FILES_PERMISSIONS],
   string
 > = {
-  'files:files:view': 'View file details and metadata',
-  'files:files:list': 'Browse and search uploaded files',
-  'files:files:download': 'Download files',
-  'files:files:upload': 'Upload new files',
+  'files:files:read': 'View and download files',
+  'files:files:create': 'Upload new files',
   'files:files:delete': 'Delete uploaded files',
-  'files:files:manage': 'Full control over all files',
+  'files:attachments:read': 'View attachments on a record',
+  'files:attachments:create': 'Attach a file to a record',
+  'files:attachments:delete': 'Detach a file from a record',
   'files:*': 'Wildcard full Files access',
 }
 
