@@ -4,7 +4,7 @@ Source: `module-scenarios.md`, scenario "Repair transfer — a unit needs repair
 
 ## Related ClickUp Tickets (Sprint 3-5)
 
-- [86d3d19k6](https://app.clickup.com/t/86d3d19k6) — "AA Stock Controller, ISBAT raise a Repair Transfer that auto-creates the paired stock transfer to main, with the RFS form attached as supporting document" — _Sprint 3, to do_ — direct match to steps 1-2, worded almost identically
+- [86d3d19k6](https://app.clickup.com/t/86d3d19k6) — "AA Stock Controller, ISBAT raise a Repair Transfer that auto-creates the paired stock transfer to main, with the RFS form attached as supporting document" — _Sprint 3, in review_ — direct match to steps 1-2, worded almost identically. Fully addressed by Parts 1-2 (2026-07-21); moved to in review.
 - [86d3d19pu](https://app.clickup.com/t/86d3d19pu) — "AA Warehouse Manager, ISBAT receive a Repair Transfer at main, assess it as repairable or unrepairable, and route it via Delivery Receipt or a manual write-off decision" — _Sprint 3, to do_ — direct match to step 3, including the "manual decision, no auto-junk" nuance this doc's Closing Gap 4 flags as needing a product decision. **Note**: this ticket still says "write-off decision" even though the write-off feature was removed from the codebase — same discrepancy flagged in Scenario 05/10, reconcile before implementing.
 - [86d3phfw4](https://app.clickup.com/t/86d3phfw4) / [86d3phfux](https://app.clickup.com/t/86d3phfux) / [86d3phfuk](https://app.clickup.com/t/86d3phfuk) — "ISBAT have a unit returned through POS route to repair when it's marked as damaged" (Business Owner / Branch Manager / Warehouse Manager) — _Sprint 3, for qa_ — this is the POS-return-to-repair flagging already confirmed working in this doc's "What's already done" (via UDS), not the Repair Transfer entity itself.
 
@@ -67,3 +67,18 @@ This is a net-new workflow. Sequence matters — later steps depend on earlier e
 ## Dead code / unused-feature flags
 
 - **UDS's `repair`/`pull_out` reason codes** — not dead, but currently under-built relative to what their own doc comment implies they're for. Not a delete candidate; a build-out candidate per Closing Gap 1.
+
+## Implementation Log — 2026-07-21
+
+**For this scenario, I have done:**
+
+- Closing Gap 1 (Part 1): extended `UnitDocumentSheet` with `rfsFormFileId` (→ `File`), `repairProviderId` (→ `Supplier`, reused rather than a new entity), and `linkedStockTransferId` (→ `StockTransfer`). Seeded the `inventory:uds:read`/`inventory:uds:manage` permissions that the controller referenced but were never actually in the catalog. Backend PR: [backend#66](https://github.com/the-prominent-enterprise-nig/backend/pull/66). Frontend: RFS-form upload control, repair-provider picker, searchable serial picker. Frontend PR: [frontend#67](https://github.com/the-prominent-enterprise-nig/frontend/pull/67).
+- Closing Gap 2 (Part 2): raising a repair-reason UDS at a non-main branch now auto-creates a draft `StockTransfer` to the tenant's main branch (`Branch.isMainBranch`, seeded on Manila HQ) and links it via `linkedStockTransferId`, atomically in the same transaction. No-op if already at main. Granted Stock Controller/Branch Manager the `inventory:transfers:*` permissions needed to follow through (previously neither had any). Backend PR: [backend#67](https://github.com/the-prominent-enterprise-nig/backend/pull/67). Frontend: linked-transfer badge, a new read-only UDS detail view, and a redesigned card-based status-update UX. Frontend PR: [frontend#68](https://github.com/the-prominent-enterprise-nig/frontend/pull/68).
+- Closing Gap 3 (no-approval receiving at main): confirmed moot as of this implementation — scenario 06's approval-gating toggle hasn't shipped yet (`StockTransferStatus` is still just `draft/in_transit/received/cancelled`), so the plain `dispatch`/`receive` path Part 2 uses already satisfies "no approval." Will need revisiting once scenario 06 actually adds approval gating.
+
+**Worth flagging:**
+
+- Closing Gaps 4 and 5 (write-off replacement for unrepairable units, DR to repair provider for repairable units) are **not yet implemented** — deferred to a later part. Gap 4's product decision was pre-resolved during Part 2 planning: reuse the generic `createAdjustment()` (`reasonCode: write_off`) with a UI, rather than rebuilding a dedicated write-off feature.
+- Found and fixed two unrelated pre-existing bugs while implementing: (1) `cleanDatabase()` in `prisma/seed.ts` never cleared `UnitDocumentSheet`/`UnitDocumentSheetLine` before `SerialNumber`, blocking reseeding once any UDS existed; (2) frontend `FILES_PERMISSIONS` guard constants didn't match what the backend actually seeds — dead code with zero prior consumers, so the drift was invisible until this scenario's RFS-upload feature became its first real consumer.
+- Both PRs for this run are stacked on the still-open Part 1 PRs (`backend#66`, `frontend#67`), not on `main` — merge order matters.
+- Ticket [86d3d19k6](https://app.clickup.com/t/86d3d19k6) moved to in review (fully covered by Parts 1-2). [86d3d19pu](https://app.clickup.com/t/86d3d19pu) is untouched — it covers Closing Gaps 4/5, not yet built.

@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, ClipboardCheck, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, ClipboardCheck, ChevronLeft, ChevronRight, Paperclip, Truck } from 'lucide-react'
 import { useUdsManager } from '../_hooks/useUdsManager'
 import CreateUdsModal from './CreateUdsModal'
 import UpdateUdsStatusModal from './UpdateUdsStatusModal'
+import UdsDetailModal from './UdsDetailModal'
 import {
   UDS_REASON_LABELS,
   UDS_STATUS_LABELS,
@@ -16,6 +18,16 @@ import {
   type UdsStatus,
 } from '@/src/schema/inventory/uds'
 import type { UpdateUdsStatusFormValues } from '@/src/schema/inventory/uds'
+
+// Mirrors TransferList's own STATUS_CONFIG colors (not exported from there) —
+// kept minimal since this is just an inline reference badge, not the transfers
+// module's own status UI.
+const TRANSFER_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft',
+  in_transit: 'In Transit',
+  received: 'Received',
+  cancelled: 'Cancelled',
+}
 
 export default function UdsList() {
   const {
@@ -42,6 +54,7 @@ export default function UdsList() {
 
   const [isCreateOpen, setCreateOpen] = useState(false)
   const [selectedUds, setSelectedUds] = useState<Uds | null>(null)
+  const [viewUds, setViewUds] = useState<Uds | null>(null)
 
   const hasFilters = !!statusFilter || !!reasonFilter
 
@@ -150,6 +163,7 @@ export default function UdsList() {
                     <th className="px-5 py-3">Status</th>
                     <th className="px-5 py-3">Units</th>
                     <th className="px-5 py-3">Repair Provider</th>
+                    <th className="px-5 py-3">Transfer to Main</th>
                     <th className="px-5 py-3">Warehouse</th>
                     <th className="px-5 py-3">Exp. Return</th>
                     <th className="px-5 py-3">Issued</th>
@@ -158,7 +172,11 @@ export default function UdsList() {
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {records.map((uds) => (
-                    <tr key={uds.id} className="hover:bg-zinc-50">
+                    <tr
+                      key={uds.id}
+                      onClick={() => setViewUds(uds)}
+                      className="cursor-pointer hover:bg-zinc-50"
+                    >
                       <td className="px-5 py-3.5 font-mono text-xs font-semibold text-zinc-800">
                         {uds.code}
                       </td>
@@ -190,6 +208,22 @@ export default function UdsList() {
                           )}
                         </span>
                       </td>
+                      <td className="px-5 py-3.5">
+                        {uds.linkedStockTransfer ? (
+                          <Link
+                            href="/inventory/transfers"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                          >
+                            <Truck className="h-3 w-3" />
+                            {uds.linkedStockTransfer.transferNumber} —{' '}
+                            {TRANSFER_STATUS_LABELS[uds.linkedStockTransfer.status] ??
+                              uds.linkedStockTransfer.status}
+                          </Link>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
                       <td className="px-5 py-3.5 text-zinc-600">
                         {uds.warehouse ? `${uds.warehouse.code} — ${uds.warehouse.name}` : '—'}
                       </td>
@@ -204,7 +238,10 @@ export default function UdsList() {
                       <td className="px-5 py-3.5 text-right">
                         {uds.status !== 'completed' && uds.status !== 'cancelled' && (
                           <button
-                            onClick={() => setSelectedUds(uds)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedUds(uds)
+                            }}
                             className="rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
                           >
                             Update
@@ -268,6 +305,8 @@ export default function UdsList() {
           currentStatus={selectedUds.status}
         />
       )}
+
+      <UdsDetailModal uds={viewUds} isOpen={!!viewUds} onClose={() => setViewUds(null)} />
     </div>
   )
 }
