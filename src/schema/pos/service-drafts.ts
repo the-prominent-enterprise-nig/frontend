@@ -49,14 +49,61 @@ const ServiceDraftLineItemSchema = z.object({
   sku: z.string(),
 })
 
+export const ServiceDraftLineSourceSchema = z.enum(['warehouse', 'purchase_order'])
+
 export const ServiceDraftLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   item: ServiceDraftLineItemSchema,
   estimatedQty: z.coerce.number(),
   actualQty: z.coerce.number().nullable().optional(),
-  source: z.string().nullable().optional(),
+  source: ServiceDraftLineSourceSchema.nullable().optional(),
   notes: z.string().nullable().optional(),
+})
+
+// ─── Sourcing (Closing Gap 3) — stock-check preview + linked PRs ───────────
+
+export const ServiceDraftSourcingPrSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  status: z.string(),
+})
+
+export const StockCheckLineSchema = z.object({
+  lineId: z.string(),
+  itemId: z.string(),
+  sku: z.string(),
+  name: z.string(),
+  estimatedQty: z.number(),
+  availableQty: z.number(),
+  shortfallQty: z.number(),
+})
+
+export const StockCheckResponseSchema = z.object({
+  lines: z.array(StockCheckLineSchema),
+  hasShortfall: z.boolean(),
+})
+
+// ─── Install (Closing Gap 4) — assign technician + record actuals ─────────
+
+export const ServiceDraftTechnicianSchema = z.object({
+  id: z.string(),
+  firstName: z.string().nullable().optional(),
+  lastName: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+})
+
+export const StartInstallFormSchema = z.object({
+  technicianId: z.string().min(1, 'Technician is required'),
+})
+
+export const RecordActualLineSchema = z.object({
+  lineId: z.string(),
+  actualQty: z.number().min(0, 'Actual quantity cannot be negative'),
+})
+
+export const RecordActualsFormSchema = z.object({
+  lines: z.array(RecordActualLineSchema).min(1),
 })
 
 const ServiceDraftBranchSchema = z.object({
@@ -84,6 +131,9 @@ export const ServiceDraftSchema = z.object({
   branchId: z.string().nullable().optional(),
   branch: ServiceDraftBranchSchema.nullable().optional(),
   lines: z.array(ServiceDraftLineSchema),
+  sourcingPurchaseRequests: z.array(ServiceDraftSourcingPrSchema).optional(),
+  technicianId: z.string().nullable().optional(),
+  technician: ServiceDraftTechnicianSchema.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
 })
@@ -99,6 +149,13 @@ export type CreateServiceDraftLineValues = z.infer<typeof CreateServiceDraftLine
 export type CreateServiceDraftFormValues = z.infer<typeof CreateServiceDraftFormSchema>
 export type UpdateServiceDraftFormValues = z.infer<typeof UpdateServiceDraftFormSchema>
 export type ServiceDraftStatus = z.infer<typeof ServiceDraftStatusSchema>
+export type ServiceDraftLineSource = z.infer<typeof ServiceDraftLineSourceSchema>
 export type ServiceDraftLine = z.infer<typeof ServiceDraftLineSchema>
 export type ServiceDraft = z.infer<typeof ServiceDraftSchema>
 export type ServiceDraftListResponse = z.infer<typeof ServiceDraftListResponseSchema>
+export type StockCheckLine = z.infer<typeof StockCheckLineSchema>
+export type StockCheckResponse = z.infer<typeof StockCheckResponseSchema>
+export type ServiceDraftTechnician = z.infer<typeof ServiceDraftTechnicianSchema>
+export type StartInstallFormValues = z.infer<typeof StartInstallFormSchema>
+export type RecordActualLineValues = z.infer<typeof RecordActualLineSchema>
+export type RecordActualsFormValues = z.infer<typeof RecordActualsFormSchema>

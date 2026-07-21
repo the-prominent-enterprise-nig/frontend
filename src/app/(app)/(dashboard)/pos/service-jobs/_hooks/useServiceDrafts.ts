@@ -10,10 +10,17 @@ import {
   createServiceDraft,
   updateServiceDraft,
   cancelServiceDraft,
+  getServiceDraftStockCheck,
+  confirmServiceDraftSourcing,
+  startServiceDraftInstall,
+  recordServiceDraftActuals,
+  completeServiceDraft,
 } from '../_actions/service-draft-actions'
 import type {
   CreateServiceDraftFormValues,
   UpdateServiceDraftFormValues,
+  StartInstallFormValues,
+  RecordActualsFormValues,
 } from '@/src/schema/pos/service-drafts'
 
 // Mirrors usePurchaseRequests — a TanStack Query wrapper around the
@@ -79,6 +86,92 @@ export function useServiceDrafts() {
     },
   })
 
+  const sourceMutation = useMutation({
+    mutationFn: (id: string) => confirmServiceDraftSourcing(id),
+    onSuccess: (result, id) => {
+      if (result.success) {
+        showToast({
+          title: 'Sourcing confirmed',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['service-drafts'] })
+        queryClient.invalidateQueries({ queryKey: ['service-draft', id] })
+      } else {
+        showToast({
+          title: 'Failed to confirm sourcing',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const startInstallMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: StartInstallFormValues }) =>
+      startServiceDraftInstall(id, data),
+    onSuccess: (result, { id }) => {
+      if (result.success) {
+        showToast({
+          title: 'Install started',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['service-drafts'] })
+        queryClient.invalidateQueries({ queryKey: ['service-draft', id] })
+      } else {
+        showToast({
+          title: 'Failed to start install',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const recordActualsMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RecordActualsFormValues }) =>
+      recordServiceDraftActuals(id, data),
+    onSuccess: (result, { id }) => {
+      if (result.success) {
+        showToast({
+          title: 'Actuals recorded',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['service-drafts'] })
+        queryClient.invalidateQueries({ queryKey: ['service-draft', id] })
+      } else {
+        showToast({
+          title: 'Failed to record actuals',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => completeServiceDraft(id),
+    onSuccess: (result, id) => {
+      if (result.success) {
+        showToast({
+          title: 'Service job completed',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['service-drafts'] })
+        queryClient.invalidateQueries({ queryKey: ['service-draft', id] })
+      } else {
+        showToast({
+          title: 'Failed to complete service job',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelServiceDraft(id),
     onSuccess: (result, id) => {
@@ -124,7 +217,39 @@ export function useServiceDrafts() {
     cancelDraft: cancelMutation.mutateAsync,
     isCancelling: cancelMutation.isPending,
 
+    confirmSourcing: sourceMutation.mutateAsync,
+    isSourcing: sourceMutation.isPending,
+
+    startInstall: (id: string, data: StartInstallFormValues) =>
+      startInstallMutation.mutateAsync({ id, data }),
+    isStartingInstall: startInstallMutation.isPending,
+
+    recordActuals: (id: string, data: RecordActualsFormValues) =>
+      recordActualsMutation.mutateAsync({ id, data }),
+    isRecordingActuals: recordActualsMutation.isPending,
+
+    completeDraft: completeMutation.mutateAsync,
+    isCompleting: completeMutation.isPending,
+
     refetch: () => queryClient.invalidateQueries({ queryKey: ['service-drafts'] }),
+  }
+}
+
+// Fetches the shortfall preview for the "Check Stock" step — a separate,
+// short-staleTime query since it reflects live stock levels that a create/
+// update/source mutation elsewhere can immediately invalidate.
+export function useServiceDraftStockCheck(id: string | null) {
+  const query = useQuery({
+    queryKey: ['service-draft-stock-check', id],
+    queryFn: () => getServiceDraftStockCheck(id as string),
+    enabled: !!id,
+    staleTime: 0,
+  })
+
+  return {
+    stockCheck: query.data?.success ? (query.data.data ?? null) : null,
+    isLoading: query.isLoading,
+    error: query.data?.success === false ? query.data.message : null,
   }
 }
 
