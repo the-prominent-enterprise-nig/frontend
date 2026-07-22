@@ -4,9 +4,16 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, BellPlus, Pencil, Trash2 } from 'lucide-react'
-import { customersApi } from '@/src/libs/api/crm'
+import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import type { Customer, Lead, Interaction, Reminder } from '@/src/schema/crm/types'
+import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
+import type {
+  Customer,
+  Lead,
+  Interaction,
+  Reminder,
+  InstallmentAccount,
+} from '@/src/schema/crm/types'
 import type { InstallmentSchedule } from '@/src/schema/pos'
 
 type CustomerView = Customer & {
@@ -42,6 +49,10 @@ export default function Customer360({
   const [installmentLoading, setInstallmentLoading] = useState(true)
   const [installmentError, setInstallmentError] = useState<string | null>(null)
 
+  const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
+
   async function handleDelete() {
     if (!data) return
     if (!confirm(`Delete ${data.name}? This can't be undone from here.`)) return
@@ -76,6 +87,14 @@ export default function Customer360({
       if (res.success && res.data) setInstallmentSchedules(res.data)
       else setInstallmentError(res.error ?? 'Failed to load installment plans')
       setInstallmentLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    installmentAccountsApi.list({ customerId: id, limit: 50 }).then((res) => {
+      if (res.success && res.data) setInstallmentAccounts(res.data.data)
+      else setAccountsError(res.error ?? 'Failed to load CRM accounts')
+      setAccountsLoading(false)
     })
   }, [id])
 
@@ -254,7 +273,7 @@ export default function Customer360({
                     ))}
                   </ul>
                   <Link
-                    href="/accounting/ar-invoices"
+                    href={`/accounting/ar-invoices?customerId=${id}`}
                     className="mt-2 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                   >
                     View full AR ledger →
@@ -262,6 +281,44 @@ export default function Customer360({
                 </div>
               ))}
             </div>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">CRM Collections Accounts</h2>
+          {accountsLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading accounts…</p>
+          ) : accountsError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{accountsError}</p>
+          ) : installmentAccounts.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No CRM collections accounts for this customer.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {installmentAccounts.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                >
+                  <Link
+                    href={`/crm/installment-accounts/${a.id}`}
+                    className="font-mono font-medium text-prominent-orange-700 hover:underline"
+                  >
+                    {a.accountNumber}
+                  </Link>
+                  <span className="flex items-center gap-2 text-gray-600">
+                    {a.collector ? `${a.collector.stubNumber} — ${a.collector.name}` : 'Unassigned'}
+                    <AgingColorBadge color={a.agingColor} />
+                    <span className="font-medium text-gray-800">
+                      {formatPeso(Number(a.currentBalance))}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>

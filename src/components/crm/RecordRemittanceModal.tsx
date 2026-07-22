@@ -20,6 +20,7 @@ export default function RecordRemittanceModal({
     amount: 0,
     remittedAt: new Date().toISOString().slice(0, 16),
     reference: '',
+    collectionBatch: '',
     notes: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -59,6 +60,7 @@ export default function RecordRemittanceModal({
         amount: 0,
         remittedAt: new Date().toISOString().slice(0, 16),
         reference: '',
+        collectionBatch: '',
         notes: '',
       })
     } else {
@@ -113,6 +115,16 @@ export default function RecordRemittanceModal({
               value={form.reference ?? ''}
               onChange={(e) => setField('reference', e.target.value)}
               placeholder="e.g. OR number"
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Collection batch</label>
+            <input
+              value={form.collectionBatch ?? ''}
+              onChange={(e) => setField('collectionBatch', e.target.value)}
+              placeholder="e.g. Route 3 — 2026-07-15"
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </div>

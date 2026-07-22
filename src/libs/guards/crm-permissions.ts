@@ -27,6 +27,7 @@ export const CRM_PERMISSIONS = {
   INSTALLMENT_ACCOUNTS_DELETE: 'crm:installment-accounts:delete',
   INSTALLMENT_ACCOUNTS_EARLY_PAYOFF: 'crm:installment-accounts:early_payoff',
   INSTALLMENT_ACCOUNTS_RECORD_PAYMENT: 'crm:installment-accounts:record_payment',
+  INSTALLMENT_ACCOUNTS_APPROVE_GRADUATION: 'crm:installment-accounts:approve_graduation',
   PIPELINE_READ: 'crm:pipeline:read',
   PIPELINE_MANAGE: 'crm:pipeline:manage',
   SETTINGS_CONFIGURE: 'crm:settings:configure',

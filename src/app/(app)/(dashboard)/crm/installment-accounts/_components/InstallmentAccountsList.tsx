@@ -6,6 +6,7 @@ import { Plus, Search, Wallet, Calculator } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
+import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -236,7 +237,10 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                       {a.customer ? a.customer.name : '—'}
                     </div>
                     <div className="mt-1 flex items-center justify-between">
-                      <StatusBadge status={a.status} />
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge status={a.status} />
+                        <AgingColorBadge color={a.agingColor} />
+                      </div>
                       <span className="text-[13px] font-semibold tabular-nums text-gray-900">
                         {peso(a.currentBalance)}
                       </span>
@@ -259,6 +263,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <th className="px-4 py-3">Collector</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">Aging</th>
+                    <th className="px-4 py-3">Color</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Balance</th>
                   </tr>
@@ -288,6 +293,9 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {a.agingBucket ?? <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <AgingColorBadge color={a.agingColor} />
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={a.status} />

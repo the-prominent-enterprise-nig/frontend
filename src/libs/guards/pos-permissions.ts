@@ -22,6 +22,7 @@ export const POS_PERMISSIONS = {
   FINANCING_TERMS_MANAGE: 'pos:financing-terms:manage',
   CASH_IN_TRANSIT_READ: 'pos:cash-in-transit:read',
   CASH_IN_TRANSIT_MANAGE: 'pos:cash-in-transit:manage',
+  COLLECTIONS_MANAGE: 'pos:collections:manage',
   WILDCARD: 'pos:*',
 } as const
 
@@ -53,6 +54,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:financing-terms:manage': 'Create and edit installment financing terms',
   'pos:cash-in-transit:read': 'View outstanding Cash-in-Transit sessions',
   'pos:cash-in-transit:manage': 'Clear Cash-in-Transit sessions into a bank deposit',
+  'pos:collections:manage':
+    "Collect payments against a customer's existing installment dues at POS",
   'pos:*': 'Wildcard full POS access',
 }
 

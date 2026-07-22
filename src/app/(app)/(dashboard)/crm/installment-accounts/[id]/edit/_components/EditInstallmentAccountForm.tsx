@@ -47,6 +47,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState<string | null>(null)
+  const [originalCategory, setOriginalCategory] = useState<InstallmentAccountCategory | ''>('')
 
   useEffect(() => {
     Promise.all([
@@ -60,6 +61,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       if (accountRes.success && accountRes.data) {
         const a = accountRes.data
         setAccountNumber(a.accountNumber)
+        setOriginalCategory(a.category ?? '')
         setForm({
           branchId: a.branchId ?? '',
           collectorId: a.collectorId ?? '',
@@ -214,9 +216,17 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
               <option value="">Unset</option>
               <option value="A">A</option>
               <option value="B">B</option>
-              <option value="C">C</option>
+              <option value="C" disabled={originalCategory !== 'C'}>
+                C {originalCategory !== 'C' ? '— requires graduation request' : ''}
+              </option>
               <option value="D">D</option>
             </select>
+            {originalCategory !== 'C' && (
+              <p className="mt-1 text-[12px] text-gray-500">
+                Graduation to Category C needs management approval — request it from the account
+                detail page instead of editing directly here.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Classification</label>

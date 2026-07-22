@@ -216,8 +216,13 @@ export default function CollectorDetail({
                   {r.reference || 'Remittance'}
                   {r.notes ? <span className="text-gray-500"> — {r.notes}</span> : null}
                 </div>
-                <div className="text-[12px] text-gray-500">
-                  {new Date(r.remittedAt).toLocaleString()}
+                <div className="flex items-center gap-2 text-[12px] text-gray-500">
+                  <span>{new Date(r.remittedAt).toLocaleString()}</span>
+                  {r.collectionBatch && (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                      {r.collectionBatch}
+                    </span>
+                  )}
                 </div>
               </div>
               <span className="shrink-0 text-[13px] font-semibold tabular-nums text-gray-900">

@@ -25,7 +25,11 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 
-export default function ARInvoicesList() {
+export default function ARInvoicesList({
+  initialCustomerId,
+}: {
+  initialCustomerId?: string
+} = {}) {
   const [items, setItems] = useState<ARInvoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,13 +38,14 @@ export default function ARInvoicesList() {
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
+  const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await ARInvoices.list()
+    const res = await ARInvoices.list(customerFilter ? { customerId: customerFilter } : undefined)
     setItems(res.data?.items ?? [])
     setLoading(false)
-  }, [])
+  }, [customerFilter])
   useEffect(() => {
     load()
     getCustomers().then((r) => setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[]))
@@ -81,6 +86,19 @@ export default function ARInvoicesList() {
           </button>
         </div>
       </div>
+      {customerFilter && (
+        <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
+          <span>
+            Filtered to {customers.find((c) => c.id === customerFilter)?.name ?? 'this customer'}
+          </span>
+          <button
+            onClick={() => setCustomerFilter(undefined)}
+            className="font-medium text-purple-700 hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">

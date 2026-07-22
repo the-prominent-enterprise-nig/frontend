@@ -8,9 +8,24 @@ import {
 export const createInstallmentAccountSchema = z.object({
   accountNumber: z.string().min(1, 'Account number is required').max(30),
   customerId: z.string().min(1, 'Customer is required'),
-  branchId: z.string().optional().or(z.literal('')),
-  collectorId: z.string().optional().or(z.literal('')),
-  arInvoiceId: z.string().optional().or(z.literal('')),
+  branchId: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => v || undefined)
+    .optional(),
+  collectorId: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => v || undefined)
+    .optional(),
+  arInvoiceId: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .transform((v) => v || undefined)
+    .optional(),
   listedCashPrice: z.coerce.number().min(0, 'Listed cash price must be 0 or more'),
   downPayment: z.coerce.number().min(0, 'Down payment must be 0 or more'),
   termMonths: z.coerce

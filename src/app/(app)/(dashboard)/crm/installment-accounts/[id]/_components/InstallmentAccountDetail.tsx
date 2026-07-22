@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Banknote, Coins } from 'lucide-react'
+import { ArrowLeft, Pencil, Banknote, Coins, ArrowUpCircle, Check, X as XIcon } from 'lucide-react'
 import { installmentAccountsApi } from '@/src/libs/api/crm'
 import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
 import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
-import type { InstallmentAccountDetail as DetailType } from '@/src/schema/crm/types'
+import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
+import type {
+  InstallmentAccountDetail as DetailType,
+  CategoryGraduationRequest,
+} from '@/src/schema/crm/types'
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -44,11 +48,13 @@ export default function InstallmentAccountDetail({
   canEdit,
   canEarlyPayoff,
   canRecordPayment,
+  canApproveGraduation,
 }: {
   id: string
   canEdit: boolean
   canEarlyPayoff: boolean
   canRecordPayment: boolean
+  canApproveGraduation: boolean
 }) {
   const [account, setAccount] = useState<DetailType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -56,9 +62,20 @@ export default function InstallmentAccountDetail({
   const [payoffOpen, setPayoffOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
 
+  const [graduationRequests, setGraduationRequests] = useState<CategoryGraduationRequest[]>([])
+  const [requestingGraduation, setRequestingGraduation] = useState(false)
+  const [graduationError, setGraduationError] = useState<string | null>(null)
+  const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null)
+
   function reload() {
     installmentAccountsApi.get(id).then((res) => {
       if (res.success && res.data) setAccount(res.data)
+    })
+  }
+
+  function reloadGraduationRequests() {
+    installmentAccountsApi.listGraduationRequests(id).then((res) => {
+      if (res.success && res.data) setGraduationRequests(res.data)
     })
   }
 
@@ -68,7 +85,38 @@ export default function InstallmentAccountDetail({
       else setError(res.error ?? 'Installment account not found')
       setLoading(false)
     })
+    reloadGraduationRequests()
   }, [id])
+
+  const pendingGraduation = graduationRequests.find((r) => r.status === 'pending')
+
+  async function handleRequestGraduation() {
+    setGraduationError(null)
+    setRequestingGraduation(true)
+    const res = await installmentAccountsApi.requestGraduation(id, {})
+    setRequestingGraduation(false)
+    if (res.success) {
+      reloadGraduationRequests()
+    } else {
+      setGraduationError(res.error ?? 'Failed to request graduation')
+    }
+  }
+
+  async function handleApproveGraduation(requestId: string) {
+    const res = await installmentAccountsApi.approveGraduation(id, requestId)
+    if (res.success) {
+      reload()
+      reloadGraduationRequests()
+    }
+  }
+
+  async function handleRejectGraduation(requestId: string, reason: string) {
+    const res = await installmentAccountsApi.rejectGraduation(id, requestId, { reason })
+    if (res.success) {
+      setRejectingRequestId(null)
+      reloadGraduationRequests()
+    }
+  }
 
   if (loading) {
     return (
@@ -169,7 +217,58 @@ export default function InstallmentAccountDetail({
             <Row label="Aging bucket" value={account.agingBucket ?? '—'} />
             <Row label="Months run" value={String(account.monthsRun)} />
             <Row label="Points" value={String(account.points)} />
+            <div className="flex justify-between gap-3">
+              <dt className="text-gray-500">Aging color</dt>
+              <dd className="text-right">
+                <AgingColorBadge color={account.agingColor} />
+              </dd>
+            </div>
           </dl>
+
+          {account.category !== 'C' && !pendingGraduation && canEdit && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <button
+                onClick={handleRequestGraduation}
+                disabled={requestingGraduation}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <ArrowUpCircle className="h-4 w-4" />
+                {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
+              </button>
+              {graduationError && (
+                <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
+              )}
+            </div>
+          )}
+
+          {pendingGraduation && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[13px] font-medium text-amber-900">
+                Pending graduation to Category C
+              </p>
+              <p className="mt-0.5 text-[12px] text-amber-700">
+                Requires management approval before the category changes.
+              </p>
+              {canApproveGraduation && (
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => handleApproveGraduation(pendingGraduation.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setRejectingRequestId(pendingGraduation.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
@@ -230,6 +329,52 @@ export default function InstallmentAccountDetail({
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
       />
+
+      {rejectingRequestId && (
+        <RejectGraduationModal
+          onClose={() => setRejectingRequestId(null)}
+          onReject={(reason) => handleRejectGraduation(rejectingRequestId, reason)}
+        />
+      )}
+    </div>
+  )
+}
+
+function RejectGraduationModal({
+  onClose,
+  onReject,
+}: {
+  onClose: () => void
+  onReject: (reason: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Reject graduation request</h2>
+        <label className="block text-[13px] font-medium text-gray-700">Reason</label>
+        <textarea
+          rows={3}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. arrears not yet cleared"
+          className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+        />
+        <div className="mt-4 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onReject(reason)}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700"
+          >
+            Reject
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

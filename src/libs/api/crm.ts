@@ -16,6 +16,7 @@ import type {
   AccountingCustomerLite,
   Agent,
   CollectionIncentive,
+  CategoryGraduationRequest,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -189,6 +190,7 @@ export const collectorsApi = {
 
 export type InstallmentAccountFilters = {
   search?: string
+  customerId?: string
   branchId?: string
   collectorId?: string
   category?: string
@@ -215,6 +217,27 @@ export const installmentAccountsApi = {
   recordPayment: (id: string, body: RecordPaymentInput) =>
     api.post<InstallmentAccountDetail & { pointEarned: boolean }>(
       `/crm/installment-accounts/${id}/payments`,
+      body
+    ),
+  requestGraduation: (id: string, body: { notes?: string }) =>
+    api.post<CategoryGraduationRequest>(
+      `/crm/installment-accounts/${id}/graduation-requests`,
+      body
+    ),
+  listGraduationRequests: (id: string) =>
+    api.get<CategoryGraduationRequest[]>(`/crm/installment-accounts/${id}/graduation-requests`),
+  listAllGraduationRequests: (status?: string) =>
+    api.get<CategoryGraduationRequest[]>(
+      '/crm/installment-accounts/graduation-requests',
+      status ? { status } : undefined
+    ),
+  approveGraduation: (id: string, requestId: string) =>
+    api.post<InstallmentAccountDetail>(
+      `/crm/installment-accounts/${id}/graduation-requests/${requestId}/approve`
+    ),
+  rejectGraduation: (id: string, requestId: string, body: { reason?: string }) =>
+    api.post<CategoryGraduationRequest>(
+      `/crm/installment-accounts/${id}/graduation-requests/${requestId}/reject`,
       body
     ),
 }
@@ -289,6 +312,13 @@ export const collectionIncentivesApi = {
     api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/approve`),
   reject: (id: string, body: RejectCollectionIncentiveInput) =>
     api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/reject`, body),
+  generateMonthly: (body: { period: string; ratePercent?: number }) =>
+    api.post<{
+      period: string
+      ratePercent: number
+      created: CollectionIncentive[]
+      skipped: { collectorId: string; reason: string }[]
+    }>('/crm/collection-incentives/generate-monthly', body),
 }
 
 // ─── Installment Price Checker ──────────────────────────────

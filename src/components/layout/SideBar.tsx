@@ -379,6 +379,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:cash-in-transit:read',
       },
       {
+        label: 'Collections',
+        href: '/pos/collections',
+        icon: Coins,
+        requiredPermission: 'pos:collections:manage',
+      },
+      {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Settings item above so hiding
         // that one from Cashier doesn't also remove their only way to reach
