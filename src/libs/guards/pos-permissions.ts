@@ -26,6 +26,9 @@ export const POS_PERMISSIONS = {
   SERVICE_DRAFTS_READ: 'pos:service-drafts:read',
   SERVICE_DRAFTS_UPDATE: 'pos:service-drafts:update',
   SERVICE_DRAFTS_CANCEL: 'pos:service-drafts:cancel',
+  SERVICE_DRAFTS_SOURCE: 'pos:service-drafts:source',
+  SERVICE_DRAFTS_INSTALL: 'pos:service-drafts:install',
+  SERVICE_DRAFTS_COMPLETE: 'pos:service-drafts:complete',
   WILDCARD: 'pos:*',
 } as const
 
@@ -61,6 +64,12 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:service-drafts:read': 'View service job drafts',
   'pos:service-drafts:update': 'Edit service job drafts while still in draft status',
   'pos:service-drafts:cancel': 'Cancel service job drafts',
+  'pos:service-drafts:source':
+    'Check on-hand stock for a service job and raise a Purchase Request for any shortfall',
+  'pos:service-drafts:install':
+    'Start the install step on a service job (assign a technician) and record actual materials used',
+  'pos:service-drafts:complete':
+    'Complete a service job: deduct actual materials used from stock and close the job',
   'pos:*': 'Wildcard full POS access',
 }
 
