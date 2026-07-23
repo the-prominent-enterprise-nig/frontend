@@ -166,6 +166,7 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
               </select>
             </div>
           </div>
+
           <div className="flex justify-end gap-2 border-t border-zinc-100 pt-4">
             <button
               type="button"

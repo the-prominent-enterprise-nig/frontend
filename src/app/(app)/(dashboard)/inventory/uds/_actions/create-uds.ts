@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import { CreateUdsFormSchema, type CreateUdsFormValues } from '@/src/schema/inventory/uds'
+import { CreateUdsFormSchema } from '@/src/schema/inventory/uds'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -33,6 +33,8 @@ export async function createUds(input: unknown): Promise<ApiResponse<{ id: strin
     ...parsed.data,
     expectedReturnDate: parsed.data.expectedReturnDate || undefined,
     warehouseId: parsed.data.warehouseId || undefined,
+    rfsFormFileId: parsed.data.rfsFormFileId || undefined,
+    repairProviderId: parsed.data.repairProviderId || undefined,
   })
 
   if (!result.success) {

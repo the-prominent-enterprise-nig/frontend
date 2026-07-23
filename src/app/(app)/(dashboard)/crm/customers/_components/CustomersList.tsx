@@ -203,7 +203,9 @@ export default function CustomersList({
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
                           c.customerType === 'business'
                             ? 'bg-prominent-orange-100 text-prominent-orange-700'
-                            : 'bg-sky-100 text-sky-700'
+                            : c.customerType === 'employee'
+                              ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                              : 'bg-sky-100 text-sky-700'
                         }`}
                       >
                         {initials(c.name)}
@@ -213,7 +215,12 @@ export default function CustomersList({
                           {c.name}
                         </span>
                         <div className="truncate text-[12px] text-gray-500">
-                          {c.companyName ?? <span className="capitalize">{c.customerType}</span>}
+                          {c.companyName ??
+                            (c.customerType === 'employee' && c.employeeNumber ? (
+                              c.employeeNumber
+                            ) : (
+                              <span className="capitalize">{c.customerType}</span>
+                            ))}
                         </div>
                       </div>
                     </div>

@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Plus, Trash2 } from 'lucide-react'
+import { X, Loader2, Plus, Trash2, Paperclip } from 'lucide-react'
 import {
   CreateUdsFormSchema,
   type CreateUdsFormValues,
@@ -11,13 +11,17 @@ import {
   UDS_REASON_LABELS,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { uploadRfsForm } from '../_actions/upload-rfs-form'
+import { showToast } from '@/src/components/ui/toast'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = { id: string; name: string; code: string; branchId?: string | null }
 type SerialOption = {
   id: string
   serialNumber: string
   item?: { sku: string; name: string } | null
 }
+type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
   isOpen: boolean
@@ -26,6 +30,13 @@ type Props = {
   isSubmitting: boolean
   warehouseOptions: WarehouseOption[]
   serialOptions: SerialOption[]
+  supplierOptions: SupplierOption[]
+  // A Branch Manager only ever issues a UDS against their own branch's
+  // warehouse — the list is scoped (and locked outright when it resolves to
+  // one warehouse) exactly like CreateTransferModal's "To Warehouse" field.
+  // null/undefined (head office / Business Owner) leaves the field fully
+  // open, matching this project's role-hierarchy convention.
+  currentUserBranchId?: string | null
 }
 
 const fieldClass =
@@ -36,6 +47,8 @@ const defaultValues: CreateUdsFormValues = {
   reason: 'repair',
   expectedReturnDate: '',
   notes: '',
+  rfsFormFileId: '',
+  repairProviderId: '',
   lines: [{ serialNumberId: '', issueReason: '', notes: '' }],
 }
 
@@ -46,11 +59,24 @@ export default function CreateUdsModal({
   isSubmitting,
   warehouseOptions,
   serialOptions,
+  supplierOptions,
+  currentUserBranchId,
 }: Props) {
+  const ownBranchWarehouses = currentUserBranchId
+    ? warehouseOptions.filter((w) => w.branchId === currentUserBranchId)
+    : []
+  // Only lock the field when it resolves to exactly one warehouse — if a
+  // branch ever has more than one, a Branch Manager still needs to choose
+  // among their own rather than have an arbitrary one silently picked.
+  const lockedToWarehouseId =
+    ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
+
   const {
     control,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<CreateUdsFormValues>({
     resolver: zodResolver(CreateUdsFormSchema),
@@ -58,16 +84,58 @@ export default function CreateUdsModal({
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const reason = watch('reason')
+
+  const [isUploading, setIsUploading] = useState(false)
+  const [rfsFormName, setRfsFormName] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isOpen) reset(defaultValues)
+    if (!isOpen) {
+      reset(defaultValues)
+      setRfsFormName(null)
+    }
   }, [isOpen, reset])
+
+  // `warehouseOptions` (and therefore lockedToWarehouseId) resolves
+  // asynchronously and can still be empty at the moment the effect above
+  // runs on open, so the locked value wouldn't otherwise reach the form
+  // state until the next open/close cycle. This narrowly re-syncs just that
+  // one field — safe to depend on lockedToWarehouseId directly since a
+  // locked field is never something the user is actively editing.
+  useEffect(() => {
+    if (isOpen && lockedToWarehouseId) {
+      setValue('warehouseId', lockedToWarehouseId, { shouldValidate: true })
+    }
+  }, [isOpen, lockedToWarehouseId, setValue])
 
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateUdsFormValues) {
     const result = await onSubmit(data)
     if (result.success) onClose()
+  }
+
+  async function handleRfsFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(true)
+    const formData = new FormData()
+    formData.set('file', file)
+    const result = await uploadRfsForm(formData)
+    setIsUploading(false)
+
+    if (result.success && result.data) {
+      setValue('rfsFormFileId', result.data.id)
+      setRfsFormName(result.data.originalName)
+    } else {
+      showToast({
+        title: 'RFS form upload failed',
+        description: result.message,
+        status: 'error',
+      })
+      e.target.value = ''
+    }
   }
 
   return (
@@ -120,17 +188,34 @@ export default function CreateUdsModal({
                 <Controller
                   name="warehouseId"
                   control={control}
-                  render={({ field }) => (
-                    <select {...field} className={fieldClass}>
-                      <option value="">— None —</option>
-                      {warehouseOptions.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.code} — {w.name}
+                  render={({ field }) =>
+                    lockedToWarehouseId ? (
+                      <select
+                        {...field}
+                        disabled
+                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
+                      >
+                        <option value={lockedToWarehouseId}>
+                          {ownBranchWarehouses[0].code} — {ownBranchWarehouses[0].name}
                         </option>
-                      ))}
-                    </select>
-                  )}
+                      </select>
+                    ) : (
+                      <select {...field} className={fieldClass}>
+                        <option value="">— None —</option>
+                        {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.code} — {w.name}
+                          </option>
+                        ))}
+                      </select>
+                    )
+                  }
                 />
+                {lockedToWarehouseId && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    UDS are always issued from your own branch&apos;s warehouse.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -146,6 +231,53 @@ export default function CreateUdsModal({
                 render={({ field }) => <input {...field} type="date" className={fieldClass} />}
               />
             </div>
+
+            {/* Repair-specific fields */}
+            {reason === 'repair' && (
+              <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Repair Provider
+                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <Controller
+                    name="repairProviderId"
+                    control={control}
+                    render={({ field }) => (
+                      <select {...field} className={fieldClass}>
+                        <option value="">— None —</option>
+                        {supplierOptions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.code} — {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    RFS Form
+                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <label
+                    className={`${fieldClass} flex cursor-pointer items-center gap-2 text-zinc-500`}
+                  >
+                    <Paperclip className="h-4 w-4 shrink-0" />
+                    <span className="truncate">
+                      {isUploading ? 'Uploading…' : (rfsFormName ?? 'Attach supporting document')}
+                    </span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      disabled={isUploading}
+                      onChange={handleRfsFileChange}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* Units */}
             <div>
@@ -170,15 +302,15 @@ export default function CreateUdsModal({
                           name={`lines.${idx}.serialNumberId`}
                           control={control}
                           render={({ field: f }) => (
-                            <select {...f} className={fieldClass}>
-                              <option value="">Select serial number…</option>
-                              {serialOptions.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.serialNumber}
-                                  {s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}
-                                </option>
-                              ))}
-                            </select>
+                            <SearchableSelect
+                              value={f.value}
+                              onChange={f.onChange}
+                              placeholder="Search serial number…"
+                              options={serialOptions.map((s) => ({
+                                value: s.id,
+                                label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
+                              }))}
+                            />
                           )}
                         />
                         {errors.lines?.[idx]?.serialNumberId && (

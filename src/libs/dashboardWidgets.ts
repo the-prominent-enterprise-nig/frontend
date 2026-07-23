@@ -23,6 +23,7 @@ import {
   Building,
   Layers,
   ClipboardList,
+  Calculator,
 } from 'lucide-react'
 
 export type DashboardRole = 'admin' | 'hr' | 'accounting' | 'inventory' | 'sales' | 'default'
@@ -279,7 +280,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     id: 'enterprise-summary',
     label: 'Enterprise Summary',
     icon: Building,
-    description: 'Employee count, users, pending leave, active modules',
+    description: 'Employee and user counts',
     defaultW: 12,
     defaultH: 3,
     minW: 6,
@@ -307,6 +308,17 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minW: 3,
     minH: 3,
     roles: ['admin'],
+  },
+  {
+    id: 'cogs-gaps',
+    label: 'COGS Posting Gaps',
+    icon: Calculator,
+    description: 'Completed sales that never got a COGS/Inventory posting',
+    defaultW: 6,
+    defaultH: 3,
+    minW: 3,
+    minH: 3,
+    roles: ['admin', 'accounting'],
   },
 ]
 

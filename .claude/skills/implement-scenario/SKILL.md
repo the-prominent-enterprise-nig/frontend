@@ -1,16 +1,17 @@
 ---
 name: implement-scenario
-description: "Reads one scenario gap-analysis doc (frontend/docs/scenario-NN-*-plan.md), re-verifies it against current code, questions the developer on open decisions and scope, then implements the confirmed closing-gap items ONE PART AT A TIME — each part gets its own e2e tests and manual testing instructions, and the skill stops and waits for the developer to confirm each part before starting the next. Logs progress into the scenario doc, and — once confirmed done — fills in both repos' real PR templates ready to copy-paste and moves the matching ClickUp ticket(s) to 'in review'."
-argument-hint: "Scenario number or slug, e.g. '05' or 'receiving' — resolves to frontend/docs/scenario-NN-*-plan.md"
+description: "Reads one scenario gap-analysis doc (frontend/docs/scenario-NN-*-plan.md), re-verifies it against current code, questions the developer on open decisions and scope, then implements the confirmed closing-gap items ONE PART AT A TIME — each part gets its own e2e tests and manual testing instructions, and the skill stops and waits for the developer to confirm each part before starting the next. Logs progress into the scenario doc, and — once confirmed done — fills in both repos' real PR templates ready to copy-paste and moves the matching ClickUp ticket(s) to 'in review', assigned to the developer who did the work."
+argument-hint: "Scenario number or slug, e.g. '05' or 'receiving' — resolves to frontend/docs/scenario-NN-*-plan.md. Pass --no-assign to skip assignee update."
 ---
 
 # Implement Scenario — TPE
 
-You implement one module-scenario gap-analysis plan end to end: re-verify it, question the developer on anything ambiguous, then build it **one part at a time** — test each part on both sides, hand the developer manual test steps for just that part, and stop until they confirm before starting the next. This is based on real precedent: a past scenario naturally split into 5+ parts across one implementation effort, and a developer using this skill shouldn't assume it all lands in one go. Once every confirmed part is done and verified, document it, hand back copy-paste-ready PRs, and move the matching ClickUp ticket(s) to "in review."
+You implement one module-scenario gap-analysis plan end to end: re-verify it, question the developer on anything ambiguous, then build it **one part at a time** — test each part on both sides, hand the developer manual test steps for just that part, and stop until they confirm before starting the next. This is based on real precedent: a past scenario naturally split into 5+ parts across one implementation effort, and a developer using this skill shouldn't assume it all lands in one go. Once every confirmed part is done and verified, document it, hand back copy-paste-ready PRs, and move the matching ClickUp ticket(s) to "in review," assigned to the developer who did the work.
 
 ## Source docs
 
 - Scenario plans: `frontend/docs/scenario-NN-<slug>-plan.md`
+- Pending requirement updates (optional, sibling to a plan doc): `frontend/docs/scenario-NN-<slug>-updates.md` — newer client feedback not yet merged into the plan doc's gap analysis, in dated append-only sections. Same `NN-<slug>` prefix as the plan doc, `-updates.md` instead of `-plan.md`.
 - Archive/index: `frontend/docs/module-scenarios.md`
 - Seeded login accounts for manual testing: `frontend/docs/seed-data-reference.md`
 
@@ -35,6 +36,7 @@ Apply this whenever Phase 3a adds a new permission string, RBAC guard, or role-g
 2. Glob `frontend/docs/scenario-*-plan.md` and match by number prefix or slug substring.
 3. If no match or more than one match, list the candidates and ask the developer to pick — never guess.
 4. Read the matched doc in full: the scenario recap, "What's already done ✅", "What's not done / gaps ❌⚠️", the ordered "Closing the gaps" list, and any "Dead code / unused-feature flags."
+5. Check for a sibling `scenario-NN-<slug>-updates.md` (same number prefix, `-updates.md` instead of `-plan.md`). If it exists, read it in full too — it holds newer client feedback not yet folded into the plan doc, in dated sections.
 
 ### Phase 1 — Read the code first (re-verify, don't trust the doc blindly)
 
@@ -43,13 +45,14 @@ The doc is a snapshot from whenever it was written — code moves.
 1. For each claim in "What's already done" and "What's not done," spot-check the cited `file:line` evidence still holds. Use direct `Read`/`Grep` for small scenarios; use an `Explore` agent for scenarios with many citations.
 2. If something has drifted — already fixed since the doc was written, reshaped, or moved — note it explicitly.
 3. Summarize any drift found to the developer before Phase 2. Don't silently implement against a stale claim.
+4. If Phase 0.5 found a sibling `-updates.md` file, reconcile it against the plan doc's own gap list: call out anything marked as _superseding_ an existing gap (the requirement itself changed — don't silently implement the old version) versus genuinely additive net-new items. Carry both kinds forward into Phase 2 alongside the plan doc's own "Closing the gaps" list.
 
 ### Phase 2 — Question the developer
 
 Do this before writing any code.
 
 1. **Surface flagged decisions.** Scan the "Closing the gaps" section for language marking an open product/business decision (e.g. "confirm with the business," "this is a product decision, not a pure engineering one," "needs a decision," "define the actual... rule," "clarify with the business what this means"). Ask about each one explicitly — use `AskUserQuestion` where there are genuinely 2-4 concrete options, plain conversational questions otherwise. Do not pick a default and proceed. If an item adds or touches a role-gated capability, also apply the **Role access hierarchy** (above) — Business Owner is never optional; if the item is Branch-Manager-scoped, explicitly ask whether it should extend to Employee-level roles too, since that direction isn't automatic.
-2. **Confirm scope.** List every item in "Closing the gaps" with a number and ask whether to implement all of them this run or a specific subset (several scenarios — e.g. Reservation, Caravan, Aircool — are large net-new features with many sequenced steps; doing everything in one pass may not be wanted). Also ask about "Dead code" flags if any apply — delete, wire up, or leave as-is.
+2. **Confirm scope.** List every item in "Closing the gaps" — plus any items surfaced from a sibling `-updates.md` file in Phase 1.4, clearly marked as such — with a number, and ask whether to implement all of them this run or a specific subset (several scenarios — e.g. Reservation, Caravan, Aircool — are large net-new features with many sequenced steps; doing everything in one pass may not be wanted). Also ask about "Dead code" flags if any apply — delete, wire up, or leave as-is.
 3. **Confirm how the confirmed scope splits into parts.** Based on real precedent — a past scenario naturally split into 5+ parts across one implementation effort — **default to one part = one closing-gap item**, done one at a time, not batched. State that default plan back to the developer and let them regroup it (e.g. two trivially small items as one part) if they'd rather. Don't assume "scope approved" means "implement it all in one pass" — those are two different questions; Phase 3 runs as a loop over these parts regardless of how big the confirmed scope is.
 4. **Confirm branch/commit posture.** Ask whether to work on the current branch or create a new one. Never commit without explicit go-ahead at commit time, even if the developer approved the overall plan — approval of scope is not approval to commit.
 5. **Recap and confirm.** State back the confirmed item list, its part breakdown, and order before touching code. This is a lightweight go/no-go, not a full plan-mode detour — but don't skip it.
@@ -112,6 +115,8 @@ Once every part in the confirmed scope from Phase 2 is implemented and manually 
 
 One log entry per run covering all its parts together — not one entry per part. Multiple runs accumulate as additional dated entries, so the doc stays a living record instead of going stale the moment any part of it ships.
 
+If any implemented part originated from a sibling `-updates.md` file, mark it consumed there too — strike the item through and add a one-line "merged into plan doc on `<date>`" note — so the updates file doesn't silently accumulate stale, already-done entries.
+
 ### Phase 5 — Ask "are you done?"
 
 Once every confirmed part from Phase 3 is implemented, tested, and manually verified, and Phase 4's doc update is in, ask directly:
@@ -144,18 +149,26 @@ Backend and frontend are separate git repositories — produce two independent, 
 
 Do this at the same time as Phase 6 — presenting the PR text is what triggers it.
 
+0. **Resolve the current user for assignment**, unless `--no-assign` was passed as an argument to this skill — same mechanism `clickup-push.md` uses in this same skills folder:
+   1. Call `clickup_get_workspace_members` with `workspace_id: "90167097004"`.
+   2. Run `git config user.email` to get the current git email and match it against the members list.
+   3. Store the matched `id` as `CURRENT_USER_ID` for use in step 2 below.
+   4. If no match found, skip assignment silently — do not error, do not block the ticket status move over it.
 1. From the scenario doc's `## Related ClickUp Tickets (Sprint 3-5)` section, identify the ticket(s) that correspond to the parts actually implemented and confirmed this run — not the whole list (some entries there cover deferred items, or are the intentional persona-split variants for a role you didn't touch this run).
-2. For each matching ticket, call `clickup_update_task` with `status: "in review"` — same status string and mechanism `clickup-push.md` already uses in this same skills folder.
-3. **Never downgrade a ticket.** If a ticket is already further along (`for qa`, `in review`, `done`, etc.), leave it — only move a ticket forward, exactly matching `clickup-push.md`'s own rule.
+2. For each matching ticket, call `clickup_update_task` with `status: "in review"` and, if `CURRENT_USER_ID` was resolved and `--no-assign` was not passed, `assignees: [CURRENT_USER_ID]` — same status string and mechanism `clickup-push.md` already uses in this same skills folder.
+3. **Never downgrade a ticket.** If a ticket is already further along (`for qa`, `in review`, `done`, etc.), leave the status alone — but still apply the assignee update (if applicable), exactly matching `clickup-push.md`'s own rule. Only move a ticket's status forward, never backward.
 4. Update the ticket's line in the scenario doc's "Related ClickUp Tickets" section to reflect the new status (e.g. change `*Sprint 3, to do*` to `*Sprint 3, in review*`) so the doc doesn't silently go stale the moment you move something in ClickUp.
 5. If an implemented part has no matching ticket at all (already called out under that scenario's "Not found in Sprint 3-5"), there's nothing to move — skip it silently, don't treat it as an error.
 6. If ClickUp is unreachable or a ticket ID no longer resolves, report it to the developer rather than failing the whole phase silently — the PR text from Phase 6 still stands either way.
+7. Note the assignment outcome in the Phase 6/7 report to the developer, e.g. "Assigned: Chloe Belle Estilo" or "Assigned: skipped — no member match" / "skipped — --no-assign".
 
 ---
 
 ## Quality Checks
 
 - [ ] Never trust the scenario doc's claims without spot-checking live code first (Phase 1)
+- [ ] Never skip checking for a sibling `-updates.md` file (Phase 0.5) — a scenario doc can look complete while newer client feedback sits unmerged next to it
+- [ ] Never treat a superseding update item as additive — if newer client feedback contradicts an existing gap, ask which one is correct rather than implementing both
 - [ ] Never implement a flagged product/business decision without asking first (Phase 2)
 - [ ] Never write a permission/role gate that excludes Business Owner from a capability a lower role has (Role access hierarchy)
 - [ ] Never assume a Branch-Manager-scoped capability should extend to Employee-level roles without confirming in Phase 2 — that direction doesn't cascade automatically
@@ -172,6 +185,8 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - [ ] Never move a ClickUp ticket for a part that wasn't actually implemented and confirmed this run
 - [ ] Never downgrade a ClickUp ticket's status when moving it to "in review"
 - [ ] Never move the persona-split ticket variants for a role you didn't touch this run — they're intentional, not duplicates (see `frontend/docs/scenario-*` "Related ClickUp Tickets" sections for which ones are confirmed intentional vs. flagged for review)
+- [ ] If member lookup fails when resolving the assignee, skip assignment silently — never block the status move or fail the phase over it
+- [ ] Still apply the assignee update on an already-further-along ticket even though its status isn't moved (assignment and status-forward are independent rules)
 
 ## Tools Used
 
@@ -179,5 +194,6 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - `Agent` (Explore) — for larger re-verification passes across many citations
 - `AskUserQuestion` — surface flagged decisions and confirm scope/branch posture
 - `Edit` / `Write` — implement code changes, add e2e specs, update the scenario doc, no-op the PR templates into filled copies (output only, not committed as files)
-- `Bash` — run `npx jest --config test/jest-e2e.json --testPathPatterns <slug>` and `npm run test:e2e`
-- `clickup_update_task` — move the matching ticket(s) to "in review" once the PR text is handed back (Phase 9)
+- `Bash` — run `npx jest --config test/jest-e2e.json --testPathPatterns <slug>` and `npm run test:e2e`, plus `git config user.email` to resolve the current user
+- `clickup_get_workspace_members` — resolve the current user's ClickUp member ID for assignment (Phase 7)
+- `clickup_update_task` — move the matching ticket(s) to "in review" and assign to the current user once the PR text is handed back (Phase 7)

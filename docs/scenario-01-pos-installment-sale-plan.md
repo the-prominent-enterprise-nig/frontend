@@ -79,3 +79,20 @@ Ordered by risk/value.
 ## Dead code / unused-feature flags
 
 - **Agent Commission ledger endpoint** — live, correct, zero consumers. See Closing Gap 3 above; this is "build or explicitly deprioritize," not delete (the data being recorded is real revenue-share liability, deleting the recording logic would lose it).
+
+## Implementation Log — 2026-07-20
+
+**For this scenario, I have done:**
+
+- Closing Gap 2 (RFD/Application Form document) — **found already done**, not implemented this run. Re-verification turned up `ReleaseApprovalsList.tsx::handlePrint()`, a real printable HTML document (cashier, branch/terminal, customer, line items, total, credit warnings, status, review info) opened via the same `window.open`/`window.print()` pattern as receipt reprinting. This closed at some point after the doc was last written and was never logged — no PDF library, just styled HTML, which the "Fix" section's option (a) already anticipated as an acceptable resolution.
+- Closing Gap 1 (COGS posting visibility) — implemented in full, expanded beyond the doc's original visibility-only scope to include real FIFO/LIFO support (explicit developer decision, made twice after the true scope was clarified):
+  - **Part 1**: Wired real FIFO/LIFO cost-layer consumption into POS checkout's stock deduction (previously only weighted-average worked; FIFO/LIFO items always fell back to `unitCost: null`, silently skipping COGS). Mirrors `CostingService.issueStock()`'s existing pattern (compute COGS → consume matching layers → decrement balances). Refund/void now correctly restores a cost layer via `StockService.processReturn` (previously wired but non-functional — POS was passing the wrong kind of reference id). New `PosTransactionLine.stockLedgerId` column + migration. New backend e2e: `test/pos-fifo-lifo-costing.e2e-spec.ts`.
+  - **Part 2**: `GET /pos/transactions/reports/missing-cogs` (count + recent sample of completed sales whose lines never got a COGS posting) plus a new "COGS Posting Gaps" dashboard widget (Business Owner/Branch Manager/Accountant), added to the existing customizable-dashboard widget system.
+- Closing Gap 3 (Agent Commission UI) — implemented: a "View Commissions" row action + read-only ledger dialog on CRM → Sales Agents, backed by the pre-existing `GET /crm/agents/:id/commissions` endpoint (no new backend work, exactly as the doc's Fix anticipated).
+
+**Worth flagging:**
+
+- The FIFO/LIFO scope expansion surfaced and fixed a real bug along the way: `StockService.processReturn`'s `originalSaleId` field was overloaded for two different purposes (a reference tag on the new ledger row, and — needed for this work — a lookup key expected to be an actual `StockLedger` id). Fixed by adding a dedicated `originalSaleLedgerId` field to `ReturnStockDto` rather than repurposing the existing one, which would have silently broken the reference tag for every existing POS void/refund (caught by re-running `pos.smoke.e2e-spec.ts`).
+- Weighted-average-costed sales still don't get a `StockLedger` entry at sale time (only FIFO/LIFO now do) — a separate, pre-existing gap in `computeAvgCost()`'s running-average accuracy, not touched here since it's out of this scenario's scope.
+- `pos-serial-branch-scoping.e2e-spec.ts` has 2 pre-existing failing tests (confirmed via `git stash` to fail identically against unmodified code) — unrelated to this work, likely accumulated test-data drift on long-lived fixture warehouses.
+- This scenario's work landed on new branches in both repos (`feat/pos-installment-scenario-gaps`), separate from the concurrently in-flight payment-method-merge/POS-config-consolidation work.

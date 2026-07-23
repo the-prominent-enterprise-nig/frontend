@@ -1,0 +1,2 @@
+RFS (Request for Service) form — sample fixture used by e2e/repair-transfer-uds.spec.ts
+to exercise the RFS-form upload control on the Issue UDS modal (reason: repair).

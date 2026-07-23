@@ -54,6 +54,12 @@ import {
   getParkedSales,
   resumeParkedSale,
   cancelParkedSale,
+  getSkuReservations,
+  fulfilSkuReservation,
+  requestCancelSkuReservation,
+  approveCancelSkuReservation,
+  rejectCancelSkuReservation,
+  getCustomerAdvances,
   submitVoidRequest,
   getVoidRequests,
   getPendingVoidRequests,
@@ -91,6 +97,9 @@ import type {
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
   ComputeInstallmentPreviewInput,
+  SkuReservationFilters,
+  FulfilSkuReservationInput,
+  CustomerAdvanceFilters,
 } from '@/src/schema/pos'
 
 // ─── Terminals ────────────────────────────────────────────────────────────────
@@ -549,6 +558,61 @@ export function useCancelParkedSale() {
   return useMutation({
     mutationFn: (id: string) => cancelParkedSale(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-parked-sales'] }),
+  })
+}
+
+// ─── SKU Reservations (Scenario 03, Part 7) ────────────────────────────────────
+
+export function useSkuReservations(filters?: SkuReservationFilters) {
+  return useQuery({
+    queryKey: ['inventory-sku-reservations', filters],
+    queryFn: () => getSkuReservations(filters),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useFulfilSkuReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: FulfilSkuReservationInput }) =>
+      fulfilSkuReservation(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory-sku-reservations'] }),
+  })
+}
+
+export function useRequestCancelSkuReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      requestCancelSkuReservation(id, reason),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory-sku-reservations'] }),
+  })
+}
+
+export function useApproveCancelSkuReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => approveCancelSkuReservation(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory-sku-reservations'] }),
+  })
+}
+
+export function useRejectCancelSkuReservation() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      rejectCancelSkuReservation(id, reason),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['inventory-sku-reservations'] }),
+  })
+}
+
+export function useCustomerAdvances(filters?: CustomerAdvanceFilters) {
+  return useQuery({
+    queryKey: ['accounting-customer-advances', filters],
+    queryFn: () => getCustomerAdvances(filters),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 

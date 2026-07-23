@@ -2,12 +2,15 @@ import { z } from 'zod'
 
 export const UDS_REASONS = ['repair', 'maintenance', 'quality_check', 'pull_out', 'loan'] as const
 export const UDS_STATUSES = ['issued', 'in_transit', 'received', 'completed', 'cancelled'] as const
+export const UDS_ASSESSMENTS = ['repairable', 'unrepairable'] as const
 
 export const UdsReasonSchema = z.enum(UDS_REASONS)
 export const UdsStatusSchema = z.enum(UDS_STATUSES)
+export const UdsAssessmentSchema = z.enum(UDS_ASSESSMENTS)
 
 export type UdsReason = z.infer<typeof UdsReasonSchema>
 export type UdsStatus = z.infer<typeof UdsStatusSchema>
+export type UdsAssessment = z.infer<typeof UdsAssessmentSchema>
 
 // ─── Create UDS ───────────────────────────────────────────────────────────────
 
@@ -22,6 +25,8 @@ export const CreateUdsFormSchema = z.object({
   reason: UdsReasonSchema,
   expectedReturnDate: z.string().optional(),
   notes: z.string().max(1000).optional(),
+  rfsFormFileId: z.string().optional(),
+  repairProviderId: z.string().optional(),
   lines: z.array(UdsLineFormSchema).min(1, 'At least one unit is required'),
 })
 
@@ -35,6 +40,38 @@ export const UpdateUdsStatusFormSchema = z.object({
 })
 
 export type UpdateUdsStatusFormValues = z.infer<typeof UpdateUdsStatusFormSchema>
+
+// ─── Set Repair Provider ─────────────────────────────────────────────────────
+
+export const SetRepairProviderFormSchema = z.object({
+  repairProviderId: z.string().min(1, 'Repair provider is required'),
+})
+
+export type SetRepairProviderFormValues = z.infer<typeof SetRepairProviderFormSchema>
+
+// ─── Assess UDS ───────────────────────────────────────────────────────────────
+
+export const AssessUdsFormSchema = z
+  .object({
+    assessment: UdsAssessmentSchema,
+    estimatedCost: z.coerce.number().positive().optional(),
+    notes: z.string().max(1000).optional(),
+  })
+  .refine((data) => data.assessment !== 'repairable' || data.estimatedCost != null, {
+    message: 'Estimated cost is required when the unit is repairable',
+    path: ['estimatedCost'],
+  })
+
+export type AssessUdsFormValues = z.infer<typeof AssessUdsFormSchema>
+
+// ─── Write Off UDS ────────────────────────────────────────────────────────────
+
+export const WriteOffUdsFormSchema = z.object({
+  unitCost: z.coerce.number().positive('Unit cost is required'),
+  notes: z.string().max(1000).optional(),
+})
+
+export type WriteOffUdsFormValues = z.infer<typeof WriteOffUdsFormSchema>
 
 // ─── Response Shapes ─────────────────────────────────────────────────────────
 
@@ -67,6 +104,25 @@ const UdsWarehouseSchema = z.object({
   name: z.string(),
 })
 
+const UdsRfsFormFileSchema = z.object({
+  id: z.string(),
+  originalName: z.string(),
+  mimeType: z.string(),
+  size: z.number(),
+})
+
+const UdsRepairProviderSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+})
+
+const UdsLinkedStockTransferSchema = z.object({
+  id: z.string(),
+  transferNumber: z.string(),
+  status: z.string(),
+})
+
 export const UdsSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -78,6 +134,19 @@ export const UdsSchema = z.object({
   issuedById: z.string(),
   expectedReturnDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  rfsFormFileId: z.string().optional().nullable(),
+  rfsFormFile: UdsRfsFormFileSchema.optional().nullable(),
+  repairProviderId: z.string().optional().nullable(),
+  repairProvider: UdsRepairProviderSchema.optional().nullable(),
+  linkedStockTransferId: z.string().optional().nullable(),
+  linkedStockTransfer: UdsLinkedStockTransferSchema.optional().nullable(),
+  assessment: UdsAssessmentSchema.optional().nullable(),
+  assessmentNotes: z.string().optional().nullable(),
+  assessedAt: z.string().optional().nullable(),
+  assessedById: z.string().optional().nullable(),
+  repairEstimatedCost: z.coerce.number().optional().nullable(),
+  repairDebitJournalEntryId: z.string().optional().nullable(),
+  writeOffAdjustmentId: z.string().optional().nullable(),
   lines: z.array(UdsLineSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -128,4 +197,14 @@ export const UDS_REASON_STYLES: Record<UdsReason, string> = {
   quality_check: 'bg-yellow-100 text-yellow-700',
   pull_out: 'bg-purple-100 text-purple-700',
   loan: 'bg-blue-100 text-blue-700',
+}
+
+export const UDS_ASSESSMENT_LABELS: Record<UdsAssessment, string> = {
+  repairable: 'Repairable',
+  unrepairable: 'Unrepairable',
+}
+
+export const UDS_ASSESSMENT_STYLES: Record<UdsAssessment, string> = {
+  repairable: 'bg-green-100 text-green-700',
+  unrepairable: 'bg-red-100 text-red-700',
 }

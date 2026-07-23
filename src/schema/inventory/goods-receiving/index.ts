@@ -1,16 +1,32 @@
 import { z } from 'zod'
 
-const ReceiveStockLineSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  purchaseOrderLineId: z.string().optional(),
-  quantityReceived: z.number().positive('Quantity must be greater than 0'),
-  unitCost: z.number().min(0).optional(),
-  batchNumber: z.string().optional(),
-  expiryDate: z.string().optional(),
-  qualityHold: z.boolean().optional(),
-  autoGenerateSerials: z.boolean().optional(),
-  notes: z.string().optional(),
-})
+const ReceiveStockLineSchema = z
+  .object({
+    itemId: z.string().min(1, 'Item is required'),
+    purchaseOrderLineId: z.string().optional(),
+    quantityReceived: z.number().positive('Quantity must be greater than 0'),
+    unitCost: z.number().min(0).optional(),
+    batchNumber: z.string().optional(),
+    expiryDate: z.string().optional(),
+    qualityHold: z.boolean().optional(),
+    autoGenerateSerials: z.boolean().optional(),
+    serialNumbers: z.array(z.string().min(1)).optional(),
+    notes: z.string().optional(),
+  })
+  .refine((line) => !(line.autoGenerateSerials && (line.serialNumbers?.length ?? 0) > 0), {
+    message: 'Choose either auto-generated or manually entered serials, not both',
+    path: ['serialNumbers'],
+  })
+  .refine(
+    (line) =>
+      !line.serialNumbers ||
+      line.serialNumbers.length === 0 ||
+      line.serialNumbers.length === line.quantityReceived,
+    {
+      message: 'Serial count must match quantity received',
+      path: ['serialNumbers'],
+    }
+  )
 
 export const ReceiveStockFormSchema = z
   .object({

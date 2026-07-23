@@ -12,7 +12,7 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
-  if (!can(session, INVENTORY_PERMISSIONS.STOCK_COUNT_ADJUST)) {
+  if (!can(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)) {
     return {
       success: false,
       error: 'Forbidden',

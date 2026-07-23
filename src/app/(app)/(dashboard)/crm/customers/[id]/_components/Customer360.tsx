@@ -130,6 +130,9 @@ export default function Customer360({
           <h1 className="text-2xl font-semibold text-gray-900">{data.name}</h1>
           <div className="mt-1 text-sm text-gray-500">
             {data.companyName ? `${data.companyName} · ` : ''}
+            {data.customerType === 'employee' && data.employeeNumber
+              ? `Employee ID: ${data.employeeNumber} · `
+              : ''}
             Source: {data.sourceChannel} · Status: {data.status}
           </div>
         </div>
@@ -315,6 +318,38 @@ export default function Customer360({
                     <span className="font-medium text-gray-800">
                       {formatPeso(Number(a.currentBalance))}
                     </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Bank Details</h2>
+          {!data.bankAccounts || data.bankAccounts.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No bank details on file. Add one from Edit.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {data.bankAccounts.map((acc) => (
+                <li
+                  key={acc.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
+                >
+                  <span className="font-medium text-gray-800">
+                    {acc.bankName} — {acc.accountNumber}
+                  </span>
+                  <span className="flex items-center gap-2 text-gray-500">
+                    {acc.accountName && <span>{acc.accountName}</span>}
+                    {acc.isPrimary && (
+                      <span className="rounded-full bg-prominent-orange-50 px-2 py-0.5 text-[11px] font-medium text-prominent-orange-700">
+                        Primary
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}

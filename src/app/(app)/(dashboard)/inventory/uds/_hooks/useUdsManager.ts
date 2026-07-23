@@ -7,11 +7,18 @@ import { STALE } from '@/src/libs/query/stale-times'
 import { getUdsList } from '../_actions/get-uds-list'
 import { createUds } from '../_actions/create-uds'
 import { updateUdsStatus } from '../_actions/update-uds-status'
+import { assessUds } from '../_actions/assess-uds'
+import { setRepairProvider } from '../_actions/set-repair-provider'
+import { writeOffUds } from '../_actions/write-off-uds'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   CreateUdsFormValues,
   UpdateUdsStatusFormValues,
+  AssessUdsFormValues,
+  SetRepairProviderFormValues,
+  WriteOffUdsFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
 
@@ -54,6 +61,12 @@ export function useUdsManager() {
     staleTime: STALE.LOOKUP,
   })
 
+  const suppliersQuery = useQuery({
+    queryKey: ['inventory-uds-repair-providers'],
+    queryFn: () => getSuppliers({ limit: 200 }),
+    staleTime: STALE.LOOKUP,
+  })
+
   const createMutation = useMutation({
     mutationFn: (data: CreateUdsFormValues) => createUds(data),
     onSuccess: (result) => {
@@ -78,6 +91,58 @@ export function useUdsManager() {
       } else {
         showToast({
           title: 'Failed to update status',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const assessMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: AssessUdsFormValues }) => assessUds(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'UDS assessed', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({ title: 'Failed to assess UDS', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const setRepairProviderMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: SetRepairProviderFormValues }) =>
+      setRepairProvider(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Repair provider updated',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+      } else {
+        showToast({
+          title: 'Failed to update repair provider',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const writeOffMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: WriteOffUdsFormValues }) =>
+      writeOffUds(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'UDS written off', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({
+          title: 'Failed to write off UDS',
           description: result.message,
           status: 'error',
         })
@@ -127,6 +192,7 @@ export function useUdsManager() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     serialOptions: serialsQuery.data?.data?.data ?? [],
+    supplierOptions: suppliersQuery.data?.data?.data ?? [],
 
     createUds: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
@@ -134,5 +200,16 @@ export function useUdsManager() {
     updateStatus: (id: string, data: UpdateUdsStatusFormValues) =>
       updateStatusMutation.mutateAsync({ id, data }),
     isUpdatingStatus: updateStatusMutation.isPending,
+
+    assessUds: (id: string, data: AssessUdsFormValues) => assessMutation.mutateAsync({ id, data }),
+    isAssessing: assessMutation.isPending,
+
+    setRepairProvider: (id: string, data: SetRepairProviderFormValues) =>
+      setRepairProviderMutation.mutateAsync({ id, data }),
+    isSettingRepairProvider: setRepairProviderMutation.isPending,
+
+    writeOffUds: (id: string, data: WriteOffUdsFormValues) =>
+      writeOffMutation.mutateAsync({ id, data }),
+    isWritingOff: writeOffMutation.isPending,
   }
 }

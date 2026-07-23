@@ -26,12 +26,19 @@ export const INVENTORY_PERMISSIONS = {
   // ── Stock ──────────────────────────────────────────────────────────────────
   STOCKS_READ: 'inventory:stock:read',
   STOCKS_CREATE: 'inventory:stock:create',
+  STOCK_ADJUST: 'inventory:stock:adjust',
 
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
+  TRANSFERS_ACCEPT: 'inventory:transfers:accept',
+  TRANSFERS_REJECT: 'inventory:transfers:reject',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
+  TRANSFERS_HQ_APPROVE: 'inventory:transfers:hq-approve',
+  TRANSFERS_HQ_REJECT: 'inventory:transfers:hq-reject',
+  TRANSFERS_MANAGER_APPROVE: 'inventory:transfers:manager-approve',
+  TRANSFERS_MANAGER_REJECT: 'inventory:transfers:manager-reject',
 
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
@@ -136,6 +143,13 @@ export const INVENTORY_PERMISSIONS = {
   // ── Stock Projection (INV-50) ──────────────────────────────────────────────
   PROJECTION_READ: 'inventory:projection:read',
 
+  // ── SKU Reservations (Scenario 03) ─────────────────────────────────────────
+  SKU_RESERVATIONS_READ: 'inventory:sku-reservations:read',
+  SKU_RESERVATIONS_CREATE: 'inventory:sku-reservations:create',
+  SKU_RESERVATIONS_FULFIL: 'inventory:sku-reservations:fulfil',
+  SKU_RESERVATIONS_CANCEL_REQUEST: 'inventory:sku-reservations:cancel-request',
+  SKU_RESERVATIONS_CANCEL_APPROVE: 'inventory:sku-reservations:cancel-approve',
+
   // ── Wildcard ───────────────────────────────────────────────────────────────
   WILDCARD: 'inventory:*',
 } as const
@@ -164,10 +178,21 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:uom:update': 'Edit units of measure and conversion rates',
   'inventory:stock:read': 'View real-time stock balances',
   'inventory:stock:create': 'Post stock entries',
+  'inventory:stock:adjust': 'Create stock adjustments with reason codes',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
+  'inventory:transfers:accept':
+    'Accept an incoming transfer request on behalf of the source branch',
+  'inventory:transfers:reject':
+    'Reject an incoming transfer request on behalf of the source branch',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
   'inventory:transfers:receive': 'Receive incoming stock transfers',
+  'inventory:transfers:hq-approve': 'Approve stock transfer requests pending head-office review',
+  'inventory:transfers:hq-reject': 'Reject stock transfer requests pending head-office review',
+  'inventory:transfers:manager-approve':
+    "Approve a Stock-Controller-originated transfer request on behalf of the requester's own branch",
+  'inventory:transfers:manager-reject':
+    "Reject a Stock-Controller-originated transfer request on behalf of the requester's own branch",
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',
@@ -221,6 +246,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:attributes:read': 'View custom item attributes',
   'inventory:attributes:manage': 'Create and manage custom item attributes',
   'inventory:projection:read': 'View forward stock projection',
+  'inventory:sku-reservations:read': 'View SKU-level reservations',
+  'inventory:sku-reservations:create': 'Reserve an item by SKU ahead of stock arrival',
+  'inventory:sku-reservations:fulfil': 'Fulfil an earmarked reservation into a completed sale',
+  'inventory:sku-reservations:cancel-request': 'Request cancellation of a reservation',
+  'inventory:sku-reservations:cancel-approve':
+    'Approve or reject a reservation cancellation request',
   'inventory:*': 'Wildcard full Inventory access',
 }
 

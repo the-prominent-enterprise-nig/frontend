@@ -142,3 +142,10 @@ UPDATE items SET lifecycle = 'archived' WHERE sku LIKE 'E2E%';
 - `E2E-RFD-SERIAL-ITEM` (from `pos-release-form-request.e2e-spec.ts`)
 - `E2E-COGSCIT-WAC-ITEM` (from `pos-gl-cogs-cit.e2e-spec.ts`)
 - `E2E-RR-ITEM` (from `pos-return-refund-request.e2e-spec.ts`)
+- `E2E-SD-ITEM-A`, `E2E-SD-ITEM-B`, `E2E-AIRCOOL-UNIT` (from `aircool.e2e-spec.ts`)
+
+**Branch**: `aircool.e2e-spec.ts` (Aircool scenario, Parts 1 & 2) also leaves behind a real Branch fixture, `E2E Aircool — Branch` (code `E2E-AIRCOOL-BR`) — its Warehouse has real `StockLedger` rows from the spec's actual stock deductions/restocks, so unlike a Branch/Warehouse/Terminal set from other specs (see `pos-serial-branch-scoping.e2e-spec.ts`'s own cleanup, which fully deletes its fixtures since its sales never reach real deduction), this one can't be deleted once the spec has run. Set to `status: 'inactive'` / `isActive: false` so it's honestly labeled, though note **`GET /branches` does not currently filter by active status** (unlike the item catalog's `lifecycle` filtering) — this branch will still appear in branch pickers everywhere until that's fixed, if ever. If it ever reappears as `active` (e.g. a future spec change resets it on upsert), re-run:
+
+```sql
+UPDATE branches SET status = 'inactive', "isActive" = false WHERE code = 'E2E-AIRCOOL-BR';
+```

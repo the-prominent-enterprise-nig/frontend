@@ -8,7 +8,12 @@ import {
   useHandoverSession,
   useTerminals,
 } from '../_hooks/usePos'
-import { verifyCashierPin, searchUsers, getSessionReconciliation } from '../_actions/pos-actions'
+import {
+  verifyCashierPin,
+  searchUsers,
+  getSessionReconciliation,
+  getCurrentSessionUser,
+} from '../_actions/pos-actions'
 import { PosDateTime } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -353,7 +358,34 @@ function OpenSessionModal({
   const [verifying, setVerifying] = useState(false)
   const [verifyError, setVerifyError] = useState('')
   const [verifiedCashier, setVerifiedCashier] = useState<{ id: string; name: string } | null>(null)
+  const [autoFilledCashier, setAutoFilledCashier] = useState(false)
+  const [loadingCurrentUser, setLoadingCurrentUser] = useState(true)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pinInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Default the sign-in to whoever's logged into this browser session — the
+  // common case is a cashier opening their own till. "Not you?" falls back
+  // to the search box for shared-terminal / supervisor-assisted sign-ins.
+  useEffect(() => {
+    let cancelled = false
+    getCurrentSessionUser().then((res) => {
+      if (cancelled) return
+      if (res.success && res.data) {
+        setSelectedUser({ id: res.data.id, name: res.data.name })
+        setAutoFilledCashier(true)
+      }
+      setLoadingCurrentUser(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedUser && !verifiedCashier) {
+      pinInputRef.current?.focus()
+    }
+  }, [selectedUser, verifiedCashier])
 
   // Scope the sign-in search to Cashiers at this terminal's branch (falls
   // back to the page's branch context until a terminal is picked).
@@ -369,7 +401,7 @@ function OpenSessionModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), effectiveBranchId)
+      const res = await searchUsers(search.trim(), effectiveBranchId, 'Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -403,6 +435,7 @@ function OpenSessionModal({
     setSearch('')
     setPin('')
     setVerifyError('')
+    setAutoFilledCashier(false)
   }
 
   const canSubmit = !!verifiedCashier && !!form.terminalId && !isLoading
@@ -429,6 +462,8 @@ function OpenSessionModal({
                 Change
               </button>
             </div>
+          ) : loadingCurrentUser ? (
+            <Skeleton className="h-9 w-full" />
           ) : selectedUser ? (
             <>
               <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
@@ -437,11 +472,12 @@ function OpenSessionModal({
                   onClick={resetCashier}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
-                  Change
+                  {autoFilledCashier ? 'Not you?' : 'Change'}
                 </button>
               </div>
               <Field label="PIN">
                 <input
+                  ref={pinInputRef}
                   className="input"
                   type="password"
                   inputMode="numeric"
@@ -693,7 +729,7 @@ function HandoverModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), branchId ?? undefined)
+      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')

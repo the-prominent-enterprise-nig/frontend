@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import {
   updateCustomerSchema,
   PAYMENT_TERMS_OPTIONS,
   type UpdateCustomerInput,
+  type CustomerBankAccountFormValues,
 } from '@/src/schema/crm/customer'
 import type { CustomerType, CustomerStatus, CustomerSourceChannel } from '@/src/schema/crm/types'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
@@ -19,6 +20,7 @@ type FormState = {
   lastName: string
   customerType: CustomerType
   companyName: string
+  employeeNumber: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -30,6 +32,7 @@ type FormState = {
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes: string
+  bankAccounts: CustomerBankAccountFormValues[]
 }
 
 const empty: FormState = {
@@ -38,6 +41,7 @@ const empty: FormState = {
   lastName: '',
   customerType: 'individual',
   companyName: '',
+  employeeNumber: '',
   taxId: '',
   isTaxExempt: false,
   taxExemptionRef: '',
@@ -49,6 +53,7 @@ const empty: FormState = {
   sourceChannel: 'pos_walkin',
   status: 'active',
   notes: '',
+  bankAccounts: [],
 }
 
 export default function EditCustomerForm({ id }: { id: string }) {
@@ -73,6 +78,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           lastName: lastParts.join(' '),
           customerType: c.customerType,
           companyName: c.companyName ?? '',
+          employeeNumber: c.employeeNumber ?? '',
           taxId: c.taxId ?? '',
           isTaxExempt: c.isTaxExempt,
           taxExemptionRef: c.taxExemptionRef ?? '',
@@ -84,6 +90,12 @@ export default function EditCustomerForm({ id }: { id: string }) {
           sourceChannel: c.sourceChannel,
           status: c.status,
           notes: c.notes ?? '',
+          bankAccounts: (c.bankAccounts ?? []).map((acc) => ({
+            bankName: acc.bankName,
+            accountNumber: acc.accountNumber,
+            accountName: acc.accountName ?? '',
+            isPrimary: acc.isPrimary,
+          })),
         }
         setForm(loaded)
         setInitialForm(loaded)
@@ -109,6 +121,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
       name: `${form.firstName} ${form.lastName}`.trim(),
       customerType: form.customerType,
       companyName: form.companyName || undefined,
+      employeeNumber: form.employeeNumber || undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
@@ -120,6 +133,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
       sourceChannel: form.sourceChannel,
       status: form.status,
       notes: form.notes || undefined,
+      bankAccounts: form.bankAccounts,
     }
 
     const parsed = updateCustomerSchema.safeParse(payload)
@@ -196,6 +210,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           >
             <option value="individual">Individual</option>
             <option value="business">Business</option>
+            <option value="employee">Employee</option>
           </select>
         </div>
 
@@ -204,6 +219,14 @@ export default function EditCustomerForm({ id }: { id: string }) {
             label="Company name"
             value={form.companyName}
             onChange={(v) => setField('companyName', v)}
+          />
+        )}
+
+        {form.customerType === 'employee' && (
+          <Field
+            label="Employee ID"
+            value={form.employeeNumber}
+            onChange={(v) => setField('employeeNumber', v)}
           />
         )}
 
@@ -305,6 +328,90 @@ export default function EditCustomerForm({ id }: { id: string }) {
             <option value="crm_lead">CRM Lead</option>
             <option value="online">Online</option>
           </select>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="block text-[13px] font-medium text-gray-700">Bank details</label>
+            <button
+              type="button"
+              onClick={() =>
+                setField('bankAccounts', [
+                  ...form.bankAccounts,
+                  { bankName: '', accountNumber: '', accountName: '', isPrimary: false },
+                ])
+              }
+              className="flex items-center gap-1 text-[12px] font-medium text-prominent-orange-700 hover:text-prominent-orange-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add bank account
+            </button>
+          </div>
+          <div className="mt-2 space-y-3">
+            {form.bankAccounts.map((acc, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
+              >
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Bank name</label>
+                  <input
+                    value={acc.bankName}
+                    maxLength={100}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], bankName: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Account number
+                  </label>
+                  <input
+                    value={acc.accountNumber}
+                    maxLength={50}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], accountNumber: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Account name
+                  </label>
+                  <input
+                    value={acc.accountName ?? ''}
+                    maxLength={150}
+                    onChange={(e) => {
+                      const next = [...form.bankAccounts]
+                      next[idx] = { ...next[idx], accountName: e.target.value }
+                      setField('bankAccounts', next)
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setField(
+                      'bankAccounts',
+                      form.bankAccounts.filter((_, i) => i !== idx)
+                    )
+                  }
+                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Remove bank account"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div>
