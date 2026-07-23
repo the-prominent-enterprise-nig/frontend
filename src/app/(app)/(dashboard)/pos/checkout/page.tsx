@@ -36,6 +36,8 @@ import {
   lineTaxAmount,
 } from './_utils/calculations'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useSessions } from '../_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -227,11 +229,16 @@ export default function CheckoutPage() {
   // which is the same branch they can configure via "My Branch" settings.
   const [authBranchId, setAuthBranchId] = useState<string | null>(null)
   const [isBranchManager, setIsBranchManager] = useState(false)
+  // Whether this login already holds the approval authority a serialized
+  // sale would otherwise need to ask someone else for (Business Owner or
+  // Branch Manager) — drives the serial-sale banner below.
+  const [canOverride, setCanOverride] = useState(false)
   useEffect(() => {
     getSessionOrNull().then((s) => {
       if (!s) return
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
+      setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
     })
   }, [])
 
@@ -1688,11 +1695,18 @@ export default function CheckoutPage() {
 
       {/* Serial-tracked sale banner */}
       {!cancellationReqId && cart.some((l) => l.isSerialTracked) && (
-        <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3">
-          <ShieldCheck size={14} className="shrink-0 text-amber-500" />
-          <p className="text-sm font-medium text-amber-700">
-            This sale includes a serialized item — it will need Business Owner or Branch Manager
-            approval before the invoice is created.
+        <div
+          className={`flex items-center gap-3 border-b px-5 py-3 ${canOverride ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
+        >
+          {canOverride ? (
+            <CheckCircle2 size={14} className="shrink-0 text-green-500" />
+          ) : (
+            <ShieldCheck size={14} className="shrink-0 text-amber-500" />
+          )}
+          <p className={`text-sm font-medium ${canOverride ? 'text-green-700' : 'text-amber-700'}`}>
+            {canOverride
+              ? 'This sale includes a serialized item — since you can already approve sales, it will post immediately.'
+              : 'This sale includes a serialized item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
           </p>
         </div>
       )}
