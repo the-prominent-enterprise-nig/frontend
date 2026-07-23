@@ -20,6 +20,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   KeyRound,
   WifiOff,
   UtensilsCrossed,
@@ -28,6 +29,7 @@ import {
   Phone,
   Send,
   Clock,
+  Building2,
 } from 'lucide-react'
 import {
   computePricingTotals,
@@ -63,6 +65,8 @@ import {
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
   getAvailableSerialNumbers,
+  getCompanyWideSerialAvailability,
+  requestStockFromBranch,
   getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
@@ -114,6 +118,10 @@ interface LookupItem {
 }
 
 interface CartLine {
+  // Unique per physical unit — itemId alone is no longer unique once a
+  // serial-tracked item can have multiple units (multiple lines) in the
+  // same cart, each needing its own serial.
+  lineId: string
   itemId: string
   itemName: string
   sku?: string
@@ -217,6 +225,12 @@ export default function CheckoutPage() {
   const [catalogItems, setCatalogItems] = useState<LookupItem[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState('')
+  // Whether the currently-loaded catalogItems reflect a real, branch-scoped
+  // stock count. Without a resolved branch (e.g. multiple open sessions and
+  // none picked yet), the backend can't compute per-branch stock and every
+  // item's stockQty defaults to 0 — that 0 must never be treated as "genuinely
+  // out of stock" until this is true.
+  const [catalogStockKnown, setCatalogStockKnown] = useState(false)
 
   // Enabled payment methods for the active branch
   const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<PosPaymentMethod[]>(
@@ -264,6 +278,18 @@ export default function CheckoutPage() {
   const [serialLoading, setSerialLoading] = useState(false)
   const [serialError, setSerialError] = useState('')
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
+  // Read-only "also available elsewhere" section — never sellable from here.
+  const [elsewhereSerials, setElsewhereSerials] = useState<SerialNumberRecord[]>([])
+  // Which branch's individual serials are showing in the side panel —
+  // master-detail style, one at a time; null means the panel is closed and
+  // the summary view stays compact.
+  const [expandedBranch, setExpandedBranch] = useState<string | null>(null)
+  // Part 3 — one-tap request status per SERIAL id (a specific unit can now
+  // be requested, not just "first available"), reset whenever the picker
+  // opens for a different item.
+  const [serialRequestStatus, setSerialRequestStatus] = useState<
+    Record<string, 'loading' | 'requested' | 'error'>
+  >({})
 
   // Customer
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
@@ -458,6 +484,7 @@ export default function CheckoutPage() {
         })
 
         setCatalogItems(enriched)
+        setCatalogStockKnown(!!branchId)
       })
       .catch(() => setCatalogError('Failed to load items'))
       .finally(() => setCatalogLoading(false))
@@ -503,6 +530,8 @@ export default function CheckoutPage() {
     setSerialNumbers([])
     setSerialError('')
     setSerialSearchQuery('')
+    setSerialRequestStatus({})
+    setExpandedBranch(null)
     getAvailableSerialNumbers(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
       (res) => {
         if (res.success && Array.isArray(res.data)) {
@@ -513,6 +542,25 @@ export default function CheckoutPage() {
           setSerialError(res.error || 'Failed to load serial numbers.')
         }
         setSerialLoading(false)
+      }
+    )
+  }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
+
+  // Read-only "also available elsewhere" lookup — purely informational, so a
+  // failure here stays silent rather than surfacing as a picker-blocking
+  // error the way the sellable fetch above does.
+  useEffect(() => {
+    if (!serialPickerTarget) {
+      setElsewhereSerials([])
+      return
+    }
+    getCompanyWideSerialAvailability(serialPickerTarget.itemId, activeBranchId ?? undefined).then(
+      (res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setElsewhereSerials(res.data)
+        } else {
+          setElsewhereSerials([])
+        }
       }
     )
   }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
@@ -605,9 +653,30 @@ export default function CheckoutPage() {
   // ─── Computed ─────────────────────────────────────────────────────────────
 
   const cartQtyMap = useMemo(
-    () => Object.fromEntries(cart.map((l) => [l.itemId, l.quantity])),
+    () =>
+      cart.reduce<Record<string, number>>((acc, l) => {
+        acc[l.itemId] = (acc[l.itemId] ?? 0) + l.quantity
+        return acc
+      }, {}),
     [cart]
   )
+
+  // Multiple units of the same serial-tracked item collapse into one cart
+  // row (see addUnitOfItem) — everything else keeps one row per line, same
+  // as before. Order preserved: a group's position is set by its first line.
+  const displayGroups = useMemo(() => {
+    const groups: CartLine[][] = []
+    const indexByItemId = new Map<string, number>()
+    for (const line of cart) {
+      if (line.isSerialTracked && indexByItemId.has(line.itemId)) {
+        groups[indexByItemId.get(line.itemId)!].push(line)
+      } else {
+        indexByItemId.set(line.itemId, groups.length)
+        groups.push([line])
+      }
+    }
+    return groups
+  }, [cart])
 
   const displayItems = useMemo(() => {
     // A plain (non-serialized) bundle has no single sellable unit and stays
@@ -792,15 +861,35 @@ export default function CheckoutPage() {
     // cap the cart at a single line (a new pick replaces it, matching this
     // page's no-toast convention of just updating the visible state).
     const isReserveMode = invoiceType === 'reserve'
+    const lineId = crypto.randomUUID()
     setCart((prev) => {
       const existing = prev.find((l) => l.itemId === item.id)
       if (existing && !isReserveMode) {
-        if (existing.isSerialTracked) return prev
+        if (existing.isSerialTracked) {
+          // Another physical unit of the same item — a sibling line, not a
+          // quantity bump, since it needs its own serial picked separately.
+          const siblingLine: CartLine = {
+            lineId,
+            itemId: item.id,
+            itemName: item.name,
+            sku: item.sku,
+            unitPrice: item.price,
+            quantity: 1,
+            taxRate: item.taxRate ?? null,
+            uomCode: item.uomCode,
+            allowDecimal: item.allowDecimal ?? false,
+            pricingMode: item.pricingMode ?? null,
+            isSerialTracked: true,
+            requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+          }
+          return [...prev, siblingLine]
+        }
         return prev.map((l) =>
           l.itemId === item.id ? { ...l, quantity: parseFloat((l.quantity + qty).toFixed(3)) } : l
         )
       }
       const newLine: CartLine = {
+        lineId,
         itemId: item.id,
         itemName: item.name,
         sku: item.sku,
@@ -818,6 +907,7 @@ export default function CheckoutPage() {
     if (item.isSerialTracked && !isReserveMode) {
       setSerialPickerStage('primary')
       setSerialPickerTarget({
+        lineId,
         itemId: item.id,
         itemName: item.name,
         unitPrice: item.price,
@@ -853,6 +943,39 @@ export default function CheckoutPage() {
 
   function removeFromCart(itemId: string) {
     setCart((prev) => prev.filter((l) => l.itemId !== itemId))
+  }
+
+  function removeCartLine(lineId: string) {
+    setCart((prev) => prev.filter((l) => l.lineId !== lineId))
+  }
+
+  // Multiple serial-tracked units of the same item are grouped into one
+  // cart row (see displayGroups) — its stepper adds/removes a whole line
+  // at a time (each unit needs its own serial), rather than adjusting a
+  // single line's quantity number the way non-serial items do.
+  function addUnitOfItem(itemId: string) {
+    const template = cart.find((l) => l.itemId === itemId)
+    if (!template) return
+    const siblingLine: CartLine = {
+      ...template,
+      lineId: crypto.randomUUID(),
+      serialNumberId: undefined,
+      serialNumberLabel: undefined,
+      secondarySerialNumberId: undefined,
+      secondarySerialNumberLabel: undefined,
+    }
+    setCart((prev) => [...prev, siblingLine])
+    setSerialPickerStage('primary')
+    setSerialPickerTarget(siblingLine)
+  }
+
+  function removeLastUnitOfItem(itemId: string) {
+    setCart((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].itemId === itemId) return prev.filter((_, idx) => idx !== i)
+      }
+      return prev
+    })
   }
 
   // ─── Promo actions ─────────────────────────────────────────────────────────
@@ -1178,7 +1301,7 @@ export default function CheckoutPage() {
             if (stale) {
               setCart((prev) =>
                 prev.map((l) =>
-                  l.itemId === stale.itemId
+                  l.lineId === stale.lineId
                     ? { ...l, serialNumberId: undefined, serialNumberLabel: undefined }
                     : l
                 )
@@ -1188,6 +1311,7 @@ export default function CheckoutPage() {
               )
               setSubmitting(false)
               setSerialPickerTarget({
+                lineId: stale.lineId,
                 itemId: stale.itemId,
                 itemName: stale.itemName,
                 unitPrice: stale.unitPrice,
@@ -1792,6 +1916,7 @@ export default function CheckoutPage() {
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
                     activeTaxRate={activeTaxRate}
                     inclusivePricing={inclusivePricing}
+                    stockKnown={catalogStockKnown}
                   />
                 ))}
               </div>
@@ -1805,30 +1930,64 @@ export default function CheckoutPage() {
                 <div className="flex items-center gap-2">
                   <ShoppingCart size={12} className="text-purple-500" />
                   <span className="text-xs font-semibold text-gray-700">
-                    Cart · {cart.length} item{cart.length !== 1 ? 's' : ''}
+                    Cart · {displayGroups.length} item{displayGroups.length !== 1 ? 's' : ''}
                   </span>
                 </div>
                 <span className="text-xs font-bold text-gray-900">{fmt(subtotal)}</span>
               </div>
               <table className="min-w-full text-sm">
                 <tbody className="divide-y divide-gray-50">
-                  {cart.map((line) => {
+                  {displayGroups.map((group) => {
+                    const line = group[0]
+                    const groupQty = group.length
                     const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
+                    const isGrouped = groupQty > 1
+
                     return (
-                      <tr key={line.itemId} className="group hover:bg-gray-50">
+                      <tr key={line.lineId} className="group hover:bg-gray-50">
                         <td className="px-4 py-2">
-                          <p className="text-xs font-medium text-gray-900">{line.itemName}</p>
+                          <p className="text-xs font-medium text-gray-900">
+                            {line.itemName}
+                            {isGrouped && <span className="ml-1 text-gray-400">× {groupQty}</span>}
+                          </p>
                           {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
-                          {line.isSerialTracked && (
-                            <button
-                              onClick={() => setSerialPickerTarget(line)}
-                              className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                            >
-                              {line.serialNumberId
-                                ? `SN: ${line.serialNumberLabel}`
-                                : '⚠ Select serial'}
-                            </button>
-                          )}
+                          {line.isSerialTracked &&
+                            (isGrouped ? (
+                              group.some((l) => !l.serialNumberId) ? (
+                                <button
+                                  onClick={() =>
+                                    setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
+                                  }
+                                  className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
+                                >
+                                  ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
+                                  serial{groupQty !== 1 ? 's' : ''} needed
+                                </button>
+                              ) : (
+                                <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
+                                  <span className="text-gray-400">SN:</span>
+                                  {group.map((l, i) => (
+                                    <button
+                                      key={l.lineId}
+                                      onClick={() => setSerialPickerTarget(l)}
+                                      className="font-medium text-green-600 underline-offset-2 hover:underline"
+                                    >
+                                      {l.serialNumberLabel}
+                                      {i < group.length - 1 ? ',' : ''}
+                                    </button>
+                                  ))}
+                                </p>
+                              )
+                            ) : (
+                              <button
+                                onClick={() => setSerialPickerTarget(line)}
+                                className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                              >
+                                {line.serialNumberId
+                                  ? `SN: ${line.serialNumberLabel}`
+                                  : '⚠ Select serial'}
+                              </button>
+                            ))}
                           {lineTaxRate != null ? (
                             <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
                               {line.taxRate == null
@@ -1845,9 +2004,11 @@ export default function CheckoutPage() {
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={() =>
-                                line.allowDecimal
-                                  ? removeFromCart(line.itemId)
-                                  : setQty(line.itemId, line.quantity - 1)
+                                line.isSerialTracked
+                                  ? removeLastUnitOfItem(line.itemId)
+                                  : line.allowDecimal
+                                    ? removeFromCart(line.itemId)
+                                    : setQty(line.itemId, line.quantity - 1)
                               }
                               disabled={!!cancellationReqId}
                               className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
@@ -1875,22 +2036,24 @@ export default function CheckoutPage() {
                               </div>
                             ) : (
                               <span className="w-6 text-center text-xs font-semibold">
-                                {line.quantity}
+                                {line.isSerialTracked ? groupQty : line.quantity}
                               </span>
                             )}
                             <button
                               onClick={() =>
-                                line.allowDecimal
-                                  ? setMeasuredItem({
-                                      id: line.itemId,
-                                      name: line.itemName,
-                                      sku: line.sku,
-                                      price: line.unitPrice,
-                                      taxRate: line.taxRate,
-                                      uomCode: line.uomCode,
-                                      allowDecimal: true,
-                                    })
-                                  : setQty(line.itemId, line.quantity + 1)
+                                line.isSerialTracked
+                                  ? addUnitOfItem(line.itemId)
+                                  : line.allowDecimal
+                                    ? setMeasuredItem({
+                                        id: line.itemId,
+                                        name: line.itemName,
+                                        sku: line.sku,
+                                        price: line.unitPrice,
+                                        taxRate: line.taxRate,
+                                        uomCode: line.uomCode,
+                                        allowDecimal: true,
+                                      })
+                                    : setQty(line.itemId, line.quantity + 1)
                               }
                               className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
                             >
@@ -1901,7 +2064,7 @@ export default function CheckoutPage() {
                         <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
                           {fmt(
                             displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                              line.quantity
+                              groupQty
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -3147,26 +3310,82 @@ export default function CheckoutPage() {
       {/* Serial Number Picker */}
       {serialPickerTarget &&
         (() => {
-          const targetLine = cart.find((l) => l.itemId === serialPickerTarget.itemId)
+          const targetLine = cart.find((l) => l.lineId === serialPickerTarget.lineId)
           const isSecondaryStage = serialPickerStage === 'secondary'
           const selectedId = isSecondaryStage
             ? targetLine?.secondarySerialNumberId
             : targetLine?.serialNumberId
+          // A serial already assigned to a SIBLING line of the same item
+          // (multiple units of one item in this cart, see addUnitOfItem)
+          // can't be picked again for this line — same physical unit,
+          // can't be sold twice in the same sale.
+          const siblingUsedSerialIds = new Set(
+            cart
+              .filter(
+                (l) =>
+                  l.itemId === serialPickerTarget.itemId && l.lineId !== serialPickerTarget.lineId
+              )
+              .flatMap(
+                (l) => [l.serialNumberId, l.secondarySerialNumberId].filter(Boolean) as string[]
+              )
+          )
           // The primary serial can't also be picked as the secondary — hide it
           // from the secondary list (backend enforces distinctness regardless).
           const visibleSerials = serialNumbers
             .filter((sn) => !isSecondaryStage || sn.id !== targetLine?.serialNumberId)
+            .filter((sn) => !siblingUsedSerialIds.has(sn.id))
             .filter((sn) =>
               serialSearchQuery.trim()
                 ? sn.serialNumber.toLowerCase().includes(serialSearchQuery.trim().toLowerCase())
                 : true
             )
 
+          // "Also available elsewhere" — informational only, never selectable
+          // here (only a Request click can act on it). Collapsed to a count
+          // by default so this section never needs its own scroll; expanding
+          // a branch reveals its individual serials, each independently
+          // requestable, for when the specific unit matters. Excludes
+          // anything already shown in visibleSerials above (a serial
+          // physically in this branch appears in both fetches).
+          const ownIds = new Set(serialNumbers.map((sn) => sn.id))
+          const elsewhereByBranch = elsewhereSerials
+            .filter((sn) => !ownIds.has(sn.id))
+            .filter((sn) => !siblingUsedSerialIds.has(sn.id))
+            .filter((sn) =>
+              serialSearchQuery.trim()
+                ? sn.serialNumber.toLowerCase().includes(serialSearchQuery.trim().toLowerCase())
+                : true
+            )
+            .reduce<Record<string, SerialNumberRecord[]>>((groups, sn) => {
+              const branchLabel = sn.currentWarehouse?.name ?? 'Another branch'
+              groups[branchLabel] = [...(groups[branchLabel] ?? []), sn]
+              return groups
+            }, {})
+
+          async function requestSerial(sn: SerialNumberRecord) {
+            if (!sn.currentWarehouseId) return
+            setSerialRequestStatus((prev) => ({ ...prev, [sn.id]: 'loading' }))
+            const res = await requestStockFromBranch({
+              itemId: serialPickerTarget!.itemId,
+              serialNumberId: sn.id,
+              fromWarehouseId: sn.currentWarehouseId,
+              toBranchId: activeBranchId ?? undefined,
+            })
+            setSerialRequestStatus((prev) => ({
+              ...prev,
+              [sn.id]: res.success ? 'requested' : 'error',
+            }))
+          }
+
+          function toggleBranch(branchLabel: string) {
+            setExpandedBranch((prev) => (prev === branchLabel ? null : branchLabel))
+          }
+
           function pick(sn: SerialNumberRecord) {
             if (isSecondaryStage) {
               setCart((prev) =>
                 prev.map((l) =>
-                  l.itemId === serialPickerTarget!.itemId
+                  l.lineId === serialPickerTarget!.lineId
                     ? {
                         ...l,
                         secondarySerialNumberId: sn.id,
@@ -3181,7 +3400,7 @@ export default function CheckoutPage() {
             }
             setCart((prev) =>
               prev.map((l) =>
-                l.itemId === serialPickerTarget!.itemId
+                l.lineId === serialPickerTarget!.lineId
                   ? { ...l, serialNumberId: sn.id, serialNumberLabel: sn.serialNumber }
                   : l
               )
@@ -3193,84 +3412,202 @@ export default function CheckoutPage() {
             }
           }
 
+          const hasElsewhere = Object.keys(elsewhereByBranch).length > 0
+          const expandedSerials = expandedBranch ? (elsewhereByBranch[expandedBranch] ?? []) : []
+
           return (
             <Overlay
               dismissible={false}
+              width={expandedBranch ? 'xl' : 'lg'}
               onClose={() => {
                 setSerialPickerTarget(null)
                 setSerialPickerStage('primary')
               }}
             >
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
-                  <Tag size={18} className="text-purple-600" />
+              <div className="flex gap-5">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100">
+                      <Tag size={18} className="text-purple-600" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">
+                        {isSecondaryStage ? 'Select Outdoor Unit Serial' : 'Select Serial Number'}
+                      </h2>
+                      <p className="text-xs text-gray-500">
+                        {serialPickerTarget.itemName}
+                        {isSecondaryStage && ' — Outdoor Unit'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="relative mb-4">
+                    <Search
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      autoFocus
+                      value={serialSearchQuery}
+                      onChange={(e) => setSerialSearchQuery(e.target.value)}
+                      placeholder="Search serial number…"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                    />
+                  </div>
+
+                  {hasElsewhere && (
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      In this branch
+                    </p>
+                  )}
+                  <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                    {serialLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 size={20} className="animate-spin text-purple-400" />
+                      </div>
+                    ) : serialError ? (
+                      <div className="rounded-lg bg-red-50 px-4 py-5 text-center text-sm text-red-700">
+                        {serialError}
+                      </div>
+                    ) : visibleSerials.length === 0 ? (
+                      <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
+                        {serialSearchQuery
+                          ? `No serial numbers match "${serialSearchQuery}".`
+                          : 'No available serial numbers in stock for this item at this branch.'}
+                      </div>
+                    ) : (
+                      visibleSerials.map((sn) => {
+                        const isSelected = selectedId === sn.id
+                        return (
+                          <button
+                            key={sn.id}
+                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                              isSelected
+                                ? 'border-purple-500 bg-purple-50'
+                                : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
+                            }`}
+                            onClick={() => pick(sn)}
+                          >
+                            <span className="font-mono text-sm font-semibold text-gray-900">
+                              {sn.serialNumber}
+                            </span>
+                            {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+
+                  {hasElsewhere && (
+                    <div className="mt-4 border-t border-gray-100 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        Also available elsewhere
+                      </p>
+                      <div className="space-y-1.5">
+                        {Object.entries(elsewhereByBranch).map(([branchLabel, serials]) => {
+                          const isActive = expandedBranch === branchLabel
+                          return (
+                            <button
+                              key={branchLabel}
+                              onClick={() => toggleBranch(branchLabel)}
+                              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                                isActive
+                                  ? 'bg-purple-50 ring-1 ring-purple-300'
+                                  : 'bg-gray-50 hover:bg-gray-100'
+                              }`}
+                            >
+                              <Building2 size={14} className="shrink-0 text-gray-400" />
+                              <span
+                                title={branchLabel}
+                                className="min-w-0 flex-1 truncate text-sm text-gray-600"
+                              >
+                                {branchLabel}
+                              </span>
+                              <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-600">
+                                {serials.length} in stock
+                              </span>
+                              <ChevronRight
+                                size={14}
+                                className={`shrink-0 text-gray-400 transition-transform ${isActive ? 'rotate-180' : ''}`}
+                              />
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {isSecondaryStage ? 'Select Outdoor Unit Serial' : 'Select Serial Number'}
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    {serialPickerTarget.itemName}
-                    {isSecondaryStage && ' — Outdoor Unit'}
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-400">
-                    A serial number is required to continue with this item.
-                  </p>
-                </div>
-              </div>
-              <div className="relative mb-3">
-                <Search
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                />
-                <input
-                  autoFocus
-                  value={serialSearchQuery}
-                  onChange={(e) => setSerialSearchQuery(e.target.value)}
-                  placeholder="Search serial number…"
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                />
-              </div>
-              {serialLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 size={20} className="animate-spin text-purple-400" />
-                </div>
-              ) : serialError ? (
-                <div className="rounded-lg bg-red-50 px-4 py-5 text-center text-sm text-red-700">
-                  {serialError}
-                </div>
-              ) : visibleSerials.length === 0 ? (
-                <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
-                  {serialSearchQuery
-                    ? `No serial numbers match "${serialSearchQuery}".`
-                    : 'No available serial numbers in stock for this item at this branch.'}
-                </div>
-              ) : (
-                <div className="max-h-64 space-y-1.5 overflow-y-auto">
-                  {visibleSerials.map((sn) => {
-                    const isSelected = selectedId === sn.id
-                    return (
-                      <button
-                        key={sn.id}
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                          isSelected
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-purple-300 hover:bg-purple-50'
-                        }`}
-                        onClick={() => pick(sn)}
+
+                {expandedBranch && (
+                  <div className="w-56 shrink-0 border-l border-gray-100 pl-5">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p
+                        title={expandedBranch}
+                        className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-400"
                       >
-                        <span className="font-mono text-sm font-semibold text-gray-900">
-                          {sn.serialNumber}
-                        </span>
-                        {isSelected && <CheckCircle2 size={14} className="text-purple-600" />}
+                        {expandedBranch}
+                      </p>
+                      <button
+                        onClick={() => setExpandedBranch(null)}
+                        className="shrink-0 text-gray-400 hover:text-gray-700"
+                      >
+                        <X size={14} />
                       </button>
-                    )
-                  })}
-                </div>
-              )}
-              <div className="mt-4 flex justify-end">
+                    </div>
+                    <div className="max-h-88 space-y-1.5 overflow-y-auto pr-1">
+                      {expandedSerials.map((sn) => {
+                        const status = serialRequestStatus[sn.id]
+                        return (
+                          <div
+                            key={sn.id}
+                            className="flex flex-col gap-1.5 rounded-lg bg-gray-50 px-2.5 py-2"
+                          >
+                            <span
+                              title="Not sellable from this branch"
+                              className="cursor-not-allowed font-mono text-xs text-gray-500"
+                            >
+                              {sn.serialNumber}
+                            </span>
+                            {status === 'requested' ? (
+                              <span className="flex items-center gap-1 text-xs font-semibold text-green-600">
+                                <CheckCircle2 size={12} /> Requested
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => requestSerial(sn)}
+                                disabled={status === 'loading'}
+                                className="flex items-center justify-center gap-1 rounded-lg border border-purple-200 bg-white px-2 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50 disabled:opacity-50"
+                              >
+                                {status === 'loading' ? (
+                                  <Loader2 size={11} className="animate-spin" />
+                                ) : (
+                                  <Send size={11} />
+                                )}
+                                {status === 'error' ? 'Retry' : 'Request'}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {Object.values(serialRequestStatus).includes('error') && (
+                      <p className="mt-1.5 text-xs text-red-600">Couldn't raise the request.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end border-t border-gray-100 pt-4">
                 <button
                   onClick={() => {
+                    // Closing on a unit that never got a serial (a fresh
+                    // add-another-unit, or a brand-new item) discards that
+                    // line entirely — otherwise it's left stranded in the
+                    // cart needing a serial with no obvious way back in.
+                    // A line that already HAD a serial (reopened to change
+                    // it) is left untouched either way.
+                    if (targetLine && !targetLine.serialNumberId) {
+                      removeCartLine(targetLine.lineId)
+                    }
                     setSerialPickerTarget(null)
                     setSerialPickerStage('primary')
                   }}
@@ -3743,7 +4080,7 @@ function SuccessScreen({
                 )
                 const displayLineTotal = displayUnitPrice * line.quantity
                 return (
-                  <div key={line.itemId} className="flex items-start justify-between gap-2">
+                  <div key={line.lineId} className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[11px] font-medium text-gray-800">
                         {line.itemName}
@@ -3955,6 +4292,7 @@ function CatalogCard({
   onAddMeasured,
   activeTaxRate,
   inclusivePricing,
+  stockKnown,
 }: {
   item: LookupItem
   qty: number
@@ -3962,6 +4300,11 @@ function CatalogCard({
   onAddMeasured?: (item: LookupItem) => void
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
+  /** False while stock hasn't been resolved to a specific branch yet (e.g.
+   * multiple open sessions, none picked) — every item's stockQty defaults to
+   * 0 in that window, so it must never be read as "genuinely out of stock"
+   * until this is true. */
+  stockKnown: boolean
 }) {
   const displayPrice = displayUnitPriceWithTax(
     { unitPrice: item.price, taxRate: item.taxRate, pricingMode: item.pricingMode },
@@ -3969,10 +4312,28 @@ function CatalogCard({
     inclusivePricing
   )
 
+  // Only serial-tracked items are hard-blocked at zero — a serial-tracked
+  // sale is impossible with nothing to pick, unlike a bulk/quantity item
+  // where allowNegativeStock or a backorder might still apply.
+  const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
+  const isLowStock =
+    stockKnown && item.stockQty !== undefined && item.stockQty > 0 && item.stockQty <= 5
+
   return (
     <button
-      onMouseDown={() => (item.allowDecimal && onAddMeasured ? onAddMeasured(item) : onAdd(item))}
-      className="group relative flex flex-col rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition-all hover:border-purple-300 hover:shadow-md active:scale-[0.97]"
+      disabled={isOutOfStock}
+      onMouseDown={() =>
+        isOutOfStock
+          ? undefined
+          : item.allowDecimal && onAddMeasured
+            ? onAddMeasured(item)
+            : onAdd(item)
+      }
+      className={`group relative flex flex-col rounded-xl border p-3 text-left shadow-sm transition-all ${
+        isOutOfStock
+          ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
+          : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-md active:scale-[0.97]'
+      }`}
     >
       {qty > 0 && (
         <span className="absolute right-2 top-2 flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
@@ -3995,8 +4356,14 @@ function CatalogCard({
               per {item.uomCode}
             </span>
           )}
-          {item.stockQty !== undefined && item.stockQty <= 5 && (
-            <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+          {isOutOfStock ? (
+            <p className="text-[9px] font-bold uppercase tracking-wide text-red-500">
+              Out of stock
+            </p>
+          ) : (
+            isLowStock && (
+              <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+            )
           )}
         </div>
       </div>
@@ -4113,18 +4480,26 @@ function Overlay({
   children,
   onClose,
   dismissible = true,
+  width = 'md',
 }: {
   children: React.ReactNode
   onClose: () => void
   /** When false, there's no backdrop-click or X close — the modal can only be
    * dismissed by whatever action inside it programmatically closes it. */
   dismissible?: boolean
+  /** 'lg'/'xl' give content-heavy modals (e.g. the cross-branch serial
+   * picker, which grows to 'xl' while its side panel is open) more room —
+   * every other caller is unaffected by leaving this at 'md'. */
+  width?: 'md' | 'lg' | 'xl'
 }) {
+  const maxWidthClass = width === 'xl' ? 'max-w-2xl' : width === 'lg' ? 'max-w-lg' : 'max-w-md'
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={dismissible ? onClose : undefined} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div
+          className={`relative w-full ${maxWidthClass} rounded-2xl bg-white p-6 shadow-xl transition-[max-width] duration-150`}
+        >
           {dismissible && (
             <button
               onClick={onClose}

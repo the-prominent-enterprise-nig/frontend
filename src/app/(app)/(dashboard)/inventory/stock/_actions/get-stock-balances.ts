@@ -21,7 +21,11 @@ export async function getStockBalances(params: Params = {}) {
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
     search: params.search,
-    belowReorder: params.belowReorder,
+    // Backend's StockBalanceFilterDto field is `belowReorderPoint` — this was
+    // previously sent as `belowReorder`, which the DTO silently ignores (no
+    // validation error, just never bound), so the "Below Reorder" toggle had
+    // no effect at all.
+    belowReorderPoint: params.belowReorder,
   }
 
   return api.get<StockBalanceListResponse>('/inventory/stock/balances', query, {
