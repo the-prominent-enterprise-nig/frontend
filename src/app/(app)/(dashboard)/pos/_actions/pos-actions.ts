@@ -2152,6 +2152,7 @@ export interface SerialNumberRecord {
   id: string
   serialNumber: string
   currentWarehouseId?: string | null
+  currentWarehouse?: { id: string; code: string; name: string } | null
 }
 
 export async function getAvailableSerialNumbers(
@@ -2172,6 +2173,64 @@ export async function getAvailableSerialNumbers(
     return { success: true, data: rows }
   } catch {
     return { success: false, error: 'Failed to fetch serial numbers' }
+  }
+}
+
+/**
+ * Read-only, cross-branch visibility for a serial-tracked item — used only to
+ * populate an informational "also available elsewhere" section in the POS
+ * serial picker. Never use this to let a cashier select/sell a serial; only
+ * getAvailableSerialNumbers (branch-forced) can back an actual sale line.
+ */
+export async function getCompanyWideSerialAvailability(
+  itemId: string,
+  activeBranchId?: string
+): Promise<ApiResponse<SerialNumberRecord[]>> {
+  try {
+    type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
+    // branchId here means "exclude this branch" (the caller's own — already
+    // shown by the sellable branch-scoped fetch), not "restrict to it." A
+    // branch-assigned caller's own branch is excluded server-side regardless;
+    // this is what lets it also work for a non-branch-assigned caller like
+    // Business Owner, whose "own branch" is only known from the active
+    // session/terminal, not their user record.
+    const branchParam = activeBranchId ? `&branchId=${activeBranchId}` : ''
+    const result = await api.get<Envelope>(
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock&scope=company${branchParam}`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch cross-branch availability' }
+    }
+    const rows = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: SerialNumberRecord[] }).data ?? [])
+    return { success: true, data: rows }
+  } catch {
+    return { success: false, error: 'Failed to fetch cross-branch availability' }
+  }
+}
+
+/**
+ * Scenario 04, Part 3 — one-tap request from the "also available elsewhere"
+ * row. Raises a real, approvable stock transfer (same entity/workflow as the
+ * standalone Transfers module) without the cashier ever leaving the sale.
+ * toBranchId only matters for a non-branch-assigned caller (Business Owner);
+ * a branch-assigned caller's own branch is resolved server-side regardless.
+ */
+export async function requestStockFromBranch(input: {
+  itemId: string
+  serialNumberId: string
+  fromWarehouseId: string
+  toBranchId?: string
+}): Promise<ApiResponse<{ id: string }>> {
+  try {
+    const result = await api.post<{ id: string }>('/inventory/transfers/request-from-pos', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to request stock' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to request stock' }
   }
 }
 
