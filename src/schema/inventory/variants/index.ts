@@ -41,6 +41,10 @@ export const VariantSummarySchema = z.object({
   stockBalance: z.coerce.number().optional().nullable(),
   availableQty: z.coerce.number().optional().nullable(),
   onHandQty: z.coerce.number().optional().nullable(),
+  // True for a serial-tracked parent item — SerialNumber rows carry no
+  // variantId, so this count is the item's total, identical across every
+  // sibling variant, not specific to this one.
+  stockSharedAcrossVariants: z.boolean().optional(),
   createdAt: z.string().optional(),
 })
 
