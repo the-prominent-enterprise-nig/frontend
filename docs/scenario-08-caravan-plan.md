@@ -70,3 +70,20 @@ This is a net-new feature spanning Inventory + POS + Accounting. Sequenced.
 ## Dead code / unused-feature flags
 
 None — nothing exists yet to flag. Note for whoever picks this up: don't confuse this with the unbuilt "Consignment Stock" user story (#52 in `inventory-user-stories.md`) — that's supplier-side consignment, a separate feature that happens to share a name.
+
+## Implementation Log — 2026-07-24
+
+**For this scenario, I have done:**
+
+- Gap 1 — Added `consignedToBranchId` to `SerialNumber` (nullable, distinct from `currentWarehouseId`/ownership) plus a `consignToBranch` primitive (`POST /inventory/serial-numbers/consign`), gated by a new `inventory:caravan:manage` permission.
+- Gap 2 — Added a "Caravan @ Host" tab on the Serial Number Tracking page, filtered by `consignedToBranchId`, with a branch picker for unrestricted (Business Owner) callers and automatic own-branch scoping for branch-restricted roles.
+- Gap 3 — Split attribution at sale time: a caravan-consigned serial sold at the host branch now redirects COGS/inventory deduction to the origin branch, while cash/session posting stays with the host as normal. Quota-crediting is explicitly out of scope — Sales Quota was already fully removed from the system per Scenario 01's doc — confirmed with the developer before implementing.
+- Gap 4 — Added `caravanOriginBranchId` on `PosTransactionLine`, tagging the sale line with its true origin branch whenever a caravan sale occurs, for downstream reporting/audit.
+- Gap 5 — Event close: a `closeConsignment` action (`POST /inventory/serial-numbers/close-consignment`) either clears the consignment (return to origin) or reassigns it to a new branch (move onward), surfaced as a bulk-select checkbox UI + action bar on the "Caravan @ Host" tab.
+
+**Worth flagging:**
+
+- Found and fixed two pre-existing bugs blocking Gap 3 in practice: (a) `deductStockForTransactionTx`/`expandLine()` never skipped serial-tracked items during actual stock deduction (only the pre-flight check did), silently breaking any self-approving sale of a serial-tracked item; (b) the checkout serial picker had no awareness of consignment, making a caravan-consigned unit technically sellable but practically undiscoverable.
+- Found and fixed an unrelated pre-existing bug on the Serial Number Tracking page: `SerialNumberFilterDto` never declared a `search` field, so the search box silently did nothing (the ValidationPipe stripped the param before the query ever saw it).
+- All filter dropdowns (Status, Item, Warehouse, Branch, and the event-close "Move to…" picker) were refined to use the existing `SearchableSelect` component (type-ahead, matches the rest of the app's design language) instead of plain native `<select>`s.
+- No ClickUp ticket exists for step 2 ("sell at host," assumed to be normal POS checkout once consignment exists) or step 4/Gap 5 (event close) — already noted above in this doc's own "Related ClickUp Tickets" section.
