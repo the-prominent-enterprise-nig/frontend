@@ -230,6 +230,9 @@ function VariantCard({
                 <span className="font-medium text-zinc-700">{variant.onHandQty}</span> on hand
               </span>
             ) : null}
+            {variant.stockSharedAcrossVariants && (
+              <p className="mt-0.5 text-[11px] text-zinc-400">shared across variants</p>
+            )}
           </div>
           <button
             type="button"

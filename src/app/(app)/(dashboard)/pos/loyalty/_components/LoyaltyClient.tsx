@@ -8,6 +8,7 @@ import {
   getLoyaltyProgram,
   createLoyaltyProgram,
   updateLoyaltyProgram,
+  createLoyaltyAccount,
   searchCustomers,
 } from '../../_actions/pos-actions'
 import type {
@@ -45,7 +46,8 @@ export default function LoyaltyClient({
   const [account, setAccount] = useState<LoyaltyAccount | null>(null)
   const [history, setHistory] = useState<LoyaltyTransaction[]>([])
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [creatingAccount, setCreatingAccount] = useState(false)
+  const [createError, setCreateError] = useState('')
 
   // Debounced customer search — same search-by-name-or-phone endpoint and
   // 300ms debounce already proven in pos/checkout/page.tsx, so a customer's
@@ -78,11 +80,14 @@ export default function LoyaltyClient({
     setAccount(null)
     setHistory([])
     setLoading(true)
-    setError('')
+    setCreateError('')
 
     const accRes = await getLoyaltyByCustomer(customer.id)
     if (!accRes.success || !accRes.data) {
-      setError(accRes.error ?? 'Loyalty account not found')
+      // Most customers simply haven't been enrolled yet — that's not an
+      // error state, it's what the "Create Loyalty Account" card below is
+      // for. `account` stays null and `selectedCustomer` is set, which is
+      // exactly the combination that card renders on.
       setLoading(false)
       return
     }
@@ -93,6 +98,22 @@ export default function LoyaltyClient({
       setHistory(histRes.data)
     }
     setLoading(false)
+  }
+
+  async function handleCreateAccount() {
+    if (!selectedCustomer) return
+    setCreatingAccount(true)
+    setCreateError('')
+
+    const res = await createLoyaltyAccount({ customerId: selectedCustomer.id })
+
+    setCreatingAccount(false)
+    if (!res.success || !res.data) {
+      setCreateError(res.error ?? 'Failed to create loyalty account')
+      return
+    }
+    setAccount(res.data)
+    setHistory([])
   }
 
   // ── Loyalty program settings (Business Owner / Branch Manager only) ────────
@@ -398,8 +419,6 @@ export default function LoyaltyClient({
               )}
             </div>
           )}
-
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </div>
 
         {/* Account Summary */}
@@ -494,8 +513,34 @@ export default function LoyaltyClient({
           </div>
         )}
 
+        {/* Enroll — a customer was found but has no loyalty account yet */}
+        {selectedCustomer && !account && !loading && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center">
+            <Star size={36} className="text-gray-300" />
+            <p className="text-sm text-gray-600">
+              <span className="font-semibold text-gray-800">
+                {customerDisplayName(selectedCustomer)}
+              </span>{' '}
+              isn&apos;t enrolled in the loyalty program yet.
+            </p>
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
+            <button
+              onClick={handleCreateAccount}
+              disabled={creatingAccount}
+              className="mt-1 flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
+            >
+              {creatingAccount ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Star size={14} />
+              )}
+              {creatingAccount ? 'Creating…' : 'Create Loyalty Account'}
+            </button>
+          </div>
+        )}
+
         {/* Empty state when no search yet */}
-        {!account && !loading && (
+        {!selectedCustomer && !loading && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-gray-300 py-16 text-gray-400">
             <Star size={40} />
             <p className="text-sm">Search for a customer to view their loyalty account.</p>
