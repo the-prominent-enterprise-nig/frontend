@@ -225,21 +225,24 @@ export default function InstallmentAccountDetail({
             </div>
           </dl>
 
-          {account.category !== 'C' && !pendingGraduation && canEdit && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <button
-                onClick={handleRequestGraduation}
-                disabled={requestingGraduation}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                <ArrowUpCircle className="h-4 w-4" />
-                {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
-              </button>
-              {graduationError && (
-                <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
-              )}
-            </div>
-          )}
+          {account.category !== 'C' &&
+            !pendingGraduation &&
+            canEdit &&
+            account.status === 'active' && (
+              <div className="mt-4 border-t border-gray-100 pt-4">
+                <button
+                  onClick={handleRequestGraduation}
+                  disabled={requestingGraduation}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <ArrowUpCircle className="h-4 w-4" />
+                  {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
+                </button>
+                {graduationError && (
+                  <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
+                )}
+              </div>
+            )}
 
           {pendingGraduation && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">

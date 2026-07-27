@@ -109,6 +109,7 @@ export interface Customer {
   shippingAddress?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
+  groupId?: string | null
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
