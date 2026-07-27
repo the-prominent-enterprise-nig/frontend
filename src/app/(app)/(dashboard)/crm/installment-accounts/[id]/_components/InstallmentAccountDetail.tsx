@@ -355,8 +355,14 @@ function RejectGraduationModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Reject graduation request</h2>
-        <label className="block text-[13px] font-medium text-gray-700">Reason</label>
+        <label
+          htmlFor="reject-graduation-reason"
+          className="block text-[13px] font-medium text-gray-700"
+        >
+          Reason
+        </label>
         <textarea
+          id="reject-graduation-reason"
           rows={3}
           value={reason}
           onChange={(e) => setReason(e.target.value)}

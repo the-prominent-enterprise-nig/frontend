@@ -10,11 +10,13 @@ function fullName(c: AccountingCustomerLite): string {
 }
 
 export default function CustomerPicker({
+  id,
   value,
   selectedLabel,
   onChange,
   error,
 }: {
+  id?: string
   value: string
   selectedLabel?: string
   onChange: (customerId: string, label: string) => void
@@ -79,6 +81,7 @@ export default function CustomerPicker({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
+          id={id}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={() => setOpen(true)}

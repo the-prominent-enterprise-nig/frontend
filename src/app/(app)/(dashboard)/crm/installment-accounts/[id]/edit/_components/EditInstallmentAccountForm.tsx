@@ -50,11 +50,18 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
   const [originalCategory, setOriginalCategory] = useState<InstallmentAccountCategory | ''>('')
 
   useEffect(() => {
+    // Guards against React Strict Mode's dev-mode double-effect-invocation
+    // (or any other stale re-fire): without this, a late-resolving duplicate
+    // load can call setForm() with the original record well after the user
+    // has already started editing, silently discarding their changes. (Same
+    // gap found and fixed in EditCollectorForm's equivalent load effect.)
+    let cancelled = false
     Promise.all([
       installmentAccountsApi.get(id),
       getBranches(),
       collectorsApi.list({ limit: 200 }),
     ]).then(([accountRes, branchesRes, collectorsRes]) => {
+      if (cancelled) return
       if (branchesRes.success && branchesRes.data) setBranches(branchesRes.data.data)
       if (collectorsRes.success && collectorsRes.data) setCollectors(collectorsRes.data.data)
 
@@ -77,6 +84,9 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       }
       setLoading(false)
     })
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -147,8 +157,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
+              Branch
+            </label>
             <select
+              id="branchId"
               value={form.branchId}
               onChange={(e) => setField('branchId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -162,8 +175,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
             </select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Collector</label>
+            <label htmlFor="collectorId" className="block text-[13px] font-medium text-gray-700">
+              Collector
+            </label>
             <select
+              id="collectorId"
               value={form.collectorId}
               onChange={(e) => setField('collectorId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -180,8 +196,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
+              Status
+            </label>
             <select
+              id="status"
               value={form.status}
               onChange={(e) => setField('status', e.target.value as InstallmentAccountStatus)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -193,8 +212,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
             </select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Aging bucket</label>
+            <label htmlFor="agingBucket" className="block text-[13px] font-medium text-gray-700">
+              Aging bucket
+            </label>
             <input
+              id="agingBucket"
               value={form.agingBucket}
               onChange={(e) => setField('agingBucket', e.target.value)}
               placeholder="current | 30 | 60 | 90 | over_90"
@@ -205,8 +227,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Category</label>
+            <label htmlFor="category" className="block text-[13px] font-medium text-gray-700">
+              Category
+            </label>
             <select
+              id="category"
               value={form.category}
               onChange={(e) =>
                 setField('category', e.target.value as InstallmentAccountCategory | '')
@@ -229,8 +254,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
             )}
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Classification</label>
+            <label htmlFor="classification" className="block text-[13px] font-medium text-gray-700">
+              Classification
+            </label>
             <select
+              id="classification"
               value={form.classification}
               onChange={(e) =>
                 setField('classification', e.target.value as InstallmentAccountClassification | '')
@@ -247,8 +275,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Arrears (₱)</label>
+            <label htmlFor="arrears" className="block text-[13px] font-medium text-gray-700">
+              Arrears (₱)
+            </label>
             <input
+              id="arrears"
               type="number"
               step="0.01"
               min="0"
@@ -259,8 +290,11 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
             {errors.arrears && <p className="mt-1 text-[12px] text-red-600">{errors.arrears}</p>}
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Penalty (₱)</label>
+            <label htmlFor="penalty" className="block text-[13px] font-medium text-gray-700">
+              Penalty (₱)
+            </label>
             <input
+              id="penalty"
               type="number"
               step="0.01"
               min="0"

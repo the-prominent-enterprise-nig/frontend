@@ -93,8 +93,11 @@ export default function NewCollectorForm() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
+              Branch
+            </label>
             <select
+              id="branchId"
               value={form.branchId ?? ''}
               onChange={(e) => setField('branchId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -109,8 +112,11 @@ export default function NewCollectorForm() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
+              Status
+            </label>
             <select
+              id="status"
               value={form.status ?? 'active'}
               onChange={(e) => setField('status', e.target.value as CreateCollectorInput['status'])}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -158,10 +164,19 @@ function Field({
   error?: string
   placeholder?: string
 }) {
+  // Derived, stable id — also lets tests target fields via getByLabel()
+  // instead of brittle selectors, since label/input weren't otherwise linked.
+  const id = `field-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
   return (
     <div>
-      <label className="block text-[13px] font-medium text-gray-700">{label}</label>
+      <label htmlFor={id} className="block text-[13px] font-medium text-gray-700">
+        {label}
+      </label>
       <input
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

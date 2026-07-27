@@ -33,7 +33,13 @@ export default function EditCollectorForm({ id }: { id: string }) {
   const [serverError, setServerError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Guards against React Strict Mode's dev-mode double-effect-invocation
+    // (or any other stale re-fire): without this, a late-resolving duplicate
+    // load can call setForm() with the original record well after the user
+    // has already started editing, silently discarding their changes.
+    let cancelled = false
     Promise.all([collectorsApi.get(id), getBranches()]).then(([collectorRes, branchesRes]) => {
+      if (cancelled) return
       if (branchesRes.success && branchesRes.data) setBranches(branchesRes.data.data)
 
       if (collectorRes.success && collectorRes.data) {
@@ -49,6 +55,9 @@ export default function EditCollectorForm({ id }: { id: string }) {
       }
       setLoading(false)
     })
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -126,8 +135,11 @@ export default function EditCollectorForm({ id }: { id: string }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
+              Branch
+            </label>
             <select
+              id="branchId"
               value={form.branchId}
               onChange={(e) => setField('branchId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -142,8 +154,11 @@ export default function EditCollectorForm({ id }: { id: string }) {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <label htmlFor="status" className="block text-[13px] font-medium text-gray-700">
+              Status
+            </label>
             <select
+              id="status"
               value={form.status}
               onChange={(e) => setField('status', e.target.value as CollectorStatus)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -189,10 +204,19 @@ function Field({
   onChange: (v: string) => void
   error?: string
 }) {
+  // Derived, stable id — also lets tests target fields via getByLabel()
+  // instead of brittle selectors, since label/input weren't otherwise linked.
+  const id = `field-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
   return (
     <div>
-      <label className="block text-[13px] font-medium text-gray-700">{label}</label>
+      <label htmlFor={id} className="block text-[13px] font-medium text-gray-700">
+        {label}
+      </label>
       <input
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"

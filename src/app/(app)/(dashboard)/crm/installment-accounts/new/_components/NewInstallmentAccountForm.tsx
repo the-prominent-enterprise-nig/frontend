@@ -119,8 +119,11 @@ export default function NewInstallmentAccountForm() {
               placeholder="IA-0001"
             />
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Term (months) *</label>
+              <label htmlFor="termMonths" className="block text-[13px] font-medium text-gray-700">
+                Term (months) *
+              </label>
               <input
+                id="termMonths"
                 type="number"
                 min={1}
                 max={12}
@@ -135,8 +138,11 @@ export default function NewInstallmentAccountForm() {
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Customer *</label>
+            <label htmlFor="customerId" className="block text-[13px] font-medium text-gray-700">
+              Customer *
+            </label>
             <CustomerPicker
+              id="customerId"
               value={form.customerId}
               selectedLabel={customerLabel}
               onChange={(id, label) => {
@@ -149,8 +155,11 @@ export default function NewInstallmentAccountForm() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+              <label htmlFor="branchId" className="block text-[13px] font-medium text-gray-700">
+                Branch
+              </label>
               <select
+                id="branchId"
                 value={form.branchId ?? ''}
                 onChange={(e) => setField('branchId', e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -164,8 +173,11 @@ export default function NewInstallmentAccountForm() {
               </select>
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Collector</label>
+              <label htmlFor="collectorId" className="block text-[13px] font-medium text-gray-700">
+                Collector
+              </label>
               <select
+                id="collectorId"
                 value={form.collectorId ?? ''}
                 onChange={(e) => setField('collectorId', e.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -182,10 +194,14 @@ export default function NewInstallmentAccountForm() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">
+              <label
+                htmlFor="listedCashPrice"
+                className="block text-[13px] font-medium text-gray-700"
+              >
                 Listed cash price (₱) *
               </label>
               <input
+                id="listedCashPrice"
                 type="number"
                 step="0.01"
                 min="0"
@@ -198,10 +214,11 @@ export default function NewInstallmentAccountForm() {
               )}
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">
+              <label htmlFor="downPayment" className="block text-[13px] font-medium text-gray-700">
                 Down payment (₱) *
               </label>
               <input
+                id="downPayment"
                 type="number"
                 step="0.01"
                 min="0"
@@ -214,8 +231,11 @@ export default function NewInstallmentAccountForm() {
               )}
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">MI factor *</label>
+              <label htmlFor="miFactor" className="block text-[13px] font-medium text-gray-700">
+                MI factor *
+              </label>
               <input
+                id="miFactor"
                 type="number"
                 step="0.0001"
                 min="0"
@@ -281,10 +301,19 @@ function Field({
   error?: string
   placeholder?: string
 }) {
+  // Derived, stable id — also lets tests target fields via getByLabel()
+  // instead of brittle selectors, since label/input weren't otherwise linked.
+  const id = `field-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')}`
   return (
     <div>
-      <label className="block text-[13px] font-medium text-gray-700">{label}</label>
+      <label htmlFor={id} className="block text-[13px] font-medium text-gray-700">
+        {label}
+      </label>
       <input
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

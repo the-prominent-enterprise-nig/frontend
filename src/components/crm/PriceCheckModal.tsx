@@ -63,10 +63,14 @@ export default function PriceCheckModal({ onClose }: { onClose: () => void }) {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">
+            <label
+              htmlFor="pricecheck-listedCashPrice"
+              className="block text-[13px] font-medium text-gray-700"
+            >
               Listed cash price (₱)
             </label>
             <input
+              id="pricecheck-listedCashPrice"
               type="number"
               step="0.01"
               min="0"
@@ -76,8 +80,14 @@ export default function PriceCheckModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Down payment (₱)</label>
+            <label
+              htmlFor="pricecheck-downPayment"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Down payment (₱)
+            </label>
             <input
+              id="pricecheck-downPayment"
               type="number"
               step="0.01"
               min="0"
@@ -87,10 +97,14 @@ export default function PriceCheckModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">
+            <label
+              htmlFor="pricecheck-termMonths"
+              className="block text-[13px] font-medium text-gray-700"
+            >
               Term (months, 1-12)
             </label>
             <input
+              id="pricecheck-termMonths"
               type="number"
               min={1}
               max={12}
@@ -100,8 +114,14 @@ export default function PriceCheckModal({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">MI factor</label>
+            <label
+              htmlFor="pricecheck-miFactor"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              MI factor
+            </label>
             <input
+              id="pricecheck-miFactor"
               type="number"
               step="0.0001"
               min="0"

@@ -108,8 +108,14 @@ export default function RecordPaymentModal({
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Amount (₱) *</label>
+              <label
+                htmlFor="payment-amount"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Amount (₱) *
+              </label>
               <input
+                id="payment-amount"
                 type="number"
                 step="0.01"
                 min="0"
@@ -121,8 +127,14 @@ export default function RecordPaymentModal({
             </div>
 
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Due date *</label>
+              <label
+                htmlFor="payment-dueDate"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Due date *
+              </label>
               <input
+                id="payment-dueDate"
                 type="date"
                 value={form.dueDate}
                 onChange={(e) => setField('dueDate', e.target.value)}
@@ -132,8 +144,14 @@ export default function RecordPaymentModal({
             </div>
 
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Paid at *</label>
+              <label
+                htmlFor="payment-paidAt"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Paid at *
+              </label>
               <input
+                id="payment-paidAt"
                 type="date"
                 value={form.paidAt}
                 onChange={(e) => setField('paidAt', e.target.value)}
@@ -146,8 +164,14 @@ export default function RecordPaymentModal({
             </div>
 
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">OR number</label>
+              <label
+                htmlFor="payment-orNumber"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                OR number
+              </label>
               <input
+                id="payment-orNumber"
                 value={form.orNumber ?? ''}
                 onChange={(e) => setField('orNumber', e.target.value)}
                 placeholder="e.g. OR-1234"

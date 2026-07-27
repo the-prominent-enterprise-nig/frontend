@@ -84,8 +84,11 @@ export default function RecordRemittanceModal({
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Amount (₱) *</label>
+            <label htmlFor="remit-amount" className="block text-[13px] font-medium text-gray-700">
+              Amount (₱) *
+            </label>
             <input
+              id="remit-amount"
               type="number"
               step="0.01"
               min="0"
@@ -97,8 +100,14 @@ export default function RecordRemittanceModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Remitted at *</label>
+            <label
+              htmlFor="remit-remittedAt"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Remitted at *
+            </label>
             <input
+              id="remit-remittedAt"
               type="datetime-local"
               value={form.remittedAt}
               onChange={(e) => setField('remittedAt', e.target.value)}
@@ -110,8 +119,14 @@ export default function RecordRemittanceModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Reference</label>
+            <label
+              htmlFor="remit-reference"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Reference
+            </label>
             <input
+              id="remit-reference"
               value={form.reference ?? ''}
               onChange={(e) => setField('reference', e.target.value)}
               placeholder="e.g. OR number"
@@ -120,8 +135,14 @@ export default function RecordRemittanceModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Collection batch</label>
+            <label
+              htmlFor="remit-collectionBatch"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Collection batch
+            </label>
             <input
+              id="remit-collectionBatch"
               value={form.collectionBatch ?? ''}
               onChange={(e) => setField('collectionBatch', e.target.value)}
               placeholder="e.g. Route 3 — 2026-07-15"
@@ -130,8 +151,11 @@ export default function RecordRemittanceModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Notes</label>
+            <label htmlFor="remit-notes" className="block text-[13px] font-medium text-gray-700">
+              Notes
+            </label>
             <textarea
+              id="remit-notes"
               rows={3}
               value={form.notes ?? ''}
               onChange={(e) => setField('notes', e.target.value)}

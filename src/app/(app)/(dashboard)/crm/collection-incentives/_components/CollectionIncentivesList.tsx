@@ -408,8 +408,14 @@ function GenerateMonthlyModal({
         ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Period *</label>
+              <label
+                htmlFor="genmonthly-period"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Period *
+              </label>
               <input
+                id="genmonthly-period"
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
                 placeholder="2026-07"
@@ -417,10 +423,14 @@ function GenerateMonthlyModal({
               />
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">
+              <label
+                htmlFor="genmonthly-ratePercent"
+                className="block text-[13px] font-medium text-gray-700"
+              >
                 Rate (% of amount collected)
               </label>
               <input
+                id="genmonthly-ratePercent"
                 type="number"
                 step="0.1"
                 min="0"
@@ -564,8 +574,14 @@ function NewIncentiveModal({
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Collector *</label>
+            <label
+              htmlFor="incentive-collectorId"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Collector *
+            </label>
             <select
+              id="incentive-collectorId"
               value={form.collectorId}
               onChange={(e) => setField('collectorId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -583,8 +599,14 @@ function NewIncentiveModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <label
+              htmlFor="incentive-branchId"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Branch
+            </label>
             <select
+              id="incentive-branchId"
               value={form.branchId ?? ''}
               onChange={(e) => setField('branchId', e.target.value)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -600,8 +622,14 @@ function NewIncentiveModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Category *</label>
+              <label
+                htmlFor="incentive-category"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Category *
+              </label>
               <select
+                id="incentive-category"
                 value={form.category}
                 onChange={(e) =>
                   setField('category', e.target.value as CreateCollectionIncentiveInput['category'])
@@ -615,8 +643,14 @@ function NewIncentiveModal({
               </select>
             </div>
             <div>
-              <label className="block text-[13px] font-medium text-gray-700">Period *</label>
+              <label
+                htmlFor="incentive-period"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Period *
+              </label>
               <input
+                id="incentive-period"
                 value={form.period}
                 onChange={(e) => setField('period', e.target.value)}
                 placeholder="2026-07"
@@ -627,8 +661,14 @@ function NewIncentiveModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Amount (₱) *</label>
+            <label
+              htmlFor="incentive-amount"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Amount (₱) *
+            </label>
             <input
+              id="incentive-amount"
               type="number"
               step="0.01"
               min="0"
@@ -640,8 +680,14 @@ function NewIncentiveModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Notes</label>
+            <label
+              htmlFor="incentive-notes"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Notes
+            </label>
             <textarea
+              id="incentive-notes"
               rows={2}
               value={form.notes ?? ''}
               onChange={(e) => setField('notes', e.target.value)}
@@ -707,8 +753,11 @@ function RejectIncentiveModal({
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Reject incentive</h2>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Reason</label>
+            <label htmlFor="reject-reason" className="block text-[13px] font-medium text-gray-700">
+              Reason
+            </label>
             <textarea
+              id="reject-reason"
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
