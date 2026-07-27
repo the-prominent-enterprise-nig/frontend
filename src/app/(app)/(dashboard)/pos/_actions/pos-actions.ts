@@ -2222,6 +2222,7 @@ export async function requestStockFromBranch(input: {
   serialNumberId: string
   fromWarehouseId: string
   toBranchId?: string
+  customerName?: string
 }): Promise<ApiResponse<{ id: string }>> {
   try {
     const result = await api.post<{ id: string }>('/inventory/transfers/request-from-pos', input)

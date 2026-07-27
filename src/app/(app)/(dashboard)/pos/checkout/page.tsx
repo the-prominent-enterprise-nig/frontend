@@ -3384,6 +3384,7 @@ export default function CheckoutPage() {
               serialNumberId: sn.id,
               fromWarehouseId: sn.currentWarehouseId,
               toBranchId: activeBranchId ?? undefined,
+              customerName: selectedCustomer ? customerDisplayName(selectedCustomer) : undefined,
             })
             setSerialRequestStatus((prev) => ({
               ...prev,
