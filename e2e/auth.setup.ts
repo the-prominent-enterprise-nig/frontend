@@ -16,16 +16,16 @@ const PASSWORD = process.env.E2E_OWNER_PASSWORD ?? 'dev-prominent-enterprise-202
 setup('authenticate as business owner', async ({ page }) => {
   await gotoReady(page, '/login')
 
-  await fillAllStable([
-    { locator: page.locator('#email'), value: EMAIL },
-    { locator: page.locator('#password'), value: PASSWORD },
-  ])
-
-  // The submit button's onClick can still be un-hydrated the instant the form
-  // finishes filling (same race fillStable works around for inputs) — retry
-  // the click until the post-login redirect actually happens, rather than a
-  // one-shot click that can silently no-op.
+  // Re-fill on every retry, not just once up front: a hydration
+  // reconciliation can silently wipe the fields *after* fillAllStable's own
+  // verification passes but *before* the click lands (same race loginAs()
+  // in utils.ts documents and works around) — a one-shot fill before the
+  // retry loop leaves every later click submitting an empty form forever.
   await expect(async () => {
+    await fillAllStable([
+      { locator: page.locator('#email'), value: EMAIL },
+      { locator: page.locator('#password'), value: PASSWORD },
+    ])
     await page.click('button[type="submit"]')
     // LoginForm pushes '/' on success, but RootPage (src/app/(app)/(dashboard)/page.tsx)
     // immediately server-redirects admins on to '/dashboard' — the URL settles

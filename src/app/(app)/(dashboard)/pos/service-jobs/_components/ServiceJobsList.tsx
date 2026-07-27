@@ -5,6 +5,8 @@ import { Plus, Loader2 } from 'lucide-react'
 import { useServiceDrafts, useServiceDraft } from '../_hooks/useServiceDrafts'
 import { ServiceJobFormModal } from './ServiceJobFormModal'
 import { ServiceJobDetailModal } from './ServiceJobDetailModal'
+import { ServiceJobSourcingModal } from './ServiceJobSourcingModal'
+import { ServiceJobStartInstallModal } from './ServiceJobStartInstallModal'
 import { SERVICE_DRAFT_STATUS_STYLES } from './status-styles'
 import { customerDisplayName } from './service-draft-utils'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -35,6 +37,9 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_CREATE)
   const canEdit = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_UPDATE)
   const canCancel = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_CANCEL)
+  const canSource = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_SOURCE)
+  const canInstall = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_INSTALL)
+  const canComplete = hasPermission(session, POS_PERMISSIONS.SERVICE_DRAFTS_COMPLETE)
 
   // Mirrors PurchaseRequestList's lockedBranch: branch-scoped actors
   // (Cashier/Branch Manager) get their branch pinned since the backend
@@ -55,11 +60,21 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
     isUpdating,
     cancelDraft,
     isCancelling,
+    confirmSourcing,
+    isSourcing,
+    startInstall,
+    isStartingInstall,
+    recordActuals,
+    isRecordingActuals,
+    completeDraft,
+    isCompleting,
   } = useServiceDrafts()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingDraft, setEditingDraft] = useState<ServiceDraft | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [sourcingDraft, setSourcingDraft] = useState<ServiceDraft | null>(null)
+  const [installingDraft, setInstallingDraft] = useState<ServiceDraft | null>(null)
 
   // The list row may not carry populated lines/nested item data, so the
   // detail modal (and edit prefill) re-fetch the full record by id.
@@ -74,10 +89,35 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
     setEditingDraft(draft)
   }
 
+  function handleSourceFromDetail(draft: ServiceDraft) {
+    // Deliberately does NOT clear selectedId (unlike handleEditFromDetail) —
+    // the sourcing modal stacks on top of the detail modal instead of
+    // replacing it, so confirming leaves the user looking at the updated
+    // detail (new status, linked PR) instead of dropping them back at the
+    // bare list.
+    setSourcingDraft(draft)
+  }
+
+  function handleStartInstallFromDetail(draft: ServiceDraft) {
+    // Same stacking behavior as handleSourceFromDetail — the detail modal
+    // stays open underneath so confirming shows the result immediately.
+    setInstallingDraft(draft)
+  }
+
   async function handleCancelFromDetail(draft: ServiceDraft) {
     if (!window.confirm(`Cancel service job "${draft.title}"? This cannot be undone.`)) return
     await cancelDraft(draft.id)
     closeDetail()
+  }
+
+  async function handleCompleteFromDetail(id: string) {
+    if (
+      !window.confirm(
+        'Complete this job? This deducts the recorded actual materials from stock and cannot be undone.'
+      )
+    )
+      return
+    await completeDraft(id)
   }
 
   return (
@@ -213,9 +253,36 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
         isLoading={isLoadingDetail}
         canEdit={canEdit}
         canCancel={canCancel}
+        canSource={canSource}
+        canInstall={canInstall}
+        canComplete={canComplete}
         onEdit={handleEditFromDetail}
         onCancelJob={handleCancelFromDetail}
+        onSource={handleSourceFromDetail}
+        onStartInstall={handleStartInstallFromDetail}
+        onSaveActuals={recordActuals}
+        onCompleteJob={handleCompleteFromDetail}
         isCancelling={isCancelling}
+        isRecordingActuals={isRecordingActuals}
+        isCompleting={isCompleting}
+      />
+
+      <ServiceJobSourcingModal
+        open={!!sourcingDraft}
+        onClose={() => setSourcingDraft(null)}
+        draftId={sourcingDraft?.id ?? null}
+        draftTitle={sourcingDraft?.title}
+        onConfirm={confirmSourcing}
+        isConfirming={isSourcing}
+      />
+
+      <ServiceJobStartInstallModal
+        open={!!installingDraft}
+        onClose={() => setInstallingDraft(null)}
+        draftId={installingDraft?.id ?? null}
+        draftTitle={installingDraft?.title}
+        onConfirm={startInstall}
+        isConfirming={isStartingInstall}
       />
     </div>
   )
