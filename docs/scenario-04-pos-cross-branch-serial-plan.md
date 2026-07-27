@@ -63,3 +63,15 @@ A prior session's branch-scoping fix (correctly closing a different bug — a se
 ## Dead code / unused-feature flags
 
 - **`SerialNumberRecord.currentWarehouseId`** — fetched, never rendered. Directly needed for Closing Gap 2 above — don't delete it, use it.
+
+## Implementation Log — 2026-07-27
+
+**For this scenario, I have done:**
+
+- Gaps 1-3 (company-wide serial search, branch labels in the picker, one-tap request) were implemented and merged in an earlier PR (`feat/scenario-04-pos-cross-branch-serial`) — confirmed still live and working via a fresh gap audit against `development` before this run.
+- Gap 4 — a follow-up gap audit found the transfer created by the one-tap request carried only a hardcoded generic `reason` string, with no link back to the sale/customer that triggered it — the closing plan's own stated intent ("so the receiving branch's approver can see it originated from an active POS sale") was not actually delivered. Fixed by adding an optional `customerName` to `RequestStockFromBranchDto`, passed from checkout's already-selected customer, embedded directly into the existing `reason` field (no schema change) — e.g. "Requested from POS checkout — for customer: Juan Dela Cruz" instead of a generic string.
+
+**Worth flagging:**
+
+- This still isn't full sale-level traceability (no `PosTransaction`/session ID stored, since the request happens mid-checkout before the sale is finalized) — it's a customer-name hint in the reason text, which is what's actually visible and useful to an approver in the existing Transfer Details UI today. A deeper fix (storing a real `sourcePosSessionId` on `StockTransfer`) would need a schema migration and wasn't judged necessary for this pass.
+- Removed a stray internal label ("(Scenario 04)") that had leaked into the fallback reason text shown to real users/approvers — caught during manual testing.
