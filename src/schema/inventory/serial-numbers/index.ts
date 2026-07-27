@@ -55,10 +55,19 @@ const SerialItemSchema = z.object({
   sku: z.string(),
 })
 
+const SerialBranchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  code: z.string().optional().nullable(),
+})
+
 const SerialWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
+  // Scenario 08 (Caravan) — the warehouse's own (home/ownership) branch,
+  // distinct from consignedToBranch below.
+  branch: SerialBranchSchema.optional().nullable(),
 })
 
 export const SerialNumberSummarySchema = z.object({
@@ -70,6 +79,10 @@ export const SerialNumberSummarySchema = z.object({
   status: SerialStatusSchema,
   soldToCustomerId: z.string().optional().nullable(),
   saleDate: z.string().optional().nullable(),
+  // Scenario 08 (Caravan) Part 1 — set when this unit is physically at a
+  // host branch for an event while ownership stays with currentWarehouse's
+  // own branch.
+  consignedToBranch: SerialBranchSchema.optional().nullable(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
