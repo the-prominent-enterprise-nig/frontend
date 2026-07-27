@@ -71,3 +71,18 @@ Ordered by risk (correctness/security first).
 ## Dead code / unused-feature flags
 
 None found specific to receiving in this pass.
+
+## Implementation Log — 2026-07-27
+
+**For this scenario, I have done:**
+
+- Gap 1 — Branch-scoped the receive endpoint: a branch-restricted caller now gets rejected (`ForbiddenException`) if `warehouseId` doesn't belong to their own branch, mirroring the existing `getLedger`/`getReceivingReports` pattern.
+- Gap 2 — Enforced `Item.isSerialTracked` server-side: a serial-tracked item now requires `serialNumbers` or `autoGenerateSerials`; a non-serial-tracked item is rejected if given either; a mismatched `serialNumbers.length` vs `quantityReceived` is rejected.
+- Gap 3 — Made GL posting atomic: `posting.post(...)` now runs inside the same `$transaction` as the stock/ledger/balance writes, passing `tx` through (the capability already existed on `PostingService.post()`, just wasn't wired here) — a posting failure (e.g. a hard-closed fiscal period) now rolls back the whole receipt instead of leaving stock updated with no journal entry.
+
+**Worth flagging:**
+
+- Gaps 4 (manual serial-number entry) and 5 (dedicated origin field) were not touched this run — out of scope for this pass, which focused on the three correctness/security gaps found during a live gap audit against `development`.
+- Found and fixed unrelated drift while testing: two migrations from an earlier merge (`add_pr_source_service_draft`, `add_service_draft_technician`) had never been applied to the local dev database, and the `WHT_PAYABLE` account mapping was missing entirely — both backfilled.
+- Found one pre-existing, unrelated broken test (`procurement-closeout.e2e-spec.ts`'s write-off test calls a `/inventory/adjustments/write-off` route that no longer exists — write-offs now live under the UDS/Repair Transfer flow) — left as-is, out of scope for this pass.
+- New coverage: `test/inventory-receiving-branch-serial-gl.e2e-spec.ts` (9 tests, including a hard-closed-period test proving the atomic rollback). Full regression pass across all Receiving-adjacent suites (receiving-enhancements, stock-balance-serial-tracked, sku-reservation-\*, phase5-valuation, procurement-closeout, pos.smoke) confirmed green.
