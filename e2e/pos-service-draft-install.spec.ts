@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, loginAs, clickStable } from './utils'
+import { gotoReady, fillStable, loginAs, clickStable, ensureItemStock } from './utils'
 
 // Aircool Closing Gap 4 — POS Service Jobs "Start Install" / actual-vs-
 // estimate recording: assign a technician (POST .../start-install, sourcing
@@ -79,6 +79,15 @@ test.describe('POS Service Jobs — Install (Aircool Closing Gap 4)', () => {
     const detailHeading = page.getByRole('heading', { name: title })
     await row.click()
     await expect(detailHeading).toBeVisible()
+
+    // Start Install now genuinely issues materials out of stock (Aircool
+    // issue-then-return) — top up this branch's stock for the picked
+    // material first, so this test's success doesn't depend on this shared
+    // dev database's ambient, ever-drifting on-hand level. Also means
+    // there's no shortfall left to source, so this exercises the plainer
+    // "materials already on hand" path rather than the PR/PO one.
+    const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
+    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
 
     await confirmSourcing(page)
     await expect(detailHeading).toBeVisible()
