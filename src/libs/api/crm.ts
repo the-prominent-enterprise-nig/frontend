@@ -98,6 +98,7 @@ export type CustomerFilters = {
   search?: string
   status?: string
   sourceChannel?: string
+  groupId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

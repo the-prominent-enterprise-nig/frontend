@@ -103,3 +103,16 @@ Ordered by risk/value — data-model gaps that block reporting/compliance first,
 - No ClickUp ticket in this doc's "Related ClickUp Tickets" section maps to items #2/#3/#4 or the graduation-button fix, so nothing was moved in ClickUp for this run.
 - Backend: `npx tsc --noEmit`, `npx nest build`, and the affected jest suite (`pos-customers.service.spec.ts`, extended with a new loyalty-enrollment assertion) all pass. Frontend: `npx tsc --noEmit` and `eslint --fix` on touched files both pass (one pre-existing, unrelated `react-hooks/exhaustive-deps` warning in `InstallmentAccountDetail.tsx` was already there before this change).
 - Not yet done: e2e test coverage for these three items (no `test/*.e2e-spec.ts` / `e2e/*.spec.ts` added this run — only unit-level backend coverage for the loyalty change). Manual click-through verification also still pending the developer's own pass.
+
+## Implementation Log — 2026-07-28
+
+**For this scenario, I have done:**
+
+- Manually verified the 2026-07-27 entry's #2/#3/#4 items and the graduation-button fix end-to-end in the real app (logged in as Business Owner): created a customer with a Group ID and `Inactive` status, confirmed both persisted on reload/edit; confirmed the customer was auto-enrolled in loyalty with a zero balance visible on `pos/loyalty` without any manual "Create Loyalty Account" step; confirmed the graduation button correctly stays hidden on an `early_closed` seeded account.
+- Added backend e2e coverage for #2 and #4 (missing from the 2026-07-27 run): `test/crm-customer-groupid-loyalty.e2e-spec.ts` — 7 tests covering groupId create/update/list-filter on the CRM endpoint, and loyalty auto-enrollment across all three creation paths (CRM/Accounting/POS walk-in), plus a check that the manual "create loyalty account" endpoint now correctly 409s for an already-enrolled customer.
+- **Found and closed a real gap the developer spotted by reading the code directly**: `crm/customer/customer.dto.ts`'s `CustomerFilterDto` never got a `groupId` param, so the CRM customer list (`customer.service.ts`'s `findAll()`) couldn't filter by it — only Accounting's `ListCustomersQueryDto`/`customers.service.ts` could. Added `groupId` to `CustomerFilterDto`, wired it into `findAll()`'s `where` clause, and added `groupId` to `listSelect`/`CustomerListItemDto` so it's actually visible on list rows (previously only on the detail response). No frontend UI filter added — Accounting doesn't have one either (it only displays the value), so this is an API-parity fix, not new UI scope.
+
+**Worth flagging:**
+
+- No corresponding UI filter control exists for `groupId` on either CRM's or Accounting's customer list page — the filter is API-only for now (usable via `GET /crm/customers?groupId=...`). Flag if a "view household" UI affordance ends up wanted later.
+- Still not done: e2e coverage for #3 (status-on-create) and the graduation-button fix specifically — this run's new spec covers #2 and #4 only. The rest was manually verified but not automated.
