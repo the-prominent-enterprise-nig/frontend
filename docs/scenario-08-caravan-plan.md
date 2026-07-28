@@ -4,8 +4,8 @@ Source: `module-scenarios.md`, scenario "Caravan — a caravan sale at a host br
 
 ## Related ClickUp Tickets (Sprint 3-5)
 
-- [86d3pg8tz](https://app.clickup.com/t/86d3pg8tz) — "AA Stock Controller, ISBAT move stock to a host branch for a caravan event on its own consignment tab, so ownership stays with the origin branch" — _Sprint 3, to do_ — direct match to step 1, matches this doc's Closing Gap 1 (a "consigned" stock state distinct from a transfer) almost word for word
-- [86d3pg8un](https://app.clickup.com/t/86d3pg8un) — "AA Branch Manager, ISBAT have a caravan sale's quota credit and inventory deduction follow the unit back to its origin branch, so the branch that owns the stock gets credit for the sale" — _Sprint 3, to do_ — direct match to step 3
+- [86d3pg8tz](https://app.clickup.com/t/86d3pg8tz) — "AA Stock Controller, ISBAT move stock to a host branch for a caravan event on its own consignment tab, so ownership stays with the origin branch" — _Sprint 3, in review_ — direct match to step 1, matches this doc's Closing Gap 1 (a "consigned" stock state distinct from a transfer) almost word for word. Minor gaps vs. the ticket's exact spec: no "Event name / dates" field, and no dedicated "Send to Caravan" UI button (consign is still API-only — see Implementation Log below).
+- [86d3pg8un](https://app.clickup.com/t/86d3pg8un) — "AA Branch Manager, ISBAT have a caravan sale's quota credit and inventory deduction follow the unit back to its origin branch, so the branch that owns the stock gets credit for the sale" — _Sprint 3, to do_ — direct match to step 3. **Not moved**: this ticket's own scope is broader than what shipped — inventory/COGS attribution is done, but quota-credit routing is confirmed out of scope (no Sales Quota exists in the app), and the ticket's two open questions (receipt series for a caravan sale; cash/revenue attribution between host and origin) were never part of this closing plan and remain unaddressed.
 
 **Not found in Sprint 3-5:** No ticket for "sell at the host" (step 2 — likely assumed to be normal POS checkout once consignment exists, not a separate ticket) or for the onward/return-at-event-close flow (step 4). Only 2 of the 4 scenario steps have explicit ticket coverage.
 
@@ -70,3 +70,21 @@ This is a net-new feature spanning Inventory + POS + Accounting. Sequenced.
 ## Dead code / unused-feature flags
 
 None — nothing exists yet to flag. Note for whoever picks this up: don't confuse this with the unbuilt "Consignment Stock" user story (#52 in `inventory-user-stories.md`) — that's supplier-side consignment, a separate feature that happens to share a name.
+
+## Implementation Log — 2026-07-27
+
+**For this scenario, I have done:**
+
+- Closing Gap 1 (consigned stock state): `SerialNumber.consignedToBranchId` + `Branch` relation, migration, `POST /inventory/serial-numbers/consign` — validates in-stock/not-already-consigned/not-same-branch, branch-restricted callers can only consign their own branch's stock.
+- Closing Gap 2 ("Caravan @ host" view): a **Caravan** tab on Inventory → Serial Number Tracking (`GET /inventory/serial-numbers?consignedToBranchId=...`) — a branch-restricted caller is forced to their own branch; Business Owner picks one explicitly. Shows a "Home Branch" column via a `currentWarehouse.branch` enrichment.
+- Closing Gap 3 (split attribution at sale time) + Closing Gap 4 (serial tag for accounting), implemented together since they share the same sale-time code path: a caravan-consigned serial is now sellable at the host branch even though its `currentWarehouseId` still points to the origin; COGS/StockLedger for FIFO/LIFO items route to the origin branch's warehouse; `PosTransactionLine.caravanOriginBranchId` tags the line for reporting; selling the serial resolves (clears) its consignment.
+- Closing Gap 5 (event close): `POST /inventory/serial-numbers/close-consignment` — return to origin (clears the consignment) or move onward to a new host branch. Only the branch currently holding the consignment (or Business Owner) may act. Frontend: row selection + a "Return to Origin" / "Move to…" action bar on the Caravan tab.
+- Attribution scope decision (flagged in this doc's own Closing Gap 3 as needing confirmation): **inventory-only, no quota** — confirmed with the developer. Sales Quota doesn't exist anywhere in the app (cleanly reverted per scenario 01), so quota-credit routing was out of scope; only inventory/COGS deduction and the reporting tag route to origin.
+
+**Worth flagging:**
+
+- A real gap was found and fixed beyond the original 5-item plan: the POS checkout serial picker (`GET /inventory/serial-numbers?itemId&status=in_stock&branchId`) still filtered strictly to the caller's own warehouse, so a cashier could never actually see/select a consigned-in serial even though the sale API would have accepted it. Fixed as part of Closing Gap 3 — "sellable at this branch" now means owned-and-on-hand OR consigned-here, and a unit consigned out correctly disappears from the origin's own picker.
+- This work was ported forward from a stale, previously-unmerged branch (`feat/scenario-08-caravan`, backend `b9c8fad` / frontend `0b237ac`) that predated the scenario 04 and scenario 09 work already on `development` — reconciled by hand rather than merged directly, since a straight merge would have reverted both of those.
+- No in-app UI exists yet to actually trigger a consignment — `POST /inventory/serial-numbers/consign` is API-only (matches the ported reference's own scope). A future pass could add a "Consign to Branch" bulk action on the "All Serials" tab, mirroring Closing Gap 5's "Move to…" pattern, if wanted.
+- New `inventory:caravan:read`/`inventory:caravan:manage` permissions required a manual backfill (`backend/scripts/backfill-caravan-permissions.ts`) against the live dev DB, since `prisma/seed.ts` itself is a full destructive reseed and can't be safely re-run — matches this repo's existing pattern for this exact situation.
+- The "Caravan @ Host" tab/view label was shortened to just "Caravan" per developer request after initial implementation.
