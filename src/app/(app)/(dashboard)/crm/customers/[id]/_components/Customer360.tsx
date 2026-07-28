@@ -314,7 +314,7 @@ export default function Customer360({
                   </Link>
                   <span className="flex items-center gap-2 text-gray-600">
                     {a.collector ? `${a.collector.stubNumber} — ${a.collector.name}` : 'Unassigned'}
-                    <AgingColorBadge color={a.agingColor} />
+                    <AgingColorBadge color={a.aging?.color} />
                     <span className="font-medium text-gray-800">
                       {formatPeso(Number(a.currentBalance))}
                     </span>

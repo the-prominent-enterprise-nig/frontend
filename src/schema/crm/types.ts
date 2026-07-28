@@ -231,11 +231,23 @@ export interface AccountingCustomerLite {
 }
 
 /**
- * PROVISIONAL — pending client confirmation of exact thresholds. See
- * computeAgingColor() in the backend's installment-account.service.ts for
- * the full reconciliation notes across the three source documents.
+ * Reverse-engineered against the client's real June 2026 AR export
+ * (AR_Balance_0626.xlsx) — see computeAging() in the backend's
+ * installment-account.service.ts. Two independent flags, not one value:
+ * an account can be both in arrears AND not-moving at once.
  */
-export type AgingColor = 'pink' | 'green' | 'blue' | 'red'
+export type ArrearsFlag = 'pink' | 'green' | null
+export type NotMovingFlag = 'pink' | 'blue' | null
+
+export interface AgingInfo {
+  noArsMonths: number
+  mosRun: number
+  notMvgMonths: number
+  arrears: ArrearsFlag
+  notMoving: NotMovingFlag
+  /** Deduped, slash-joined display color (e.g. "green/blue"), or null if neither flag is set. */
+  color: string | null
+}
 
 export interface InstallmentAccount {
   id: string
@@ -252,7 +264,7 @@ export interface InstallmentAccount {
   customer?: { name: string } | null
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
-  agingColor?: AgingColor | null
+  aging?: AgingInfo | null
 }
 
 export interface InstallmentAccountDetail extends InstallmentAccount {

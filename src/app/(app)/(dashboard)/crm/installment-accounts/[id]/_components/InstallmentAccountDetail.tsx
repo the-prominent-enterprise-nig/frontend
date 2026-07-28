@@ -61,6 +61,22 @@ export default function InstallmentAccountDetail({
   const [error, setError] = useState<string | null>(null)
   const [payoffOpen, setPayoffOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
+  const [payoffQuote, setPayoffQuote] = useState<number | null>(null)
+  // EarlyPayoffModal seeds its form state from `suggestedAmount` only on
+  // mount (it stays mounted, just returns null while closed) — bumping this
+  // key forces a fresh mount each time so the just-fetched quote actually
+  // makes it into the pre-filled amount instead of the stale first value.
+  const [payoffModalKey, setPayoffModalKey] = useState(0)
+
+  async function openPayoffModal() {
+    // Pre-fill with the real early-closure quote (ID/Terms x MosRun + LCP -
+    // Total Paid) instead of the full remaining balance — falls back to the
+    // balance only if the quote call fails, so the modal still opens.
+    const res = await installmentAccountsApi.getEarlyPayoffQuote(id)
+    setPayoffQuote(res.success ? (res.data?.payoffAmount ?? null) : null)
+    setPayoffModalKey((k) => k + 1)
+    setPayoffOpen(true)
+  }
 
   const [graduationRequests, setGraduationRequests] = useState<CategoryGraduationRequest[]>([])
   const [requestingGraduation, setRequestingGraduation] = useState(false)
@@ -174,7 +190,7 @@ export default function InstallmentAccountDetail({
           )}
           {canSettle && (
             <button
-              onClick={() => setPayoffOpen(true)}
+              onClick={() => void openPayoffModal()}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 sm:flex-none"
             >
               <Banknote className="h-4 w-4" />
@@ -220,7 +236,7 @@ export default function InstallmentAccountDetail({
             <div className="flex justify-between gap-3">
               <dt className="text-gray-500">Aging color</dt>
               <dd className="text-right">
-                <AgingColorBadge color={account.agingColor} />
+                <AgingColorBadge color={account.aging?.color} />
               </dd>
             </div>
           </dl>
@@ -318,11 +334,12 @@ export default function InstallmentAccountDetail({
       </div>
 
       <EarlyPayoffModal
+        key={payoffModalKey}
         open={payoffOpen}
         onClose={() => setPayoffOpen(false)}
         onSettled={reload}
         accountId={id}
-        suggestedAmount={Number(account.currentBalance)}
+        suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
       />
 
       <RecordPaymentModal

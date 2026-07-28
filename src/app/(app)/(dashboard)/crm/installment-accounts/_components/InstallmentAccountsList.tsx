@@ -239,7 +239,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <div className="mt-1 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <StatusBadge status={a.status} />
-                        <AgingColorBadge color={a.agingColor} />
+                        <AgingColorBadge color={a.aging?.color} />
                       </div>
                       <span className="text-[13px] font-semibold tabular-nums text-gray-900">
                         {peso(a.currentBalance)}
@@ -295,7 +295,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                         {a.agingBucket ?? <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <AgingColorBadge color={a.agingColor} />
+                        <AgingColorBadge color={a.aging?.color} />
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={a.status} />

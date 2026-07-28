@@ -215,6 +215,16 @@ export const installmentAccountsApi = {
   remove: (id: string) => api.delete(`/crm/installment-accounts/${id}`),
   earlyPayoff: (id: string, body: EarlyPayoffInput) =>
     api.post<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/early-payoff`, body),
+  getEarlyPayoffQuote: (id: string) =>
+    api.get<{
+      installmentAccountId: string
+      interestDifferential: number | string
+      termMonths: number
+      monthsRun: number
+      listedCashPrice: number | string
+      totalPaid: number
+      payoffAmount: number
+    }>(`/crm/installment-accounts/${id}/early-payoff-quote`),
   recordPayment: (id: string, body: RecordPaymentInput) =>
     api.post<InstallmentAccountDetail & { pointEarned: boolean }>(
       `/crm/installment-accounts/${id}/payments`,
