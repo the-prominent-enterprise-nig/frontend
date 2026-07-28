@@ -9,12 +9,11 @@ import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
 import {
   createCustomerSchema,
-  PAYMENT_TERMS_OPTIONS,
   type CreateCustomerInput,
   type CustomerBankAccountFormValues,
 } from '@/src/schema/crm/customer'
 import type { CustomerType, CustomerStatus } from '@/src/schema/crm/types'
-import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
+import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
 
 type FormState = {
   firstName: string
@@ -147,37 +146,6 @@ export default function NewCustomerForm() {
         </div>
         {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}
 
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Type</label>
-          <select
-            value={form.customerType ?? 'individual'}
-            onChange={(e) => setField('customerType', e.target.value as CustomerType)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="individual">Individual</option>
-            <option value="business">Business</option>
-            <option value="employee">Employee</option>
-          </select>
-        </div>
-
-        {form.customerType === 'business' && (
-          <Field
-            label="Company name"
-            value={form.companyName}
-            maxLength={255}
-            onChange={(v) => setField('companyName', v)}
-          />
-        )}
-
-        {form.customerType === 'employee' && (
-          <Field
-            label="Employee ID"
-            value={form.employeeNumber}
-            maxLength={50}
-            onChange={(v) => setField('employeeNumber', v)}
-          />
-        )}
-
         <div className="grid grid-cols-2 gap-4">
           <Field
             label="Email"
@@ -201,82 +169,9 @@ export default function NewCustomerForm() {
           </div>
         </div>
 
-        <div>
-          <label className="mb-1 block text-[13px] font-medium text-gray-700">
-            Shipping address
-          </label>
-          <PhilippineAddressPicker onChange={(v) => setField('shippingAddress', v)} />
-        </div>
-
-        <div className="grid grid-cols-3 gap-4">
-          <Field
-            label="Tax ID"
-            value={form.taxId}
-            maxLength={50}
-            onChange={(v) => setField('taxId', v)}
-          />
-          <div className="flex items-end gap-2 pb-2">
-            <input
-              id="isTaxExempt"
-              type="checkbox"
-              checked={form.isTaxExempt ?? false}
-              onChange={(e) => setField('isTaxExempt', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            <label htmlFor="isTaxExempt" className="text-[13px] font-medium text-gray-700">
-              Tax-exempt
-            </label>
-          </div>
-          <Field
-            label="Exemption ref"
-            value={form.taxExemptionRef}
-            maxLength={100}
-            onChange={(v) => setField('taxExemptionRef', v)}
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
-            <select
-              value={form.paymentTerms ?? ''}
-              onChange={(e) => setField('paymentTerms', e.target.value)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Select payment terms</option>
-              {PAYMENT_TERMS_OPTIONS.map((term) => (
-                <option key={term} value={term}>
-                  {term}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Field
-            label="Credit limit (₱)"
-            value={form.creditLimit}
-            max={999_999_999}
-            type="number"
-            onChange={(v) => setField('creditLimit', v)}
-          />
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
-            <select
-              value={form.status ?? 'active'}
-              onChange={(e) => setField('status', e.target.value as CustomerStatus)}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </div>
-        </div>
-
-        <Field
-          label="Group ID"
-          value={form.groupId}
-          maxLength={50}
-          onChange={(v) => setField('groupId', v)}
+        <CustomerExtraFields
+          values={form}
+          onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
         />
 
         <div>
@@ -361,17 +256,6 @@ export default function NewCustomerForm() {
               </div>
             ))}
           </div>
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Notes</label>
-          <textarea
-            rows={3}
-            value={form.notes ?? ''}
-            maxLength={1000}
-            onChange={(e) => setField('notes', e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          />
         </div>
 
         {serverError && (

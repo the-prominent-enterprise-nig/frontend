@@ -407,6 +407,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
   crm: {
     main: [
       {
+        label: 'Customers',
+        href: '/crm/customers',
+        icon: Contact,
+        requiredPermission: CRM_PERMISSIONS.CUSTOMERS_READ,
+      },
+      {
         label: 'CRM Dashboard',
         href: '/crm',
         icon: House,
@@ -423,12 +429,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/leads',
         icon: UsersRound,
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
-      {
-        label: 'Customers',
-        href: '/crm/customers',
-        icon: Contact,
-        requiredPermission: CRM_PERMISSIONS.CUSTOMERS_READ,
       },
       {
         label: 'Collectors',

@@ -23,15 +23,33 @@ const STATUS_COLORS: Record<string, string> = {
   written_off: 'bg-red-50 text-red-700 ring-red-200',
 }
 
-function CategoryBadge({ category }: { category?: string | null }) {
+function CategoryBadge({
+  category,
+  recommended,
+}: {
+  category?: string | null
+  /** Recommend-only hint from aging data — never auto-applied. Shown only
+   * when it differs from the current category. */
+  recommended?: string | null
+}) {
   if (!category) return <span className="text-gray-400">—</span>
   return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-        CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-      }`}
-    >
-      {category}
+    <span className="inline-flex items-center gap-1">
+      <span
+        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+          CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
+        }`}
+      >
+        {category}
+      </span>
+      {recommended && recommended !== category && (
+        <span
+          title="Computed from this account's aging data — not applied automatically"
+          className="rounded-full border border-dashed border-amber-300 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+        >
+          →{recommended}
+        </span>
+      )}
     </span>
   )
 }
@@ -231,7 +249,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-medium text-gray-900">{a.accountNumber}</span>
-                      <CategoryBadge category={a.category} />
+                      <CategoryBadge category={a.category} recommended={a.recommendedCategory} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
                       {a.customer ? a.customer.name : '—'}
@@ -289,7 +307,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                         {a.collector?.stubNumber ?? <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <CategoryBadge category={a.category} />
+                        <CategoryBadge category={a.category} recommended={a.recommendedCategory} />
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {a.agingBucket ?? <span className="text-gray-400">—</span>}

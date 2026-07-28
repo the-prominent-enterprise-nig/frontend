@@ -337,7 +337,9 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                                               className="border-t border-gray-200"
                                             >
                                               <td className="py-1.5">
-                                                {t.account?.name ?? t.accountId}
+                                                {t.account
+                                                  ? `${t.account.number} — ${t.account.name}`
+                                                  : t.accountId}
                                               </td>
                                               <td className="py-1.5">{t.item || '—'}</td>
                                               <td className="py-1.5 text-gray-500">

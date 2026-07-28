@@ -205,7 +205,7 @@ export default function NewInstallmentAccountForm() {
                 type="number"
                 step="0.01"
                 min="0"
-                value={form.listedCashPrice}
+                value={form.listedCashPrice === 0 ? '' : form.listedCashPrice}
                 onChange={(e) => setField('listedCashPrice', Number(e.target.value))}
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
@@ -222,7 +222,7 @@ export default function NewInstallmentAccountForm() {
                 type="number"
                 step="0.01"
                 min="0"
-                value={form.downPayment}
+                value={form.downPayment === 0 ? '' : form.downPayment}
                 onChange={(e) => setField('downPayment', Number(e.target.value))}
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
@@ -239,7 +239,7 @@ export default function NewInstallmentAccountForm() {
                 type="number"
                 step="0.0001"
                 min="0"
-                value={form.miFactor}
+                value={form.miFactor === 0 ? '' : form.miFactor}
                 onChange={(e) => setField('miFactor', Number(e.target.value))}
                 placeholder="0.0954"
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"

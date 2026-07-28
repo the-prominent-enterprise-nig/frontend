@@ -92,7 +92,7 @@ export default function RecordRemittanceModal({
               type="number"
               step="0.01"
               min="0"
-              value={form.amount}
+              value={form.amount === 0 ? '' : form.amount}
               onChange={(e) => setField('amount', Number(e.target.value))}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
