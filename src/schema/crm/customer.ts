@@ -43,6 +43,7 @@ export const createCustomerSchema = z.object({
   shippingAddress: z.string().max(1000).optional().or(z.literal('')),
   paymentTerms: z.string().max(50).optional().or(z.literal('')),
   creditLimit: z.coerce.number().min(0).optional(),
+  groupId: z.string().max(50).optional().or(z.literal('')),
   sourceChannel: CustomerSourceChannelEnum.optional(),
   status: CustomerStatusEnum.optional(),
   notes: z.string().max(1000).optional().or(z.literal('')),

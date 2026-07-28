@@ -8,15 +8,39 @@ import type {
   CustomerSegment,
   PipelineColumn,
   PaginatedResponse,
+  Collector,
+  CollectorDetail,
+  CollectorRemittance,
+  InstallmentAccount,
+  InstallmentAccountDetail,
+  AccountingCustomerLite,
   Agent,
+  CollectionIncentive,
+  CategoryGraduationRequest,
   AgentCommission,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type { CreateReminderInput, UpdateReminderInput } from '@/src/schema/crm/reminder'
+import type {
+  CreateCollectorInput,
+  UpdateCollectorInput,
+  CreateRemittanceInput,
+} from '@/src/schema/crm/collector'
+import type {
+  CreateInstallmentAccountInput,
+  UpdateInstallmentAccountInput,
+  EarlyPayoffInput,
+  RecordPaymentInput,
+} from '@/src/schema/crm/installment-account'
 import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
 import type { InstallmentSchedule } from '@/src/schema/pos'
+import type {
+  CreateCollectionIncentiveInput,
+  RejectCollectionIncentiveInput,
+} from '@/src/schema/crm/collection-incentive'
+import type { PriceCheckInput, PriceCheckResult } from '@/src/schema/crm/installment-account'
 
 // ─── Pipeline Stages ────────────────────────────────────────
 
@@ -139,6 +163,103 @@ export const remindersApi = {
   remove: (id: string) => api.delete(`/crm/reminders/${id}`),
 }
 
+// ─── Collectors ─────────────────────────────────────────────
+
+export type CollectorFilters = {
+  search?: string
+  branchId?: string
+  status?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const collectorsApi = {
+  list: (filters?: CollectorFilters) =>
+    api.get<PaginatedResponse<Collector>>('/crm/collectors', filters, {
+      tags: ['crm:collectors'],
+    }),
+  get: (id: string) => api.get<CollectorDetail>(`/crm/collectors/${id}`),
+  create: (body: CreateCollectorInput) => api.post<Collector>('/crm/collectors', body),
+  update: (id: string, body: UpdateCollectorInput) =>
+    api.patch<Collector>(`/crm/collectors/${id}`, body),
+  remove: (id: string) => api.delete(`/crm/collectors/${id}`),
+  remit: (id: string, body: CreateRemittanceInput) =>
+    api.post<CollectorRemittance>(`/crm/collectors/${id}/remittances`, body),
+}
+
+// ─── Installment Accounts ───────────────────────────────────
+
+export type InstallmentAccountFilters = {
+  search?: string
+  customerId?: string
+  branchId?: string
+  collectorId?: string
+  category?: string
+  classification?: string
+  status?: string
+  agingBucket?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const installmentAccountsApi = {
+  list: (filters?: InstallmentAccountFilters) =>
+    api.get<PaginatedResponse<InstallmentAccount>>('/crm/installment-accounts', filters, {
+      tags: ['crm:installment-accounts'],
+    }),
+  get: (id: string) => api.get<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`),
+  create: (body: CreateInstallmentAccountInput) =>
+    api.post<InstallmentAccountDetail>('/crm/installment-accounts', body),
+  update: (id: string, body: UpdateInstallmentAccountInput) =>
+    api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`, body),
+  remove: (id: string) => api.delete(`/crm/installment-accounts/${id}`),
+  earlyPayoff: (id: string, body: EarlyPayoffInput) =>
+    api.post<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/early-payoff`, body),
+  getEarlyPayoffQuote: (id: string) =>
+    api.get<{
+      installmentAccountId: string
+      interestDifferential: number | string
+      termMonths: number
+      monthsRun: number
+      listedCashPrice: number | string
+      totalPaid: number
+      payoffAmount: number
+    }>(`/crm/installment-accounts/${id}/early-payoff-quote`),
+  recordPayment: (id: string, body: RecordPaymentInput) =>
+    api.post<InstallmentAccountDetail & { pointEarned: boolean }>(
+      `/crm/installment-accounts/${id}/payments`,
+      body
+    ),
+  requestGraduation: (id: string, body: { notes?: string }) =>
+    api.post<CategoryGraduationRequest>(
+      `/crm/installment-accounts/${id}/graduation-requests`,
+      body
+    ),
+  listGraduationRequests: (id: string) =>
+    api.get<CategoryGraduationRequest[]>(`/crm/installment-accounts/${id}/graduation-requests`),
+  listAllGraduationRequests: (status?: string) =>
+    api.get<CategoryGraduationRequest[]>(
+      '/crm/installment-accounts/graduation-requests',
+      status ? { status } : undefined
+    ),
+  approveGraduation: (id: string, requestId: string) =>
+    api.post<InstallmentAccountDetail>(
+      `/crm/installment-accounts/${id}/graduation-requests/${requestId}/approve`
+    ),
+  rejectGraduation: (id: string, requestId: string, body: { reason?: string }) =>
+    api.post<CategoryGraduationRequest>(
+      `/crm/installment-accounts/${id}/graduation-requests/${requestId}/reject`,
+      body
+    ),
+}
+
+// ─── Accounting Customers (used to link installment accounts) ──
+
+export const accountingCustomersApi = {
+  search: (search?: string) =>
+    api.get<AccountingCustomerLite[]>('/customers', search ? { search } : undefined),
+}
+
 // ─── Customer Segments ──────────────────────────────────────
 
 export const segmentsApi = {
@@ -177,4 +298,44 @@ export const agentsApi = {
   update: (id: string, body: UpdateAgentInput) => api.patch<Agent>(`/crm/agents/${id}`, body),
   remove: (id: string) => api.delete(`/crm/agents/${id}`),
   commissions: (id: string) => api.get<AgentCommission[]>(`/crm/agents/${id}/commissions`),
+}
+
+// ─── Collection Incentives ──────────────────────────────────
+
+export type CollectionIncentiveFilters = {
+  collectorId?: string
+  branchId?: string
+  period?: string
+  status?: string
+  page?: number
+  limit?: number
+} & Record<string, string | number | boolean | undefined>
+
+export const collectionIncentivesApi = {
+  list: (filters?: CollectionIncentiveFilters) =>
+    api.get<PaginatedResponse<CollectionIncentive>>('/crm/collection-incentives', filters, {
+      tags: ['crm:collection-incentives'],
+    }),
+  get: (id: string) => api.get<CollectionIncentive>(`/crm/collection-incentives/${id}`),
+  create: (body: CreateCollectionIncentiveInput) =>
+    api.post<CollectionIncentive>('/crm/collection-incentives', body),
+  remove: (id: string) => api.delete(`/crm/collection-incentives/${id}`),
+  approve: (id: string) =>
+    api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/approve`),
+  reject: (id: string, body: RejectCollectionIncentiveInput) =>
+    api.post<CollectionIncentive>(`/crm/collection-incentives/${id}/reject`, body),
+  generateMonthly: (body: { period: string; ratePercent?: number }) =>
+    api.post<{
+      period: string
+      ratePercent: number
+      created: CollectionIncentive[]
+      skipped: { collectorId: string; reason: string }[]
+    }>('/crm/collection-incentives/generate-monthly', body),
+}
+
+// ─── Installment Price Checker ──────────────────────────────
+
+export const priceCheckApi = {
+  check: (params: PriceCheckInput) =>
+    api.get<PriceCheckResult>('/crm/installment-accounts/price-check', params),
 }

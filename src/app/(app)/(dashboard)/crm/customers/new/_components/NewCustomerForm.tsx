@@ -13,7 +13,7 @@ import {
   type CreateCustomerInput,
   type CustomerBankAccountFormValues,
 } from '@/src/schema/crm/customer'
-import type { CustomerType } from '@/src/schema/crm/types'
+import type { CustomerType, CustomerStatus } from '@/src/schema/crm/types'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 type FormState = {
@@ -30,6 +30,8 @@ type FormState = {
   shippingAddress: string
   paymentTerms: string
   creditLimit: string
+  groupId: string
+  status: CustomerStatus
   notes: string
   bankAccounts: CustomerBankAccountFormValues[]
 }
@@ -48,6 +50,8 @@ const empty: FormState = {
   shippingAddress: '',
   paymentTerms: '',
   creditLimit: '',
+  groupId: '',
+  status: 'active',
   notes: '',
   bankAccounts: [],
 }
@@ -81,6 +85,8 @@ export default function NewCustomerForm() {
       shippingAddress: form.shippingAddress || undefined,
       paymentTerms: form.paymentTerms || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
+      groupId: form.groupId || undefined,
+      status: form.status,
       // Fixed, not user-selectable — this form is a direct manual add under CRM.
       sourceChannel: 'sales',
       notes: form.notes || undefined,
@@ -229,7 +235,7 @@ export default function NewCustomerForm() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
             <select
@@ -252,7 +258,26 @@ export default function NewCustomerForm() {
             type="number"
             onChange={(v) => setField('creditLimit', v)}
           />
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Status</label>
+            <select
+              value={form.status ?? 'active'}
+              onChange={(e) => setField('status', e.target.value as CustomerStatus)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
         </div>
+
+        <Field
+          label="Group ID"
+          value={form.groupId}
+          maxLength={50}
+          onChange={(v) => setField('groupId', v)}
+        />
 
         <div>
           <div className="flex items-center justify-between">
