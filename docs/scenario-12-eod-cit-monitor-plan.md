@@ -6,8 +6,7 @@ Source: `module-scenarios.md`, scenario "End-of-day cash & Cash in Transit — c
 
 - [86d3d19rc](https://app.clickup.com/t/86d3d19rc) — "AA Cashier, ISBAT run an end-of-day cash close that moves collected payments from Undeposited Funds to Cash in Transit and generates a CIT slip" — _Sprint 4, to do_ — matches step 1 (also cross-listed under Scenario 01)
 - [86d3d19tg](https://app.clickup.com/t/86d3d19tg) — "AA Accountant, ISBAT configure Undeposited Funds and Cash in Transit GL accounts with next-day starting cash balances, so cash flow between collection and deposit is accurately tracked" — _Sprint 4, to do_
-
-**Not found in Sprint 3-5:** No ticket anywhere for step 4 — the company-wide CIT monitor that flags any branch not at ₱0.00. This is exactly this doc's central finding (the monitor doesn't exist in code), and it doesn't exist in the backlog either — worth raising as a new ticket rather than assuming it's implicitly covered by the per-branch tickets above.
+- [86d3ux7c8](https://app.clickup.com/t/86d3ux7c8) — "AA Business Owner/Accounting, ISBAT monitor Cash-in-Transit balances across every branch and flag any branch not at ₱0.00" — _Sprint 4, in review_ — raised 2026-07-28 for step 4, closed the same day (see Implementation Log below)
 
 ## The scenario we're building toward
 
