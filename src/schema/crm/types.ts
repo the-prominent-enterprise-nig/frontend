@@ -265,6 +265,9 @@ export interface InstallmentAccount {
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
   aging?: AgingInfo | null
+  /** Recommend-only, computed from aging — never auto-applied. Null when the
+   * account isn't active (aging itself isn't computed) or has no signal. */
+  recommendedCategory?: InstallmentAccountCategory | null
 }
 
 export interface InstallmentAccountDetail extends InstallmentAccount {

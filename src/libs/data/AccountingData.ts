@@ -11,11 +11,17 @@ export type NormalBalance = 'DEBIT' | 'CREDIT'
 
 export interface Account {
   id: string
-  code: string
+  /** Not actually returned by the backend (the real field is `number`) — kept
+   * optional rather than removed since a couple of call sites already guard
+   * with `number ?? code`. */
+  code?: string
   number?: string
   name: string
   type: AccountType
-  normalBalance: NormalBalance
+  /** Not actually returned by the backend — there's no such column on Account.
+   * Derive debit/credit from `type` instead (ASSET/EXPENSE = debit-normal,
+   * LIABILITY/EQUITY/REVENUE = credit-normal) rather than reading this. */
+  normalBalance?: NormalBalance
   parentId?: string | null
   currencyId?: string | null
   description?: string | null

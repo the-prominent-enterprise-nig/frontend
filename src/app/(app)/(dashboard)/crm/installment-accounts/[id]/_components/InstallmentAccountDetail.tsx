@@ -176,6 +176,14 @@ export default function InstallmentAccountDetail({
             <span>·</span>
             <Badge value={account.status} colors={STATUS_COLORS} />
             <Badge value={account.category} colors={CATEGORY_COLORS} />
+            {account.recommendedCategory && account.recommendedCategory !== account.category && (
+              <span
+                title="Computed from this account's aging data — not applied automatically"
+                className="rounded-full border border-dashed border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              >
+                Suggests: {account.recommendedCategory}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">

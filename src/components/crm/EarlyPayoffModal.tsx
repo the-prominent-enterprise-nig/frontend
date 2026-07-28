@@ -83,7 +83,7 @@ export default function EarlyPayoffModal({
               type="number"
               step="0.01"
               min="0"
-              value={form.payoffAmount}
+              value={form.payoffAmount === 0 ? '' : form.payoffAmount}
               onChange={(e) => setField('payoffAmount', Number(e.target.value))}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />

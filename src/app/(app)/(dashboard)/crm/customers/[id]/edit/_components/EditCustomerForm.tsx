@@ -301,11 +301,6 @@ export default function EditCustomerForm({ id }: { id: string }) {
               ))}
             </select>
           </div>
-          <Field
-            label="Credit limit (₱)"
-            value={form.creditLimit}
-            onChange={(v) => setField('creditLimit', v)}
-          />
           <Field label="Group ID" value={form.groupId} onChange={(v) => setField('groupId', v)} />
         </div>
 

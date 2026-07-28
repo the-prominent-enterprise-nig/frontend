@@ -165,10 +165,6 @@ export default function Customer360({
             <Row label="Email" value={data.email ?? '—'} />
             <Row label="Phone" value={data.phone ?? '—'} />
             <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
-            <Row
-              label="Credit limit"
-              value={data.creditLimit ? `₱${Number(data.creditLimit).toLocaleString()}` : '—'}
-            />
           </dl>
         </section>
 
