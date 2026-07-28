@@ -59,7 +59,8 @@ export function ServiceJobStartInstallModal({
           </label>
           <TechnicianSearchCombobox value={technicianId} onChange={setTechnicianId} />
           <p className="mt-2 text-xs text-zinc-500">
-            Assigns who&apos;s performing the install and moves this job to Installing.
+            Assigns who&apos;s performing the install, issues each line&apos;s estimated quantity
+            out of branch stock, and moves this job to Installing.
           </p>
         </div>
 

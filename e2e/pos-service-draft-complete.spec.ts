@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, loginAs, clickStable } from './utils'
+import { gotoReady, fillStable, loginAs, clickStable, ensureItemStock } from './utils'
 
 // Aircool Closing Gap 5 — POS Service Jobs "Complete Job": deducts each
 // line's actualQty from stock (no separate issue/return — nothing was ever
@@ -92,19 +92,24 @@ test.describe('POS Service Jobs — Complete (Aircool Closing Gap 5)', () => {
     await row.click()
     await expect(detailHeading).toBeVisible()
 
+    // Start Install now genuinely issues materials out of stock (Aircool
+    // issue-then-return) — top up this branch's stock for the picked
+    // material first, so this test's success doesn't depend on this shared
+    // dev database's ambient, ever-drifting on-hand level.
+    const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
+    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+
     await confirmSourcing(page)
     await expect(detailHeading).toBeVisible()
     await startInstall(page)
     await expect(detailHeading).toBeVisible()
 
     // Record 0 as the actual (technician used none of the estimated
-    // material) — deliberately, not 1: the backend skips stock deduction
-    // entirely for a zero-actual line, so this test's success never depends
-    // on this shared dev DB's ambient stock level for whatever item the
-    // combobox above picked (already flaky once this session against a
-    // long-lived, heavily-reused database — stock-deduction math itself is
+    // material, so complete() returns the full issued qty back to stock) —
+    // deliberately, not 1: keeps this test's assertions independent of the
+    // exact issued/returned amounts, since stock-movement math itself is
     // already covered thoroughly by the backend e2e suite's own isolated
-    // fixtures, so this UI test only needs to prove the workflow wiring).
+    // fixtures — this UI test only needs to prove the workflow wiring.
     const actualInput = page.locator('input[placeholder="0"]').first()
     await fillStable(actualInput, '0')
     await expect(async () => {
@@ -126,6 +131,46 @@ test.describe('POS Service Jobs — Complete (Aircool Closing Gap 5)', () => {
     // actual-qty cell reverts to read-only display once the job is closed.
     await expect(page.getByRole('button', { name: 'Complete Job' })).toHaveCount(0)
     await expect(page.locator('input[placeholder="0"]')).toHaveCount(0)
+    // Nothing was actually used (actual recorded as 0) — no materials
+    // invoice should have been generated for this job.
+    await expect(page.getByText('Materials Invoice')).toHaveCount(0)
+  })
+
+  test('completing a job with actual usage generates and displays a materials invoice (Aircool Closing Gap 5b)', async ({
+    page,
+  }) => {
+    const title = `E2E Complete — Invoice — ${Date.now()}`
+    const row = await createServiceJob(page, title)
+
+    const detailHeading = page.getByRole('heading', { name: title })
+    await row.click()
+    await expect(detailHeading).toBeVisible()
+
+    const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
+    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+
+    await confirmSourcing(page)
+    await startInstall(page)
+
+    // The estimated qty was 1 (createServiceJob) — record 1 as the actual
+    // too, so this line is genuinely billable.
+    const actualInput = page.locator('input[placeholder="0"]').first()
+    await fillStable(actualInput, '1')
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Save Actuals' }).click()
+      await expect(page.getByText('Actuals recorded').first()).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 15_000 })
+
+    page.once('dialog', (dialog) => dialog.accept())
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Complete Job' }).click()
+      await expect(page.getByText('Service job completed').first()).toBeVisible({
+        timeout: 3_000,
+      })
+    }).toPass({ timeout: 15_000 })
+
+    await expect(page.getByText('Materials Invoice')).toBeVisible()
+    await expect(page.getByText(/^SDI-\d{8}-\d{4}$/)).toBeVisible()
   })
 })
 
@@ -150,6 +195,10 @@ test.describe('POS Service Jobs — Cashier cannot complete (role gate)', () => 
     await expect(row).toBeVisible({ timeout: 10_000 })
     await row.click()
     await expect(page.getByRole('heading', { name: title })).toBeVisible()
+
+    const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
+    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+
     await confirmSourcing(page)
     await startInstall(page)
 

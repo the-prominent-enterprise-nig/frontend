@@ -276,6 +276,78 @@ export function ServiceJobDetailModal({
                   </div>
                 </div>
               )}
+
+              {/* Materials invoice (Closing Gap 5b) — auto-generated on complete() */}
+              {draft.invoice && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Materials Invoice
+                    </p>
+                    <span className="font-mono text-xs text-zinc-500">
+                      {draft.invoice.invoiceNumber}
+                    </span>
+                  </div>
+                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-zinc-200 bg-zinc-50">
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Item
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Qty
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Unit Price
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Line Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {draft.invoice.lines.map((line) => (
+                          <tr key={line.id}>
+                            <td className="px-3 py-2">
+                              <span className="font-medium text-zinc-900">{line.item.name}</span>
+                              <span className="ml-1.5 font-mono text-xs text-zinc-400">
+                                {line.item.sku}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {Number(line.quantity)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {Number(line.unitPrice).toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {Number(line.lineTotal).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-zinc-200 bg-zinc-50">
+                          <td
+                            colSpan={3}
+                            className="px-3 py-2 text-right font-medium text-zinc-700"
+                          >
+                            Total
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-zinc-900">
+                            {Number(draft.invoice.totalAmount).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-400">
+                    Auto-generated for materials actually used. Bill this to the customer as a
+                    separate sale.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
