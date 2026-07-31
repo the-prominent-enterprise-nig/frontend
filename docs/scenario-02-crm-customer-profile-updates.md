@@ -16,3 +16,21 @@ Source: client meeting notes, July 17, 2026, "Staging (CRM & POS)."
 2. **Add bank details / bank transfer info to the customer profile.** New field, no existing gap covers it. `bank` already exists as a POS _payment tender_ type (`PAYMENT_METHOD_MAPPING` in `pos-posting.service.ts`) — this is different: capturing a customer's own bank details on their CRM profile. Likely relevant for Employee-type buyers paid via payroll/bank transfer, or for refund/collection routing — confirm the exact use case with the client before scoping the field(s) (bank name, account number, account name, and whether it needs masking/verification given it's financial PII).
 
    **Status: Implemented 2026-07-21.** Added a `CustomerBankAccount` model mirroring the existing `SupplierBankAccount` shape/pattern exactly (bank name, account number, optional account name, `isPrimary` flag; full-replace-on-update via the same delete-then-recreate transaction `SupplierService` already uses) — same migration as item #1 above. Embedded as a `bankAccounts[]` array on create/update (`src/crm/customer/customer.dto.ts`, `.service.ts`), not a separate sub-resource, matching Supplier's actual pattern rather than the `SupplierDocument` sub-resource pattern. Frontend: repeatable bank-account field-array in `NewCustomerForm.tsx`/`EditCustomerForm.tsx`, read-only "Bank Details" section added to `Customer360.tsx`. Use case wasn't re-confirmed with the client before building (out of session scope) — worth revisiting if masking/verification turns out to matter given it's financial PII.
+
+---
+
+## Update — 2026-07-31 (NIG_ERP_Core_Operational_Scenarios_Draft_2_20260727.pdf, row 3)
+
+Source: client-provided "Core Operational Scenarios" process map, Draft 2, 27 July 2026, row "3. Creating or updating a customer and co-maker profile." Additive to the plan doc's existing gap list, not superseding anything — this row describes real sub-capabilities the plan doc doesn't currently track. Re-verified against current `development` code before logging here (not just taken from the PDF at face value).
+
+1. **No co-maker (guarantor) entity at all.** The PDF requires capturing a "co-maker relationship and documents" alongside the primary customer for a financed sale. Nothing in the schema models a co-maker/guarantor/co-signer relationship — the only adjacent model, `GovernmentID`, belongs to `Employee` (HR/payroll), not `Customer`. This is also a direct dependency for the new Scenario 17 (Credit Application, Investigation & Promissory Note) — its Promissory Note needs to reference a co-maker, so this should land before or alongside that scenario.
+
+2. **No duplicate-customer detection at creation.** `crm/lead/lead.service.ts` already has `detectDuplicate()` (exact match on email/phone) for Leads — `crm/customer/customer.service.ts`'s `create()` has no equivalent check at all. There's already an open ClickUp ticket for this specific gap: `86d3d19qn` "AA Cashier, ISBAT be warned of a potential duplicate when adding a new customer" (status: to do) — this PDF row reinforces that ticket rather than introducing a new ask.
+
+3. **No duplicate-resolution/merge workflow.** The PDF's "BM/AR Reviewer resolves duplicates and confirms verified data" step has no equivalent anywhere — no merge logic for two Customer records exists in either repo.
+
+4. **No ID/consent document capture on the customer profile.** `customer.dto.ts` has no idType/idNumber/consent/attachment fields; `GovernmentID` (the only ID-document model) is HR/Employee-scoped, not usable here.
+
+5. **Already covered, no gap:** the PDF's "each installment sale receives a separate Account/Contract ID" is already true — `InstallmentAccount` is a distinct model with its own unique `accountNumber`, one-to-many from `Customer`.
+
+**Status: not yet implemented.** Scope/sequencing questions to confirm with the developer before building: (a) is co-maker capture required for every financed sale or only above some threshold; (b) should duplicate detection be a hard block (like Lead's) or a soft warning (the PDF's "flags... duplicates" language implies non-blocking); (c) does the merge-resolution UI need to be built now or can duplicates just be flagged for manual cleanup initially.
