@@ -6,8 +6,7 @@ Source: `module-scenarios.md`, scenario "End-of-day cash & Cash in Transit — c
 
 - [86d3d19rc](https://app.clickup.com/t/86d3d19rc) — "AA Cashier, ISBAT run an end-of-day cash close that moves collected payments from Undeposited Funds to Cash in Transit and generates a CIT slip" — _Sprint 4, to do_ — matches step 1 (also cross-listed under Scenario 01)
 - [86d3d19tg](https://app.clickup.com/t/86d3d19tg) — "AA Accountant, ISBAT configure Undeposited Funds and Cash in Transit GL accounts with next-day starting cash balances, so cash flow between collection and deposit is accurately tracked" — _Sprint 4, to do_
-
-**Not found in Sprint 3-5:** No ticket anywhere for step 4 — the company-wide CIT monitor that flags any branch not at ₱0.00. This is exactly this doc's central finding (the monitor doesn't exist in code), and it doesn't exist in the backlog either — worth raising as a new ticket rather than assuming it's implicitly covered by the per-branch tickets above.
+- [86d3ux7c8](https://app.clickup.com/t/86d3ux7c8) — "AA Business Owner/Accounting, ISBAT monitor Cash-in-Transit balances across every branch and flag any branch not at ₱0.00" — _Sprint 4, in review_ — raised 2026-07-28 for step 4, closed the same day (see Implementation Log below)
 
 ## The scenario we're building toward
 
@@ -60,3 +59,19 @@ Steps 1-3 are solid, confirmed working (verified in an earlier session and re-co
 ## Dead code / unused-feature flags
 
 None — the existing per-branch CIT flow is real, used, and correctly scoped; it just needs the aggregate layer added on top, not replaced.
+
+## Implementation Log — 2026-07-28
+
+**For this scenario, I have done:**
+
+- **Item 1** — Accountant role granted `pos:cash-in-transit:read` (read-only; `manage` deliberately withheld, clearing to bank deposit stays Branch Manager/Business Owner). Re-verified live: 403 → 200, still branch-scoped like Branch Manager.
+- **Item 2** — Added `SessionsService.getCashInTransitSummary()`, a per-branch rollup grouping the same rows `getCashInTransitReport()` already computes (not a new data source). Every branch appears even at ₱0.00; sorted non-zero-first. New endpoint: `GET /pos/sessions/cash-in-transit/summary`.
+- **Item 3** — Built the company-wide monitor as a new tab on the existing `/pos/cash-in-transit` page ("Monitor All Branches"), gated to unrestricted callers only. Drill-down into a flagged branch reuses the existing session-list component rather than duplicating it.
+- **Item 4** — Extracted `resolveCitBranchScope()`, replacing the old `callerBranchId ?? filters.branchId` fallthrough with three explicit, named outcomes (branch-restricted caller / unrestricted caller requesting one branch / unrestricted caller seeing everything). Same behavior, no longer an accident of how the expression happened to evaluate.
+- **From `scenario-12-eod-cit-monitor-updates.md`, item 1** — Added an "Export to Excel" button (CSV + Blob, matching the existing `ValuationReport.tsx` pattern — no new dependency) on both the sessions and history views.
+
+**Worth flagging:**
+
+- **Accountant is per-branch, not company-wide** — the seed data (`prisma/seed.ts`) creates one Accountant per branch, same as Branch Manager, not a single HQ-wide accounting user. Decided with the developer: the monitor tab stays Business-Owner-only for now; a branch Accountant gets read-only visibility into their own branch only. If a true company-wide Accounting role is wanted later, that's new scope, not implicit in this pass.
+- **`scenario-12-eod-cit-monitor-updates.md` item 2** (OR#/transaction detail by EOD/closing sales) was explicitly deferred to `scenario-14-accounting-month-end-plan.md` per the developer's call — not touched this run.
+- No ClickUp ticket exists for items 2-4 (the actual cross-branch monitor) — the doc's own "Related ClickUp Tickets" section already flagged this gap before this run started; the two listed tickets (86d3d19rc, 86d3d19tg) cover the per-branch close/GL-mapping flow, which was already done, not the monitor itself. Worth raising a new ticket for this work.

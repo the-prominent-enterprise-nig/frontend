@@ -25,5 +25,11 @@ export default async function CashInTransitPage() {
   // what's submitted).
   const restrictedBranchId = session.branchId ?? null
 
-  return <CashInTransitList canManage={canManage} restrictedBranchId={restrictedBranchId} />
+  return (
+    <CashInTransitList
+      canManage={canManage}
+      restrictedBranchId={restrictedBranchId}
+      isUnrestricted={restrictedBranchId === null}
+    />
+  )
 }

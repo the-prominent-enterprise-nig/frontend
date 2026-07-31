@@ -12,6 +12,9 @@ export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
 
+export const CustomerLifecycleStatusEnum = z.enum(['alive', 'dead', 'employed'])
+export type CustomerLifecycleStatus = z.infer<typeof CustomerLifecycleStatusEnum>
+
 export const InteractionTypeEnum = z.enum(['call', 'email', 'meeting', 'visit', 'message', 'other'])
 export type InteractionType = z.infer<typeof InteractionTypeEnum>
 
@@ -21,8 +24,33 @@ export type ReminderType = z.infer<typeof ReminderTypeEnum>
 export const ReminderStatusEnum = z.enum(['pending', 'completed', 'overdue', 'cancelled'])
 export type ReminderStatus = z.infer<typeof ReminderStatusEnum>
 
+export const CollectorStatusEnum = z.enum(['active', 'inactive'])
+export type CollectorStatus = z.infer<typeof CollectorStatusEnum>
+
+export const InstallmentAccountCategoryEnum = z.enum(['A', 'B', 'C', 'D'])
+export type InstallmentAccountCategory = z.infer<typeof InstallmentAccountCategoryEnum>
+
+export const InstallmentAccountClassificationEnum = z.enum(['official', 'arrears', 'not_moving'])
+export type InstallmentAccountClassification = z.infer<typeof InstallmentAccountClassificationEnum>
+
+export const InstallmentAccountStatusEnum = z.enum([
+  'active',
+  'closed',
+  'early_closed',
+  'written_off',
+])
+export type InstallmentAccountStatus = z.infer<typeof InstallmentAccountStatusEnum>
+
 export const AgentStatusEnum = z.enum(['active', 'inactive'])
 export type AgentStatus = z.infer<typeof AgentStatusEnum>
+
+export const CollectionIncentiveStatusEnum = z.enum([
+  'auto_approved',
+  'pending_approval',
+  'approved',
+  'rejected',
+])
+export type CollectionIncentiveStatus = z.infer<typeof CollectionIncentiveStatusEnum>
 
 export interface PipelineStage {
   id: string
@@ -81,6 +109,7 @@ export interface Customer {
   shippingAddress?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
+  groupId?: string | null
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
@@ -154,6 +183,166 @@ export interface CustomerSegment {
   lastRefreshedAt?: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Collector {
+  id: string
+  stubNumber: string
+  name: string
+  branchId?: string | null
+  userId?: string | null
+  status: CollectorStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CollectorRemittance {
+  id: string
+  collectorId: string
+  amount: number | string
+  remittedAt: string
+  cashierId?: string | null
+  reference?: string | null
+  collectionBatch?: string | null
+  notes?: string | null
+  createdAt: string
+}
+
+export interface CollectorInstallmentAccountSummary {
+  id: string
+  accountNumber: string
+  category?: InstallmentAccountCategory | null
+  classification?: InstallmentAccountClassification | null
+  agingBucket?: string | null
+  currentBalance: number | string
+}
+
+export interface CollectorDetail extends Collector {
+  branch?: { id: string; name: string; code: string } | null
+  installmentAccounts: CollectorInstallmentAccountSummary[]
+  remittances: CollectorRemittance[]
+}
+
+export interface AccountingCustomerLite {
+  id: string
+  name: string
+  phone?: string | null
+  email?: string | null
+}
+
+/**
+ * Reverse-engineered against the client's real June 2026 AR export
+ * (AR_Balance_0626.xlsx) — see computeAging() in the backend's
+ * installment-account.service.ts. Two independent flags, not one value:
+ * an account can be both in arrears AND not-moving at once.
+ */
+export type ArrearsFlag = 'pink' | 'green' | null
+export type NotMovingFlag = 'pink' | 'blue' | null
+
+export interface AgingInfo {
+  noArsMonths: number
+  mosRun: number
+  notMvgMonths: number
+  arrears: ArrearsFlag
+  notMoving: NotMovingFlag
+  /** Deduped, slash-joined display color (e.g. "green/blue"), or null if neither flag is set. */
+  color: string | null
+}
+
+export interface InstallmentAccount {
+  id: string
+  accountNumber: string
+  customerId: string
+  branchId?: string | null
+  collectorId?: string | null
+  currentBalance: number | string
+  category?: InstallmentAccountCategory | null
+  classification?: InstallmentAccountClassification | null
+  agingBucket?: string | null
+  status: InstallmentAccountStatus
+  createdAt: string
+  customer?: { name: string } | null
+  branch?: { name: string } | null
+  collector?: { stubNumber: string; name: string } | null
+  aging?: AgingInfo | null
+  /** Recommend-only, computed from aging — never auto-applied. Null when the
+   * account isn't active (aging itself isn't computed) or has no signal. */
+  recommendedCategory?: InstallmentAccountCategory | null
+}
+
+export interface InstallmentAccountDetail extends InstallmentAccount {
+  arInvoiceId?: string | null
+  listedCashPrice: number | string
+  downPayment: number | string
+  amountFinanced: number | string
+  termMonths: number
+  miFactor: number | string
+  monthlyInstallment: number | string
+  pnv: number | string
+  totalPrice: number | string
+  interestDifferential: number | string
+  ppd: number | string
+  openingBalance: number | string
+  dpBalance: number | string
+  lastOrNumber?: string | null
+  lastOrDate?: string | null
+  lastOrAmount?: number | string | null
+  notYetDue: number | string
+  totalDue: number | string
+  miDue: number | string
+  uncollected: number | string
+  arrears: number | string
+  penalty: number | string
+  monthsRun: number
+  points: number
+  noArsSince?: string | null
+  notMovingSince?: string | null
+  closedAt?: string | null
+  updatedAt: string
+  customer: AccountingCustomerLite
+  branch?: { id: string; name: string; code: string } | null
+  collector?: { id: string; stubNumber: string; name: string } | null
+  arInvoice?: { id: string; invoiceNumber: string; status: string } | null
+}
+
+export const CategoryGraduationStatusEnum = z.enum(['pending', 'approved', 'rejected'])
+export type CategoryGraduationStatus = z.infer<typeof CategoryGraduationStatusEnum>
+
+export interface CategoryGraduationRequest {
+  id: string
+  installmentAccountId: string
+  fromCategory?: InstallmentAccountCategory | null
+  toCategory: InstallmentAccountCategory
+  status: CategoryGraduationStatus
+  requestedById?: string | null
+  decidedById?: string | null
+  decidedAt?: string | null
+  notes?: string | null
+  createdAt: string
+  installmentAccount?: { id: string; accountNumber: string } | null
+  requestedBy?: { id: string; name: string } | null
+  decidedBy?: { id: string; name: string } | null
+}
+
+export interface CollectionIncentive {
+  id: string
+  collectorId: string
+  branchId?: string | null
+  installmentAccountId?: string | null
+  category: InstallmentAccountCategory
+  period: string
+  amount: number | string
+  status: CollectionIncentiveStatus
+  approvedById?: string | null
+  approvedAt?: string | null
+  notes?: string | null
+  isAutoGenerated?: boolean
+  createdAt: string
+  updatedAt: string
+  collector?: { id: string; stubNumber: string; name: string } | null
+  branch?: { id: string; name: string } | null
+  installmentAccount?: { id: string; accountNumber: string } | null
+  approvedBy?: { id: string; name: string; email?: string | null } | null
 }
 
 export interface PipelineColumn {

@@ -391,11 +391,19 @@ function PayBill({
             />
           </Field>
           <Field label="Method">
-            <input
+            <select
               value={form.method}
               onChange={(e) => setForm({ ...form, method: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
+            >
+              <option value="">— Select —</option>
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="gcash">GCash</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+            </select>
           </Field>
           <Field label="Reference">
             <input

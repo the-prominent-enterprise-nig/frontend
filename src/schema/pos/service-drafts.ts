@@ -106,6 +106,25 @@ export const RecordActualsFormSchema = z.object({
   lines: z.array(RecordActualLineSchema).min(1),
 })
 
+// ─── Complete (Closing Gap 5b) — auto-generated materials invoice ─────────
+
+export const ServiceDraftInvoiceLineSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  item: ServiceDraftLineItemSchema,
+  quantity: z.coerce.number(),
+  unitPrice: z.coerce.number(),
+  lineTotal: z.coerce.number(),
+})
+
+export const ServiceDraftInvoiceSchema = z.object({
+  id: z.string(),
+  invoiceNumber: z.string(),
+  totalAmount: z.coerce.number(),
+  lines: z.array(ServiceDraftInvoiceLineSchema),
+  createdAt: z.string(),
+})
+
 const ServiceDraftBranchSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -134,6 +153,7 @@ export const ServiceDraftSchema = z.object({
   sourcingPurchaseRequests: z.array(ServiceDraftSourcingPrSchema).optional(),
   technicianId: z.string().nullable().optional(),
   technician: ServiceDraftTechnicianSchema.nullable().optional(),
+  invoice: ServiceDraftInvoiceSchema.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
 })
@@ -156,6 +176,8 @@ export type ServiceDraftListResponse = z.infer<typeof ServiceDraftListResponseSc
 export type StockCheckLine = z.infer<typeof StockCheckLineSchema>
 export type StockCheckResponse = z.infer<typeof StockCheckResponseSchema>
 export type ServiceDraftTechnician = z.infer<typeof ServiceDraftTechnicianSchema>
+export type ServiceDraftInvoiceLine = z.infer<typeof ServiceDraftInvoiceLineSchema>
+export type ServiceDraftInvoice = z.infer<typeof ServiceDraftInvoiceSchema>
 export type StartInstallFormValues = z.infer<typeof StartInstallFormSchema>
 export type RecordActualLineValues = z.infer<typeof RecordActualLineSchema>
 export type RecordActualsFormValues = z.infer<typeof RecordActualsFormSchema>

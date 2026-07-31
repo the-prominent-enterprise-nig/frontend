@@ -373,6 +373,17 @@ export interface CreateWalkInCustomerInput {
   lastName: string
   phoneNumber: string
   email?: string
+  customerType?: import('@/src/schema/crm/types').CustomerType
+  companyName?: string
+  employeeNumber?: string
+  groupId?: string
+  taxId?: string
+  isTaxExempt?: boolean
+  taxExemptionRef?: string
+  shippingAddress?: string
+  paymentTerms?: string
+  status?: import('@/src/schema/crm/types').CustomerStatus
+  note?: string
 }
 
 export interface AddPaymentInput {

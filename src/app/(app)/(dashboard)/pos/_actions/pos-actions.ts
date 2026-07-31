@@ -2651,6 +2651,29 @@ export async function getCashInTransitHistory(filters?: {
   }
 }
 
+export interface CashInTransitBranchSummary {
+  branchId: string
+  branchName: string
+  sessionCount: number
+  totalAmount: number
+}
+
+export async function getCashInTransitSummary(): Promise<
+  ApiResponse<CashInTransitBranchSummary[]>
+> {
+  try {
+    const result = await api.get<CashInTransitBranchSummary[]>(
+      '/pos/sessions/cash-in-transit/summary'
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch Cash-in-Transit summary' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch Cash-in-Transit summary' }
+  }
+}
+
 export interface ClearCashInTransitInput {
   bankAccountId: string
   sessionIds: string[]

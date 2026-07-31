@@ -85,3 +85,34 @@ Ordered by risk/value — data-model gaps that block reporting/compliance first,
 
 - **`Customer.billingAddress`** (schema + DTO) — defined but the create form only ever populates `shippingAddress`, never `billingAddress`. Either wire up a real billing-address use case (e.g. distinct from shipping for invoicing) or remove the field.
 - **`CustomerSourceChannelEnum`/`sourceChannel` filter** — supports values like `crm_lead`/`online` that nothing in the codebase ever produces except the hardcoded `'sales'` constant set on manual CRM add. Largely inert filter plumbing on the customer list — remove the filter UI or wire up real source-channel tracking (e.g. from a future web lead-capture form) if that's still planned.
+
+## Implementation Log — 2026-07-27
+
+**For this scenario, I have done:**
+
+- **#2 (family/group ID)** — note: by the time this ran, `Customer.groupId` (`String?`) already existed in the schema from a separate, unrelated session (added for AR-invoice grouping) and was already wired into Accounting's customer DTO/service/UI — so the actual remaining gap was narrower than this doc's original wording ("no family/group ID field exists anywhere"). Closed the CRM-specific gap: added `groupId` to `crm/customer/customer.dto.ts`'s `CreateCustomerDto`/`CustomerDetailDto` (previously stripped by the global `ValidationPipe`'s `whitelist: true` since it wasn't declared there) and added a "Group ID" field to both `NewCustomerForm.tsx` and `EditCustomerForm.tsx`.
+- **#3 (status on create form)** — added the same status dropdown already used in `EditCustomerForm.tsx` to `NewCustomerForm.tsx`, defaulting to `active`.
+- **#4 (loyalty auto-enroll)** — developer decided **auto-enroll at creation** (not "confirm opt-in and update the doc"). Since `Customer` is a single unified model created from three separate places (CRM `customer.service.ts`, Accounting `customers.service.ts`, POS walk-in `pos-customers.service.ts`), implemented a shared `enrollInLoyalty()` helper (`crm/customer/enroll-loyalty.util.ts`) and called it from all three creation paths, each now wrapped in a `$transaction` so the zero-balance `LoyaltyAccount` commits atomically with the customer row. This intentionally goes beyond a CRM-only fix — a customer's loyalty status would otherwise depend on which screen created the record, which would have been a new inconsistency rather than a real fix.
+
+**Worth flagging:**
+
+- Also fixed, while in the area but **not a listed gap in this doc** — the "Request graduation" button on the Installment Account detail page (`crm/installment-accounts/[id]/_components/InstallmentAccountDetail.tsx`) was missing a `status === 'active'` guard that Record Payment/Settle Early already had, so it showed even on closed/settled accounts. One-line fix, developer confirmed doing it in the same pass.
+- Items #1 (customerType/bank details) were already closed before this run — see the July 17 "Staging CRM & POS" update, superseding this doc's original 3-way `customerType` split ask.
+- Items #5 (Smart SMS) and #6 (retargeting send mechanism) remain correctly deferred — out of scope this run, need their own scoping pass per this doc's existing notes.
+- Dead-code items (`billingAddress`, `sourceChannel` filter) — still undecided, not touched this run.
+- No ClickUp ticket in this doc's "Related ClickUp Tickets" section maps to items #2/#3/#4 or the graduation-button fix, so nothing was moved in ClickUp for this run.
+- Backend: `npx tsc --noEmit`, `npx nest build`, and the affected jest suite (`pos-customers.service.spec.ts`, extended with a new loyalty-enrollment assertion) all pass. Frontend: `npx tsc --noEmit` and `eslint --fix` on touched files both pass (one pre-existing, unrelated `react-hooks/exhaustive-deps` warning in `InstallmentAccountDetail.tsx` was already there before this change).
+- Not yet done: e2e test coverage for these three items (no `test/*.e2e-spec.ts` / `e2e/*.spec.ts` added this run — only unit-level backend coverage for the loyalty change). Manual click-through verification also still pending the developer's own pass.
+
+## Implementation Log — 2026-07-28
+
+**For this scenario, I have done:**
+
+- Manually verified the 2026-07-27 entry's #2/#3/#4 items and the graduation-button fix end-to-end in the real app (logged in as Business Owner): created a customer with a Group ID and `Inactive` status, confirmed both persisted on reload/edit; confirmed the customer was auto-enrolled in loyalty with a zero balance visible on `pos/loyalty` without any manual "Create Loyalty Account" step; confirmed the graduation button correctly stays hidden on an `early_closed` seeded account.
+- Added backend e2e coverage for #2 and #4 (missing from the 2026-07-27 run): `test/crm-customer-groupid-loyalty.e2e-spec.ts` — 7 tests covering groupId create/update/list-filter on the CRM endpoint, and loyalty auto-enrollment across all three creation paths (CRM/Accounting/POS walk-in), plus a check that the manual "create loyalty account" endpoint now correctly 409s for an already-enrolled customer.
+- **Found and closed a real gap the developer spotted by reading the code directly**: `crm/customer/customer.dto.ts`'s `CustomerFilterDto` never got a `groupId` param, so the CRM customer list (`customer.service.ts`'s `findAll()`) couldn't filter by it — only Accounting's `ListCustomersQueryDto`/`customers.service.ts` could. Added `groupId` to `CustomerFilterDto`, wired it into `findAll()`'s `where` clause, and added `groupId` to `listSelect`/`CustomerListItemDto` so it's actually visible on list rows (previously only on the detail response). No frontend UI filter added — Accounting doesn't have one either (it only displays the value), so this is an API-parity fix, not new UI scope.
+
+**Worth flagging:**
+
+- No corresponding UI filter control exists for `groupId` on either CRM's or Accounting's customer list page — the filter is API-only for now (usable via `GET /crm/customers?groupId=...`). Flag if a "view household" UI affordance ends up wanted later.
+- Still not done: e2e coverage for #3 (status-on-create) and the graduation-button fix specifically — this run's new spec covers #2 and #4 only. The rest was manually verified but not automated.

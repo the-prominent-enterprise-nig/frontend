@@ -105,7 +105,12 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
   }
 
   async function handleCancelFromDetail(draft: ServiceDraft) {
-    if (!window.confirm(`Cancel service job "${draft.title}"? This cannot be undone.`)) return
+    const stockNote =
+      draft.status === 'installing'
+        ? ' The materials already issued for this job will be returned to inventory.'
+        : ''
+    if (!window.confirm(`Cancel service job "${draft.title}"?${stockNote} This cannot be undone.`))
+      return
     await cancelDraft(draft.id)
     closeDetail()
   }
@@ -113,7 +118,7 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
   async function handleCompleteFromDetail(id: string) {
     if (
       !window.confirm(
-        'Complete this job? This deducts the recorded actual materials from stock and cannot be undone.'
+        'Complete this job? Unused materials will be returned to inventory, and any usage beyond the estimate will be deducted. This cannot be undone.'
       )
     )
       return

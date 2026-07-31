@@ -29,6 +29,7 @@ type FormState = {
   shippingAddress: string
   paymentTerms: string
   creditLimit: string
+  groupId: string
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes: string
@@ -50,6 +51,7 @@ const empty: FormState = {
   shippingAddress: '',
   paymentTerms: '',
   creditLimit: '',
+  groupId: '',
   sourceChannel: 'pos_walkin',
   status: 'active',
   notes: '',
@@ -87,6 +89,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
           shippingAddress: c.shippingAddress ?? '',
           paymentTerms: c.paymentTerms ?? '',
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
+          groupId: c.groupId ?? '',
           sourceChannel: c.sourceChannel,
           status: c.status,
           notes: c.notes ?? '',
@@ -130,6 +133,7 @@ export default function EditCustomerForm({ id }: { id: string }) {
       shippingAddress: form.shippingAddress || undefined,
       paymentTerms: form.paymentTerms || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
+      groupId: form.groupId || undefined,
       sourceChannel: form.sourceChannel,
       status: form.status,
       notes: form.notes || undefined,
@@ -297,11 +301,10 @@ export default function EditCustomerForm({ id }: { id: string }) {
               ))}
             </select>
           </div>
-          <Field
-            label="Credit limit (₱)"
-            value={form.creditLimit}
-            onChange={(v) => setField('creditLimit', v)}
-          />
+          <Field label="Group ID" value={form.groupId} onChange={(v) => setField('groupId', v)} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Status</label>
             <select
@@ -314,20 +317,19 @@ export default function EditCustomerForm({ id }: { id: string }) {
               <option value="blocked">Blocked</option>
             </select>
           </div>
-        </div>
-
-        <div>
-          <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
-          <select
-            value={form.sourceChannel ?? 'pos_walkin'}
-            onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
-            className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="pos_walkin">POS Walk-in</option>
-            <option value="sales">Sales</option>
-            <option value="crm_lead">CRM Lead</option>
-            <option value="online">Online</option>
-          </select>
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Source channel</label>
+            <select
+              value={form.sourceChannel ?? 'pos_walkin'}
+              onChange={(e) => setField('sourceChannel', e.target.value as CustomerSourceChannel)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="pos_walkin">POS Walk-in</option>
+              <option value="sales">Sales</option>
+              <option value="crm_lead">CRM Lead</option>
+              <option value="online">Online</option>
+            </select>
+          </div>
         </div>
 
         <div>

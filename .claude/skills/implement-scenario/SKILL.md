@@ -13,6 +13,7 @@ You implement one module-scenario gap-analysis plan end to end: re-verify it, qu
 - Scenario plans: `frontend/docs/scenario-NN-<slug>-plan.md`
 - Pending requirement updates (optional, sibling to a plan doc): `frontend/docs/scenario-NN-<slug>-updates.md` — newer client feedback not yet merged into the plan doc's gap analysis, in dated append-only sections. Same `NN-<slug>` prefix as the plan doc, `-updates.md` instead of `-plan.md`.
 - Archive/index: `frontend/docs/module-scenarios.md`
+- One-page status checklist across all 14 scenarios: `frontend/docs/scenario-checklist.md` — kept in sync at the end of every run (Phase 4)
 - Seeded login accounts for manual testing: `frontend/docs/seed-data-reference.md`
 
 ## Role access hierarchy
@@ -97,7 +98,7 @@ Tell the developer directly, e.g.:
 - If they report a bug, fix it within the current part (repeat 3a-3c as needed) — never carry a known-broken part into the next one.
 - If they instead say to keep going without testing each part, that's their call to make explicitly — don't assume it by default.
 
-### Phase 4 — Update the scenario doc
+### Phase 4 — Update the scenario doc and the checklist
 
 Once every part in the confirmed scope from Phase 2 is implemented and manually confirmed, append — never overwrite the existing gap analysis above it:
 
@@ -116,6 +117,15 @@ Once every part in the confirmed scope from Phase 2 is implemented and manually 
 One log entry per run covering all its parts together — not one entry per part. Multiple runs accumulate as additional dated entries, so the doc stays a living record instead of going stale the moment any part of it ships.
 
 If any implemented part originated from a sibling `-updates.md` file, mark it consumed there too — strike the item through and add a one-line "merged into plan doc on `<date>`" note — so the updates file doesn't silently accumulate stale, already-done entries.
+
+**Then update `frontend/docs/scenario-checklist.md` to match** — this is not optional, and it happens every run that reaches Phase 4, not just ones that close the whole scenario:
+
+1. Find this scenario's top-level checkbox line by number.
+2. Re-derive its status from what's true right now, not from what changed: if every gap this scenario ever had is now closed, check the box (`- [x]`) and collapse its sub-bullets to a single "fully closed" status (or delete the sub-bullet list entirely). If gaps remain — either because this run only covered a subset of the confirmed scope, or because some items were explicitly deferred — leave the box unchecked (`- [ ]`) and rewrite the sub-bullet list to reflect exactly what's still open, removing anything this run closed and adding anything newly discovered (e.g. a bug Phase 1's re-verification turned up that the plan doc never listed).
+3. If Phase 1's re-verification found doc drift worth flagging (a plan doc claim that no longer matches code, in either direction), add or update a short bullet under the checklist's `## Notes` section — same spirit as the existing entries there.
+4. Bump the "Last verified" date at the top of the checklist file to today.
+
+Treat the checklist as a derived view of the 14 plan docs' current truth, not a second source of record — when in doubt, what you just verified in Phase 1/3 wins over what the checklist previously said.
 
 ### Phase 5 — Ask "are you done?"
 
@@ -179,6 +189,7 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - [ ] Never hand-roll waits in Playwright specs — use the existing `gotoReady`/`fillStable` helpers
 - [ ] Never run backend e2e as a full-suite batch — run the new spec individually
 - [ ] Never overwrite prior "Implementation Log" entries in the scenario doc — append only
+- [ ] Never finish Phase 4 without also updating this scenario's line and sub-bullets in `frontend/docs/scenario-checklist.md` — the checklist must reflect the doc's current truth, not just the plan doc itself
 - [ ] Never invent a PR body structure — always read the live `pull_request_template.md` files
 - [ ] Never auto-create or push a PR — output copy-paste-ready text only
 - [ ] Never skip the "are you done?" gate — PR text is generated only after explicit confirmation
@@ -193,7 +204,7 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - `Read` / `Grep` (via Bash) — resolve the scenario doc, spot-check cited code
 - `Agent` (Explore) — for larger re-verification passes across many citations
 - `AskUserQuestion` — surface flagged decisions and confirm scope/branch posture
-- `Edit` / `Write` — implement code changes, add e2e specs, update the scenario doc, no-op the PR templates into filled copies (output only, not committed as files)
+- `Edit` / `Write` — implement code changes, add e2e specs, update the scenario doc and `frontend/docs/scenario-checklist.md`, no-op the PR templates into filled copies (output only, not committed as files)
 - `Bash` — run `npx jest --config test/jest-e2e.json --testPathPatterns <slug>` and `npm run test:e2e`, plus `git config user.email` to resolve the current user
 - `clickup_get_workspace_members` — resolve the current user's ClickUp member ID for assignment (Phase 7)
 - `clickup_update_task` — move the matching ticket(s) to "in review" and assign to the current user once the PR text is handed back (Phase 7)
