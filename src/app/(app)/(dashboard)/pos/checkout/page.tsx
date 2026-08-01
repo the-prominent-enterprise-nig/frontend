@@ -4594,8 +4594,6 @@ function NewCustomerModal({
     isTaxExempt: false,
     taxExemptionRef: '',
     shippingAddress: '',
-    paymentTerms: '',
-    status: 'active' as CustomerExtraFieldsValues['status'],
     notes: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -4627,8 +4625,8 @@ function NewCustomerModal({
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
       shippingAddress: form.shippingAddress.trim() || undefined,
-      paymentTerms: form.paymentTerms || undefined,
-      status: form.status,
+      // Fixed, not user-selectable — a walk-in customer always starts active.
+      status: 'active',
       note: form.notes.trim() || undefined,
     })
     setSubmitting(false)

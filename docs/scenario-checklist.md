@@ -2,14 +2,12 @@
 
 One-page status for all module scenarios (14 from the original source, plus 15-21 added 2026-07-31 from a second client scenario map — see [module-scenarios.md](./module-scenarios.md)'s "Draft 2 additions" for the full routing table). Each row is re-verified against the actual `development` branch code in both repos (not just the plan docs' own checkmarks, which can drift) — see the full gap analysis and Implementation Log in each scenario's own plan doc for file/line evidence.
 
-Last verified: 2026-07-31.
+Last verified: 2026-08-01.
 
 - [x] **01 — POS Installment Sale** — fully closed. [plan](./scenario-01-pos-installment-sale-plan.md)
-- [ ] **02 — CRM Customer Profile** — nearly done, gaps below. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
+- [ ] **02 — CRM Customer Profile** — core done (2026-08-01: co-maker, duplicate detection, BM/AR merge-resolution, ID/consent capture, Lead-conversion loyalty bug); Smart SMS + segment campaigns remain out of scope pending their own integration/scoping pass. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
   - [ ] Smart SMS — still just a TODO comment, no provider wired
   - [ ] Segment → campaign send mechanism doesn't exist
-  - [ ] Bug: Lead→Customer conversion skips loyalty auto-enrollment (the other 3 creation paths enroll, this one doesn't)
-  - [ ] No co-maker (guarantor) entity, no duplicate-customer detection, no BM/AR merge-resolution workflow, no ID/consent capture (2026-07-31 update)
 - [x] **03 — Reservation / Advance Sale** — fully closed. [plan](./scenario-03-reservation-advance-sale-plan.md)
 - [x] **04 — POS Cross-Branch Serial** — fully closed. [plan](./scenario-04-pos-cross-branch-serial-plan.md)
 - [ ] **05 — Receiving** — core gaps fixed, 2 minor items open. [plan](./scenario-05-receiving-plan.md) / [updates](./scenario-05-receiving-updates.md)

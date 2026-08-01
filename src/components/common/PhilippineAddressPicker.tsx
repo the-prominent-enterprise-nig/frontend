@@ -1,17 +1,56 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import {
-  regions,
-  provinces,
-  cities,
-  barangays,
-  type PhRegion,
-  type PhProvince,
-  type PhCity,
-  type PhBarangay,
-} from 'select-philippines-address'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+
+interface PhRegion {
+  region_code: string
+  region_name: string
+}
+interface PhProvince {
+  province_code: string
+  province_name: string
+  region_code: string
+}
+interface PhCity {
+  city_code: string
+  city_name: string
+  province_code: string
+}
+interface PhBarangay {
+  brgy_code: string
+  brgy_name: string
+  city_code: string
+}
+
+// Self-hosted under public/data/ph-address (see that folder) instead of the
+// select-philippines-address package, which hit a third-party GitHub Pages
+// host with no caching — 8-10s per level, even for the 2KB region file.
+// Each dataset is fetched once per page session (module-level cache, not
+// per-component-instance) and filtered client-side for every subsequent
+// selection, so switching regions/provinces/cities after the first load is
+// instant.
+let regionsCache: Promise<PhRegion[]> | null = null
+let provincesCache: Promise<PhProvince[]> | null = null
+let citiesCache: Promise<PhCity[]> | null = null
+let barangaysCache: Promise<PhBarangay[]> | null = null
+
+function fetchRegions(): Promise<PhRegion[]> {
+  regionsCache ??= fetch('/data/ph-address/region.json').then((r) => r.json())
+  return regionsCache
+}
+function fetchProvinces(): Promise<PhProvince[]> {
+  provincesCache ??= fetch('/data/ph-address/province.json').then((r) => r.json())
+  return provincesCache
+}
+function fetchCities(): Promise<PhCity[]> {
+  citiesCache ??= fetch('/data/ph-address/city.json').then((r) => r.json())
+  return citiesCache
+}
+function fetchBarangays(): Promise<PhBarangay[]> {
+  barangaysCache ??= fetch('/data/ph-address/barangay.json').then((r) => r.json())
+  return barangaysCache
+}
 
 /** Cash-register-style Philippine address picker — Region → Province →
  * City/Municipality → Barangay, each a searchable (type-to-filter) select
@@ -40,7 +79,7 @@ export default function PhilippineAddressPicker({
   const [loadingBarangays, setLoadingBarangays] = useState(false)
 
   useEffect(() => {
-    regions()
+    fetchRegions()
       .then((r) => setRegionList(Array.isArray(r) ? r : []))
       .finally(() => setLoadingRegions(false))
   }, [])
@@ -54,8 +93,8 @@ export default function PhilippineAddressPicker({
     setBarangayName('')
     if (!regionCode) return
     setLoadingProvinces(true)
-    provinces(regionCode)
-      .then((p) => setProvinceList(Array.isArray(p) ? p : []))
+    fetchProvinces()
+      .then((all) => setProvinceList(all.filter((p) => p.region_code === regionCode)))
       .finally(() => setLoadingProvinces(false))
   }, [regionCode])
 
@@ -66,8 +105,8 @@ export default function PhilippineAddressPicker({
     setBarangayName('')
     if (!provinceCode) return
     setLoadingCities(true)
-    cities(provinceCode)
-      .then((c) => setCityList(Array.isArray(c) ? c : []))
+    fetchCities()
+      .then((all) => setCityList(all.filter((c) => c.province_code === provinceCode)))
       .finally(() => setLoadingCities(false))
   }, [provinceCode])
 
@@ -76,8 +115,8 @@ export default function PhilippineAddressPicker({
     setBarangayName('')
     if (!cityCode) return
     setLoadingBarangays(true)
-    barangays(cityCode)
-      .then((b) => setBarangayList(Array.isArray(b) ? b : []))
+    fetchBarangays()
+      .then((all) => setBarangayList(all.filter((b) => b.city_code === cityCode)))
       .finally(() => setLoadingBarangays(false))
   }, [cityCode])
 
