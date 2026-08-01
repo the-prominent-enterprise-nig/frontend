@@ -6,7 +6,7 @@ Source: `module-scenarios.md`, scenario "CRM — documenting a customer before t
 
 - [86d3abzf7](https://app.clickup.com/t/86d3abzf7) — "AA Cashier, ISBAT create a walk-in customer profile" — _Sprint 3, for qa_
 - [86d3aat2z](https://app.clickup.com/t/86d3aat2z) — "AA Sales Rep, ISBAT create and manage customer profiles" — _Sprint 3, done_
-- [86d3d19qn](https://app.clickup.com/t/86d3d19qn) — "AA Cashier, ISBAT be warned of a potential duplicate when adding a new customer" — _Sprint 3, to do_
+- [86d3d19qn](https://app.clickup.com/t/86d3d19qn) — "AA Cashier, ISBAT be warned of a potential duplicate when adding a new customer" — _Sprint 3, in review_
 - [86d3aat8g](https://app.clickup.com/t/86d3aat8g) — "AA Sales Rep, ISBAT view a customer 360 view with interactions, reminders, and leads" — _Sprint 3, done_
 - [86d3aat7v](https://app.clickup.com/t/86d3aat7v) — "AA Sales Manager, ISBAT create rule-based customer segments" — _Sprint 3, in progress_ — relates to Gap "marketing retargeting is list-building only, not campaigns"
 - [86d3an2je](https://app.clickup.com/t/86d3an2je) — "AA Sales Manager, ISBAT export a customer segment to CSV" — _Sprint 3, to do_
