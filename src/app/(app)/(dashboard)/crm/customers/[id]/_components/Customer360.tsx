@@ -147,9 +147,13 @@ export default function Customer360({
           <h1 className="text-2xl font-semibold text-gray-900">{data.name}</h1>
           <div className="mt-1 text-sm text-gray-500">
             {data.companyName ? `${data.companyName} · ` : ''}
+            {data.customerType === 'business' && data.businessCategory
+              ? `${data.businessCategory === 'government' ? 'Government' : 'Private'} · `
+              : ''}
             {data.customerType === 'employee' && data.employeeNumber
               ? `Employee ID: ${data.employeeNumber} · `
               : ''}
+            {data.birthday ? `Birthday: ${new Date(data.birthday).toLocaleDateString()} · ` : ''}
             Source: {data.sourceChannel} · Status: {data.status}
           </div>
         </div>

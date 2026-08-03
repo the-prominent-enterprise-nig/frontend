@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable, fillStable } from './utils'
+import { gotoReady, fillAllStable, fillStable, fillPhoneStable } from './utils'
 
 // CRM — Add Customer (scenario step 1: "find or create the customer ... a
 // customer can exist without buying").
@@ -25,6 +25,13 @@ test.describe('CRM — Add Customer', () => {
         value: streetAddress,
       },
     ])
+    // Phone is a PhoneInput (react-phone-number-input) — it reformats
+    // whatever's typed, so it can't go through fillAllStable's exact-value
+    // check and gets its own stable-fill helper instead.
+    await fillPhoneStable(
+      page.locator('.phone-input-field'),
+      `9${uniqueSuffix.toString().slice(-9)}`
+    )
 
     // Part 3 (scenario-02): co-maker capture.
     const coMakerName = `E2E Co-maker ${uniqueSuffix}`
