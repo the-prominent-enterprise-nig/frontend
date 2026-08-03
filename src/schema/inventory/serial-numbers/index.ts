@@ -1,6 +1,13 @@
 import { z } from 'zod'
 
-export const SerialStatusSchema = z.enum(['in_stock', 'sold', 'returned', 'defective', 'scrapped'])
+export const SerialStatusSchema = z.enum([
+  'in_stock',
+  'sold',
+  'returned',
+  'defective',
+  'scrapped',
+  'quarantine',
+])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
@@ -9,6 +16,7 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   returned: 'Returned',
   defective: 'Defective',
   scrapped: 'Scrapped',
+  quarantine: 'Quarantine',
 }
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
@@ -17,6 +25,7 @@ export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   returned: 'bg-yellow-100 text-yellow-700',
   defective: 'bg-red-100 text-red-700',
   scrapped: 'bg-zinc-100 text-zinc-600',
+  quarantine: 'bg-orange-100 text-orange-700',
 }
 
 export const RegisterSerialsFormSchema = z.object({

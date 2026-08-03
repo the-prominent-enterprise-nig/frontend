@@ -1,7 +1,12 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useTransactions, useSessions, useTerminals } from './_hooks/usePos'
+import {
+  useTransactions,
+  useSessions,
+  useTerminals,
+  useOpenReturnRefundCases,
+} from './_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import {
@@ -37,6 +42,9 @@ export default function PosOverviewPage() {
   } = useTransactions(branchFilter, autoRefresh)
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
   const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
+  // Scenario 18 — visible to anyone who can see this dashboard at all
+  // (open-cases is gated only on pos:transactions:read).
+  const { data: openCasesData } = useOpenReturnRefundCases(branchId ?? undefined, autoRefresh)
 
   type Row = Record<string, unknown>
   const transactions = (() => {
@@ -66,6 +74,26 @@ export default function PosOverviewPage() {
         new Date(String(a.createdAt ?? '')).getTime()
     )
     .slice(0, 5)
+
+  // Scenario 18 — a transaction with a pending void/refund case against it
+  // stays `completed` until that case is resolved (the case is opened
+  // without deleting/altering the original sale), so this map is what
+  // actually surfaces the in-progress case on the row instead.
+  const pendingByTransactionId = new Map<string, { type: string; status: string }>()
+  if (openCasesData?.success && openCasesData.data) {
+    for (const req of openCasesData.data) {
+      const txId = req.type === 'refund' ? req.originalTransactionId : req.transactionId
+      if (txId) pendingByTransactionId.set(txId, { type: req.type, status: req.status })
+    }
+  }
+
+  function pendingCaseLabel(info: { type: string; status: string }): string {
+    const typeLabel =
+      info.type === 'void' ? 'Void' : info.type === 'refund' ? 'Refund' : 'Cancellation'
+    const stageLabel =
+      info.status === 'pending_inspection' ? 'Awaiting Inspection' : 'Awaiting Approval'
+    return `${typeLabel} · ${stageLabel}`
+  }
 
   const isLoading = txLoading || sessLoading || termLoading
 
@@ -259,15 +287,21 @@ export default function PosOverviewPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3">
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            tx.status === 'completed'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {String(tx.status ?? '')}
-                        </span>
+                        {pendingByTransactionId.has(String(tx.id ?? '')) ? (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            {pendingCaseLabel(pendingByTransactionId.get(String(tx.id ?? ''))!)}
+                          </span>
+                        ) : (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              tx.status === 'completed'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {String(tx.status ?? '')}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-right font-semibold text-gray-900">
                         {formatCurrency(parseFloat(String(tx.totalAmount ?? 0)))}

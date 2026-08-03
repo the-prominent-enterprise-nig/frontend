@@ -809,7 +809,7 @@ export interface InstallmentSchedule {
 }
 
 // Void Requests
-export type PosVoidRequestStatus = 'pending' | 'approved' | 'rejected'
+export type PosVoidRequestStatus = 'pending_inspection' | 'pending' | 'approved' | 'rejected'
 export type PosVoidRequestType = 'void' | 'edit'
 
 export interface PosVoidRequest {
@@ -981,7 +981,13 @@ export interface ReviewReleaseFormInput {
 // this queue is the NEW shared surface going forward for all three types.
 
 export type PosReturnRefundType = 'cancellation' | 'void' | 'refund'
-export type PosReturnRefundStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired'
+export type PosReturnRefundStatus =
+  | 'pending_inspection'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'expired'
 
 export interface PosReturnRefundRequest {
   id: string
@@ -991,6 +997,11 @@ export interface PosReturnRefundRequest {
   /** Dual-purpose on the backend: the source transaction for type='void',
    * and the *result* transaction (set on approval) for type='refund'. */
   transactionId?: string | null
+  /** type='refund' only — the existing completed transaction this refund is
+   * against, before approval creates the actual refund transaction (which
+   * transactionId then points to). Use this, not transactionId, to link a
+   * pending refund request back to the original sale it's refunding. */
+  originalTransactionId?: string | null
   requestedById: string
   reason?: string | null
   status: PosReturnRefundStatus
@@ -998,6 +1009,11 @@ export interface PosReturnRefundRequest {
   reviewNotes?: string | null
   createdAt: string
   reviewedAt?: string | null
+  /** Scenario 18 — Quarantine + inspection. type=void/refund only; set once
+   * a Stock Controller (or above) inspects the returned unit(s). */
+  inspectedById?: string | null
+  inspectedAt?: string | null
+  inspectionNotes?: string | null
   /** Present for refund requests only (cart-snapshot based) — the wire
    * field is refundCartSnapshot, not cartSnapshot. */
   refundCartSnapshot?: PosReleaseFormCartSnapshot | null
@@ -1031,6 +1047,20 @@ export interface ReturnRefundStatusResult {
 
 export interface ReviewReturnRefundInput {
   reviewNotes?: string
+}
+
+/** Minimal shape from GET /pos/return-refund-requests/open-cases — a
+ * lightweight badge signal any pos:transactions:read holder can fetch,
+ * deliberately not the fuller pending/pending-inspection queue shapes. */
+export interface PosReturnRefundOpenCase {
+  type: PosReturnRefundType
+  status: PosReturnRefundStatus
+  transactionId: string | null
+  originalTransactionId: string | null
+}
+
+export interface InspectReturnRefundInput {
+  inspectionNotes: string
 }
 
 /** Response shape when POST /pos/transactions defers a refund to manager

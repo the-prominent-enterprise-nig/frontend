@@ -65,6 +65,7 @@ import {
   getPendingVoidRequests,
   approveVoidRequest,
   rejectVoidRequest,
+  getOpenReturnRefundCases,
   getFinancingTerms,
   getActiveFinancingTerms,
   createFinancingTerm,
@@ -231,6 +232,26 @@ export function useTransactions(
     queryFn: () => getTransactions(filters),
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
+    ...options,
+  })
+}
+
+/**
+ * Open void/refund cases per transaction (Scenario 18) — a lightweight
+ * badge signal for the Transactions list, gated only on
+ * pos:transactions:read (the same permission needed to view the list at
+ * all), unlike the fuller manager/inspector review-queue endpoints. Safe to
+ * call unconditionally for any transactions-list viewer, cashier included.
+ */
+export function useOpenReturnRefundCases(
+  branchId?: string,
+  options?: { refetchInterval?: number; refetchOnWindowFocus?: boolean }
+) {
+  return useQuery({
+    queryKey: ['pos-return-refund-requests-open-cases', branchId],
+    queryFn: () => getOpenReturnRefundCases(branchId),
+    staleTime: 30 * 1000,
+    retry: false,
     ...options,
   })
 }

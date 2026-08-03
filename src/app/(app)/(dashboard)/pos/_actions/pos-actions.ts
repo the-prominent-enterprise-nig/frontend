@@ -71,8 +71,10 @@ import type {
   ReleaseFormStatusResult,
   ReviewReleaseFormInput,
   PosReturnRefundRequest,
+  PosReturnRefundOpenCase,
   ReturnRefundStatusResult,
   ReviewReturnRefundInput,
+  InspectReturnRefundInput,
   SkuReservation,
   CreateSkuReservationInput,
   SkuReservationFilters,
@@ -110,6 +112,7 @@ const TAGS = {
   releaseFormRequest: (id: string) => `pos-release-form-request-${id}`,
   returnRefundRequests: 'pos-return-refund-requests',
   returnRefundRequest: (id: string) => `pos-return-refund-request-${id}`,
+  returnRefundPendingInspections: 'pos-return-refund-pending-inspections',
   cashInTransit: 'pos-cash-in-transit',
   skuReservations: 'inventory-sku-reservations',
   skuReservation: (id: string) => `inventory-sku-reservation-${id}`,
@@ -2587,6 +2590,77 @@ export async function rejectReturnRefundRequest(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to reject request' }
+  }
+}
+
+/**
+ * Stock Controller's queue (Scenario 18) — void/refund requests awaiting
+ * physical inspection before a BM/HO can approve/reject them. Mirrors
+ * getPendingReturnRefundRequests but hits the dedicated pending-inspection
+ * endpoint, which is permission-gated separately (inventory:returns:inspect
+ * rather than pos:transaction:override).
+ */
+export async function getPendingInspectionReturnRefundRequests(
+  branchId?: string
+): Promise<ApiResponse<PosReturnRefundRequest[]>> {
+  try {
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending-inspection',
+      branchId ? { branchId } : undefined,
+      { tags: [TAGS.returnRefundPendingInspections] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch pending inspections' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch pending inspections' }
+  }
+}
+
+/**
+ * Lightweight open-case signal for the Transactions list (Scenario 18) —
+ * gated only on pos:transactions:read, so anyone who can already view the
+ * transaction list (including a cashier) can see that a pending void/refund
+ * exists against a row and roughly what stage it's at, without exposing the
+ * fuller manager/inspector review queues' detail (requester, reason, etc.).
+ */
+export async function getOpenReturnRefundCases(
+  branchId?: string
+): Promise<ApiResponse<PosReturnRefundOpenCase[]>> {
+  try {
+    const result = await api.get<PosReturnRefundOpenCase[]>(
+      '/pos/return-refund-requests/open-cases',
+      branchId ? { branchId } : undefined,
+      { tags: [TAGS.returnRefundRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch open cases' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch open cases' }
+  }
+}
+
+export async function inspectReturnRefundRequest(
+  requestId: string,
+  input: InspectReturnRefundInput
+): Promise<ApiResponse<PosReturnRefundRequest>> {
+  try {
+    const result = await api.post<PosReturnRefundRequest>(
+      `/pos/return-refund-requests/${requestId}/inspect`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to record inspection' }
+    }
+    revalidateTag(TAGS.returnRefundPendingInspections, 'max')
+    revalidateTag(TAGS.returnRefundRequests, 'max')
+    revalidateTag(TAGS.returnRefundRequest(requestId), 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to record inspection' }
   }
 }
 

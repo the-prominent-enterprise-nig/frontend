@@ -99,6 +99,7 @@ export const INVENTORY_PERMISSIONS = {
   // ── Returns ────────────────────────────────────────────────────────────────
   RETURNS_READ: 'inventory:returns:read',
   RETURNS_CREATE: 'inventory:returns:create',
+  RETURNS_INSPECT: 'inventory:returns:inspect',
 
   // ── Costing ────────────────────────────────────────────────────────────────
   COSTING_READ: 'inventory:costing:read',
@@ -232,6 +233,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:quality-hold:manage': 'Place, release, or reject quality holds on received stock',
   'inventory:returns:read': 'View return records',
   'inventory:returns:create': 'Process returned items back into inventory',
+  'inventory:returns:inspect':
+    "Inspect a POS void/refund request's returned unit(s) and move them to Quarantine before manager disposition",
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
   'inventory:variants:read': 'View item variants',

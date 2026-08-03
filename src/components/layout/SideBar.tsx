@@ -34,6 +34,7 @@ import {
   TrendingUp,
   Package,
   PackageCheck,
+  PackageSearch,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -170,6 +171,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/uds',
         icon: ClipboardCheck,
         requiredPermission: INVENTORY_PERMISSIONS.UDS_READ,
+      },
+      {
+        label: 'Return Inspections',
+        href: '/inventory/return-inspections',
+        icon: PackageSearch,
+        requiredPermission: INVENTORY_PERMISSIONS.RETURNS_INSPECT,
       },
       {
         label: 'Reports',

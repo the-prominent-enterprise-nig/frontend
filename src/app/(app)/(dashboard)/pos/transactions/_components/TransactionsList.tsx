@@ -9,6 +9,7 @@ import {
   useVoidRequests,
   useSubmitVoidRequest,
   useSessions,
+  useOpenReturnRefundCases,
 } from '../../_hooks/usePos'
 import {
   RefreshCw,
@@ -106,6 +107,29 @@ export default function TransactionsList({ session }: Props) {
   )
 
   const transactions: PosTransaction[] = data?.data ?? []
+
+  // Scenario 18 — a transaction with a pending void/refund case stays
+  // `completed` until that case resolves (the original sale is preserved,
+  // not touched, while the case is open), so this surfaces the in-progress
+  // case on the row instead. Visible to anyone who can see this list at all
+  // (open-cases is gated only on pos:transactions:read) — a cashier should
+  // see the status of a transaction they can already see, same as a manager.
+  const { data: openCasesData } = useOpenReturnRefundCases(branchId ?? undefined)
+  const pendingByTransactionId = new Map<string, { type: string; status: string }>()
+  if (openCasesData?.success && openCasesData.data) {
+    for (const req of openCasesData.data) {
+      const txId = req.type === 'refund' ? req.originalTransactionId : req.transactionId
+      if (txId) pendingByTransactionId.set(txId, { type: req.type, status: req.status })
+    }
+  }
+
+  function pendingCaseLabel(info: { type: string; status: string }): string {
+    const typeLabel =
+      info.type === 'void' ? 'Void' : info.type === 'refund' ? 'Refund' : 'Cancellation'
+    const stageLabel =
+      info.status === 'pending_inspection' ? 'Awaiting Inspection' : 'Awaiting Approval'
+    return `${typeLabel} · ${stageLabel}`
+  }
 
   async function handleVoid() {
     if (!voidTarget) return
@@ -393,11 +417,17 @@ export default function TransactionsList({ session }: Props) {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[tx.status]}`}
-                      >
-                        {tx.status}
-                      </span>
+                      {pendingByTransactionId.has(tx.id) ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          {pendingCaseLabel(pendingByTransactionId.get(tx.id)!)}
+                        </span>
+                      ) : (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[tx.status]}`}
+                        >
+                          {tx.status}
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-gray-600">
                       <PosDateTime iso={tx.occurredAt ?? tx.createdAt} />
@@ -421,6 +451,7 @@ export default function TransactionsList({ session }: Props) {
           onClose={() => setDetail({ type: 'none' })}
           canVoid={canVoid}
           canRefund={canRefund}
+          hasPendingRefund={pendingByTransactionId.get(detail.transaction.id)?.type === 'refund'}
           onVoid={() => {
             setDetail({ type: 'none' })
             openVoidModal(detail.transaction)
@@ -602,6 +633,7 @@ function TransactionDetail({
   onClose,
   canVoid,
   canRefund,
+  hasPendingRefund,
   onVoid,
   onRefunded,
 }: {
@@ -610,6 +642,10 @@ function TransactionDetail({
   onClose: () => void
   canVoid?: boolean
   canRefund?: boolean
+  /** Scenario 18 — a refund is already open (pending_inspection or pending)
+   * against this transaction; blocks a duplicate submission the same way
+   * hasPendingRequest does for void, below. */
+  hasPendingRefund?: boolean
   onVoid?: () => void
   onRefunded?: () => void
 }) {
@@ -640,7 +676,14 @@ function TransactionDetail({
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
   const voidRequests: PosVoidRequest[] = voidReqRes?.data ?? []
-  const hasPendingRequest = voidRequests.some((r) => r.status === 'pending')
+  // Scenario 18 — a void spends most of its open lifetime at
+  // pending_inspection (before a Stock Controller inspects it), not just
+  // pending (awaiting manager approval); both count as "already open" for
+  // blocking a duplicate submission.
+  const openVoidRequest = voidRequests.find(
+    (r) => r.status === 'pending_inspection' || r.status === 'pending'
+  )
+  const hasPendingRequest = !!openVoidRequest
 
   const submitVoidMutation = useSubmitVoidRequest()
   const [voidReason, setVoidReason] = useState('')
@@ -994,7 +1037,7 @@ function TransactionDetail({
                   <Printer size={12} />
                   {reprinting ? 'Loading…' : 'Reprint'}
                 </button>
-                {canRefund && isRefundable && (
+                {canRefund && isRefundable && !hasPendingRefund && (
                   <button
                     onClick={() => setShowRefund(true)}
                     className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
@@ -1002,6 +1045,11 @@ function TransactionDetail({
                     <Undo2 size={12} />
                     Refund
                   </button>
+                )}
+                {canRefund && isRefundable && hasPendingRefund && (
+                  <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                    A refund request is already open for this transaction
+                  </span>
                 )}
               </div>
             </>
@@ -1047,9 +1095,14 @@ function TransactionDetail({
                 ))
               )}
 
-              {/* Submit form — only for completed transactions with no pending request */}
+              {/* Submit form — only for completed transactions with no pending
+                  request. Gated on !voidReqLoading too — hasPendingRequest
+                  defaults to false while voidRequests is still loading, so
+                  without this the form could flash visible for a moment on
+                  a slow connection before the pending-check resolves. */}
               {canRequestVoid &&
                 tx.status === 'completed' &&
+                !voidReqLoading &&
                 !hasPendingRequest &&
                 !submitSuccess && (
                   <div className="rounded-xl border border-gray-200 p-4">
@@ -1082,7 +1135,9 @@ function TransactionDetail({
 
               {hasPendingRequest && (
                 <p className="rounded-lg bg-yellow-50 px-4 py-3 text-xs text-yellow-700">
-                  A void request is already pending manager review.
+                  {openVoidRequest?.status === 'pending_inspection'
+                    ? 'A void request is already awaiting Stock Controller inspection.'
+                    : 'A void request is already pending manager review.'}
                 </p>
               )}
             </div>
