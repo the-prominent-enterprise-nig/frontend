@@ -1,5 +1,15 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { gotoReady, fillStable, fillAllStable, fillPhoneStable, clickStable } from './utils'
+import {
+  clickStable,
+  deleteCustomers,
+  fillAllStable,
+  fillPhoneStable,
+  fillStable,
+  gotoReady,
+  sweepE2ECustomers,
+} from './utils'
+
+const CUSTOMER_NAME_PREFIX = 'E2E IaFixture'
 
 /** Same hydration-race retry fillStable uses, adapted for <select> (fill() doesn't work on selects). */
 async function selectStable(locator: Locator, value: string): Promise<void> {
@@ -31,7 +41,10 @@ async function submitStable(
   }).toPass({ timeout: opts.timeout ?? 30_000 })
 }
 
-async function createCustomerViaUi(page: Page, suffix: number): Promise<{ fullName: string }> {
+async function createCustomerViaUi(
+  page: Page,
+  suffix: number
+): Promise<{ fullName: string; customerId: string }> {
   const firstName = 'E2E'
   const lastName = `IaFixture${suffix}`
   const fullName = `${firstName} ${lastName}`
@@ -50,18 +63,9 @@ async function createCustomerViaUi(page: Page, suffix: number): Promise<{ fullNa
     () => expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 8_000 })
   )
 
-  return { fullName }
-}
-
-async function deleteCustomerViaUi(page: Page, fullName: string): Promise<void> {
-  await gotoReady(page, '/crm/customers')
-  await fillStable(page.getByPlaceholder(/search code, name, email/i), fullName)
-  await expect(page.getByText(fullName)).toBeVisible({ timeout: 10_000 })
-  await page.getByText(fullName).click()
-  await expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 15_000 })
-  page.once('dialog', (dialog) => dialog.accept())
-  await page.getByRole('button', { name: 'Delete customer' }).click()
-  await expect(page).toHaveURL(/\/crm\/customers$/, { timeout: 15_000 })
+  const customerId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
+  if (!customerId) throw new Error('createCustomerViaUi: customerId not found in URL after create')
+  return { fullName, customerId }
 }
 
 /**
@@ -195,6 +199,17 @@ test.describe('CRM — Collectors', () => {
 })
 
 test.describe('CRM — Installment Accounts', () => {
+  let createdCustomerIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, CUSTOMER_NAME_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdCustomerIds)
+    createdCustomerIds = []
+  })
+
   test('price checker modal computes financing terms without creating an account', async ({
     page,
   }) => {
@@ -236,7 +251,8 @@ test.describe('CRM — Installment Accounts', () => {
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -289,12 +305,12 @@ test.describe('CRM — Installment Accounts', () => {
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('requests graduation to Category C and approves it', async ({ page }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-GRAD-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -333,12 +349,12 @@ test.describe('CRM — Installment Accounts', () => {
     // was just filed and approved.
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('settles an active account early via the Settle early action', async ({ page }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-PO-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -383,7 +399,6 @@ test.describe('CRM — Installment Accounts', () => {
 
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('filters the installment accounts list by category and status', async ({ page }) => {

@@ -1,11 +1,24 @@
 import path from 'path'
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable, fillPhoneStable } from './utils'
+import { deleteCustomers, fillAllStable, fillPhoneStable, gotoReady, sweepE2ECustomers } from './utils'
+
+const NAME_PREFIX = 'E2E IdConsent'
 
 // CRM — Customer ID & Consent (scenario-02, 2026-07-31 update): capture a
 // scanned ID + type/number + consent on the profile, reusing the same
 // central Files store as UDS's RFS form upload.
 test.describe('CRM — Customer ID & Consent', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, NAME_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdIds)
+    createdIds = []
+  })
+
   test('uploads an ID document, fills type/number, gives consent, and shows it on the profile', async ({
     page,
   }) => {
@@ -92,8 +105,7 @@ test.describe('CRM — Customer ID & Consent', () => {
     await expect(page.getByText('rfs-form-sample.txt')).toBeVisible()
     await expect(page.getByText(/Consent given/)).toBeVisible()
 
-    // Cleanup.
     const customerId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
-    if (customerId) await page.request.delete(`/api/crm/customers/${customerId}`)
+    if (customerId) createdIds.push(customerId)
   })
 })
