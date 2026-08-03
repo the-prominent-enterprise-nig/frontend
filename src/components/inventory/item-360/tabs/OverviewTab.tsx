@@ -7,7 +7,7 @@ import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import ItemImageGallery from '@/src/app/(app)/(dashboard)/inventory/items/_components/ItemImageGallery'
 import { getItemTags } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/item-tags'
 import { STALE } from '@/src/libs/query/stale-times'
-import { formatClassificationLabel } from '@/src/libs/format/text'
+import { displayClassificationLabel } from '@/src/libs/format/text'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { formatShortDate, formatAge } from '@/src/libs/format/date'
 
@@ -167,14 +167,8 @@ export default function OverviewTab({
       {/* Identity */}
       <div className="grid grid-cols-2 gap-4">
         <Field label="SKU" value={<span className="font-mono">{item.sku}</span>} />
-        <Field
-          label="Category"
-          value={categoryName ? formatClassificationLabel(categoryName) : undefined}
-        />
-        <Field
-          label="Subcategory"
-          value={subcategoryName ? formatClassificationLabel(subcategoryName) : undefined}
-        />
+        <Field label="Category" value={displayClassificationLabel(categoryName)} />
+        <Field label="Subcategory" value={displayClassificationLabel(subcategoryName)} />
         <Field label="Unit of Measure" value={item.baseUnit?.name} />
         <Field label="Costing Method" value={COSTING_LABELS[(item as any).costingMethod] ?? '—'} />
         {item.isSerialTracked && (
@@ -195,15 +189,9 @@ export default function OverviewTab({
             Classification
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <Field
-              label="Brand"
-              value={item.brand ? formatClassificationLabel(item.brand.name) : undefined}
-            />
+            <Field label="Brand" value={displayClassificationLabel(item.brand?.name)} />
             <Field label="Model Number" value={item.modelNumber} />
-            <Field
-              label="Item Type"
-              value={item.type ? formatClassificationLabel(item.type.name) : undefined}
-            />
+            <Field label="Item Type" value={displayClassificationLabel(item.type?.name)} />
           </div>
         </div>
       )}

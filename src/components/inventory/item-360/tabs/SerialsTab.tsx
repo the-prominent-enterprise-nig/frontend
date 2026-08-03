@@ -8,7 +8,7 @@ import {
 } from '@/src/schema/inventory/serial-numbers'
 import { formatShortDate, formatAge } from '@/src/libs/format/date'
 import { originLabel } from '@/src/libs/format/serial-provenance'
-import { formatClassificationLabel } from '@/src/libs/format/text'
+import { displayClassificationLabel } from '@/src/libs/format/text'
 
 function SerialsSkeleton() {
   return (
@@ -85,7 +85,7 @@ export default function SerialsTab({
                 {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
               </td>
               <td className="px-2 py-2 text-zinc-600">
-                {serial.item?.type?.name ? formatClassificationLabel(serial.item.type.name) : '—'}
+                {displayClassificationLabel(serial.item?.type?.name) ?? '—'}
               </td>
               <td className="px-2 py-2 text-center">
                 <span

@@ -4,14 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import { Pencil, Trash2, ChevronDown, Layers, Palette, ExternalLink } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
-import { formatClassificationLabel } from '@/src/libs/format/text'
+import { displayClassificationLabel } from '@/src/libs/format/text'
 
 // "Group/Subgroup" classification lives on the category's own parent —
 // primaryCategory is the leaf (subgroup) when it has a parent, in which case
 // the parent is the main category to show here (matches OverviewTab).
 function mainCategoryName(item: ItemSummary): string | undefined {
   const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name
-  return name ? formatClassificationLabel(name) : undefined
+  return displayClassificationLabel(name)
 }
 
 const LIFECYCLE_COLORS: Record<string, string> = {
@@ -217,11 +217,11 @@ export default function ItemMasterTable({
                   </div>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">
-                  {item.brand?.name ? formatClassificationLabel(item.brand.name) : '—'}
+                  {displayClassificationLabel(item.brand?.name) ?? '—'}
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{item.modelNumber ?? '—'}</td>
                 <td className="px-4 py-3 text-zinc-500">
-                  {item.type?.name ? formatClassificationLabel(item.type.name) : '—'}
+                  {displayClassificationLabel(item.type?.name) ?? '—'}
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">

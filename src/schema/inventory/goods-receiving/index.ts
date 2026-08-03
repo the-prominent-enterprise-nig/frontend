@@ -76,12 +76,26 @@ export const StockBalanceSchema = z.object({
   updatedAt: z.string().optional(),
 })
 
-export const StockBalanceListResponseSchema = z.object({
-  data: z.array(StockBalanceSchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level — same shape as
+// ItemListResponseSchema/SerialNumberListResponseSchema. Parsing the real
+// shape and transforming it back to a flat one keeps every existing
+// consumer (useStockBalance's `pagination`) unchanged.
+export const StockBalanceListResponseSchema = z
+  .object({
+    data: z.array(StockBalanceSchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type StockBalance = z.infer<typeof StockBalanceSchema>
 export type StockBalanceListResponse = z.infer<typeof StockBalanceListResponseSchema>

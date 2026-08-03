@@ -17,7 +17,7 @@ import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { formatShortDate, formatAge } from '@/src/libs/format/date'
 import { originLabel } from '@/src/libs/format/serial-provenance'
-import { formatClassificationLabel } from '@/src/libs/format/text'
+import { displayClassificationLabel } from '@/src/libs/format/text'
 
 const statusOptions = SerialStatusSchema.options
 
@@ -384,15 +384,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                         {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
-                        <div>
-                          {serial.item?.brand?.name
-                            ? formatClassificationLabel(serial.item.brand.name)
-                            : '—'}
-                        </div>
+                        <div>{displayClassificationLabel(serial.item?.brand?.name) ?? '—'}</div>
                         <div className="text-xs text-zinc-400">
-                          {serial.item?.type?.name &&
-                            formatClassificationLabel(serial.item.type.name)}
-                          {serial.item?.type?.name && serial.item?.modelNumber && ' · '}
+                          {displayClassificationLabel(serial.item?.type?.name)}
+                          {displayClassificationLabel(serial.item?.type?.name) &&
+                            serial.item?.modelNumber &&
+                            ' · '}
                           <span className="font-mono">{serial.item?.modelNumber}</span>
                         </div>
                       </td>
