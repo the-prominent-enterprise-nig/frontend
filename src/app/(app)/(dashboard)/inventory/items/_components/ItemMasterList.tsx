@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, Search, X, Layers, ImagePlus, FileUp } from 'lucide-react'
+import { Plus, RefreshCw, Search, X, Layers, ImagePlus } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
 import CreateItemModal from './CreateItemModal'
 import EditItemModal from './EditItemModal'
@@ -10,7 +10,6 @@ import CreateBundleModal from '../../bundles/_components/CreateBundleModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
 import VariantsModal from './VariantsModal'
 import BulkImageImportModal from './BulkImageImportModal'
-import BulkImportItemsModal from './BulkImportItemsModal'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -32,8 +31,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     pagination,
     categories,
     uomOptions,
-    groupOptions,
-    subgroupOptions,
     brandOptions,
     typeOptions,
     isLoading,
@@ -52,6 +49,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setSortOrder,
     page,
     setPage,
+    limit,
+    setLimit,
     createItem,
     isCreating,
     updateItem,
@@ -88,7 +87,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isBundleCreateOpen, setIsBundleCreateOpen] = useState(false)
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false)
-  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
 
@@ -142,17 +140,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
                 <ImagePlus className="h-4 w-4" />
                 <span className="hidden sm:inline">Bulk Import Images</span>
                 <span className="sm:hidden">Images</span>
-              </button>
-            )}
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setIsCsvImportOpen(true)}
-                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                <FileUp className="h-4 w-4" />
-                <span className="hidden sm:inline">Import CSV</span>
-                <span className="sm:hidden">CSV</span>
               </button>
             )}
             {canCreate && (
@@ -258,33 +245,49 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         />
 
         {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>
-              Showing {(page - 1) * pagination.limit + 1}–
-              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1.5 font-medium text-zinc-700">
-                {page} / {pagination.totalPages}
+        {pagination.total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {(page - 1) * pagination.limit + 1}–
+                {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
               </span>
-              <button
-                type="button"
-                onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                disabled={page >= pagination.totalPages}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Next
-              </button>
+              <label className="flex items-center gap-1.5">
+                <span className="text-zinc-400">Per page</span>
+                <select
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
             </div>
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 font-medium text-zinc-700">
+                  {page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page >= pagination.totalPages}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -297,8 +300,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         isSubmitting={isCreating}
         categories={categories}
         uomOptions={uomOptions}
-        groupOptions={groupOptions}
-        subgroupOptions={subgroupOptions}
         brandOptions={brandOptions}
         typeOptions={typeOptions}
       />
@@ -315,8 +316,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onAttributeSubmit={(attrs) => updateItemAttributes(editTarget!.id, attrs)}
         isAttributeSubmitting={isUpdatingAttributes}
         canReadAttributes={canReadAttributes}
-        groupOptions={groupOptions}
-        subgroupOptions={subgroupOptions}
         brandOptions={brandOptions}
         typeOptions={typeOptions}
       />
@@ -354,9 +353,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onClose={() => setIsBulkImportOpen(false)}
         items={itemOptions}
       />
-
-      {/* Bulk CSV Import Modal */}
-      <BulkImportItemsModal isOpen={isCsvImportOpen} onClose={() => setIsCsvImportOpen(false)} />
 
       {/* Variants Modal */}
       <VariantsModal

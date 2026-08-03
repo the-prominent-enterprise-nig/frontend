@@ -4,6 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import { Pencil, Trash2, ChevronDown, Layers, Palette, ExternalLink } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
+import { formatClassificationLabel } from '@/src/libs/format/text'
+
+// "Group/Subgroup" classification lives on the category's own parent —
+// primaryCategory is the leaf (subgroup) when it has a parent, in which case
+// the parent is the main category to show here (matches OverviewTab).
+function mainCategoryName(item: ItemSummary): string | undefined {
+  const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name
+  return name ? formatClassificationLabel(name) : undefined
+}
 
 const LIFECYCLE_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -150,13 +159,16 @@ export default function ItemMasterTable({
                 SKU
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Name
+                Brand
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Model
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Type
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Category
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Unit
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Cost Price
@@ -178,12 +190,9 @@ export default function ItemMasterTable({
                 className="cursor-pointer hover:bg-zinc-50"
                 onClick={() => pushPanel({ type: 'item360', itemId: item.id, itemName: item.name })}
               >
-                <td className="px-4 py-3 font-mono text-xs font-medium text-zinc-700">
-                  {item.sku}
-                </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-zinc-900">{item.name}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-medium text-zinc-700">{item.sku}</span>
                     {item.isBundle === true && (
                       <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
                         Bundle
@@ -199,16 +208,28 @@ export default function ItemMasterTable({
                         Service
                       </span>
                     )}
+                    {(item._count?.serialNumbers ?? 0) > 0 && (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                        {item._count?.serialNumbers} unit
+                        {item._count?.serialNumbers !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-500">{item.primaryCategory?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-zinc-500">{item.baseUnit?.code ?? '—'}</td>
+                <td className="px-4 py-3 text-zinc-500">
+                  {item.brand?.name ? formatClassificationLabel(item.brand.name) : '—'}
+                </td>
+                <td className="px-4 py-3 text-zinc-500">{item.modelNumber ?? '—'}</td>
+                <td className="px-4 py-3 text-zinc-500">
+                  {item.type?.name ? formatClassificationLabel(item.type.name) : '—'}
+                </td>
+                <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">
                   {item.costPrice != null
                     ? `₱${Number(item.costPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
                     : '—'}
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                   {canManageLifecycle ? (
                     <LifecycleDropdown item={item} onLifecycleChange={onLifecycleChange} />
                   ) : (
@@ -237,19 +258,20 @@ export default function ItemMasterTable({
                         <button
                           type="button"
                           onClick={() => onViewBundle(item)}
-                          className="flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                          className="rounded p-1.5 text-prominent-purple-700 hover:bg-prominent-purple-50"
+                          title="View components"
                         >
-                          <Layers className="h-3.5 w-3.5" />
-                          Components
+                          <Layers className="h-4 w-4" />
                         </button>
                       )}
                       {!item.isBundle && onViewVariants && (
                         <button
                           type="button"
                           onClick={() => onViewVariants(item)}
-                          className="flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                          className="rounded p-1.5 text-blue-600 hover:bg-blue-50"
+                          title="View variants"
                         >
-                          <Palette className="h-3.5 w-3.5" />
+                          <Palette className="h-4 w-4" />
                         </button>
                       )}
                       {canUpdate && (
@@ -257,6 +279,7 @@ export default function ItemMasterTable({
                           type="button"
                           onClick={() => onEdit(item)}
                           className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-prominent-purple-700"
+                          title="Edit item"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -266,6 +289,7 @@ export default function ItemMasterTable({
                           type="button"
                           onClick={() => onDelete(item)}
                           className="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                          title="Delete item"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
