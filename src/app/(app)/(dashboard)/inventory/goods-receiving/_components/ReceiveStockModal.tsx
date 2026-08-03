@@ -22,6 +22,11 @@ type Props = {
   isSubmitting: boolean
   warehouses: WarehouseOption[]
   items: ItemSummary[]
+  /** Unit cost is sensitive pricing data — hidden from Branch Manager/Stock
+   * Controller, restricted to Business Owner/Accountant (Scenario 05 followup).
+   * Server-side enforcement in receiveStock() is the real guard; this just
+   * keeps the field out of view for roles who can't set it anyway. */
+  canViewCost: boolean
 }
 
 const fieldClass =
@@ -33,6 +38,7 @@ const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
   itemId: '',
   quantityReceived: 0,
   unitCost: undefined,
+  isFreebie: false,
   batchNumber: '',
   expiryDate: '',
   qualityHold: false,
@@ -62,6 +68,7 @@ export default function ReceiveStockModal({
   isSubmitting,
   warehouses,
   items,
+  canViewCost,
 }: Props) {
   const {
     control,
@@ -338,31 +345,33 @@ export default function ReceiveStockModal({
             </div>
 
             {/* NNDP Cost */}
-            <div className="sm:w-1/2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">NNDP Cost</label>
-              <Controller
-                name="nndpCost"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={field.value ?? ''}
-                    className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) =>
-                      field.onChange(e.target.value === '' ? undefined : Number(e.target.value))
-                    }
-                  />
+            {canViewCost && (
+              <div className="sm:w-1/2">
+                <label className="mb-1 block text-sm font-medium text-zinc-700">NNDP Cost</label>
+                <Controller
+                  name="nndpCost"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={field.value ?? ''}
+                      className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) =>
+                        field.onChange(e.target.value === '' ? undefined : Number(e.target.value))
+                      }
+                    />
+                  )}
+                />
+                {errors.nndpCost && (
+                  <p className="mt-1 text-xs text-red-600">{errors.nndpCost.message}</p>
                 )}
-              />
-              {errors.nndpCost && (
-                <p className="mt-1 text-xs text-red-600">{errors.nndpCost.message}</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Withholding */}
             <div className="grid gap-4 sm:grid-cols-2">
@@ -384,7 +393,7 @@ export default function ReceiveStockModal({
                 />
               </div>
 
-              {withholding === 'pct_1' && (
+              {withholding === 'pct_1' && canViewCost && (
                 <div>
                   <label className="mb-1 block text-sm font-medium text-zinc-700">
                     Withheld Amount
@@ -424,7 +433,8 @@ export default function ReceiveStockModal({
                       <tr>
                         <th className="px-3 py-2">Item</th>
                         <th className="px-3 py-2">Qty</th>
-                        <th className="px-3 py-2">Unit Cost</th>
+                        {canViewCost && <th className="px-3 py-2">Unit Cost</th>}
+                        <th className="px-3 py-2 text-center">Freebie</th>
                         <th className="px-3 py-2">Batch No.</th>
                         <th className="px-3 py-2 text-center">QC Hold</th>
                         <th className="px-3 py-2 text-center">Serials</th>
@@ -473,31 +483,60 @@ export default function ReceiveStockModal({
                                 </p>
                               )}
                             </td>
-                            <td className="px-3 py-2">
+                            {canViewCost && (
+                              <td className="px-3 py-2">
+                                {watchedLines?.[idx]?.isFreebie ? (
+                                  <span className="inline-block w-28 text-zinc-400">Free</span>
+                                ) : (
+                                  <>
+                                    <Controller
+                                      name={`lines.${idx}.unitCost`}
+                                      control={control}
+                                      render={({ field: f }) => (
+                                        <input
+                                          {...f}
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={f.value ?? ''}
+                                          className={`w-28 ${cellInputClass}`}
+                                          onChange={(e) =>
+                                            f.onChange(
+                                              e.target.value === ''
+                                                ? undefined
+                                                : Number(e.target.value)
+                                            )
+                                          }
+                                        />
+                                      )}
+                                    />
+                                    {errors.lines?.[idx]?.unitCost && (
+                                      <p className="mt-0.5 text-xs text-red-600">
+                                        {errors.lines[idx]?.unitCost?.message}
+                                      </p>
+                                    )}
+                                  </>
+                                )}
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center">
                               <Controller
-                                name={`lines.${idx}.unitCost`}
+                                name={`lines.${idx}.isFreebie`}
                                 control={control}
                                 render={({ field: f }) => (
                                   <input
-                                    {...f}
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={f.value ?? ''}
-                                    className={`w-28 ${cellInputClass}`}
-                                    onChange={(e) =>
-                                      f.onChange(
-                                        e.target.value === '' ? undefined : Number(e.target.value)
-                                      )
-                                    }
+                                    type="checkbox"
+                                    checked={f.value ?? false}
+                                    onChange={(e) => {
+                                      f.onChange(e.target.checked)
+                                      if (e.target.checked) {
+                                        setValue(`lines.${idx}.unitCost`, undefined)
+                                      }
+                                    }}
+                                    className="h-4 w-4 rounded border-zinc-300"
                                   />
                                 )}
                               />
-                              {errors.lines?.[idx]?.unitCost && (
-                                <p className="mt-0.5 text-xs text-red-600">
-                                  {errors.lines[idx]?.unitCost?.message}
-                                </p>
-                              )}
                             </td>
                             <td className="px-3 py-2">
                               <Controller

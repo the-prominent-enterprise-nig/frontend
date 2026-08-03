@@ -42,6 +42,10 @@ export default async function PurchaseOrdersPage() {
   const canReceive =
     can(session, INVENTORY_PERMISSIONS.RECEIVE_CREATE) ||
     can(session, PROCUREMENT_PERMISSIONS.WILDCARD)
+  // Unit cost is sensitive pricing data — restricted to Business
+  // Owner/Accountant (Scenario 05 followup), same gate as the standalone
+  // Goods Receiving flow.
+  const canViewCost = can(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -52,6 +56,7 @@ export default async function PurchaseOrdersPage() {
         canCancel={canCancel}
         canClose={canClose}
         canReceive={canReceive}
+        canViewCost={canViewCost}
       />
     </div>
   )

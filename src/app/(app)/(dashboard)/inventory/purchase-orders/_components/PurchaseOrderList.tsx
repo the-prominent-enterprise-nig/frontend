@@ -240,6 +240,7 @@ export function PurchaseOrderList({
   canCancel,
   canClose,
   canReceive,
+  canViewCost,
 }: {
   canCreate: boolean
   canApprove: boolean
@@ -247,6 +248,7 @@ export function PurchaseOrderList({
   canCancel: boolean
   canClose: boolean
   canReceive: boolean
+  canViewCost: boolean
 }) {
   const [activeSection, setActiveSection] = useState<Section>('orders')
 
@@ -709,6 +711,7 @@ export function PurchaseOrderList({
           setReceiveTarget(null)
           refetch()
         }}
+        canViewCost={canViewCost}
       />
     </div>
   )
