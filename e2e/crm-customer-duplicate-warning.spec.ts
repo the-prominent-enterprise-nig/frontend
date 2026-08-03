@@ -1,20 +1,34 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable, fillPhoneStable } from './utils'
+import { deleteCustomers, fillAllStable, fillPhoneStable, gotoReady, sweepE2ECustomers } from './utils'
+
+const SEED_NAME = 'Original Duplicate Owner'
+const NAME_PREFIX = 'E2E DupWarning'
 
 // CRM — Customer Duplicate Warning (scenario-02, 2026-07-31 update): "ERP
 // flags exact or possible duplicates" — a non-blocking warning the Cashier
 // can dismiss and still proceed, not a hard stop.
 test.describe('CRM — Customer Duplicate Warning', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, SEED_NAME)
+    await sweepE2ECustomers(request, NAME_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdIds)
+    createdIds = []
+  })
+
   test('warns on a duplicate email but still allows creating the profile', async ({ page }) => {
     const uniqueSuffix = Date.now()
     const email = `dup-warning-${uniqueSuffix}@example.com`
-    const createdIds: string[] = []
 
     // Seed the "original" customer directly via API — faster than driving
     // the UI twice, and this test is about the warning, not creation itself.
     const seedRes = await page.request.post('/api/crm/customers', {
       data: {
-        name: 'Original Duplicate Owner',
+        name: SEED_NAME,
         sourceChannel: 'sales',
         email,
         phone: `+637${uniqueSuffix.toString().slice(-9)}`,
@@ -74,10 +88,5 @@ test.describe('CRM — Customer Duplicate Warning', () => {
 
     const newId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
     if (newId) createdIds.push(newId)
-
-    // Cleanup both records via API.
-    for (const id of createdIds) {
-      await page.request.delete(`/api/crm/customers/${id}`)
-    }
   })
 })
