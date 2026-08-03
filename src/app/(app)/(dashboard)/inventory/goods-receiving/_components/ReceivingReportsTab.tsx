@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
   X,
   AlertTriangle,
@@ -43,6 +43,7 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
         <td>${l.batchNumber ?? '—'}</td>
         <td>${serials.length > 0 ? serials.join(', ') : '—'}</td>
         <td>${l.qualityHold ? 'QC Hold' : 'OK'}</td>
+        <td>${l.isFreebie ? 'Freebie' : '—'}</td>
       </tr>`
     })
     .join('')
@@ -57,6 +58,7 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
         <th>Batch</th>
         <th>Serial #s</th>
         <th>Condition</th>
+        <th>Freebie</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`
@@ -95,13 +97,13 @@ function JournalEntryBadge({ journalEntryId }: { journalEntryId?: string | null 
   )
 }
 
-function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: () => void }) {
+function DetailPanel({ report }: { report: ReceivingReport }) {
   const [isPrinting, setIsPrinting] = useState(false)
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-prominent-purple-100 bg-white">
       {/* Panel header */}
-      <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+      <div className="flex items-center justify-between border-b border-prominent-purple-100 bg-prominent-purple-50/40 px-5 py-3">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-semibold text-zinc-900">{report.code}</h3>
@@ -150,36 +152,27 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              setIsPrinting(true)
-              try {
-                const res = await getReceivingDocument(report.id)
-                if (res.success && res.data) printDocument(res.data)
-              } finally {
-                setIsPrinting(false)
-              }
-            }}
-            disabled={isPrinting}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
-          >
-            {isPrinting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Printer className="h-3.5 w-3.5" />
-            )}
-            Print
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={async () => {
+            setIsPrinting(true)
+            try {
+              const res = await getReceivingDocument(report.id)
+              if (res.success && res.data) printDocument(res.data)
+            } finally {
+              setIsPrinting(false)
+            }
+          }}
+          disabled={isPrinting}
+          className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+        >
+          {isPrinting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Printer className="h-3.5 w-3.5" />
+          )}
+          Print
+        </button>
       </div>
 
       {/* Lines */}
@@ -217,7 +210,14 @@ function DetailPanel({ report, onClose }: { report: ReceivingReport; onClose: ()
               return (
                 <tr key={line.id} className={hasIssue ? 'bg-red-50' : ''}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-zinc-900">{line.item?.name ?? '—'}</p>
+                    <p className="font-medium text-zinc-900">
+                      {line.item?.name ?? '—'}
+                      {line.isFreebie && (
+                        <span className="ml-2 inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                          Freebie
+                        </span>
+                      )}
+                    </p>
                     {line.item?.sku && (
                       <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
                     )}
@@ -300,6 +300,7 @@ export default function ReceivingReportsTab() {
     setSelectedId,
     selectedReport,
     isLoadingDetail,
+    detailError,
   } = useReceivingReports()
 
   const hasFilters = warehouseId || hasDiscrepancy !== undefined || startDate || endDate
@@ -394,57 +395,80 @@ export default function ReceivingReportsTab() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {reports.map((report) => (
-                  <tr
-                    key={report.id}
-                    className={`cursor-pointer hover:bg-zinc-50 ${selectedId === report.id ? 'bg-prominent-purple-50' : ''}`}
-                    onClick={() => setSelectedId(selectedId === report.id ? undefined : report.id)}
-                  >
-                    <td className="px-4 py-3 font-mono font-medium text-zinc-900">{report.code}</td>
-                    <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                      {report.warehouse?.code ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
-                      {report.warehouse?.branch?.name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
-                      {report.lines.length}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                      {new Date(report.receivedAt).toLocaleDateString('en-PH', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <DiscrepancyBadge report={report} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <ChevronRight
-                        className={`h-4 w-4 transition-transform ${selectedId === report.id ? 'rotate-90 text-prominent-purple-700' : 'text-zinc-400'}`}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {reports.map((report) => {
+                  const isSelected = selectedId === report.id
+                  return (
+                    <Fragment key={report.id}>
+                      <tr
+                        className={`cursor-pointer hover:bg-zinc-50 ${isSelected ? 'bg-prominent-purple-50' : ''}`}
+                        onClick={() => setSelectedId(isSelected ? undefined : report.id)}
+                      >
+                        <td className="px-4 py-3 font-mono font-medium text-zinc-900">
+                          {report.code}
+                        </td>
+                        <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
+                          {report.warehouse?.code ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
+                          {report.warehouse?.branch?.name ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
+                          {report.lines.length}
+                        </td>
+                        <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
+                          {new Date(report.receivedAt).toLocaleDateString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <DiscrepancyBadge report={report} />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <ChevronRight
+                            className={`h-4 w-4 transition-transform ${isSelected ? 'rotate-90 text-prominent-purple-700' : 'text-zinc-400'}`}
+                          />
+                        </td>
+                      </tr>
+                      {isSelected && (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className="border-l-4 border-prominent-purple-300 bg-prominent-purple-50/40 p-3"
+                          >
+                            {isLoadingDetail ? (
+                              <div className="flex items-center justify-center py-10">
+                                <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+                              </div>
+                            ) : selectedReport ? (
+                              <DetailPanel report={selectedReport} />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 py-10 text-center">
+                                <AlertTriangle className="h-5 w-5 text-red-500" />
+                                <p className="text-sm font-medium text-red-700">
+                                  {detailError ?? "Couldn't load this receipt."}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedId(undefined)}
+                                  className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* Detail panel */}
-      {selectedId && (
-        <div>
-          {isLoadingDetail ? (
-            <div className="flex items-center justify-center rounded-xl border border-zinc-200 bg-white py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-            </div>
-          ) : selectedReport ? (
-            <DetailPanel report={selectedReport} onClose={() => setSelectedId(undefined)} />
-          ) : null}
-        </div>
-      )}
 
       {/* Pagination */}
       {totalPages > 1 && (

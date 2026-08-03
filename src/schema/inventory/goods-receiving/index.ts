@@ -6,6 +6,10 @@ const ReceiveStockLineSchema = z
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
+    // Promotional/free item included in the delivery — server forces
+    // unitCost to 0 for these regardless of what's submitted (Scenario 05
+    // followup, "freebies" gap).
+    isFreebie: z.boolean().optional(),
     batchNumber: z.string().optional(),
     expiryDate: z.string().optional(),
     qualityHold: z.boolean().optional(),
@@ -146,6 +150,7 @@ const ReceivingReportLineSchema = z.object({
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
   qualityHold: z.boolean(),
+  isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
   discrepancy: DiscrepancySchema.nullable(),
 })
