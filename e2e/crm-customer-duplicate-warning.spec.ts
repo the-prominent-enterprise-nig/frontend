@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable } from './utils'
+import { gotoReady, fillAllStable, fillPhoneStable } from './utils'
 
 // CRM — Customer Duplicate Warning (scenario-02, 2026-07-31 update): "ERP
 // flags exact or possible duplicates" — a non-blocking warning the Cashier
@@ -13,7 +13,12 @@ test.describe('CRM — Customer Duplicate Warning', () => {
     // Seed the "original" customer directly via API — faster than driving
     // the UI twice, and this test is about the warning, not creation itself.
     const seedRes = await page.request.post('/api/crm/customers', {
-      data: { name: 'Original Duplicate Owner', sourceChannel: 'sales', email },
+      data: {
+        name: 'Original Duplicate Owner',
+        sourceChannel: 'sales',
+        email,
+        phone: `+637${uniqueSuffix.toString().slice(-9)}`,
+      },
     })
     const seeded = await seedRes.json()
     createdIds.push(seeded.id)
@@ -32,6 +37,13 @@ test.describe('CRM — Customer Duplicate Warning', () => {
         { locator: page.getByLabel('Last name *'), value: `DupWarning${uniqueSuffix}` },
         { locator: page.getByLabel('Email'), value: email },
       ])
+      // PhoneInput reformats its display value, so it can't go through
+      // fillAllStable's exact-value check — filled separately, still inside
+      // this same retry so a hydration wipe re-fills it along with the rest.
+      await fillPhoneStable(
+        page.locator('.phone-input-field'),
+        `9${uniqueSuffix.toString().slice(-9)}`
+      )
       await expect(page.getByText(/already has this email/)).toBeVisible({ timeout: 5_000 })
     }).toPass({ timeout: 20_000 })
     await expect(page.getByText('Original Duplicate Owner')).toBeVisible()
@@ -49,6 +61,10 @@ test.describe('CRM — Customer Duplicate Warning', () => {
       { locator: page.getByLabel('Last name *'), value: `DupWarning${uniqueSuffix}` },
       { locator: page.getByLabel('Email'), value: email },
     ])
+    await fillPhoneStable(
+      page.locator('.phone-input-field'),
+      `9${uniqueSuffix.toString().slice(-9)}`
+    )
 
     // Still allowed to submit despite the flagged duplicate.
     await expect(async () => {

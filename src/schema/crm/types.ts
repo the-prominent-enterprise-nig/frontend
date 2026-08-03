@@ -132,7 +132,9 @@ export interface Customer {
   name: string
   customerType: CustomerType
   companyName?: string | null
+  businessCategory?: 'private' | 'government' | null
   employeeNumber?: string | null
+  birthday?: string | null
   taxId?: string | null
   isTaxExempt: boolean
   taxExemptionRef?: string | null

@@ -1,6 +1,6 @@
 import path from 'path'
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable } from './utils'
+import { gotoReady, fillAllStable, fillPhoneStable } from './utils'
 
 // CRM — Customer ID & Consent (scenario-02, 2026-07-31 update): capture a
 // scanned ID + type/number + consent on the profile, reusing the same
@@ -75,6 +75,10 @@ test.describe('CRM — Customer ID & Consent', () => {
       { locator: page.getByLabel('Last name *'), value: lastName },
       { locator: idNumberInput, value: 'N01-23-456789' },
     ])
+    await fillPhoneStable(
+      page.locator('.phone-input-field'),
+      `9${uniqueSuffix.toString().slice(-9)}`
+    )
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Create customer' }).click()

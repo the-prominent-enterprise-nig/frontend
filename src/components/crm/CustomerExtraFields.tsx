@@ -1,18 +1,26 @@
 'use client'
 
 import type { CustomerType } from '@/src/schema/crm/types'
+import { BUSINESS_CATEGORY_OPTIONS } from '@/src/schema/crm/customer'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 export interface CustomerExtraFieldsValues {
   customerType: CustomerType
   companyName: string
+  businessCategory: string
   employeeNumber: string
+  birthday: string
   shippingAddress: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
   groupId: string
   notes: string
+}
+
+const BUSINESS_CATEGORY_LABELS: Record<string, string> = {
+  private: 'Private',
+  government: 'Government',
 }
 
 /**
@@ -26,6 +34,7 @@ export default function CustomerExtraFields({
   values,
   onChange,
   showAddressHint = false,
+  showGroupId = true,
 }: {
   values: CustomerExtraFieldsValues
   onChange: (patch: Partial<CustomerExtraFieldsValues>) => void
@@ -34,6 +43,10 @@ export default function CustomerExtraFields({
    * surface what's already on file above it — otherwise an editor has no
    * way to see the current address before picking a new one. */
   showAddressHint?: boolean
+  /** CRM's full customer form drops Group ID (superseded by clearer
+   * grouping elsewhere); POS's quick walk-in modal keeps it, so this
+   * defaults to on and CRM opts out explicitly. */
+  showGroupId?: boolean
 }) {
   return (
     <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -64,6 +77,24 @@ export default function CustomerExtraFields({
           </div>
         )}
 
+        {values.customerType === 'business' && (
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Business category</label>
+            <select
+              value={values.businessCategory}
+              onChange={(e) => onChange({ businessCategory: e.target.value })}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select category</option>
+              {BUSINESS_CATEGORY_OPTIONS.map((c) => (
+                <option key={c} value={c}>
+                  {BUSINESS_CATEGORY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {values.customerType === 'employee' && (
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Employee ID</label>
@@ -77,14 +108,26 @@ export default function CustomerExtraFields({
         )}
 
         <div>
-          <label className="block text-[13px] font-medium text-gray-700">Group ID</label>
+          <label className="block text-[13px] font-medium text-gray-700">Birthday</label>
           <input
-            value={values.groupId}
-            maxLength={50}
-            onChange={(e) => onChange({ groupId: e.target.value })}
+            type="date"
+            value={values.birthday}
+            onChange={(e) => onChange({ birthday: e.target.value })}
             className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
+
+        {showGroupId && (
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Group ID</label>
+            <input
+              value={values.groupId}
+              maxLength={50}
+              onChange={(e) => onChange({ groupId: e.target.value })}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
+            />
+          </div>
+        )}
       </div>
 
       {/* Top-right: tax + terms */}
