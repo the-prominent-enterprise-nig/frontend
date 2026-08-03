@@ -69,6 +69,10 @@ export const INVENTORY_PERMISSIONS = {
   SERIAL_READ: 'inventory:serial:read',
   SERIAL_MANAGE: 'inventory:serial:manage',
 
+  // ── Caravan (Scenario 08) ──────────────────────────────────────────────────
+  CARAVAN_READ: 'inventory:caravan:read',
+  CARAVAN_MANAGE: 'inventory:caravan:manage',
+
   // ── Unit Document Sheets (UDS) ─────────────────────────────────────────────
   UDS_READ: 'inventory:uds:read',
   UDS_MANAGE: 'inventory:uds:manage',
@@ -208,6 +212,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:batch:manage': 'Assign and manage batch numbers',
   'inventory:serial:read': 'View serial number records',
   'inventory:serial:manage': 'Assign and manage serial numbers',
+  'inventory:caravan:read':
+    'View caravan consignments (stock consigned to a host branch for an event)',
+  'inventory:caravan:manage':
+    'Consign stock to a host branch for a caravan event, and return/reassign it at close',
   'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
   'inventory:uds:manage': 'Issue and update Unit Document Sheets',
   'inventory:expiry:read': 'View expiry-tracked stock',

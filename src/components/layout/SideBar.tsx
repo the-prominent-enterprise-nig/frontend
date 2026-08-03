@@ -387,6 +387,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:cash-in-transit:read',
       },
       {
+        label: 'Collections',
+        href: '/pos/collections',
+        icon: Coins,
+        requiredPermission: 'pos:collections:manage',
+      },
+      {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Settings item above so hiding
         // that one from Cashier doesn't also remove their only way to reach
@@ -400,6 +406,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
   },
   crm: {
     main: [
+      {
+        label: 'Customers',
+        href: '/crm/customers',
+        icon: Contact,
+        requiredPermission: CRM_PERMISSIONS.CUSTOMERS_READ,
+      },
       {
         label: 'CRM Dashboard',
         href: '/crm',
@@ -419,10 +431,22 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
       },
       {
-        label: 'Customers',
-        href: '/crm/customers',
-        icon: Contact,
-        requiredPermission: CRM_PERMISSIONS.CUSTOMERS_READ,
+        label: 'Collectors',
+        href: '/crm/collectors',
+        icon: HandCoins,
+        requiredPermission: CRM_PERMISSIONS.COLLECTORS_READ,
+      },
+      {
+        label: 'Installment Accounts',
+        href: '/crm/installment-accounts',
+        icon: Wallet,
+        requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
+      },
+      {
+        label: 'Collection Incentives',
+        href: '/crm/collection-incentives',
+        icon: Coins,
+        requiredPermission: CRM_PERMISSIONS.INCENTIVES_READ,
       },
       {
         label: 'Reminders',

@@ -288,13 +288,13 @@ export default function TransferDetailModal({
   async function handleDispatchSubmit(data: DispatchTransferFormValues) {
     if (!transfer) return
     const result = await onDispatch(transfer.id, {
-      expectedArrival: data.expectedArrival || undefined,
+      expectedArrival: data.expectedArrival,
       notes: data.notes || undefined,
-      driverName: data.driverName || undefined,
-      driverPhone: data.driverPhone || undefined,
-      driverLicense: data.driverLicense || undefined,
-      vehiclePlate: data.vehiclePlate || undefined,
-      carrierName: data.carrierName || undefined,
+      driverName: data.driverName,
+      driverPhone: data.driverPhone,
+      driverLicense: data.driverLicense,
+      vehiclePlate: data.vehiclePlate,
+      carrierName: data.carrierName,
     })
     if (result.success) {
       setShowDispatchForm(false)
@@ -698,7 +698,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Expected Arrival
+                    Expected Arrival <span className="text-red-500">*</span>
                   </label>
                   <Controller
                     name="expectedArrival"
@@ -724,13 +724,13 @@ export default function TransferDetailModal({
                 </div>
 
                 <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Logistics / Driver (Optional)
+                  Logistics / Driver
                 </p>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Name
+                      Driver Name <span className="text-red-500">*</span>
                     </label>
                     <Controller
                       name="driverName"
@@ -747,7 +747,7 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver Phone
+                      Driver Phone <span className="text-red-500">*</span>
                     </label>
                     <Controller
                       name="driverPhone"
@@ -764,7 +764,7 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver License
+                      Driver License <span className="text-red-500">*</span>
                     </label>
                     <Controller
                       name="driverLicense"
@@ -781,7 +781,7 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Vehicle Plate
+                      Vehicle Plate <span className="text-red-500">*</span>
                     </label>
                     <Controller
                       name="vehiclePlate"
@@ -800,7 +800,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Carrier / Logistics Company
+                    Carrier / Logistics Company <span className="text-red-500">*</span>
                   </label>
                   <Controller
                     name="carrierName"

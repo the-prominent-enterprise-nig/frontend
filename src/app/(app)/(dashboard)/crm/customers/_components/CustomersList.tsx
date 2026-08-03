@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { BellPlus, Plus, Search } from 'lucide-react'
+import { BellPlus, GitMerge, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import type { Customer } from '@/src/schema/crm/types'
@@ -65,11 +65,13 @@ function initials(name: string): string {
 export default function CustomersList({
   canScheduleReminder,
   canCreate,
+  canReviewDuplicates,
   currentUserId,
   tenantId,
 }: {
   canScheduleReminder: boolean
   canCreate: boolean
+  canReviewDuplicates: boolean
   currentUserId: string
   tenantId: string
 }) {
@@ -78,6 +80,7 @@ export default function CustomersList({
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
+  const [groupIdFilter, setGroupIdFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reminderForCustomerId, setReminderForCustomerId] = useState<string | null>(null)
@@ -90,6 +93,7 @@ export default function CustomersList({
         search: search || undefined,
         status: statusFilter || undefined,
         sourceChannel: sourceFilter || undefined,
+        groupId: groupIdFilter || undefined,
         limit: 50,
       })
       if (res.success && res.data) setCustomers(res.data.data)
@@ -97,7 +101,7 @@ export default function CustomersList({
       setLoading(false)
     }, 250)
     return () => clearTimeout(t)
-  }, [search, statusFilter, sourceFilter])
+  }, [search, statusFilter, sourceFilter, groupIdFilter])
 
   return (
     <div className="px-6 py-8 lg:px-10">
@@ -108,15 +112,26 @@ export default function CustomersList({
             Unified view across leads, orders, and POS history.
           </p>
         </div>
-        {canCreate && (
-          <Link
-            href="/crm/customers/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Customer
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {canReviewDuplicates && (
+            <Link
+              href="/crm/customers/duplicates"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <GitMerge className="h-4 w-4" />
+              Review Duplicates
+            </Link>
+          )}
+          {canCreate && (
+            <Link
+              href="/crm/customers/new"
+              className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add Customer
+            </Link>
+          )}
+        </div>
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
@@ -150,6 +165,12 @@ export default function CustomersList({
           <option value="crm_lead">CRM Lead</option>
           <option value="online">Online</option>
         </select>
+        <input
+          value={groupIdFilter}
+          onChange={(e) => setGroupIdFilter(e.target.value)}
+          placeholder="Filter by Group ID…"
+          className="w-[180px] rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
+        />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">

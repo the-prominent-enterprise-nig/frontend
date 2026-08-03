@@ -3,10 +3,17 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, BellPlus, Pencil, Trash2 } from 'lucide-react'
-import { customersApi } from '@/src/libs/api/crm'
+import { ArrowLeft, BellPlus, Download, GitMerge, Paperclip, Pencil, Trash2 } from 'lucide-react'
+import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import type { Customer, Lead, Interaction, Reminder } from '@/src/schema/crm/types'
+import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
+import type {
+  Customer,
+  Lead,
+  Interaction,
+  Reminder,
+  InstallmentAccount,
+} from '@/src/schema/crm/types'
 import type { InstallmentSchedule } from '@/src/schema/pos'
 
 type CustomerView = Customer & {
@@ -41,6 +48,10 @@ export default function Customer360({
   const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
   const [installmentLoading, setInstallmentLoading] = useState(true)
   const [installmentError, setInstallmentError] = useState<string | null>(null)
+
+  const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
 
   async function handleDelete() {
     if (!data) return
@@ -79,6 +90,14 @@ export default function Customer360({
     })
   }, [id])
 
+  useEffect(() => {
+    installmentAccountsApi.list({ customerId: id, limit: 50 }).then((res) => {
+      if (res.success && res.data) setInstallmentAccounts(res.data.data)
+      else setAccountsError(res.error ?? 'Failed to load CRM accounts')
+      setAccountsLoading(false)
+    })
+  }, [id])
+
   if (loading) {
     return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
   }
@@ -104,6 +123,23 @@ export default function Customer360({
       >
         <ArrowLeft className="h-4 w-4" /> Back to customers
       </Link>
+
+      {data.mergedFrom && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-3.5 py-3 text-[13px] text-sky-800">
+          <GitMerge className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            You were redirected here — customer{' '}
+            <span className="font-medium">
+              {data.mergedFrom.name} ({data.mergedFrom.customerCode})
+            </span>{' '}
+            was merged into this record
+            {data.mergedFrom.mergedAt
+              ? ` on ${new Date(data.mergedFrom.mergedAt).toLocaleDateString()}`
+              : ''}
+            . That old profile is no longer active on its own.
+          </div>
+        </div>
+      )}
 
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -146,10 +182,6 @@ export default function Customer360({
             <Row label="Email" value={data.email ?? '—'} />
             <Row label="Phone" value={data.phone ?? '—'} />
             <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
-            <Row
-              label="Credit limit"
-              value={data.creditLimit ? `₱${Number(data.creditLimit).toLocaleString()}` : '—'}
-            />
           </dl>
         </section>
 
@@ -257,7 +289,7 @@ export default function Customer360({
                     ))}
                   </ul>
                   <Link
-                    href="/accounting/ar-invoices"
+                    href={`/accounting/ar-invoices?customerId=${id}`}
                     className="mt-2 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                   >
                     View full AR ledger →
@@ -265,6 +297,44 @@ export default function Customer360({
                 </div>
               ))}
             </div>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">CRM Collections Accounts</h2>
+          {accountsLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading accounts…</p>
+          ) : accountsError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{accountsError}</p>
+          ) : installmentAccounts.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No CRM collections accounts for this customer.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {installmentAccounts.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                >
+                  <Link
+                    href={`/crm/installment-accounts/${a.id}`}
+                    className="font-mono font-medium text-prominent-orange-700 hover:underline"
+                  >
+                    {a.accountNumber}
+                  </Link>
+                  <span className="flex items-center gap-2 text-gray-600">
+                    {a.collector ? `${a.collector.stubNumber} — ${a.collector.name}` : 'Unassigned'}
+                    <AgingColorBadge color={a.aging?.color} />
+                    <span className="font-medium text-gray-800">
+                      {formatPeso(Number(a.currentBalance))}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>
@@ -297,6 +367,74 @@ export default function Customer360({
                 </li>
               ))}
             </ul>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Co-maker (Guarantor)</h2>
+          {!data.coMakers || data.coMakers.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No co-maker on file. Add one from Edit.
+            </p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {data.coMakers.map((cm) => (
+                <li
+                  key={cm.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[13px]"
+                >
+                  <span className="font-medium text-gray-800">
+                    {cm.name} — {cm.relationship}
+                  </span>
+                  <span className="flex items-center gap-2 text-gray-500">
+                    <span>{cm.contactNumber}</span>
+                    {cm.email && <span>{cm.email}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">ID & Consent</h2>
+          {!data.idType && !data.idNumber && !data.idDocumentFile && !data.consentGiven ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No ID information on file. Add it from Edit.
+            </p>
+          ) : (
+            <div className="space-y-2.5 text-[13px]">
+              {(data.idType || data.idNumber) && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-gray-800">{data.idType || 'ID'}</span>
+                  {data.idNumber && <span className="text-gray-500">{data.idNumber}</span>}
+                </div>
+              )}
+              {data.idDocumentFile && (
+                <a
+                  href={`/api/files/${data.idDocumentFile.id}/download`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-prominent-purple-700 hover:underline"
+                >
+                  <Paperclip className="h-3.5 w-3.5" />
+                  {data.idDocumentFile.originalName}
+                  <Download className="h-3.5 w-3.5" />
+                </a>
+              )}
+              <div className="flex items-center gap-1.5 text-gray-500">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${data.consentGiven ? 'bg-green-500' : 'bg-gray-300'}`}
+                />
+                {data.consentGiven
+                  ? `Consent given${data.consentGivenAt ? ` on ${new Date(data.consentGivenAt).toLocaleDateString()}` : ''}`
+                  : 'Consent not yet given'}
+              </div>
+            </div>
           )}
         </section>
       </div>

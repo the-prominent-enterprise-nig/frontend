@@ -15,6 +15,7 @@ export default async function CustomersPage() {
     <CustomersList
       canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
       canCreate={can(session, CRM_PERMISSIONS.CUSTOMERS_CREATE)}
+      canReviewDuplicates={can(session, CRM_PERMISSIONS.CUSTOMERS_MERGE)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}
     />
