@@ -2,7 +2,7 @@
 
 One-page status for all module scenarios (14 from the original source, plus 15-21 added 2026-07-31 from a second client scenario map — see [module-scenarios.md](./module-scenarios.md)'s "Draft 2 additions" for the full routing table). Each row is re-verified against the actual `development` branch code in both repos (not just the plan docs' own checkmarks, which can drift) — see the full gap analysis and Implementation Log in each scenario's own plan doc for file/line evidence.
 
-Last verified: 2026-08-01.
+Last verified: 2026-08-03.
 
 - [x] **01 — POS Installment Sale** — fully closed. [plan](./scenario-01-pos-installment-sale-plan.md)
 - [ ] **02 — CRM Customer Profile** — core done (2026-08-01: co-maker, duplicate detection, BM/AR merge-resolution, ID/consent capture, Lead-conversion loyalty bug); Smart SMS + segment campaigns remain out of scope pending their own integration/scoping pass. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
@@ -33,11 +33,7 @@ Last verified: 2026-08-01.
   - [ ] `CreditMemo` is thin: no type field, no line items, no serial link, not connected to POS returns
   - [ ] `DebitMemo` — zero implementation
   - [ ] Supplier-side returns/credit — zero implementation
-- [ ] **14 — Accounting Daily & Month-End** — mostly done, 4 real gaps. [plan](./scenario-14-accounting-month-end-plan.md)
-  - [ ] No tax-rate approval workflow
-  - [ ] P&L report has no branch filter
-  - [ ] No gross-vs-net report variant
-  - [ ] `costCenter` is captured on records but never read back in any report
+- [x] **14 — Accounting Daily & Month-End** — fully closed (2026-08-03: tax-rate approver-gating, per-branch P&L, internal-vs-net P&L view, cost-center report). [plan](./scenario-14-accounting-month-end-plan.md)
 - [ ] **15 — Price List Management & Approval** — new (2026-07-31), not started. [plan](./scenario-15-price-list-management-plan.md)
   - [ ] No branch scoping, no approval workflow, no floor price, no true versioning on `PriceList`
 - [ ] **16 — Item Master Governance** — new (2026-07-31), not started. [plan](./scenario-16-item-master-governance-plan.md)
@@ -60,3 +56,4 @@ Last verified: 2026-08-01.
 - Two unresolved conflicting findings on **RFD/Application Form** printability: Scenario 01's check found a working `handlePrint()` in `ReleaseApprovalsList.tsx` (real client-side printable HTML); Scenario 02's check said the backend only returns a status label. Both can be true at once (frontend prints from the label's data) — worth a manual click-through if it matters.
 - Several branches that looked "unmerged" (`feat/scenario-04-...`, `feat/scenario-08-caravan`, `feat/aircool-*`, `feat/scenario-12-cit-monitor`, etc.) are actually **stale**, not pending — their content already shipped to `development` via later commits and the branches were never cleaned up.
 - Scenario 06 and 11's plan docs describe large gaps that are already closed in code — flagged for a docs refresh, not because the work is missing.
+- Scenario 14 (2026-08-03): while closing the P&L branch/view gaps, found every seeded `Account` row has `category: null` (only `type` is populated), so `profitAndLoss()`/`balanceSheet()` return ₱0 for revenue/COGS/opEx against real data regardless of branch/view — pre-existing, unrelated to the scenario's own gaps, needs its own fix. Also `reports.controller.ts` has no permission/tenant guard at all (`Account`/`ARInvoice`/`APBill`/etc. have no `tenantId`), so the whole reports module — not just this scenario's additions — is readable by any authenticated user.
