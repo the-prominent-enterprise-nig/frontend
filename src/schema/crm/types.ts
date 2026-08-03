@@ -204,6 +204,9 @@ export interface Interaction {
   tenantId: string
   customerId?: string | null
   leadId?: string | null
+  installmentAccountId?: string | null
+  collectorId?: string | null
+  contactPhone?: string | null
   interactionType: InteractionType
   summary: string
   outcome?: string | null
@@ -217,6 +220,8 @@ export interface Reminder {
   tenantId: string
   customerId?: string | null
   leadId?: string | null
+  installmentAccountId?: string | null
+  collectorId?: string | null
   assignedTo: string
   reminderType: ReminderType
   dueAt: string

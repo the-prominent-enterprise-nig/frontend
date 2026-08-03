@@ -499,3 +499,278 @@ test.describe('CRM — Collection Incentives', () => {
     expect(delCollector.ok()).toBeTruthy()
   })
 })
+
+test.describe('CRM — Installment Account collections reminders (Scenario 20 NAMIDRe)', () => {
+  test('schedules a reminder against an installment account and completes it with outcome/contact phone', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-NDR-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    expect(accountId).toBeTruthy()
+
+    await expect(page.getByText('No reminders logged for this account yet.')).toBeVisible({
+      timeout: 10_000,
+    })
+
+    // Schedule a NAMIDRe reminder directly against this installment account
+    // (no customer/lead relation — the whole point of the linkage this
+    // section exists to exercise).
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await selectStable(page.locator('#reminder-type'), 'call')
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-10T09:00')
+        await fillStable(page.locator('#reminder-note'), 'NAMIDRe follow-up call')
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+
+    await expect(page.getByText('NAMIDRe follow-up call')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('No reminders logged for this account yet.')).toHaveCount(0)
+
+    // Complete it with outcome + contact phone — confirms the complete()
+    // call now carries a real body instead of firing empty.
+    await clickStable(
+      page.getByRole('button', { name: 'Complete' }),
+      page.getByRole('heading', { name: 'Complete reminder' })
+    )
+    await submitStable(
+      () =>
+        fillAllStable([
+          { locator: page.locator('#complete-reminder-phone'), value: '+639171234567' },
+          {
+            locator: page.locator('#complete-reminder-outcome'),
+            value: 'Reached customer, promised to pay by Friday',
+          },
+        ]),
+      () => page.locator('form').getByRole('button', { name: 'Complete' }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Complete reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Complete' })).toHaveCount(0)
+
+    // Confirm the auto-logged interaction picked up the outcome/contactPhone
+    // (no interactions UI exists yet — assert via the API directly).
+    const interactions = await page.request.get(
+      `/api/crm/interactions?installmentAccountId=${accountId}&limit=5`
+    )
+    const interactionsBody = await interactions.json()
+    const logged = (interactionsBody.data as { outcome?: string; contactPhone?: string }[]).find(
+      (i) => i.outcome === 'Reached customer, promised to pay by Friday'
+    )
+    expect(logged?.contactPhone).toBe('+639171234567')
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
+
+  test('blocks scheduling a second open reminder on the same account until the first is completed', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-DUP-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    // First reminder schedules fine
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-10T09:00')
+        await fillStable(page.locator('#reminder-note'), 'First open task')
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+    await expect(page.getByText('First open task')).toBeVisible({ timeout: 10_000 })
+
+    // Second reminder is rejected with a clear inline error, and the modal
+    // stays open (nothing was silently lost).
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await fillStable(page.locator('#reminder-due-at'), '2026-08-11T09:00')
+    await fillStable(page.locator('#reminder-note'), 'Duplicate task attempt')
+    await page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click()
+    await expect(
+      page.getByText(
+        'This account already has an open reminder. Complete it before scheduling a new one.'
+      )
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: 'Schedule reminder' })).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByText('Duplicate task attempt')).toHaveCount(0)
+
+    // Complete the first one, then scheduling a new reminder succeeds again
+    await clickStable(
+      page.getByRole('button', { name: 'Complete' }),
+      page.getByRole('heading', { name: 'Complete reminder' })
+    )
+    await page.locator('form').getByRole('button', { name: 'Complete', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Complete reminder' })).toHaveCount(0, {
+      timeout: 8_000,
+    })
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-12T09:00')
+        await fillStable(page.locator('#reminder-note'), 'New task after completion')
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+    await expect(page.getByText('New task after completion')).toBeVisible({ timeout: 10_000 })
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
+
+  test('recording a payment auto-closes the account’s open reminder', async ({ page }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-AUTOCLOSE-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    // Schedule an open reminder
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-10T09:00')
+        await fillStable(page.locator('#reminder-note'), 'Task to be auto-closed by payment')
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+    await expect(page.getByText('Task to be auto-closed by payment')).toBeVisible({
+      timeout: 10_000,
+    })
+
+    // Record a payment via the existing Record payment flow
+    await clickStable(
+      page.getByRole('button', { name: 'Record payment' }),
+      page.getByRole('heading', { name: 'Record payment' })
+    )
+    await submitStable(
+      () =>
+        fillAllStable([
+          { locator: page.getByLabel('Amount (₱) *'), value: '1000' },
+          { locator: page.getByLabel('Due date *'), value: '2026-08-15' },
+          { locator: page.getByLabel('Paid at *'), value: '2026-08-10' },
+        ]),
+      () => page.locator('form').getByRole('button', { name: 'Record payment' }).click(),
+      () => expect(page.getByText(/on time, \+1 point earned/i)).toBeVisible({ timeout: 8_000 })
+    )
+    await page.getByRole('button', { name: 'Done' }).click()
+
+    // The reminders section refreshes on its own — no manual page reload —
+    // and shows the task as Completed.
+    await expect(page.getByText('Task to be auto-closed by payment')).toBeVisible({
+      timeout: 10_000,
+    })
+    const reminderRow = page.locator('li', { hasText: 'Task to be auto-closed by payment' })
+    await expect(reminderRow.getByText('Completed', { exact: true })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(reminderRow.getByRole('button', { name: 'Complete' })).toHaveCount(0)
+
+    const interactions = await page.request.get(
+      `/api/crm/interactions?installmentAccountId=${accountId}&limit=5`
+    )
+    const interactionsBody = await interactions.json()
+    const logged = (interactionsBody.data as { outcome?: string }[]).find((i) =>
+      i.outcome?.startsWith('Auto-closed — payment posted')
+    )
+    expect(logged).toBeTruthy()
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
+})

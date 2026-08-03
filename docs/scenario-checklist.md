@@ -2,7 +2,7 @@
 
 One-page status for all module scenarios (14 from the original source, plus 15-21 added 2026-07-31 from a second client scenario map — see [module-scenarios.md](./module-scenarios.md)'s "Draft 2 additions" for the full routing table). Each row is re-verified against the actual `development` branch code in both repos (not just the plan docs' own checkmarks, which can drift) — see the full gap analysis and Implementation Log in each scenario's own plan doc for file/line evidence.
 
-Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-verified 2026-07-31, this branch).
+Last verified: 2026-08-03 (Scenario 20's NAMIDRe track closed this pass; Scenario 02 re-verified 2026-08-01; Scenario 05 re-verified 2026-07-31).
 
 - [x] **01 — POS Installment Sale** — fully closed. [plan](./scenario-01-pos-installment-sale-plan.md)
 - [ ] **02 — CRM Customer Profile** — core done (2026-08-01: co-maker, duplicate detection, BM/AR merge-resolution, ID/consent capture, Lead-conversion loyalty bug); Smart SMS + segment campaigns remain out of scope pending their own integration/scoping pass. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
@@ -48,8 +48,10 @@ Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-ver
   - [ ] No Quarantine hold, no tiered custodian+approver flow, Exchange is a vestigial enum value, not connected to `CreditMemo`
 - [ ] **19 — Stock Count & Inventory Adjustment Approval** — new (2026-07-31), not started. [plan](./scenario-19-stock-count-adjustment-approval-plan.md)
   - [ ] No server-side count snapshot, no approval chain on adjustments, no before/after audit log
-- [ ] **20 — Collections Reminder Track (NAMIDRe) & Delinquency Escalation (DAM)** — new (2026-07-31), not started. [plan](./scenario-20-collections-namidre-dam-plan.md)
-  - [ ] No NAMIDRe/DAM two-track bifurcation, no structured PTP tracking, no legal-escalation pipeline
+- [ ] **20 — Collections Reminder Track (NAMIDRe) & Delinquency Escalation (DAM)** — NAMIDRe reminder track closed 2026-08-03 (linked to InstallmentAccount/Collector, duplicate-suppression, auto-close-on-payment); DAM track not started. [plan](./scenario-20-collections-namidre-dam-plan.md)
+  - [ ] No formal NAMIDRe/DAM two-track bifurcation or trigger rule (confirmed as a product/policy decision, not yet made)
+  - [ ] No structured Promise-to-Pay (PTP) tracking — `Interaction.outcome` is still free text
+  - [ ] No DAM formal state, review chain, or legal-escalation pipeline (Small Claims pack, SOA/demand-letter tracking)
 - [ ] **21 — Role-Based Action Queues, Maker-Checker & Approval Limits** — new (2026-07-31), not started. [plan](./scenario-21-role-queues-maker-checker-plan.md)
   - [ ] `PendingApprovalsWidget` is hardcoded mock data, no maker≠checker enforcement, `AccountingAuditLog` unused, no approval limits
   - [ ] Offline sync explicitly deferred — flagged as future work, not scoped into this doc's implementation
@@ -62,3 +64,4 @@ Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-ver
 - Scenario 06 and 11's plan docs describe large gaps that are already closed in code — flagged for a docs refresh, not because the work is missing.
 - The base `prisma/seed.ts` CLI seed never creates GL account 2060 (WHT Payable) or its account mapping — only the separate "Seed PH Defaults" endpoint (`coa-seed.service.ts`'s `seedPH()`) does. This has now silently broken a fresh-seed dev environment twice (2026-07-27, 2026-07-31); worth a real fix in `prisma/seed.ts` rather than repeated manual backfills.
 - `inventory-receiving-branch-serial-gl.e2e-spec.ts` had a real test-ordering bug (fixed 2026-07-31): its one hard-closed-fiscal-period test creates a period covering the whole current month, torn down only at the very end of the file — any describe block placed after it that does a real-cost receive fails once the wall-clock date rolls into that period's month. Now positioned last in the file, with the reason documented inline. Its `afterAll` cleanup was also fixed (was deleting `Item` before `StockCostLayer`, violating the FK on every run).
+- Frontend e2e specs in this codebase clean up fixtures inline at the end of each test body (not via `afterEach`) — if a test fails/throws partway through, its fixtures are silently orphaned in the dev DB (found 2026-08-03: a Scenario 20 test's own fixture from an earlier, since-fixed locator bug, still sitting in the Installment Accounts list days later, confusing manual QA). `customer.remove()` is a soft delete (`deletedAt`, filtered everywhere) so successful runs' cleanup is invisible either way — the risk is specifically failed runs, whose fixtures never reach the cleanup code at all. No fix applied (would mean reworking every spec's cleanup pattern) — just flagging so a stray-looking row prompts "check for a failed run," not a data bug.

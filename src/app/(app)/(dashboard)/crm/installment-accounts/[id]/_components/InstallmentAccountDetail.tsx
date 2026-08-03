@@ -1,16 +1,41 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Banknote, Coins, ArrowUpCircle, Check, X as XIcon } from 'lucide-react'
-import { installmentAccountsApi } from '@/src/libs/api/crm'
+import {
+  ArrowLeft,
+  Pencil,
+  Banknote,
+  Coins,
+  ArrowUpCircle,
+  Check,
+  X as XIcon,
+  BellRing,
+  Phone,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  CalendarClock,
+} from 'lucide-react'
+import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
 import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
 import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
+import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import type {
   InstallmentAccountDetail as DetailType,
   CategoryGraduationRequest,
+  Reminder,
+  ReminderType,
 } from '@/src/schema/crm/types'
+
+const REMINDER_TYPE_ICON: Record<ReminderType, React.ElementType> = {
+  call: Phone,
+  email: Mail,
+  visit: MapPin,
+  other: MoreHorizontal,
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -49,12 +74,18 @@ export default function InstallmentAccountDetail({
   canEarlyPayoff,
   canRecordPayment,
   canApproveGraduation,
+  canScheduleReminder,
+  currentUserId,
+  tenantId,
 }: {
   id: string
   canEdit: boolean
   canEarlyPayoff: boolean
   canRecordPayment: boolean
   canApproveGraduation: boolean
+  canScheduleReminder: boolean
+  currentUserId: string
+  tenantId: string
 }) {
   const [account, setAccount] = useState<DetailType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -82,6 +113,23 @@ export default function InstallmentAccountDetail({
   const [requestingGraduation, setRequestingGraduation] = useState(false)
   const [graduationError, setGraduationError] = useState<string | null>(null)
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null)
+
+  const [reminders, setReminders] = useState<Reminder[]>([])
+  const [remindersLoading, setRemindersLoading] = useState(true)
+  const [scheduleReminderOpen, setScheduleReminderOpen] = useState(false)
+  const [completingReminderId, setCompletingReminderId] = useState<string | null>(null)
+
+  const loadReminders = useCallback(() => {
+    setRemindersLoading(true)
+    remindersApi.list({ installmentAccountId: id, limit: 50 }).then((res) => {
+      if (res.success && res.data) setReminders(res.data.data)
+      setRemindersLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    loadReminders()
+  }, [loadReminders])
 
   function reload() {
     installmentAccountsApi.get(id).then((res) => {
@@ -341,11 +389,102 @@ export default function InstallmentAccountDetail({
         </section>
       </div>
 
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-[14px] font-semibold text-gray-900">Collections reminders</h2>
+          {canScheduleReminder && (
+            <button
+              onClick={() => setScheduleReminderOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <BellRing className="h-3.5 w-3.5" />
+              Schedule reminder
+            </button>
+          )}
+        </div>
+
+        {remindersLoading && <p className="mt-3 text-[13px] text-gray-400">Loading…</p>}
+
+        {!remindersLoading && reminders.length === 0 && (
+          <p className="mt-3 text-[13px] text-gray-400">
+            No reminders logged for this account yet.
+          </p>
+        )}
+
+        {!remindersLoading && reminders.length > 0 && (
+          <ul className="mt-3 divide-y divide-gray-50">
+            {reminders.map((r) => {
+              const Icon = REMINDER_TYPE_ICON[r.reminderType] ?? MoreHorizontal
+              const isPending = r.status === 'pending' || r.status === 'overdue'
+              return (
+                <li key={r.id} className="flex items-center gap-3 py-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+                    <Icon className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-gray-900">
+                      {r.note ?? r.reminderType}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
+                      <CalendarClock className="h-3 w-3" />
+                      {new Date(r.dueAt).toLocaleString('en-PH', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {r.status === 'overdue' && (
+                        <span className="ml-1 font-semibold text-red-600">Overdue</span>
+                      )}
+                    </p>
+                  </div>
+                  {isPending ? (
+                    <button
+                      onClick={() => setCompletingReminderId(r.id)}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Complete
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] font-medium text-gray-400">
+                      Completed
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <ScheduleReminderModal
+        open={scheduleReminderOpen}
+        onClose={() => setScheduleReminderOpen(false)}
+        onCreated={loadReminders}
+        tenantId={tenantId}
+        assignedTo={currentUserId}
+        target={{ installmentAccountId: id, collectorId: account.collector?.id }}
+      />
+
+      <CompleteReminderModal
+        open={completingReminderId !== null}
+        onClose={() => setCompletingReminderId(null)}
+        onCompleted={loadReminders}
+        reminderId={completingReminderId}
+      />
+
       <EarlyPayoffModal
         key={payoffModalKey}
         open={payoffOpen}
         onClose={() => setPayoffOpen(false)}
-        onSettled={reload}
+        onSettled={() => {
+          reload()
+          // Scenario 20 (NAMIDRe): an early payoff auto-closes any open
+          // reminder on this account server-side — refresh the list so
+          // that shows up without a manual page reload.
+          loadReminders()
+        }}
         accountId={id}
         suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
       />
@@ -353,7 +492,13 @@ export default function InstallmentAccountDetail({
       <RecordPaymentModal
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
-        onRecorded={reload}
+        onRecorded={() => {
+          reload()
+          // Scenario 20 (NAMIDRe): a recorded payment auto-closes any open
+          // reminder on this account server-side — refresh the list so
+          // that shows up without a manual page reload.
+          loadReminders()
+        }}
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
       />

@@ -24,7 +24,11 @@ import type {
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
-import type { CreateReminderInput, UpdateReminderInput } from '@/src/schema/crm/reminder'
+import type {
+  CreateReminderInput,
+  UpdateReminderInput,
+  CompleteReminderInput,
+} from '@/src/schema/crm/reminder'
 import type {
   CreateCollectorInput,
   UpdateCollectorInput,
@@ -139,6 +143,8 @@ export const customersApi = {
 export type InteractionFilters = {
   customerId?: string
   leadId?: string
+  installmentAccountId?: string
+  collectorId?: string
   interactionType?: string
   page?: number
   limit?: number
@@ -158,6 +164,8 @@ export type ReminderFilters = {
   status?: string
   customerId?: string
   leadId?: string
+  installmentAccountId?: string
+  collectorId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
@@ -169,7 +177,8 @@ export const remindersApi = {
   create: (body: CreateReminderInput) => api.post<Reminder>('/crm/reminders', body),
   update: (id: string, body: UpdateReminderInput) =>
     api.patch<Reminder>(`/crm/reminders/${id}`, body),
-  complete: (id: string) => api.post<Reminder>(`/crm/reminders/${id}/complete`),
+  complete: (id: string, body?: CompleteReminderInput) =>
+    api.post<Reminder>(`/crm/reminders/${id}/complete`, body),
   remove: (id: string) => api.delete(`/crm/reminders/${id}`),
 }
 

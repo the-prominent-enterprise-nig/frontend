@@ -23,6 +23,9 @@ export default async function InstallmentAccountDetailPage({
       canEarlyPayoff={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)}
       canRecordPayment={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT)}
       canApproveGraduation={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_APPROVE_GRADUATION)}
+      canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      currentUserId={session.id}
+      tenantId={session.enterpriseOwnerId ?? session.id}
     />
   )
 }
