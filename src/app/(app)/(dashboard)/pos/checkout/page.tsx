@@ -4588,7 +4588,9 @@ function NewCustomerModal({
     email: '',
     customerType: 'individual' as CustomerExtraFieldsValues['customerType'],
     companyName: '',
+    businessCategory: '',
     employeeNumber: '',
+    birthday: '',
     groupId: '',
     taxId: '',
     isTaxExempt: false,
@@ -4618,8 +4620,13 @@ function NewCustomerModal({
       customerType: form.customerType,
       companyName:
         form.customerType === 'business' ? form.companyName.trim() || undefined : undefined,
+      businessCategory:
+        form.customerType === 'business' && form.businessCategory
+          ? (form.businessCategory as 'private' | 'government')
+          : undefined,
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber.trim() || undefined : undefined,
+      birthday: form.birthday ? new Date(form.birthday) : undefined,
       groupId: form.groupId.trim() || undefined,
       taxId: form.taxId.trim() || undefined,
       isTaxExempt: form.isTaxExempt,

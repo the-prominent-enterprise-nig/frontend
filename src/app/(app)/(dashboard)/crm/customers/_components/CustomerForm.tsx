@@ -29,7 +29,9 @@ type FormState = {
   lastName: string
   customerType: CustomerType
   companyName: string
+  businessCategory: string
   employeeNumber: string
+  birthday: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -53,7 +55,9 @@ const empty: FormState = {
   lastName: '',
   customerType: 'individual',
   companyName: '',
+  businessCategory: '',
   employeeNumber: '',
+  birthday: '',
   taxId: '',
   isTaxExempt: false,
   taxExemptionRef: '',
@@ -118,7 +122,9 @@ export default function CustomerForm({ id }: { id?: string }) {
           lastName: lastParts.join(' '),
           customerType: c.customerType,
           companyName: c.companyName ?? '',
+          businessCategory: c.businessCategory ?? '',
           employeeNumber: c.employeeNumber ?? '',
+          birthday: c.birthday ? c.birthday.slice(0, 10) : '',
           taxId: c.taxId ?? '',
           isTaxExempt: c.isTaxExempt,
           taxExemptionRef: c.taxExemptionRef ?? '',
@@ -203,13 +209,18 @@ export default function CustomerForm({ id }: { id?: string }) {
       name: `${form.firstName} ${form.lastName}`.trim(),
       customerType: form.customerType,
       companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
+      businessCategory:
+        form.customerType === 'business' && form.businessCategory
+          ? (form.businessCategory as 'private' | 'government')
+          : undefined,
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber || undefined : undefined,
+      birthday: form.birthday ? new Date(form.birthday) : undefined,
       taxId: form.taxId || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
       email: form.email || undefined,
-      phone: form.phone || undefined,
+      phone: form.phone,
       shippingAddress: form.shippingAddress || undefined,
       // Only one address is captured today (no separate billing/shipping
       // concept in this form) — mirror it into billingAddress too so it's
@@ -351,7 +362,7 @@ export default function CustomerForm({ id }: { id?: string }) {
             onChange={(v) => setField('email', v)}
           />
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Phone</label>
+            <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
             <PhoneInput
               value={form.phone ?? ''}
               defaultCountry="PH"
@@ -361,6 +372,7 @@ export default function CustomerForm({ id }: { id?: string }) {
               numberInputProps={{ className: 'phone-input-field' }}
               className="ph-phone-input mt-1"
             />
+            {errors.phone && <p className="mt-1 text-[12px] text-red-600">{errors.phone}</p>}
           </div>
         </div>
 
@@ -388,6 +400,7 @@ export default function CustomerForm({ id }: { id?: string }) {
           values={form}
           onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           showAddressHint={isEdit}
+          showGroupId={false}
         />
 
         {isEdit && (
