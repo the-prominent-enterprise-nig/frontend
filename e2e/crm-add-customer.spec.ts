@@ -1,10 +1,30 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable, fillStable, fillPhoneStable } from './utils'
+import {
+  deleteCustomers,
+  fillAllStable,
+  fillPhoneStable,
+  fillStable,
+  gotoReady,
+  sweepE2ECustomers,
+} from './utils'
+
+const NAME_PREFIX = 'E2E TestCustomer'
 
 // CRM — Add Customer (scenario step 1: "find or create the customer ... a
 // customer can exist without buying").
 test.describe('CRM — Add Customer', () => {
-  test('creates a customer with no prior sale, then deletes it (cleanup)', async ({ page }) => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, NAME_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdIds)
+    createdIds = []
+  })
+
+  test('creates a customer with no prior sale', async ({ page }) => {
     const uniqueSuffix = Date.now()
     const firstName = 'E2E'
     const lastName = `TestCustomer${uniqueSuffix}`
@@ -57,6 +77,7 @@ test.describe('CRM — Add Customer', () => {
     // Customer360 doesn't render billingAddress at all (it's an
     // Accounting-side display concern), so check the API response directly.
     const customerId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
+    if (customerId) createdIds.push(customerId)
     const detailRes = await page.request.get(`/api/crm/customers/${customerId}`)
     const detail = await detailRes.json()
     expect(detail.shippingAddress).toContain(streetAddress)
@@ -71,13 +92,5 @@ test.describe('CRM — Add Customer', () => {
     await gotoReady(page, '/crm/customers')
     await fillStable(page.getByPlaceholder(/search code, name, email/i), lastName)
     await expect(page.getByText(fullName)).toBeVisible({ timeout: 10_000 })
-
-    // Cleanup via the Danger Zone delete action so repeated runs don't pile
-    // up test customers in the shared dev database.
-    await page.getByText(fullName).click()
-    await expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 15_000 })
-    page.once('dialog', (dialog) => dialog.accept())
-    await page.getByRole('button', { name: 'Delete customer' }).click()
-    await expect(page).toHaveURL(/\/crm\/customers$/, { timeout: 15_000 })
   })
 })

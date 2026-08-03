@@ -7831,25 +7831,6 @@ export interface components {
       declaredCash: number
       notes?: string
     }
-    ScPwdDiscountDto: {
-      /**
-       * @description Senior Citizen or Person with Disability
-       * @enum {string}
-       */
-      type: 'SC' | 'PWD'
-      /**
-       * @description Government-issued SC/PWD ID number
-       * @example 1234567890
-       */
-      idNumber: string
-      /**
-       * @description Full name on SC/PWD ID
-       * @example Juan dela Cruz
-       */
-      name: string
-      /** @description Base64-encoded signature capture or URL */
-      signatureCapture?: string
-    }
     CreateTransactionLineDto: {
       /** @example uuid-item-id */
       itemId: string
@@ -7991,8 +7972,6 @@ export interface components {
        * @example 3000
        */
       downPayment?: number
-      /** @description SC/PWD discount — triggers 20% BIR-compliant discount on VAT-exclusive base with VAT exemption (POS-42/53) */
-      scPwdDiscount?: components['schemas']['ScPwdDiscountDto']
       /**
        * @description CRM-owned sales agent to attribute this sale to — distinct from the cashier operating the terminal, and from system User accounts. Must reference an active Agent record.
        * @example uuid-agent-id

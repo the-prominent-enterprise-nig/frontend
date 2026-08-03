@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import {
+  cancelStockTransfer,
+  clickStable,
+  findStockTransferIdByReason,
+  gotoReady,
+  sweepE2EStockTransfers,
+} from './utils'
+
+const REASON_PREFIX = 'E2E-TRF-AR-'
 
 // Scenario 06, Part 3 — source-branch accept/reject of an incoming request,
 // then dispatch/receive through to the auto-issued receiving report (GRN).
@@ -54,6 +62,9 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
       timeout: 3_000,
     })
   }).toPass({ timeout: 15_000 })
+  // Creation goes through a Server Action, not a client-visible request —
+  // look the id up after the fact instead of intercepting the create call.
+  return findStockTransferIdByReason(page.request, uniqueReason)
 }
 
 async function openMine(page: import('@playwright/test').Page, uniqueReason: string) {
@@ -86,11 +97,26 @@ function detailModal(page: import('@playwright/test').Page) {
 }
 
 test.describe('Inventory — Stock Transfer accept/reject + receiving report', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2EStockTransfers(request, REASON_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    // No-ops for both tests below — they deliberately drive the transfer to
+    // Received (a real completed movement of destination stock) or Rejected
+    // (already terminal), neither of which is cancellable. Only catches a
+    // transfer left behind mid-flow by a failure (still at Requested).
+    for (const id of createdIds) await cancelStockTransfer(request, id)
+    createdIds = []
+  })
+
   test('accept -> dispatch -> receive issues a receiving report (GRN)', async ({ page }) => {
     await ensureHqApprovalOff(page)
 
     const uniqueReason = `E2E-TRF-AR-HAPPY-${Date.now()}`
-    await createBulkRequest(page, uniqueReason)
+    createdIds.push(await createBulkRequest(page, uniqueReason))
     await openMine(page, uniqueReason)
     const modal = detailModal(page)
 
@@ -122,7 +148,7 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
     await ensureHqApprovalOff(page)
 
     const uniqueReason = `E2E-TRF-AR-REJECT-${Date.now()}`
-    await createBulkRequest(page, uniqueReason)
+    createdIds.push(await createBulkRequest(page, uniqueReason))
     await openMine(page, uniqueReason)
     const modal = detailModal(page)
 

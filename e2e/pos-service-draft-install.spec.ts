@@ -1,5 +1,16 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, loginAs, clickStable, ensureItemStock } from './utils'
+import {
+  cancelServiceDraft,
+  clickStable,
+  ensureItemStock,
+  fillStable,
+  findServiceDraftIdByTitle,
+  gotoReady,
+  loginAs,
+  sweepE2EServiceDrafts,
+} from './utils'
+
+const TITLE_PREFIX = 'E2E Install — '
 
 // Aircool Closing Gap 4 — POS Service Jobs "Start Install" / actual-vs-
 // estimate recording: assign a technician (POST .../start-install, sourcing
@@ -56,7 +67,10 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
 
   const row = page.locator('tr').filter({ hasText: title })
   await expect(row).toBeVisible({ timeout: 10_000 })
-  return row
+  // Creation goes through a Server Action, not a client-visible request —
+  // look the id up after the fact instead of intercepting the create call.
+  const id = await findServiceDraftIdByTitle(page.request, title)
+  return { row, id }
 }
 
 async function confirmSourcing(page: import('@playwright/test').Page) {
@@ -70,11 +84,23 @@ async function confirmSourcing(page: import('@playwright/test').Page) {
 }
 
 test.describe('POS Service Jobs — Install (Aircool Closing Gap 4)', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2EServiceDrafts(request, TITLE_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    for (const id of createdIds) await cancelServiceDraft(request, id)
+    createdIds = []
+  })
+
   test('Business Owner starts install, assigns a technician, and records actual materials', async ({
     page,
   }) => {
     const title = `E2E Install — ${Date.now()}`
-    const row = await createServiceJob(page, title)
+    const { row, id } = await createServiceJob(page, title)
+    createdIds.push(id)
 
     const detailHeading = page.getByRole('heading', { name: title })
     await row.click()
@@ -139,12 +165,24 @@ test.describe('POS Service Jobs — Cashier cannot install (role gate)', () => {
   const STOCK_EMAIL = process.env.E2E_STOCK_EMAIL ?? 'technova.b1.stock@test.com'
   const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
+  // No beforeAll self-heal sweep in this block — this file-level storageState
+  // override means a worker-scoped `request` fixture in beforeAll would be
+  // unauthenticated. The sibling describe block above already sweeps this
+  // title prefix (both patterns share it), so that gap is covered from there.
+  let createdIds: string[] = []
+
+  test.afterEach(async ({ page }) => {
+    for (const id of createdIds) await cancelServiceDraft(page.request, id)
+    createdIds = []
+  })
+
   test('Cashier never sees Start Install, even on a job Stock Controller already moved to sourcing', async ({
     page,
   }) => {
     await loginAs(page, CASHIER_EMAIL, PASSWORD)
     const title = `E2E Install — Cashier gate — ${Date.now()}`
-    await createServiceJob(page, title)
+    const { id } = await createServiceJob(page, title)
+    createdIds.push(id)
 
     // Same branch (Manila HQ) as the Cashier, so the Stock Controller's own
     // branch-scoped list shows this same draft — switch identity in-place
