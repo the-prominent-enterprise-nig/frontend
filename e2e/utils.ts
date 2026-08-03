@@ -297,6 +297,47 @@ export async function sweepE2EStockTransfers(
   }
 }
 
+/**
+ * Finds the id of a just-created/updated Price List by its exact name.
+ * Creation/update go through a Next.js Server Action ('use server') — see
+ * findServiceDraftIdByTitle's docstring for why that rules out intercepting
+ * the request itself.
+ */
+export async function findPriceListIdByName(
+  request: APIRequestContext,
+  name: string
+): Promise<string> {
+  const res = await request.get(`/api/inventory/price-lists?search=${encodeURIComponent(name)}`)
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const match = list.find((p) => p.name === name)
+  if (!match) throw new Error(`findPriceListIdByName: no price list found with name "${name}"`)
+  return match.id
+}
+
+/**
+ * Self-heal sweep: deactivates any leftover Price List whose name starts
+ * with `namePrefix` — same rationale as sweepE2ECustomers, for a prior run
+ * of these specs that got interrupted before reaching its own cleanup.
+ * There's no hard-delete endpoint for price lists (DELETE only deactivates),
+ * so this is the closest to a real cleanup this entity supports.
+ */
+export async function sweepE2EPriceLists(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get(
+    `/api/inventory/price-lists?search=${encodeURIComponent(namePrefix)}`
+  )
+  if (!res.ok()) return
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const matches = list.filter((p) => p.name?.startsWith(namePrefix))
+  for (const p of matches) {
+    await request.delete(`/api/inventory/price-lists/${p.id}`).catch(() => {})
+  }
+}
+
 export async function loginAs(page: Page, email: string, password: string): Promise<void> {
   await gotoReady(page, '/login')
   // Re-fills on every retry, not just once up front: a hydration reconciliation
