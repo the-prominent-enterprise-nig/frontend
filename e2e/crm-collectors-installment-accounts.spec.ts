@@ -773,4 +773,137 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     expect(del.ok()).toBeTruthy()
     await deleteCustomerViaUi(page, fullName)
   })
+
+  test('captures a structured Promise to Pay when completing a reminder', async ({ page }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-PTP-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-10T09:00')
+        await fillStable(page.locator('#reminder-note'), 'PTP capture test')
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+    await expect(page.getByText('PTP capture test')).toBeVisible({ timeout: 10_000 })
+
+    // Checking "Mark as Promise to Pay" without a date is rejected client-side
+    await clickStable(
+      page.getByRole('button', { name: 'Complete' }),
+      page.getByRole('heading', { name: 'Complete reminder' })
+    )
+    await page.getByLabel('Mark as Promise to Pay').check()
+    await page.locator('#complete-reminder-ptp-amount').fill('2500')
+    await page.locator('form').getByRole('button', { name: 'Complete', exact: true }).click()
+    await expect(page.getByText('A committed date is required for a Promise to Pay')).toBeVisible({
+      timeout: 5_000,
+    })
+    await expect(page.getByRole('heading', { name: 'Complete reminder' })).toBeVisible()
+
+    // Filling in the date lets it through
+    await page.locator('#complete-reminder-ptp-date').fill('2026-08-20')
+    await page.locator('form').getByRole('button', { name: 'Complete', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Complete reminder' })).toHaveCount(0, {
+      timeout: 8_000,
+    })
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+    const interactions = await page.request.get(
+      `/api/crm/interactions?installmentAccountId=${accountId}&limit=5`
+    )
+    const interactionsBody = await interactions.json()
+    const logged = (
+      interactionsBody.data as { isPromiseToPay?: boolean; ptpAmount?: string; ptpDate?: string }[]
+    ).find((i) => i.isPromiseToPay)
+    expect(logged).toBeTruthy()
+    expect(Number(logged?.ptpAmount)).toBe(2500)
+    expect(logged?.ptpDate).toContain('2026-08-20')
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
+
+  test('the legal escalation section only appears once the account is in DAM, and its status is editable', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-LEGAL-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    // Not in DAM yet — section is absent
+    await expect(page.getByRole('heading', { name: 'Legal escalation' })).toHaveCount(0)
+
+    // Move it into DAM via the edit form's classification field
+    await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
+    await page.getByLabel('Classification').selectOption('not_moving')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await page.waitForURL(`/crm/installment-accounts/${accountId}`, { timeout: 15_000 })
+
+    await expect(page.getByRole('heading', { name: 'Legal escalation' })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.locator('#legal-escalation-status')).toHaveValue('none')
+
+    await page.locator('#legal-escalation-status').selectOption('soa_prepared')
+    await page.locator('#legal-escalation-notes').fill('SOA drafted, awaiting BM sign-off')
+    await page.getByRole('button', { name: 'Update' }).click()
+
+    await expect(page.locator('#legal-escalation-status')).toHaveValue('soa_prepared', {
+      timeout: 10_000,
+    })
+    await expect(page.locator('#legal-escalation-notes')).toHaveValue(
+      'SOA drafted, awaiting BM sign-off'
+    )
+    await expect(page.getByText(/Last updated/)).toBeVisible()
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
 })

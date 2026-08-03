@@ -2,7 +2,7 @@
 
 One-page status for all module scenarios (14 from the original source, plus 15-21 added 2026-07-31 from a second client scenario map — see [module-scenarios.md](./module-scenarios.md)'s "Draft 2 additions" for the full routing table). Each row is re-verified against the actual `development` branch code in both repos (not just the plan docs' own checkmarks, which can drift) — see the full gap analysis and Implementation Log in each scenario's own plan doc for file/line evidence.
 
-Last verified: 2026-08-03 (Scenario 20's NAMIDRe track closed this pass; Scenario 02 re-verified 2026-08-01; Scenario 05 re-verified 2026-07-31).
+Last verified: 2026-08-03 (Scenario 20 fully closed this pass — NAMIDRe + DAM; Scenario 02 re-verified 2026-08-01; Scenario 05 re-verified 2026-07-31).
 
 - [x] **01 — POS Installment Sale** — fully closed. [plan](./scenario-01-pos-installment-sale-plan.md)
 - [ ] **02 — CRM Customer Profile** — core done (2026-08-01: co-maker, duplicate detection, BM/AR merge-resolution, ID/consent capture, Lead-conversion loyalty bug); Smart SMS + segment campaigns remain out of scope pending their own integration/scoping pass. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
@@ -48,10 +48,8 @@ Last verified: 2026-08-03 (Scenario 20's NAMIDRe track closed this pass; Scenari
   - [ ] No Quarantine hold, no tiered custodian+approver flow, Exchange is a vestigial enum value, not connected to `CreditMemo`
 - [ ] **19 — Stock Count & Inventory Adjustment Approval** — new (2026-07-31), not started. [plan](./scenario-19-stock-count-adjustment-approval-plan.md)
   - [ ] No server-side count snapshot, no approval chain on adjustments, no before/after audit log
-- [ ] **20 — Collections Reminder Track (NAMIDRe) & Delinquency Escalation (DAM)** — NAMIDRe reminder track closed 2026-08-03 (linked to InstallmentAccount/Collector, duplicate-suppression, auto-close-on-payment); DAM track not started. [plan](./scenario-20-collections-namidre-dam-plan.md)
-  - [ ] No formal NAMIDRe/DAM two-track bifurcation or trigger rule (confirmed as a product/policy decision, not yet made)
-  - [ ] No structured Promise-to-Pay (PTP) tracking — `Interaction.outcome` is still free text
-  - [ ] No DAM formal state, review chain, or legal-escalation pipeline (Small Claims pack, SOA/demand-letter tracking)
+- [x] **20 — Collections Reminder Track (NAMIDRe) & Delinquency Escalation (DAM)** — fully closed 2026-08-03: NAMIDRe reminder track (linked to InstallmentAccount/Collector, duplicate-suppression, auto-close-on-payment) + DAM (trigger rule + manual escalation, structured PTP tracking, legal-escalation checklist/status). [plan](./scenario-20-collections-namidre-dam-plan.md)
+  - [ ] Deliberately not built (confirmed with the developer as out of scope for this pass, not a gap): a formal BM → Area Supervisor → HO AR multi-stage review/approval chain for legal escalation. Today it's a single status field anyone with the permission can move through any order; enforcing the PDF's actual stage-by-stage review workflow would be its own scoping conversation.
 - [ ] **21 — Role-Based Action Queues, Maker-Checker & Approval Limits** — new (2026-07-31), not started. [plan](./scenario-21-role-queues-maker-checker-plan.md)
   - [ ] `PendingApprovalsWidget` is hardcoded mock data, no maker≠checker enforcement, `AccountingAuditLog` unused, no approval limits
   - [ ] Offline sync explicitly deferred — flagged as future work, not scoped into this doc's implementation

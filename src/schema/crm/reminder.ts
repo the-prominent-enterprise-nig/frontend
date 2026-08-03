@@ -28,8 +28,16 @@ export const updateReminderSchema = z.object({
 })
 export type UpdateReminderInput = z.infer<typeof updateReminderSchema>
 
-export const completeReminderSchema = z.object({
-  outcome: z.string().max(1000).optional().or(z.literal('')),
-  contactPhone: z.string().max(20).optional().or(z.literal('')),
-})
+export const completeReminderSchema = z
+  .object({
+    outcome: z.string().max(1000).optional().or(z.literal('')),
+    contactPhone: z.string().max(20).optional().or(z.literal('')),
+    isPromiseToPay: z.boolean().optional(),
+    ptpAmount: z.number().min(0).optional(),
+    ptpDate: z.string().optional().or(z.literal('')),
+  })
+  .refine((d) => !d.isPromiseToPay || Boolean(d.ptpDate), {
+    message: 'A committed date is required for a Promise to Pay',
+    path: ['ptpDate'],
+  })
 export type CompleteReminderInput = z.infer<typeof completeReminderSchema>

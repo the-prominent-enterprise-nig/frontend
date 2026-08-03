@@ -17,6 +17,8 @@ import type {
   Agent,
   CollectionIncentive,
   CategoryGraduationRequest,
+  DamEscalationRequest,
+  LegalEscalationStatus,
   AgentCommission,
   DuplicateCheckResult,
   DuplicatePair,
@@ -270,6 +272,26 @@ export const installmentAccountsApi = {
       `/crm/installment-accounts/${id}/graduation-requests/${requestId}/reject`,
       body
     ),
+  requestDamEscalation: (id: string, body: { reason?: string }) =>
+    api.post<DamEscalationRequest>(`/crm/installment-accounts/${id}/dam-escalation-requests`, body),
+  listDamEscalationRequests: (id: string) =>
+    api.get<DamEscalationRequest[]>(`/crm/installment-accounts/${id}/dam-escalation-requests`),
+  listAllDamEscalationRequests: (status?: string) =>
+    api.get<DamEscalationRequest[]>(
+      '/crm/installment-accounts/dam-escalation-requests',
+      status ? { status } : undefined
+    ),
+  approveDamEscalation: (id: string, requestId: string) =>
+    api.post<InstallmentAccountDetail>(
+      `/crm/installment-accounts/${id}/dam-escalation-requests/${requestId}/approve`
+    ),
+  rejectDamEscalation: (id: string, requestId: string, body: { reason?: string }) =>
+    api.post<DamEscalationRequest>(
+      `/crm/installment-accounts/${id}/dam-escalation-requests/${requestId}/reject`,
+      body
+    ),
+  updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
+    api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──
