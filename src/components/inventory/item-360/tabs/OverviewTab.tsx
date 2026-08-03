@@ -3,9 +3,13 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { ItemTagLabel } from '@/src/schema/inventory/items'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import ItemImageGallery from '@/src/app/(app)/(dashboard)/inventory/items/_components/ItemImageGallery'
 import { getItemTags } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/item-tags'
 import { STALE } from '@/src/libs/query/stale-times'
+import { formatClassificationLabel } from '@/src/libs/format/text'
+import { originLabel } from '@/src/libs/format/serial-provenance'
+import { formatShortDate, formatAge } from '@/src/libs/format/date'
 
 const COSTING_LABELS: Record<string, string> = {
   fifo: 'FIFO',
@@ -50,7 +54,68 @@ function TrackingBadge({ label, active }: { label: string; active: boolean }) {
   )
 }
 
-export default function OverviewTab({ item }: { item: ItemSummary }) {
+// Provenance (origin/RR/date-in) lives on the goods receipt, not the item —
+// with many units it can span several receipts/dates. Show the one real
+// value when every fetched unit agrees, otherwise a count instead of
+// blending values that don't actually match.
+function summarizeDistinct(
+  serials: SerialNumberSummary[],
+  extract: (s: SerialNumberSummary) => string | undefined
+): { single?: string; count: number } {
+  const distinct = Array.from(new Set(serials.map(extract).filter((v): v is string => !!v)))
+  return { single: distinct.length === 1 ? distinct[0] : undefined, count: distinct.length }
+}
+
+export default function OverviewTab({
+  item,
+  serials = [],
+}: {
+  item: ItemSummary
+  serials?: SerialNumberSummary[]
+}) {
+  const serialCount = item._count?.serialNumbers ?? serials.length
+  const serialValue =
+    serialCount === 1 && serials[0] ? (
+      <span className="font-mono">{serials[0].serialNumber}</span>
+    ) : serialCount > 0 ? (
+      `${serialCount} unit${serialCount !== 1 ? 's' : ''}`
+    ) : (
+      'No units yet'
+    )
+
+  const originSummary = summarizeDistinct(serials, (s) => {
+    const label = originLabel(s)
+    return label === '—' ? undefined : label
+  })
+  const originValue =
+    serials.length === 0
+      ? undefined
+      : (originSummary.single ??
+        (originSummary.count > 1 ? `${originSummary.count} origins` : undefined))
+
+  const rrSummary = summarizeDistinct(serials, (s) => s.goodsReceiptLine?.goodsReceipt?.code)
+  const rrValue =
+    serials.length === 0
+      ? undefined
+      : (rrSummary.single ?? (rrSummary.count > 1 ? `${rrSummary.count} receipts` : undefined))
+
+  const dateInSummary = summarizeDistinct(
+    serials,
+    (s) => s.goodsReceiptLine?.goodsReceipt?.receivedAt
+  )
+  const dateInValue =
+    serials.length === 0
+      ? undefined
+      : dateInSummary.single
+        ? formatShortDate(dateInSummary.single)
+        : dateInSummary.count > 1
+          ? `${dateInSummary.count} dates`
+          : undefined
+  // Age is derived from a single date-in — blending ages across units
+  // received on different dates wouldn't mean anything, so it's only shown
+  // when every fetched unit agrees on the same date-in.
+  const ageValue = dateInSummary.single ? formatAge(dateInSummary.single) : undefined
+
   const costPrice =
     item.costPrice != null
       ? `₱${Number(item.costPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
@@ -82,6 +147,18 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
     item.weightKg != null ||
     item.warrantyPeriodDays != null
 
+  const hasClassification = !!item.brand || !!item.type || !!item.modelNumber
+
+  // Category doubles as "group/subgroup": primaryCategory is the leaf
+  // (subgroup) when it has a parent, in which case the parent is the group.
+  // When primaryCategory has no parent, it IS the group and there's no
+  // subgroup chosen.
+  const hasParentCategory = !!item.primaryCategory?.parentCategory
+  const categoryName = hasParentCategory
+    ? item.primaryCategory?.parentCategory?.name
+    : item.primaryCategory?.name
+  const subcategoryName = hasParentCategory ? item.primaryCategory?.name : undefined
+
   return (
     <div className="space-y-6 p-5">
       {/* Images */}
@@ -90,10 +167,46 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
       {/* Identity */}
       <div className="grid grid-cols-2 gap-4">
         <Field label="SKU" value={<span className="font-mono">{item.sku}</span>} />
-        <Field label="Category" value={item.primaryCategory?.name} />
+        <Field
+          label="Category"
+          value={categoryName ? formatClassificationLabel(categoryName) : undefined}
+        />
+        <Field
+          label="Subcategory"
+          value={subcategoryName ? formatClassificationLabel(subcategoryName) : undefined}
+        />
         <Field label="Unit of Measure" value={item.baseUnit?.name} />
         <Field label="Costing Method" value={COSTING_LABELS[(item as any).costingMethod] ?? '—'} />
+        {item.isSerialTracked && (
+          <>
+            <Field label={serialCount === 1 ? 'Serial Number' : 'Units'} value={serialValue} />
+            <Field label="RR #" value={rrValue} />
+            <Field label="Origin" value={originValue} />
+            <Field label="Date In" value={dateInValue} />
+            <Field label="Age" value={ageValue} />
+          </>
+        )}
       </div>
+
+      {/* Classification */}
+      {hasClassification && (
+        <div>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Classification
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field
+              label="Brand"
+              value={item.brand ? formatClassificationLabel(item.brand.name) : undefined}
+            />
+            <Field label="Model Number" value={item.modelNumber} />
+            <Field
+              label="Item Type"
+              value={item.type ? formatClassificationLabel(item.type.name) : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Pricing */}
       <div>

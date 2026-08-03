@@ -9,13 +9,7 @@ import { createItem } from '../_actions/create-item'
 import { updateItem, updateItemLifecycle } from '../_actions/update-item'
 import { updateItemAttributes } from '../_actions/update-item-attributes'
 import { deleteItem } from '../_actions/delete-item'
-import {
-  getUnitsOfMeasure,
-  getItemGroups,
-  getItemSubgroups,
-  getItemBrands,
-  getItemTypes,
-} from '../_actions/get-lookup-data'
+import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
@@ -30,8 +24,6 @@ import type {
   UpdateItemFormValues,
   UomOption,
   ItemSummary,
-  ItemGroupOption,
-  ItemSubgroupOption,
   ClassificationOption,
 } from '@/src/schema/inventory/items'
 import type { FlatCategory } from '@/src/schema/inventory/categories'
@@ -81,7 +73,7 @@ export function useItemMaster() {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimit] = useState(20)
   const [search, setSearch] = useState('')
   const [lifecycle, setLifecycle] = useState<'active' | 'discontinued' | 'archived' | undefined>(
     undefined
@@ -124,18 +116,6 @@ export function useItemMaster() {
   const uomQuery = useQuery({
     queryKey: ['inventory-uom'],
     queryFn: () => getUnitsOfMeasure(),
-    staleTime: 10 * 60 * 1000,
-  })
-
-  const itemGroupsQuery = useQuery({
-    queryKey: ['inventory-item-groups'],
-    queryFn: () => getItemGroups(),
-    staleTime: 10 * 60 * 1000,
-  })
-
-  const itemSubgroupsQuery = useQuery({
-    queryKey: ['inventory-item-subgroups'],
-    queryFn: () => getItemSubgroups(),
     staleTime: 10 * 60 * 1000,
   })
 
@@ -390,8 +370,6 @@ export function useItemMaster() {
       if (Array.isArray((d as { data?: unknown }).data)) return (d as { data: UomOption[] }).data
       return []
     })(),
-    groupOptions: (itemGroupsQuery.data?.data ?? []) as ItemGroupOption[],
-    subgroupOptions: (itemSubgroupsQuery.data?.data ?? []) as ItemSubgroupOption[],
     brandOptions: (itemBrandsQuery.data?.data ?? []) as ClassificationOption[],
     typeOptions: (itemTypesQuery.data?.data ?? []) as ClassificationOption[],
 
@@ -431,6 +409,11 @@ export function useItemMaster() {
     // Pagination
     page,
     setPage,
+    limit,
+    setLimit: (val: number) => {
+      setLimit(val)
+      setPage(1)
+    },
 
     // Mutations
     createItem: createMutation.mutateAsync,

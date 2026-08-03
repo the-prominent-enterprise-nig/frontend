@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Hash, RefreshCw, X, Truck } from 'lucide-react'
+import { Hash, RefreshCw, X, Truck, FileUp } from 'lucide-react'
 import { useSerialNumbers } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -13,7 +13,11 @@ import {
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
+import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { formatShortDate, formatAge } from '@/src/libs/format/date'
+import { originLabel } from '@/src/libs/format/serial-provenance'
+import { formatClassificationLabel } from '@/src/libs/format/text'
 
 const statusOptions = SerialStatusSchema.options
 
@@ -21,6 +25,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
   const [moveTargetBranchId, setMoveTargetBranchId] = useState('')
 
   const {
@@ -40,6 +45,8 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     warehouseOptions,
     itemOptions,
     branchOptions,
@@ -100,6 +107,16 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               >
                 <Hash className="h-4 w-4" />
                 Register Serials
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setIsImportOpen(true)}
+                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                <FileUp className="h-4 w-4" />
+                Import CSV
               </button>
             )}
           </div>
@@ -309,11 +326,26 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Serial #
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Item
-                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
                       Warehouse
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Brand / Type / Model
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      RR #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Origin
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Date In
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Age
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Unit Cost
                     </th>
                     {caravanView && (
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -348,14 +380,42 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                       <td className="px-4 py-3 font-mono text-sm font-semibold text-zinc-700">
                         {serial.serialNumber}
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-900">{serial.item?.name ?? '—'}</p>
-                        {serial.item?.sku && (
-                          <p className="font-mono text-xs text-zinc-400">{serial.item.sku}</p>
-                        )}
-                      </td>
                       <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
                         {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
+                        <div>
+                          {serial.item?.brand?.name
+                            ? formatClassificationLabel(serial.item.brand.name)
+                            : '—'}
+                        </div>
+                        <div className="text-xs text-zinc-400">
+                          {serial.item?.type?.name &&
+                            formatClassificationLabel(serial.item.type.name)}
+                          {serial.item?.type?.name && serial.item?.modelNumber && ' · '}
+                          <span className="font-mono">{serial.item?.modelNumber}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-zinc-600 hidden lg:table-cell">
+                        {serial.goodsReceiptLine?.goodsReceipt?.code ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
+                        {originLabel(serial)}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
+                        {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                          ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
+                        {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                          ? formatAge(serial.goodsReceiptLine.goodsReceipt.receivedAt)
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-700 hidden lg:table-cell">
+                        {serial.goodsReceiptLine?.unitCost != null
+                          ? `₱${Number(serial.goodsReceiptLine.unitCost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+                          : '—'}
                       </td>
                       {caravanView && (
                         <td className="px-4 py-3">
@@ -388,33 +448,49 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           )}
         </div>
 
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>
-              Showing {(page - 1) * pagination.limit + 1}–
-              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1.5 font-medium text-zinc-700">
-                {page} / {pagination.totalPages}
+        {pagination.total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {(page - 1) * pagination.limit + 1}–
+                {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
               </span>
-              <button
-                type="button"
-                onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                disabled={page >= pagination.totalPages}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Next
-              </button>
+              <label className="flex items-center gap-1.5">
+                <span className="text-zinc-400">Per page</span>
+                <select
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
             </div>
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 font-medium text-zinc-700">
+                  {page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page >= pagination.totalPages}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -425,6 +501,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         onSubmit={registerSerials}
         isSubmitting={isRegistering}
         items={itemOptions.filter((i) => i.isSerialTracked)}
+        warehouses={warehouseOptions}
+      />
+
+      <ImportSerializedInventoryModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
         warehouses={warehouseOptions}
       />
     </div>
