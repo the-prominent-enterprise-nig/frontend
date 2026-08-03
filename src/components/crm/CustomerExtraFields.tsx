@@ -1,21 +1,26 @@
 'use client'
 
-import { PAYMENT_TERMS_OPTIONS } from '@/src/schema/crm/customer'
-import type { CustomerType, CustomerStatus } from '@/src/schema/crm/types'
+import type { CustomerType } from '@/src/schema/crm/types'
+import { BUSINESS_CATEGORY_OPTIONS } from '@/src/schema/crm/customer'
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 
 export interface CustomerExtraFieldsValues {
   customerType: CustomerType
   companyName: string
+  businessCategory: string
   employeeNumber: string
+  birthday: string
   shippingAddress: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
-  paymentTerms: string
-  status: CustomerStatus
   groupId: string
   notes: string
+}
+
+const BUSINESS_CATEGORY_LABELS: Record<string, string> = {
+  private: 'Private',
+  government: 'Government',
 }
 
 /**
@@ -28,9 +33,20 @@ export interface CustomerExtraFieldsValues {
 export default function CustomerExtraFields({
   values,
   onChange,
+  showAddressHint = false,
+  showGroupId = true,
 }: {
   values: CustomerExtraFieldsValues
   onChange: (patch: Partial<CustomerExtraFieldsValues>) => void
+  /** Edit-only: the picker always starts blank (it can't reverse-parse a
+   * saved free-text address back into region/province/city/barangay), so
+   * surface what's already on file above it — otherwise an editor has no
+   * way to see the current address before picking a new one. */
+  showAddressHint?: boolean
+  /** CRM's full customer form drops Group ID (superseded by clearer
+   * grouping elsewhere); POS's quick walk-in modal keeps it, so this
+   * defaults to on and CRM opts out explicitly. */
+  showGroupId?: boolean
 }) {
   return (
     <div className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -61,6 +77,24 @@ export default function CustomerExtraFields({
           </div>
         )}
 
+        {values.customerType === 'business' && (
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Business category</label>
+            <select
+              value={values.businessCategory}
+              onChange={(e) => onChange({ businessCategory: e.target.value })}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select category</option>
+              {BUSINESS_CATEGORY_OPTIONS.map((c) => (
+                <option key={c} value={c}>
+                  {BUSINESS_CATEGORY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {values.customerType === 'employee' && (
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Employee ID</label>
@@ -74,14 +108,26 @@ export default function CustomerExtraFields({
         )}
 
         <div>
-          <label className="block text-[13px] font-medium text-gray-700">Group ID</label>
+          <label className="block text-[13px] font-medium text-gray-700">Birthday</label>
           <input
-            value={values.groupId}
-            maxLength={50}
-            onChange={(e) => onChange({ groupId: e.target.value })}
+            type="date"
+            value={values.birthday}
+            onChange={(e) => onChange({ birthday: e.target.value })}
             className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
+
+        {showGroupId && (
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Group ID</label>
+            <input
+              value={values.groupId}
+              maxLength={50}
+              onChange={(e) => onChange({ groupId: e.target.value })}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-prominent-orange-400 focus:outline-none"
+            />
+          </div>
+        )}
       </div>
 
       {/* Top-right: tax + terms */}
@@ -120,51 +166,26 @@ export default function CustomerExtraFields({
             />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Payment terms</label>
-            <select
-              value={values.paymentTerms}
-              onChange={(e) => onChange({ paymentTerms: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Select terms</option>
-              {PAYMENT_TERMS_OPTIONS.map((term) => (
-                <option key={term} value={term}>
-                  {term}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Status</label>
-            <select
-              value={values.status}
-              onChange={(e) => onChange({ status: e.target.value as CustomerStatus })}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="blocked">Blocked</option>
-            </select>
-          </div>
-        </div>
       </div>
 
-      {/* Bottom-left: address */}
-      <div>
-        <label className="mb-1 block text-[13px] font-medium text-gray-700">Shipping address</label>
+      {/* Full width: address, with notes stacked underneath, smaller */}
+      <div className="col-span-2">
+        <label className="mb-1 block text-[13px] font-medium text-gray-700">Address</label>
+        {showAddressHint && values.shippingAddress && (
+          <p className="mb-1.5 text-xs text-gray-500">
+            Current: <span className="text-gray-700">{values.shippingAddress}</span> — pick below to
+            replace it.
+          </p>
+        )}
         <PhilippineAddressPicker onChange={(v) => onChange({ shippingAddress: v })} />
-      </div>
 
-      {/* Bottom-right: notes, height-matched to the address block beside it */}
-      <div className="flex flex-col">
-        <label className="block text-[13px] font-medium text-gray-700">Notes</label>
+        <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">Notes</label>
         <textarea
           value={values.notes}
           maxLength={1000}
+          rows={2}
           onChange={(e) => onChange({ notes: e.target.value })}
-          className="mt-1 w-full flex-1 min-h-33 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
         />
       </div>
     </div>

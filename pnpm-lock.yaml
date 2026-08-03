@@ -70,9 +70,6 @@ importers:
       react-select:
         specifier: ^5.10.2
         version: 5.10.2(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      select-philippines-address:
-        specifier: ^1.0.6
-        version: 1.0.6
       shadcn:
         specifier: ^4.0.6
         version: 4.0.6(@types/node@20.19.37)(babel-plugin-macros@3.1.0)(typescript@5.9.3)
@@ -3952,12 +3949,6 @@ packages:
       }
     engines: { node: '>=4' }
 
-  axios@0.21.4:
-    resolution:
-      {
-        integrity: sha512-ut5vewkiu8jjGBdqpM44XxjuCjq9LAKeHVmoVfHVzy8eHgxxq8SbAVQNovDA8mVi05kP0Ea/n/UzcSHcTJQfNg==,
-      }
-
   axobject-query@4.1.0:
     resolution:
       {
@@ -5080,18 +5071,6 @@ packages:
       {
         integrity: sha512-IxfVbRFVlV8V/yRaGzk0UVIcsKKHMSfYw66T/u4nTwlWteQePsxe//LjudR1AMX4tZW3WFCh3Zqa/sjlqpbURQ==,
       }
-
-  follow-redirects@1.16.0:
-    resolution:
-      {
-        integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==,
-      }
-    engines: { node: '>=4.0' }
-    peerDependencies:
-      debug: '*'
-    peerDependenciesMeta:
-      debug:
-        optional: true
 
   for-each@0.3.5:
     resolution:
@@ -7010,13 +6989,6 @@ packages:
       }
     engines: { node: '>=0.10.0' }
 
-  read-file@0.2.0:
-    resolution:
-      {
-        integrity: sha512-na/zgd5KplGlR+io+ygXQMIoDfX/Y0bNS5+P2TOXOTk5plquOVd0snudCd30hZJAsnVK2rxuxUP2z0CN+Aw1lQ==,
-      }
-    engines: { node: '>=0.8' }
-
   recast@0.23.11:
     resolution:
       {
@@ -7171,12 +7143,6 @@ packages:
     resolution:
       {
         integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==,
-      }
-
-  select-philippines-address@1.0.6:
-    resolution:
-      {
-        integrity: sha512-5szjgG1z8cwWdwbD/eTBHsuzZh8k8ctTuInkDIGSh0ZR5xik71/7XN678OkWarVsgXdf+wNIa4MJYh4gwIB+HQ==,
       }
 
   semver@6.3.1:
@@ -11212,12 +11178,6 @@ snapshots:
 
   axe-core@4.11.1: {}
 
-  axios@0.21.4:
-    dependencies:
-      follow-redirects: 1.16.0
-    transitivePeerDependencies:
-      - debug
-
   axobject-query@4.1.0: {}
 
   babel-plugin-macros@3.1.0:
@@ -12040,8 +12000,6 @@ snapshots:
       keyv: 4.5.4
 
   flatted@3.4.1: {}
-
-  follow-redirects@1.16.0: {}
 
   for-each@0.3.5:
     dependencies:
@@ -13241,8 +13199,6 @@ snapshots:
 
   react@19.2.3: {}
 
-  read-file@0.2.0: {}
-
   recast@0.23.11:
     dependencies:
       ast-types: 0.16.1
@@ -13349,13 +13305,6 @@ snapshots:
   safer-buffer@2.1.2: {}
 
   scheduler@0.27.0: {}
-
-  select-philippines-address@1.0.6:
-    dependencies:
-      axios: 0.21.4
-      read-file: 0.2.0
-    transitivePeerDependencies:
-      - debug
 
   semver@6.3.1: {}
 

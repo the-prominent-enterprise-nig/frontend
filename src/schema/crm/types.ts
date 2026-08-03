@@ -92,6 +92,39 @@ export interface CustomerBankAccount {
   updatedAt: string
 }
 
+export interface DuplicateCheckResult {
+  duplicate: boolean
+  matchedField?: 'email' | 'phone'
+  customer?: { id: string; name: string }
+}
+
+export interface DuplicatePairCustomer {
+  id: string
+  customerCode: string
+  name: string
+  customerType: CustomerType
+  email?: string | null
+  phone?: string | null
+  shippingAddress?: string | null
+  createdAt: string
+}
+
+export interface DuplicatePair {
+  customerA: DuplicatePairCustomer
+  customerB: DuplicatePairCustomer
+  matchedField: 'email' | 'phone'
+}
+
+export interface CoMaker {
+  id: string
+  name: string
+  relationship: string
+  contactNumber: string
+  email?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Customer {
   id: string
   tenantId: string
@@ -99,7 +132,9 @@ export interface Customer {
   name: string
   customerType: CustomerType
   companyName?: string | null
+  businessCategory?: 'private' | 'government' | null
   employeeNumber?: string | null
+  birthday?: string | null
   taxId?: string | null
   isTaxExempt: boolean
   taxExemptionRef?: string | null
@@ -114,8 +149,27 @@ export interface Customer {
   status: CustomerStatus
   notes?: string | null
   bankAccounts?: CustomerBankAccount[]
+  coMakers?: CoMaker[]
+  idType?: string | null
+  idNumber?: string | null
+  idDocumentFile?: {
+    id: string
+    originalName: string
+    mimeType: string
+    size: number
+  } | null
+  consentGiven: boolean
+  consentGivenAt?: string | null
   createdAt: string
   updatedAt: string
+  /** Only present when this response came from following an old, merged-away
+   * customer id — the UI shows a notice instead of silently swapping data. */
+  mergedFrom?: {
+    id: string
+    customerCode: string
+    name: string
+    mergedAt?: string | null
+  }
 }
 
 export interface Agent {

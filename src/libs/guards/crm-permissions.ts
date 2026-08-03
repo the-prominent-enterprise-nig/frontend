@@ -9,6 +9,7 @@ export const CRM_PERMISSIONS = {
   CUSTOMERS_CREATE: 'crm:customers:create',
   CUSTOMERS_UPDATE: 'crm:customers:update',
   CUSTOMERS_DELETE: 'crm:customers:delete',
+  CUSTOMERS_MERGE: 'crm:customers:merge',
   INTERACTIONS_READ: 'crm:interactions:read',
   INTERACTIONS_CREATE: 'crm:interactions:create',
   REMINDERS_READ: 'crm:reminders:read',

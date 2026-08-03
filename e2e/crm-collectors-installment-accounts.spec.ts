@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { gotoReady, fillStable, fillAllStable, clickStable } from './utils'
+import { gotoReady, fillStable, fillAllStable, fillPhoneStable, clickStable } from './utils'
 
 /** Same hydration-race retry fillStable uses, adapted for <select> (fill() doesn't work on selects). */
 async function selectStable(locator: Locator, value: string): Promise<void> {
@@ -38,12 +38,14 @@ async function createCustomerViaUi(page: Page, suffix: number): Promise<{ fullNa
 
   await gotoReady(page, '/crm/customers/new')
   await submitStable(
-    () =>
-      fillAllStable([
+    async () => {
+      await fillAllStable([
         { locator: page.getByLabel('First name *'), value: firstName },
         { locator: page.getByLabel('Last name *'), value: lastName },
         { locator: page.getByLabel('Email'), value: `e2e.ia.${suffix}@example.com` },
-      ]),
+      ])
+      await fillPhoneStable(page.locator('.phone-input-field'), `9${suffix.toString().slice(-9)}`)
+    },
     () => page.getByRole('button', { name: 'Create customer' }).click(),
     () => expect(page).toHaveURL(/\/crm\/customers\/[a-f0-9-]+$/, { timeout: 8_000 })
   )

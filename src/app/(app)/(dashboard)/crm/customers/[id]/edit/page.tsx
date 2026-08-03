@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
-import EditCustomerForm from './_components/EditCustomerForm'
+import CustomerForm from '../../_components/CustomerForm'
 
 export const metadata = { title: 'Edit Customer | CRM' }
 
@@ -12,5 +12,5 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
   if (!can(session, CRM_PERMISSIONS.CUSTOMERS_UPDATE)) redirect('/403')
 
   const { id } = await params
-  return <EditCustomerForm id={id} />
+  return <CustomerForm id={id} />
 }

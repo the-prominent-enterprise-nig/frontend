@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { BellPlus, Plus, Search } from 'lucide-react'
+import { BellPlus, GitMerge, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import type { Customer } from '@/src/schema/crm/types'
@@ -65,11 +65,13 @@ function initials(name: string): string {
 export default function CustomersList({
   canScheduleReminder,
   canCreate,
+  canReviewDuplicates,
   currentUserId,
   tenantId,
 }: {
   canScheduleReminder: boolean
   canCreate: boolean
+  canReviewDuplicates: boolean
   currentUserId: string
   tenantId: string
 }) {
@@ -110,15 +112,26 @@ export default function CustomersList({
             Unified view across leads, orders, and POS history.
           </p>
         </div>
-        {canCreate && (
-          <Link
-            href="/crm/customers/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
-          >
-            <Plus className="h-4 w-4" />
-            Add Customer
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {canReviewDuplicates && (
+            <Link
+              href="/crm/customers/duplicates"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <GitMerge className="h-4 w-4" />
+              Review Duplicates
+            </Link>
+          )}
+          {canCreate && (
+            <Link
+              href="/crm/customers/new"
+              className="inline-flex items-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add Customer
+            </Link>
+          )}
+        </div>
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">

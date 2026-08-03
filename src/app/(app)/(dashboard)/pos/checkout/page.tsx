@@ -4588,14 +4588,14 @@ function NewCustomerModal({
     email: '',
     customerType: 'individual' as CustomerExtraFieldsValues['customerType'],
     companyName: '',
+    businessCategory: '',
     employeeNumber: '',
+    birthday: '',
     groupId: '',
     taxId: '',
     isTaxExempt: false,
     taxExemptionRef: '',
     shippingAddress: '',
-    paymentTerms: '',
-    status: 'active' as CustomerExtraFieldsValues['status'],
     notes: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -4620,15 +4620,20 @@ function NewCustomerModal({
       customerType: form.customerType,
       companyName:
         form.customerType === 'business' ? form.companyName.trim() || undefined : undefined,
+      businessCategory:
+        form.customerType === 'business' && form.businessCategory
+          ? (form.businessCategory as 'private' | 'government')
+          : undefined,
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber.trim() || undefined : undefined,
+      birthday: form.birthday ? new Date(form.birthday) : undefined,
       groupId: form.groupId.trim() || undefined,
       taxId: form.taxId.trim() || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
       shippingAddress: form.shippingAddress.trim() || undefined,
-      paymentTerms: form.paymentTerms || undefined,
-      status: form.status,
+      // Fixed, not user-selectable — a walk-in customer always starts active.
+      status: 'active',
       note: form.notes.trim() || undefined,
     })
     setSubmitting(false)

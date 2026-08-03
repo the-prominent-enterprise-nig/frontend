@@ -18,6 +18,8 @@ import type {
   CollectionIncentive,
   CategoryGraduationRequest,
   AgentCommission,
+  DuplicateCheckResult,
+  DuplicatePair,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -118,11 +120,18 @@ export const customersApi = {
       }
     >(`/crm/customers/${id}/360`),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
+  checkDuplicate: (params: { email?: string; phone?: string }) =>
+    api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
   update: (id: string, body: UpdateCustomerInput) =>
     api.patch<Customer>(`/crm/customers/${id}`, body),
   getInstallmentSchedules: (id: string) =>
     api.get<InstallmentSchedule[]>(`/pos/customers/${id}/installment-schedules`),
   remove: (id: string) => api.delete(`/crm/customers/${id}`),
+  listDuplicates: () => api.get<DuplicatePair[]>('/crm/customers/duplicates'),
+  dismissDuplicate: (customerAId: string, customerBId: string) =>
+    api.post('/crm/customers/duplicates/dismiss', { customerAId, customerBId }),
+  merge: (survivorId: string, duplicateId: string, fieldOverrides?: Partial<UpdateCustomerInput>) =>
+    api.post<Customer>(`/crm/customers/${survivorId}/merge`, { duplicateId, fieldOverrides }),
 }
 
 // ─── Interactions ───────────────────────────────────────────

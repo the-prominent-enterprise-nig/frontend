@@ -64,6 +64,22 @@ export async function clickStable(
 }
 
 /**
+ * react-phone-number-input reformats whatever's typed into a spaced display
+ * string (e.g. "9171234567" becomes "+63 917 123 4567"), so fillStable's
+ * exact-value check can never pass against it. Verifies by digits only —
+ * and by non-emptiness surviving the same hydration-wipe race fillStable's
+ * own docstring describes, not exact formatting, since no test in this
+ * suite asserts a specific phone value back out of this component.
+ */
+export async function fillPhoneStable(locator: Locator, digits: string): Promise<void> {
+  await expect(async () => {
+    await locator.fill(digits)
+    const value = await locator.inputValue()
+    expect(value.replace(/\D/g, '')).toContain(digits.replace(/\D/g, ''))
+  }).toPass({ timeout: 10_000 })
+}
+
+/**
  * Logs in as an arbitrary seeded user (prisma/seed.ts) rather than the shared
  * Business Owner session every other spec inherits from playwright.config.ts's
  * storageState — use this for specs that need to exercise a specific role's
