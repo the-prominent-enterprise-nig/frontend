@@ -89,11 +89,21 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
     const nameB = `Dismiss E2E B ${uniqueSuffix}`
 
     const resA = await page.request.post('/api/crm/customers', {
-      data: { name: nameA, sourceChannel: 'sales', email },
+      data: {
+        name: nameA,
+        sourceChannel: 'sales',
+        email,
+        phone: `+639${uniqueSuffix.toString().slice(-9)}`,
+      },
     })
     const customerA = await resA.json()
     const resB = await page.request.post('/api/crm/customers', {
-      data: { name: nameB, sourceChannel: 'sales', email },
+      data: {
+        name: nameB,
+        sourceChannel: 'sales',
+        email,
+        phone: `+638${uniqueSuffix.toString().slice(-9)}`,
+      },
     })
     const customerB = await resB.json()
 

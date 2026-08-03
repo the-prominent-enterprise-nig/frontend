@@ -18,6 +18,7 @@ test.describe('CRM — Edit Customer', () => {
         name: `E2E ${originalLastName}`,
         sourceChannel: 'sales',
         email: `edit-${uniqueSuffix}@example.com`,
+        phone: `+639${uniqueSuffix.toString().slice(-9)}`,
       },
     })
     const seeded = await seedRes.json()

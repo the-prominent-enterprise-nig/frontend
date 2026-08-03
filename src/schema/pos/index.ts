@@ -375,7 +375,9 @@ export interface CreateWalkInCustomerInput {
   email?: string
   customerType?: import('@/src/schema/crm/types').CustomerType
   companyName?: string
+  businessCategory?: 'private' | 'government'
   employeeNumber?: string
+  birthday?: Date
   groupId?: string
   taxId?: string
   isTaxExempt?: boolean
