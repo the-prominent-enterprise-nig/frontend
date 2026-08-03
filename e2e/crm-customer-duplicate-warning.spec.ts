@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { deleteCustomers, fillAllStable, fillPhoneStable, gotoReady, sweepE2ECustomers } from './utils'
+import {
+  deleteCustomers,
+  fillAllStable,
+  fillPhoneStable,
+  gotoReady,
+  sweepE2ECustomers,
+} from './utils'
 
 const SEED_NAME = 'Original Duplicate Owner'
 const NAME_PREFIX = 'E2E DupWarning'

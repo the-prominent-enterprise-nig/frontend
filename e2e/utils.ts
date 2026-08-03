@@ -169,13 +169,18 @@ export async function sweepE2ECustomers(
   request: APIRequestContext,
   namePrefix: string
 ): Promise<void> {
-  const res = await request.get(`/api/crm/customers?search=${encodeURIComponent(namePrefix)}&limit=100`)
+  const res = await request.get(
+    `/api/crm/customers?search=${encodeURIComponent(namePrefix)}&limit=100`
+  )
   if (!res.ok()) return
   const body = await res.json()
   const matches = ((body.data ?? []) as { id: string; name: string }[]).filter((c) =>
     c.name?.startsWith(namePrefix)
   )
-  await deleteCustomers(request, matches.map((c) => c.id))
+  await deleteCustomers(
+    request,
+    matches.map((c) => c.id)
+  )
 }
 
 /**
@@ -226,9 +231,7 @@ export async function sweepE2EServiceDrafts(
   const res = await request.get('/api/pos/service-drafts?limit=100')
   if (!res.ok()) return
   const body = await res.json()
-  const matches = (
-    (body.data ?? []) as { id: string; title: string; status: string }[]
-  ).filter(
+  const matches = ((body.data ?? []) as { id: string; title: string; status: string }[]).filter(
     (d) => d.title?.startsWith(titlePrefix) && !TERMINAL_SERVICE_DRAFT_STATUSES.includes(d.status)
   )
   for (const d of matches) {
