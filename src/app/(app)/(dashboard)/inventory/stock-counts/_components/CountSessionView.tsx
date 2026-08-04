@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, AlertTriangle } from 'lucide-react'
 import type {
   CountSummary,
+  CountLineSnapshot,
   SubmitCountFormValues,
   CreateAdjustmentFormValues,
 } from '@/src/schema/inventory/stock-counts'
@@ -30,6 +31,18 @@ type Props = {
   isAdjusting: boolean
   items: ItemSummary[]
   canAdjust: boolean
+  countLines: CountLineSnapshot[]
+  isCountLinesLoading: boolean
+}
+
+type CountSheetLine = {
+  itemId: string
+  itemLabel: string
+  variantId?: string
+  batchId?: string
+  locationId?: string
+  systemQty: number | null // null = not in the system snapshot (a genuine find)
+  countedQty: number | ''
 }
 
 const reasonCodes = AdjustmentReasonCodeSchema.options
@@ -47,11 +60,29 @@ export default function CountSessionView({
   isAdjusting,
   items,
   canAdjust,
+  countLines,
+  isCountLinesLoading,
 }: Props) {
   const [tab, setTab] = useState<'count' | 'adjust'>('count')
-  const [lines, setLines] = useState<
-    { itemId: string; expectedQty: number | ''; countedQty: number | '' }[]
-  >([])
+  const [lines, setLines] = useState<CountSheetLine[]>([])
+
+  // Seed the count sheet from the server-side snapshot taken at start() —
+  // expected quantity is never something the counter types in themselves.
+  useEffect(() => {
+    if (count?.status !== 'in_progress') return
+    setLines(
+      countLines.map((l) => ({
+        itemId: l.itemId,
+        itemLabel: `${l.item.sku} — ${l.item.name}`,
+        variantId: l.variantId ?? undefined,
+        batchId: l.batchId ?? undefined,
+        locationId: l.locationId ?? undefined,
+        systemQty: Number(l.systemQty),
+        countedQty: l.countedQty ?? '',
+      }))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count?.id, countLines])
 
   const adjustForm = useForm<CreateAdjustmentFormValues>({
     resolver: zodResolver(CreateAdjustmentFormSchema),
@@ -78,12 +109,26 @@ export default function CountSessionView({
   const isCompleted = count.status === 'completed'
   const isCancelled = count.status === 'cancelled'
 
-  function addLine() {
-    setLines((prev) => [...prev, { itemId: '', expectedQty: '', countedQty: '' }])
+  function addFoundLine() {
+    // A genuine find — an item the system snapshot has no balance for.
+    setLines((prev) => [...prev, { itemId: '', itemLabel: '', systemQty: null, countedQty: '' }])
   }
 
-  function updateLine(index: number, field: keyof (typeof lines)[0], value: string | number) {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)))
+  function updateLineItem(index: number, itemId: string) {
+    const item = items.find((i) => i.id === itemId)
+    setLines((prev) =>
+      prev.map((l, i) =>
+        i === index ? { ...l, itemId, itemLabel: item ? `${item.sku} — ${item.name}` : '' } : l
+      )
+    )
+  }
+
+  function updateLineCounted(index: number, value: string) {
+    setLines((prev) =>
+      prev.map((l, i) =>
+        i === index ? { ...l, countedQty: value === '' ? '' : Number(value) } : l
+      )
+    )
   }
 
   function removeLine(index: number) {
@@ -96,7 +141,9 @@ export default function CountSessionView({
       .filter((l) => l.itemId && l.countedQty !== '')
       .map((l) => ({
         itemId: l.itemId,
-        expectedQty: Number(l.expectedQty),
+        variantId: l.variantId,
+        batchId: l.batchId,
+        locationId: l.locationId,
         countedQty: Number(l.countedQty),
       }))
 
@@ -106,7 +153,7 @@ export default function CountSessionView({
   }
 
   const variantLines = lines.filter(
-    (l) => l.countedQty !== '' && l.countedQty !== (l.expectedQty === '' ? 0 : l.expectedQty)
+    (l) => l.countedQty !== '' && l.countedQty !== (l.systemQty ?? 0)
   )
 
   const fieldClass =
@@ -202,6 +249,12 @@ export default function CountSessionView({
 
           {isInProgress && tab === 'count' && (
             <div className="space-y-4">
+              <p className="text-xs text-zinc-500">
+                Expected quantities come from the system&apos;s stock balance at the moment this
+                count started — they can&apos;t be edited. Enter what you actually counted; anything
+                found that isn&apos;t already listed can be added below as a new find.
+              </p>
+
               {variantLines.length > 0 && (
                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -211,99 +264,102 @@ export default function CountSessionView({
                 </div>
               )}
 
-              <div className="space-y-3">
-                {lines.map((line, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                    <div className="col-span-5">
-                      <select
-                        value={line.itemId}
-                        onChange={(e) => updateLine(i, 'itemId', e.target.value)}
-                        className={`${fieldClass} bg-white`}
-                      >
-                        <option value="">Select item…</option>
-                        {items.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.sku} — {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.expectedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'expectedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Expected"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.countedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'countedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Counted"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                          line.countedQty !== '' && line.countedQty !== line.expectedQty
-                            ? 'border-amber-400 bg-amber-50'
-                            : ''
-                        }`}
-                      />
-                    </div>
-                    <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
-                      {line.countedQty !== '' ? (
-                        <span
-                          className={
-                            Number(line.countedQty) - Number(line.expectedQty) >= 0
-                              ? 'text-green-600'
-                              : 'text-red-600'
-                          }
-                        >
-                          {Number(line.countedQty) - Number(line.expectedQty) >= 0 ? '+' : ''}
-                          {Number(line.countedQty) - Number(line.expectedQty)}
-                        </span>
-                      ) : (
-                        <span className="text-zinc-300">—</span>
-                      )}
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {isCountLinesLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-zinc-400">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading snapshot…
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {lines.map((line, i) => {
+                    const isFound = line.systemQty === null
+                    const variance =
+                      line.countedQty !== ''
+                        ? Number(line.countedQty) - (line.systemQty ?? 0)
+                        : null
 
-              {lines.length === 0 && (
+                    return (
+                      <div key={i} className="grid grid-cols-12 gap-2 items-start">
+                        <div className="col-span-5">
+                          {isFound ? (
+                            <select
+                              value={line.itemId}
+                              onChange={(e) => updateLineItem(i, e.target.value)}
+                              className={`${fieldClass} bg-white`}
+                            >
+                              <option value="">Select found item…</option>
+                              {items.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.sku} — {item.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="flex h-9.5 items-center rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-700">
+                              {line.itemLabel}
+                            </div>
+                          )}
+                        </div>
+                        <div className="col-span-2">
+                          <div className="flex h-9.5 items-center justify-end rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-500">
+                            {isFound ? (
+                              <span className="text-xs font-medium text-blue-600">New find</span>
+                            ) : (
+                              line.systemQty
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            value={line.countedQty}
+                            onChange={(e) => updateLineCounted(i, e.target.value)}
+                            placeholder="Counted"
+                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                              variance !== null && variance !== 0
+                                ? 'border-amber-400 bg-amber-50'
+                                : ''
+                            }`}
+                          />
+                        </div>
+                        <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
+                          {variance !== null ? (
+                            <span className={variance >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              {variance >= 0 ? '+' : ''}
+                              {variance}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => removeLine(i)}
+                            className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {!isCountLinesLoading && lines.length === 0 && (
                 <p className="text-center text-sm text-zinc-400 py-4">
-                  Add items to begin counting.
+                  Nothing in the system balance for this warehouse yet — add a found item below to
+                  begin counting.
                 </p>
               )}
 
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={addLine}
+                  onClick={addFoundLine}
                   className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
                 >
-                  <Plus className="h-4 w-4" /> Add Line
+                  <Plus className="h-4 w-4" /> Add Found Item
                 </button>
 
                 {lines.length > 0 && (

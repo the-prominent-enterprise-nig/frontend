@@ -50,7 +50,6 @@ export const CountLineSubmitSchema = z.object({
   variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
-  expectedQty: z.number(),
   countedQty: z.number().min(0, 'Counted quantity cannot be negative'),
 })
 export type CountLineSubmit = z.infer<typeof CountLineSubmitSchema>
@@ -59,6 +58,27 @@ export const SubmitCountFormSchema = z.object({
   lines: z.array(CountLineSubmitSchema).min(1, 'At least one line is required'),
 })
 export type SubmitCountFormValues = z.infer<typeof SubmitCountFormSchema>
+
+// The system-of-record snapshot taken when a count starts — systemQty is
+// never caller-supplied, so the UI only ever displays it, never edits it.
+export const CountLineSnapshotSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  variantId: z.string().optional().nullable(),
+  variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
+  batchId: z.string().optional().nullable(),
+  batch: z.object({ id: z.string(), batchNumber: z.string() }).optional().nullable(),
+  locationId: z.string().optional().nullable(),
+  location: z
+    .object({ id: z.string(), code: z.string(), name: z.string().optional().nullable() })
+    .optional()
+    .nullable(),
+  systemQty: z.coerce.number(),
+  countedQty: z.coerce.number().optional().nullable(),
+  countedAt: z.string().optional().nullable(),
+})
+export type CountLineSnapshot = z.infer<typeof CountLineSnapshotSchema>
 
 const CountWarehouseSchema = z.object({
   id: z.string(),

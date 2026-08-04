@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getCounts } from '../_actions/get-counts'
+import { getCountLines } from '../_actions/get-count-lines'
 import { createCount } from '../_actions/create-count'
 import { startCount } from '../_actions/start-count'
 import { submitCount } from '../_actions/submit-count'
@@ -59,6 +60,12 @@ export function useStockCounts() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const countLinesQuery = useQuery({
+    queryKey: ['inventory-stock-count-lines', selectedCount?.id],
+    queryFn: () => getCountLines(selectedCount!.id),
+    enabled: !!selectedCount?.id && selectedCount.status === 'in_progress',
+  })
+
   const createMutation = useMutation({
     mutationFn: (data: CreateCountFormValues) => createCount(data),
     onSuccess: (result) => {
@@ -81,6 +88,9 @@ export function useStockCounts() {
       if (result.success) {
         showToast({ title: 'Count started', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-counts'] })
+        setSelectedCount((prev) =>
+          prev ? { ...prev, ...(result.data as Partial<CountSummary>) } : prev
+        )
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -170,6 +180,9 @@ export function useStockCounts() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
+
+    countLines: countLinesQuery.data?.data ?? [],
+    isCountLinesLoading: countLinesQuery.isLoading,
 
     createCount: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

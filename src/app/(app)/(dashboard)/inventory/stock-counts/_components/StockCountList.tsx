@@ -47,6 +47,8 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     setSelectedCount,
     warehouseOptions,
     itemOptions,
+    countLines,
+    isCountLinesLoading,
     createCount,
     isCreating,
     startCount,
@@ -311,6 +313,8 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         isAdjusting={isAdjusting}
         items={itemOptions}
         canAdjust={canAdjust}
+        countLines={countLines}
+        isCountLinesLoading={isCountLinesLoading}
       />
     </div>
   )
