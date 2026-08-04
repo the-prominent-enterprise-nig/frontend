@@ -127,7 +127,7 @@ export function useStockCounts() {
     mutationFn: (data: CreateAdjustmentFormValues) => createAdjustment(data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Adjustment recorded', description: result.message, status: 'success' })
+        showToast({ title: 'Adjustment submitted', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-counts'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })

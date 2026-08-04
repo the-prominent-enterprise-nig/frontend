@@ -140,6 +140,22 @@ export async function ensureItemStock(
       `ensureItemStock: adjustment failed (${adjustRes.status()}): ${await adjustRes.text()}`
     )
   }
+
+  // Scenario 19 Part 2: an adjustment no longer posts to stock on creation —
+  // it sits 'submitted' until it clears confirm -> investigate -> approve.
+  // This helper needs the stock to actually land, so it drives the chain
+  // itself using the same session (Business Owner storageState bypasses
+  // every step's permission check, same as a real approver would need to
+  // pass through, just without the wait).
+  const { id: adjustmentId } = await adjustRes.json()
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await page.request.patch(`/api/inventory/adjustments/${adjustmentId}/${step}`)
+    if (!stepRes.ok()) {
+      throw new Error(
+        `ensureItemStock: ${step} failed (${stepRes.status()}): ${await stepRes.text()}`
+      )
+    }
+  }
 }
 
 /**

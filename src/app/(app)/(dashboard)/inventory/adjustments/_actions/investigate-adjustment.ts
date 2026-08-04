@@ -1,0 +1,38 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { api, type ApiResponse } from '@/src/libs/api/client'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+
+export async function investigateAdjustment(id: string): Promise<ApiResponse<unknown>> {
+  const session = await getSessionOrNull()
+  if (!session) {
+    return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  }
+  if (!can(session, INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to investigate stock adjustments',
+    }
+  }
+
+  const result = await api.patch(`/inventory/adjustments/${id}/investigate`)
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error ?? 'Failed to move adjustment into investigation',
+      message:
+        typeof result.message === 'string'
+          ? result.message
+          : 'Failed to move adjustment into investigation',
+    }
+  }
+
+  revalidatePath('/inventory/adjustments')
+
+  return { success: true, data: result.data, message: 'Adjustment moved to investigating' }
+}

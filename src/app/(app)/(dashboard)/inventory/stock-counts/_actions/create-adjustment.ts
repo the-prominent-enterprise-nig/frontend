@@ -16,7 +16,7 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to post stock adjustments',
+      message: 'You do not have permission to submit stock adjustments',
     }
   }
 
@@ -44,5 +44,9 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
 
   revalidatePath('/inventory/stock-counts')
 
-  return { success: true, data: result.data, message: 'Adjustment recorded successfully' }
+  return {
+    success: true,
+    data: result.data,
+    message: 'Adjustment submitted — pending Branch Manager confirmation',
+  }
 }
