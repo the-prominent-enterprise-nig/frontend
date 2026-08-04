@@ -386,7 +386,7 @@ export function PurchaseOrderList({
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <input
                 type="text"
-                placeholder="Search by PO code…"
+                placeholder="Search purchase orders, items, supplier"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-9 w-64 rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm placeholder:text-zinc-400 focus:border-prominent-purple-400 focus:outline-none focus:ring-2 focus:ring-prominent-purple-100"

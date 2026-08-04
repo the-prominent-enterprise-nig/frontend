@@ -13,6 +13,7 @@ export async function getTransfers(params?: {
   status?: TransferStatus
   fromWarehouseId?: string
   toWarehouseId?: string
+  search?: string
 }): Promise<ApiResponse<TransferListResponse>> {
   try {
     const result = await api.get<TransferListResponse>(
