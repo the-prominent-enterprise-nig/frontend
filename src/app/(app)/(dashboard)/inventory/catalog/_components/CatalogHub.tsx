@@ -9,6 +9,8 @@ import AttributesPageView from '../../attributes/_components/AttributesPageView'
 import UomList from '../../uom/_components/UomList'
 import BarcodesPageView from '../../barcodes/_components/BarcodesPageView'
 import { SerialNumberList } from '../../serial-numbers/_components'
+import { BrandsPageView } from '../../brands/_components'
+import { TypesPageView } from '../../types/_components'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 // Serial Numbers also lives under Stock (StockHub) — it's genuinely
@@ -19,6 +21,8 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 const TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
+  { id: 'brands', label: 'Brands' },
+  { id: 'types', label: 'Types' },
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
   { id: 'barcodes', label: 'Barcodes' },
@@ -34,6 +38,10 @@ export function CatalogHub({ session }: { session: SessionUser }) {
       <InventoryTabNav tabs={TABS} />
       {tab === 'categories' ? (
         <CategoryManager session={session} />
+      ) : tab === 'brands' ? (
+        <BrandsPageView session={session} />
+      ) : tab === 'types' ? (
+        <TypesPageView session={session} />
       ) : tab === 'attributes' ? (
         <AttributesPageView session={session} />
       ) : tab === 'units' ? (
