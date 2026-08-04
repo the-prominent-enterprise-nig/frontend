@@ -1,9 +1,15 @@
 import { z } from 'zod'
 
-export const PriceListTypeEnum = z.enum(['standard', 'promotional', 'contract', 'wholesale'])
+export const PriceListTypeEnum = z.enum(['retail', 'wholesale', 'member', 'promotional', 'custom'])
 export type PriceListType = z.infer<typeof PriceListTypeEnum>
 
-export const PriceListStatusEnum = z.enum(['active', 'inactive', 'archived'])
+export const PriceListStatusEnum = z.enum([
+  'pending_approval',
+  'active',
+  'rejected',
+  'inactive',
+  'expired',
+])
 export type PriceListStatus = z.infer<typeof PriceListStatusEnum>
 
 export const PriceListFormSchema = z.object({
@@ -14,7 +20,8 @@ export const PriceListFormSchema = z.object({
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
   priority: z.number().int(),
-  status: PriceListStatusEnum,
+  allowedBranchIds: z.array(z.string()).optional(),
+  supersedesId: z.string().optional(),
 })
 export type PriceListFormValues = z.infer<typeof PriceListFormSchema>
 
@@ -28,9 +35,53 @@ export const PriceListSchema = z.object({
   effectiveTo: z.string().optional().nullable(),
   priority: z.number(),
   status: PriceListStatusEnum,
+  allowedBranchIds: z.array(z.string()).optional().default([]),
+  approverId: z.string().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+  actedAt: z.string().optional().nullable(),
+  supersedesId: z.string().optional().nullable(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
+
+export const PriceListItemSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  variantId: z.string().optional().nullable(),
+  price: z.union([z.string(), z.number()]),
+  floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
+  minQty: z.union([z.string(), z.number()]).optional().nullable(),
+  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
+})
+export type PriceListItem = z.infer<typeof PriceListItemSchema>
+
+export const PriceListDetailSchema = PriceListSchema.extend({
+  items: z.array(PriceListItemSchema).default([]),
+})
+export type PriceListDetail = z.infer<typeof PriceListDetailSchema>
+
+export const UpsertPriceListItemFormSchema = z.object({
+  itemId: z.string().min(1, 'Select an item'),
+  variantId: z.string().optional(),
+  price: z.number().min(0, 'Price must be 0 or more'),
+  floorPrice: z.number().min(0).optional(),
+  minQty: z.number().min(0).optional(),
+})
+export type UpsertPriceListItemFormValues = z.infer<typeof UpsertPriceListItemFormSchema>
+
+export const ApprovePriceListFormSchema = z.object({
+  remarks: z.string().max(500).optional(),
+})
+export type ApprovePriceListFormValues = z.infer<typeof ApprovePriceListFormSchema>
+
+export const RejectPriceListFormSchema = z.object({
+  remarks: z
+    .string()
+    .min(1, 'Reason is required')
+    .max(500, 'Reason must be 500 characters or less'),
+})
+export type RejectPriceListFormValues = z.infer<typeof RejectPriceListFormSchema>
 
 export const PriceListListResponseSchema = z.object({
   data: z.array(PriceListSchema),
