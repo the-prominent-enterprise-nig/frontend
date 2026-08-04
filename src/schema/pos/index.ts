@@ -225,13 +225,6 @@ export interface CreateTransactionLineInput {
   secondarySerialNumberId?: string
 }
 
-export interface ScPwdDiscountInput {
-  type: 'SC' | 'PWD'
-  idNumber: string
-  name: string
-  signatureCapture: string
-}
-
 export interface CreateTransactionInput {
   sessionId: string
   transactionType?: PosTransactionType
@@ -261,7 +254,6 @@ export interface CreateTransactionInput {
   /** Mandatory when transactionType is 'refund' — the backend rejects a
    * refund submission with no reason. */
   reason?: string
-  scPwdDiscount?: ScPwdDiscountInput
   sellingAgentId?: string
   lines: CreateTransactionLineInput[]
 }

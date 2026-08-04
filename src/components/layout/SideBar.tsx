@@ -19,6 +19,7 @@ import {
   ClipboardX,
   Coins,
   Contact,
+  CreditCard,
   FileBarChart,
   FileSpreadsheet,
   ClipboardCheck,
@@ -216,6 +217,11 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'AP Bills',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+      },
+      {
+        label: 'AP Payment Methods',
+        href: '/accounting/ap-payment-methods',
+        icon: CreditCard,
       },
       {
         label: 'Expenses',

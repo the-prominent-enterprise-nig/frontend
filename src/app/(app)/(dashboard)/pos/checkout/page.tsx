@@ -24,7 +24,6 @@ import {
   KeyRound,
   WifiOff,
   UtensilsCrossed,
-  Users,
   Mail,
   Phone,
   Send,
@@ -94,7 +93,6 @@ import type {
   LoyaltyProgram,
   PosTransaction,
   SyncTransactionItem,
-  ScPwdDiscountInput,
   FinancingTerm,
   InstallmentPreview,
 } from '@/src/schema/pos'
@@ -385,17 +383,6 @@ export default function CheckoutPage() {
   const [discountThreshold, setDiscountThreshold] = useState(20)
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [inclusivePricing, setInclusivePricing] = useState(false)
-
-  // SC/PWD discount
-  const [scPwdData, setScPwdData] = useState<ScPwdDiscountInput | null>(null)
-  const [showScPwdModal, setShowScPwdModal] = useState(false)
-  const [scPwdForm, setScPwdForm] = useState<{
-    type: 'SC' | 'PWD'
-    idNumber: string
-    name: string
-    signatureCapture: string
-  }>({ type: 'SC', idNumber: '', name: '', signatureCapture: '' })
-  const [scPwdFormError, setScPwdFormError] = useState('')
 
   // Manager override
   const [managerOverrideApproved, setManagerOverrideApproved] = useState(false)
@@ -747,8 +734,7 @@ export default function CheckoutPage() {
   const hasMixedTaxRates = distinctLineTaxRates.length > 1
   const uniformLineTaxRate = distinctLineTaxRates.length === 1 ? distinctLineTaxRates[0] : null
 
-  // promoDiscount is cleared when SC/PWD is active (cannot stack)
-  const promoDiscount = promoResult?.valid && !scPwdData ? (promoResult.discountAmount ?? 0) : 0
+  const promoDiscount = promoResult?.valid ? (promoResult.discountAmount ?? 0) : 0
 
   // additiveTax is 0 for lines whose tax is already baked into unitPrice
   // (inclusive), and the real per-line tax for lines that still need it added
@@ -756,15 +742,7 @@ export default function CheckoutPage() {
   // uniformly match the tenant's global pricing-mode default.
   const subtotal = rawSubtotal + additiveTax
 
-  // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
-  const scPwdEstimatedDiscount = scPwdData
-    ? Math.round(vatExclSubtotalForBackend * 0.2 * 100) / 100
-    : 0
-
-  const totalAmount = Math.max(
-    0,
-    Math.round((subtotal - promoDiscount - scPwdEstimatedDiscount) * 100) / 100
-  )
+  const totalAmount = Math.max(0, Math.round((subtotal - promoDiscount) * 100) / 100)
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
   const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
@@ -1240,10 +1218,9 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
         totalAmount,
-        isTaxExempt: isTaxExempt || !!scPwdData,
+        isTaxExempt,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
-        scPwdDiscount: scPwdData ?? undefined,
         lines: cart.map((l) => ({
           itemId: l.itemId,
           itemName: l.itemName,
@@ -1293,12 +1270,11 @@ export default function CheckoutPage() {
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
           totalAmount,
-          isTaxExempt: isTaxExempt || !!scPwdData,
+          isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           managerOverride: managerOverrideApproved || undefined,
           managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
-          scPwdDiscount: scPwdData ?? undefined,
           sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
@@ -1536,7 +1512,6 @@ export default function CheckoutPage() {
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
-    setScPwdData(null)
     setFromTab(null)
     setInvoiceType('cash')
     setChargeDueDays(30)
@@ -2427,15 +2402,8 @@ export default function CheckoutPage() {
                   <span>−{fmt(promoDiscount)}</span>
                 </div>
               )}
-              {scPwdEstimatedDiscount > 0 && (
-                <div className="flex justify-between text-blue-600 text-xs">
-                  <span>{scPwdData?.type === 'PWD' ? 'PWD' : 'SC'} Discount (20%)*</span>
-                  <span>−{fmt(scPwdEstimatedDiscount)}</span>
-                </div>
-              )}
               {cart.length > 0 &&
                 !isTaxExempt &&
-                !scPwdData &&
                 (hasMixedTaxRates || uniformLineTaxRate != null) && (
                   <div className="flex justify-between text-gray-700 text-xs">
                     <span>
@@ -2561,40 +2529,6 @@ export default function CheckoutPage() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Senior Citizen Discount (PWD disabled per request) */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Senior Citizen Discount
-            </p>
-            {scPwdData ? (
-              <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
-                <div className="flex items-center gap-2 text-sm text-blue-700">
-                  <Users size={12} />
-                  <span className="font-semibold">{scPwdData.type}</span>
-                  <span className="text-blue-600">{scPwdData.name}</span>
-                  <span className="ml-1 text-xs text-blue-400">−{fmt(scPwdEstimatedDiscount)}</span>
-                </div>
-                <button
-                  onClick={() => setScPwdData(null)}
-                  className="text-blue-300 hover:text-blue-600"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <button
-                disabled={cart.length === 0}
-                onClick={() => {
-                  setScPwdFormError('')
-                  setShowScPwdModal(true)
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-3 text-sm text-gray-700 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Users size={14} /> Add Senior Citizen Beneficiary
-              </button>
             )}
           </div>
 
@@ -3271,117 +3205,6 @@ export default function CheckoutPage() {
             >
               <ShieldCheck size={14} />
               {overridePending ? 'Verifying…' : 'Approve Override'}
-            </button>
-          </div>
-        </Overlay>
-      )}
-
-      {/* SC/PWD Discount Dialog */}
-      {showScPwdModal && (
-        <Overlay onClose={() => setShowScPwdModal(false)}>
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-              <Users size={18} className="text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Senior Citizen Discount</h2>
-              <p className="text-xs text-gray-500">20% on VAT-exclusive base per BIR rules</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Beneficiary Type
-              </label>
-              <div className="flex gap-2">
-                {/* PWD disabled per request — re-enable by adding 'PWD' back to this tuple */}
-                {(['SC'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setScPwdForm((f) => ({ ...f, type: t }))}
-                    className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${scPwdForm.type === t ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                  >
-                    Senior Citizen
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">ID Number</label>
-              <input
-                autoFocus
-                className="input"
-                placeholder="OSCA ID number"
-                value={scPwdForm.idNumber}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, idNumber: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Beneficiary Name
-              </label>
-              <input
-                className="input"
-                placeholder="Full name as shown on ID"
-                value={scPwdForm.name}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Signature / Acknowledgement
-              </label>
-              <input
-                className="input"
-                placeholder="Type name to acknowledge"
-                value={scPwdForm.signatureCapture}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, signatureCapture: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.form?.requestSubmit?.()
-                }}
-              />
-              <p className="mt-1 text-[10px] text-gray-400">
-                Required for BIR record — beneficiary types their name
-              </p>
-            </div>
-          </div>
-          {scPwdFormError && (
-            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              {scPwdFormError}
-            </p>
-          )}
-          <div className="mt-5 flex justify-end gap-3">
-            <button
-              onClick={() => setShowScPwdModal(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                if (!scPwdForm.idNumber.trim()) {
-                  setScPwdFormError('ID number is required.')
-                  return
-                }
-                if (!scPwdForm.name.trim()) {
-                  setScPwdFormError('Beneficiary name is required.')
-                  return
-                }
-                if (!scPwdForm.signatureCapture.trim()) {
-                  setScPwdFormError('Signature acknowledgement is required.')
-                  return
-                }
-                setScPwdData({
-                  type: scPwdForm.type,
-                  idNumber: scPwdForm.idNumber.trim(),
-                  name: scPwdForm.name.trim(),
-                  signatureCapture: scPwdForm.signatureCapture.trim(),
-                })
-                setShowScPwdModal(false)
-              }}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <ShieldCheck size={14} /> Apply Discount
             </button>
           </div>
         </Overlay>

@@ -1,17 +1,78 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, Inbox, DollarSign, X } from 'lucide-react'
-import { APBills, type APBill, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Plus,
+  RefreshCw,
+  Pencil,
+  Trash2,
+  Inbox,
+  DollarSign,
+  FileText,
+  Printer,
+  Undo2,
+  X,
+} from 'lucide-react'
+import {
+  APBills,
+  APBillSuppliers,
+  APBillMatching,
+  type APBill,
+  type APBillPayment,
+  type APBillSupplierOption,
+  type APBillPurchaseOrderOption,
+  type APBillGoodsReceiptOption,
+  type APBillMatchCheck,
+  fmtMoney,
+  fmtDate,
+} from '@/src/libs/data/AccountingV2Data'
 import { getVendors, type Vendor } from '@/src/libs/data/AccountingData'
+import VoucherPanel from './VoucherPanel'
+import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
+import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
+import {
+  printInventoryDocument,
+  type PrintDocumentEnvelope,
+} from '@/src/libs/print/printInventoryDocument'
+
+function renderApChequeBody(doc: PrintDocumentEnvelope): string {
+  const d = doc.document as Record<string, unknown>
+  return `<h2>Cheque Payment</h2><div class="meta">
+    <div><p class="label">Payee</p><p>${d.payee ?? '—'}</p></div>
+    <div><p class="label">Bill No.</p><p>${d.billNumber ?? '—'}</p></div>
+    <div><p class="label">Cheque No.</p><p>${d.chequeNumber ?? '—'}</p></div>
+    <div><p class="label">Amount</p><p>${fmtMoney(Number(d.amount ?? 0))}</p></div>
+    <div><p class="label">Withholding</p><p>${fmtMoney(Number(d.withholdingAmount ?? 0))}</p></div>
+    <div><p class="label">Payment Date</p><p>${d.paymentDate ? new Date(d.paymentDate as string).toLocaleDateString('en-PH') : '—'}</p></div>
+    <div><p class="label">Method</p><p>${d.method ?? '—'}</p></div>
+    <div><p class="label">Reference</p><p>${d.reference ?? '—'}</p></div>
+  </div>${d.notes ? `<h2>Notes</h2><p style="font-size:13px">${d.notes}</p>` : ''}`
+}
+
+function latestChequePayment(bill: APBill): APBillPayment | undefined {
+  return (bill.payments ?? [])
+    .filter((p) => p.chequeNumber)
+    .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())[0]
+}
+
+const VOUCHER_STATUS_LABEL: Record<string, string> = {
+  pending_online_approval: 'Pending Online Approval',
+  pending_onsite_approval: 'Pending Onsite Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+}
 
 export default function APBillsList() {
   const [items, setItems] = useState<APBill[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
+  const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<APBill | null>(null)
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<APBill | null>(null)
+  const [voucherFor, setVoucherFor] = useState<APBill | null>(null)
+  const [printingChequeFor, setPrintingChequeFor] = useState<string | null>(null)
+  const [debitMemoFor, setDebitMemoFor] = useState<APBill | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -22,6 +83,7 @@ export default function APBillsList() {
   useEffect(() => {
     load()
     getVendors().then((r) => setVendors(((r.data as any)?.items ?? r.data ?? []) as Vendor[]))
+    APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
   }, [load])
 
   const del = async (id: string) => {
@@ -29,6 +91,18 @@ export default function APBillsList() {
     const res = await APBills.remove(id)
     if (!res.success) alert(res.message || res.error || 'Delete failed')
     load()
+  }
+  const printCheque = async (bill: APBill) => {
+    const payment = latestChequePayment(bill)
+    if (!payment) return
+    setPrintingChequeFor(bill.id)
+    try {
+      const res = await getApPaymentDocument(bill.id, payment.id)
+      if (res.success && res.data)
+        printInventoryDocument(res.data, 'AP Cheque Payment', renderApChequeBody)
+    } finally {
+      setPrintingChequeFor(null)
+    }
   }
   const receive = async (id: string) => {
     const res = await APBills.receive(id)
@@ -91,7 +165,12 @@ export default function APBillsList() {
               items.map((b) => (
                 <tr key={b.id}>
                   <td className="px-3 py-2 font-mono text-xs">{b.billNumber}</td>
-                  <td className="px-3 py-2">{b.vendor?.name}</td>
+                  <td className="px-3 py-2">
+                    <div>{b.vendor?.name}</div>
+                    {b.supplier && (
+                      <div className="text-xs text-gray-400">Supplier: {b.supplier.name}</div>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs">{fmtDate(b.billDate)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(b.dueDate)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(b.totalAmount)}</td>
@@ -101,6 +180,11 @@ export default function APBillsList() {
                     <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-700">
                       {b.status}
                     </span>
+                    {b.voucherApprovalStatus && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        Voucher: {VOUCHER_STATUS_LABEL[b.voucherApprovalStatus]}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-1">
@@ -121,6 +205,32 @@ export default function APBillsList() {
                           <DollarSign className="w-4 h-4" />
                         </button>
                       )}
+                      {latestChequePayment(b) && (
+                        <button
+                          onClick={() => printCheque(b)}
+                          title="Print Cheque"
+                          disabled={printingChequeFor === b.id}
+                          className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                      )}
+                      {b.supplierId && ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
+                        <button
+                          onClick={() => setDebitMemoFor(b)}
+                          title="Issue supplier debit memo (return)"
+                          className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                        >
+                          <Undo2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setVoucherFor(b)}
+                        title="Voucher"
+                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() => setEditing(b)}
                         className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
@@ -146,6 +256,7 @@ export default function APBillsList() {
         <BillForm
           initial={editing}
           vendors={vendors}
+          suppliers={suppliers}
           onClose={() => {
             setCreating(false)
             setEditing(null)
@@ -167,6 +278,27 @@ export default function APBillsList() {
           }}
         />
       )}
+      {voucherFor && (
+        <VoucherPanel
+          bill={voucherFor}
+          onClose={() => setVoucherFor(null)}
+          onSaved={async () => {
+            const res = await APBills.get(voucherFor.id)
+            if (res.data) setVoucherFor(res.data)
+            load()
+          }}
+        />
+      )}
+      {debitMemoFor && (
+        <SupplierDebitMemoDialog
+          bill={debitMemoFor}
+          onClose={() => setDebitMemoFor(null)}
+          onSaved={() => {
+            setDebitMemoFor(null)
+            load()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -174,16 +306,21 @@ export default function APBillsList() {
 function BillForm({
   initial,
   vendors,
+  suppliers,
   onClose,
   onSaved,
 }: {
   initial: APBill | null
   vendors: Vendor[]
+  suppliers: APBillSupplierOption[]
   onClose: () => void
   onSaved: () => void
 }) {
   const [form, setForm] = useState({
     vendorId: initial?.vendorId ?? '',
+    supplierId: initial?.supplierId ?? '',
+    purchaseOrderId: initial?.purchaseOrderId ?? '',
+    goodsReceiptIds: initial?.goodsReceipts?.map((r) => r.id) ?? ([] as string[]),
     billDate: initial?.billDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     dueDate:
       initial?.dueDate?.slice(0, 10) ??
@@ -194,17 +331,68 @@ function BillForm({
     costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [purchaseOrders, setPurchaseOrders] = useState<APBillPurchaseOrderOption[]>([])
+  const [receipts, setReceipts] = useState<APBillGoodsReceiptOption[]>([])
+  const [matchCheck, setMatchCheck] = useState<APBillMatchCheck | null>(null)
+  const supplierIdOnMount = useRef(form.supplierId)
+
+  useEffect(() => {
+    if (!form.supplierId) {
+      setPurchaseOrders([])
+      return
+    }
+    // Only reset the previously-picked PO when the supplier actually
+    // changes after mount — not on the initial load of an existing bill.
+    if (form.supplierId !== supplierIdOnMount.current) {
+      setForm((f) => ({ ...f, purchaseOrderId: '', goodsReceiptIds: [] }))
+    }
+    APBillMatching.purchaseOrders(form.supplierId).then((r) =>
+      setPurchaseOrders(r.data?.data ?? [])
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.supplierId])
+
+  useEffect(() => {
+    if (!form.purchaseOrderId) {
+      setReceipts([])
+      return
+    }
+    APBillMatching.receipts(form.purchaseOrderId).then((r) => setReceipts(r.data?.data ?? []))
+  }, [form.purchaseOrderId])
+
+  useEffect(() => {
+    if (!initial?.id || !initial?.purchaseOrderId) return
+    APBillMatching.matchCheck(initial.id).then((r) => setMatchCheck(r.data ?? null))
+  }, [initial?.id, initial?.purchaseOrderId])
+
+  const toggleReceipt = (id: string) => {
+    setForm((f) => ({
+      ...f,
+      goodsReceiptIds: f.goodsReceiptIds.includes(id)
+        ? f.goodsReceiptIds.filter((r) => r !== id)
+        : [...f.goodsReceiptIds, id],
+    }))
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
+    setError(null)
     const payload = {
       ...form,
+      supplierId: form.supplierId || undefined,
+      purchaseOrderId: form.purchaseOrderId || undefined,
+      goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
       subtotal: Number(form.subtotal),
       taxAmount: Number(form.taxAmount || 0),
     }
-    if (initial) await APBills.update(initial.id, payload)
-    else await APBills.create(payload)
+    const res = initial ? await APBills.update(initial.id, payload) : await APBills.create(payload)
     setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Save failed')
+      return
+    }
     onSaved()
   }
   return (
@@ -232,6 +420,70 @@ function BillForm({
               ))}
             </select>
           </Field>
+          <Field label="Supplier (if this bill is for a PO/RR delivery)">
+            <select
+              value={form.supplierId}
+              onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            >
+              <option value="">— None —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.code} — {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {form.supplierId && (
+            <Field label="Purchase Order (for the 3-way match)">
+              <select
+                value={form.purchaseOrderId}
+                onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              >
+                <option value="">— None —</option>
+                {purchaseOrders.map((po) => (
+                  <option key={po.id} value={po.id}>
+                    {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {form.purchaseOrderId && (
+            <Field label="Receiving Reports matched to this bill">
+              {receipts.length === 0 ? (
+                <p className="text-xs text-gray-400">
+                  No receiving reports posted against this PO yet.
+                </p>
+              ) : (
+                <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
+                  {receipts.map((r) => (
+                    <label key={r.id} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={form.goodsReceiptIds.includes(r.id)}
+                        onChange={() => toggleReceipt(r.id)}
+                      />
+                      {r.code} — {fmtDate(r.receivedAt)}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </Field>
+          )}
+          {matchCheck?.applicable && (
+            <div
+              className={`text-xs px-3 py-2 rounded-lg ${
+                matchCheck.matched ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+              }`}
+            >
+              3-way match:{' '}
+              <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
+              {' — '}PO {fmtMoney(matchCheck.poTotal ?? 0)} · RRs{' '}
+              {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Bill Date *">
               <input
@@ -287,6 +539,11 @@ function BillForm({
               />
             </Field>
           </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-3 border-t">
             <button
               type="button"
@@ -319,12 +576,19 @@ function PayBill({
   onSaved: () => void
 }) {
   const out = bill.totalAmount - bill.amountPaid
+  // Scenario 10 Part 5 — a PO-linked bill can't actually be paid until a
+  // goods receipt is matched against it; surface that proactively instead
+  // of only after the backend rejects the submit.
+  const blockedByMissingReceipt = Boolean(
+    bill.purchaseOrderId && (bill.goodsReceipts?.length ?? 0) === 0
+  )
   const [form, setForm] = useState({
     amount: String(out),
     withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
     method: '',
     reference: '',
+    chequeNumber: '',
     notes: '',
   })
   const [saving, setSaving] = useState(false)
@@ -338,6 +602,7 @@ function PayBill({
       ...form,
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
+      chequeNumber: form.method === 'check' ? form.chequeNumber || undefined : undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -356,6 +621,12 @@ function PayBill({
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
+          {blockedByMissingReceipt && (
+            <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+              This bill is linked to a purchase order but has no goods receipt matched to it yet —
+              payment will be blocked until at least one is matched (edit the bill to match one).
+            </div>
+          )}
           <div className="text-sm text-gray-600">
             Outstanding: <span className="font-semibold">{fmtMoney(out)}</span>
           </div>
@@ -405,6 +676,17 @@ function PayBill({
               <option value="other">Other</option>
             </select>
           </Field>
+          {form.method === 'check' && (
+            <Field label="Cheque Number *">
+              <input
+                required
+                value={form.chequeNumber}
+                onChange={(e) => setForm({ ...form, chequeNumber: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                placeholder="e.g. 0001234"
+              />
+            </Field>
+          )}
           <Field label="Reference">
             <input
               value={form.reference}
