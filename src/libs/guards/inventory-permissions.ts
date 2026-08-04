@@ -6,6 +6,9 @@ export const INVENTORY_PERMISSIONS = {
   ITEMS_DELETE: 'inventory:items:delete',
   ITEMS_MANAGE_LIFECYCLE: 'inventory:items:manage_lifecycle',
   ITEMS_MANAGE_CLASSIFICATION: 'inventory:items:manage_classification',
+  // Scenario 16 — Item Master Governance
+  ITEMS_CONFIRM_TAX_MAPPING: 'inventory:items:confirm_tax_mapping',
+  ITEMS_APPROVE: 'inventory:items:approve',
 
   // ── Categories ─────────────────────────────────────────────────────────────
   CATEGORIES_READ: 'inventory:categories:read',
@@ -113,6 +116,7 @@ export const INVENTORY_PERMISSIONS = {
   PRICE_LISTS_CREATE: 'inventory:price-lists:create',
   PRICE_LISTS_UPDATE: 'inventory:price-lists:update',
   PRICE_LISTS_DELETE: 'inventory:price-lists:delete',
+  PRICE_LISTS_APPROVE: 'inventory:price-lists:approve',
 
   // ── Stock Level Boundaries (INV-33) ────────────────────────────────────────
   STOCK_LEVELS_READ: 'inventory:stock-levels:read',
@@ -174,6 +178,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Change item lifecycle status (Active / Discontinued / Archived)',
   'inventory:items:manage_classification':
     'Manage item classification (groups, subgroups, brands, types)',
+  'inventory:items:confirm_tax_mapping':
+    'Confirm tax and GL account mapping on a draft item pending review',
+  'inventory:items:approve': 'Approve a draft item for publish, or reject it back to the submitter',
   'inventory:categories:read': 'View item categories',
   'inventory:categories:create': 'Create item categories',
   'inventory:categories:update': 'Edit item categories',
@@ -240,6 +247,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:price-lists:create': 'Create price lists',
   'inventory:price-lists:update': 'Edit price lists',
   'inventory:price-lists:delete': 'Delete price lists',
+  'inventory:price-lists:approve':
+    'Approve or reject a pending price list (Sales/Finance Approver)',
   'inventory:stock-levels:read': 'View min / max stock level boundaries',
   'inventory:stock-levels:manage': 'Configure min / max stock level boundaries',
   'inventory:reservations:read': 'View stock reservations',

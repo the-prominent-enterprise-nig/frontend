@@ -2,16 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Upload, ImageOff, Images } from 'lucide-react'
+import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
-import type {
-  ItemTagLabel,
-  ItemGroupOption,
-  ItemSubgroupOption,
-  ClassificationOption,
-} from '@/src/schema/inventory/items'
+import type { ItemTagLabel, ClassificationOption } from '@/src/schema/inventory/items'
 import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
+import { formatClassificationLabel } from '@/src/libs/format/text'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
@@ -19,6 +16,10 @@ import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
+import { checkItemDuplicates } from '../_actions/check-item-duplicates'
+import type { DuplicateCandidate } from '@/src/schema/inventory/items'
+import { receiveInitialUnit } from '../_actions/receive-initial-unit'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 
 interface PendingImage {
   fileId: string
@@ -42,8 +43,6 @@ type Props = {
   isSubmitting: boolean
   categories: CategorySelectOption[]
   uomOptions: UomOption[]
-  groupOptions: ItemGroupOption[]
-  subgroupOptions: ItemSubgroupOption[]
   brandOptions: ClassificationOption[]
   typeOptions: ClassificationOption[]
 }
@@ -55,8 +54,6 @@ export default function CreateItemModal({
   isSubmitting,
   categories,
   uomOptions,
-  groupOptions,
-  subgroupOptions,
   brandOptions,
   typeOptions,
 }: Props) {
@@ -66,7 +63,6 @@ export default function CreateItemModal({
     reset,
     setError,
     setValue,
-    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<CreateItemFormValues>({
@@ -75,6 +71,7 @@ export default function CreateItemModal({
       name: '',
       sku: '',
       description: '',
+      modelNumber: '',
       baseUnitId: '',
       primaryCategoryId: '',
       costingMethod: 'weighted_average',
@@ -86,6 +83,12 @@ export default function CreateItemModal({
       hasVariants: false,
       isService: false,
       taxRateId: undefined,
+      initialWarehouseId: '',
+      initialDateIn: '',
+      initialRr: '',
+      initialOrigin: '',
+      initialPrice: undefined,
+      initialSerialNumber: '',
     },
   })
 
@@ -98,18 +101,6 @@ export default function CreateItemModal({
 
   const hasUnsavedChanges = isDirty || pendingImages.length > 0 || selectedTags.length > 0
 
-  const selectedGroupId = useWatch({ control, name: 'groupId' })
-  const filteredSubgroups = subgroupOptions.filter(
-    (s) => !selectedGroupId || s.groupId === selectedGroupId
-  )
-
-  useEffect(() => {
-    const currentSub = getValues('subgroupId')
-    if (!currentSub) return
-    const valid = filteredSubgroups.some((s) => s.id === currentSub)
-    if (!valid) setValue('subgroupId', undefined)
-  }, [selectedGroupId]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Service items never carry stock/serial tracking — force-clear + disable those
   // checkboxes whenever "Service Item" is checked.
   const isServiceValue = useWatch({ control, name: 'isService' })
@@ -117,6 +108,33 @@ export default function CreateItemModal({
     if (!isServiceValue) return
     TRACKING_FIELDS_DISABLED_BY_SERVICE.forEach((name) => setValue(name, false))
   }, [isServiceValue, setValue])
+
+  // Scenario 16 gap #3: non-blocking near-duplicate warning, debounced as the
+  // name is typed — never blocks submission, only informs.
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([])
+  const nameValue = useWatch({ control, name: 'name' })
+  const brandIdValue = useWatch({ control, name: 'brandId' })
+  useEffect(() => {
+    if (!isOpen || !nameValue || nameValue.trim().length < 3) {
+      setDuplicates([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      const result = await checkItemDuplicates(nameValue, brandIdValue)
+      if (result.success) setDuplicates(result.data ?? [])
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [isOpen, nameValue, brandIdValue])
+
+  const isSerialTrackedValue = useWatch({ control, name: 'isSerialTracked' })
+
+  const warehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  })
+  const warehouses = warehousesQuery.data?.data?.data ?? []
 
   function handleRequestClose() {
     if (hasUnsavedChanges) {
@@ -222,6 +240,24 @@ export default function CreateItemModal({
         ...pendingImages.map((img) => addItemImage(newItemId, { fileId: img.fileId })),
         ...selectedTags.map((tag) => addItemTag(newItemId, tag)),
       ])
+
+      if (data.initialWarehouseId && data.initialDateIn && data.initialRr) {
+        const initialStockResult = await receiveInitialUnit(newItemId, {
+          warehouseId: data.initialWarehouseId,
+          dateIn: data.initialDateIn,
+          rr: data.initialRr,
+          origin: data.initialOrigin || undefined,
+          price: data.initialPrice,
+          serialNumber: data.initialSerialNumber || undefined,
+        })
+        if (!initialStockResult.success) {
+          showToast({
+            title: 'Item created, but initial stock failed',
+            description: initialStockResult.message,
+            status: 'error',
+          })
+        }
+      }
     }
 
     onClose()
@@ -234,15 +270,20 @@ export default function CreateItemModal({
     errors.primaryCategoryId,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
 
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add New Item"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    >
       <div
         ref={scrollRef}
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
+        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
       >
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
@@ -284,6 +325,15 @@ export default function CreateItemModal({
           )}
         </div>
 
+        {/* Governance notice (Scenario 16) */}
+        <div className="border-b border-blue-100 bg-blue-50 px-6 py-2.5">
+          <p className="text-xs text-blue-800">
+            This item saves as a <span className="font-medium">draft</span>. Submit it for
+            Accounting confirmation and Master Data Approver sign-off before it becomes available in
+            PO, receiving, inventory, and POS.
+          </p>
+        </div>
+
         {/* Form */}
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           {/* Basic Info */}
@@ -311,6 +361,22 @@ export default function CreateItemModal({
                 )}
               />
               {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+              {duplicates.length > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800">
+                    {duplicates.length} similar item{duplicates.length !== 1 ? 's' : ''} found —
+                    review before creating:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {duplicates.map((d) => (
+                      <li key={d.id} className="text-xs text-amber-700">
+                        <span className="font-mono">{d.sku}</span> — {d.name}
+                        {d.brandName ? ` (${d.brandName})` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* SKU */}
@@ -402,6 +468,71 @@ export default function CreateItemModal({
                 )}
               />
             </div>
+
+            {/* Brand */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
+              <Controller
+                name="brandId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {brandOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Item Type */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
+              <Controller
+                name="typeId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {typeOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {formatClassificationLabel(t.name)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Model Number */}
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Model Number</label>
+              <Controller
+                name="modelNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    type="text"
+                    placeholder="e.g. KFM36E0W"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+            </div>
           </FormSection>
 
           {/* Pricing */}
@@ -433,27 +564,6 @@ export default function CreateItemModal({
               {errors.costPrice && (
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
-            </div>
-
-            {/* Selling Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Selling Price (₱)
-              </label>
-              <Controller
-                name="sellingPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
             </div>
 
             {/* Costing Method */}
@@ -624,106 +734,142 @@ export default function CreateItemModal({
             </div>
           </FormSection>
 
-          {/* Classification */}
-          <FormSection title="Classification" defaultOpen={false}>
-            {/* Group */}
+          {/* Initial Stock */}
+          <FormSection title="Initial Stock (Optional)" defaultOpen={false}>
+            <div className="sm:col-span-2 -mt-1 mb-1 flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+              <PackagePlus className="h-4 w-4 shrink-0 text-zinc-400" />
+              Record one already-in-hand unit for this item right now — e.g. pasting in a single row
+              from a legacy stock sheet. Leave blank to create the item with no stock.
+            </div>
+
+            {/* Warehouse */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Group</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
               <Controller
-                name="groupId"
+                name="initialWarehouseId"
                 control={control}
                 render={({ field }) => (
                   <select
                     {...field}
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   >
                     <option value="">— None —</option>
-                    {groupOptions.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
                       </option>
                     ))}
                   </select>
+                )}
+              />
+              {errors.initialWarehouseId && (
+                <p className="mt-1 text-xs text-red-600">{errors.initialWarehouseId.message}</p>
+              )}
+            </div>
+
+            {/* Date In */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Date In</label>
+              <Controller
+                name="initialDateIn"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="date"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+              {errors.initialDateIn && (
+                <p className="mt-1 text-xs text-red-600">{errors.initialDateIn.message}</p>
+              )}
+            </div>
+
+            {/* RR # */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">RR #</label>
+              <Controller
+                name="initialRr"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="e.g. RR#163451S"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+              {errors.initialRr && (
+                <p className="mt-1 text-xs text-red-600">{errors.initialRr.message}</p>
+              )}
+            </div>
+
+            {/* Origin */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Origin</label>
+              <Controller
+                name="initialOrigin"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="Supplier name, or WHSE"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
                 )}
               />
             </div>
 
-            {/* Subgroup */}
+            {/* Price */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Subgroup</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Unit Price (₱)</label>
               <Controller
-                name="subgroupId"
+                name="initialPrice"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    disabled={!selectedGroupId}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
-                  >
-                    <option value="">
-                      {selectedGroupId ? '— None —' : '— Select group first —'}
-                    </option>
-                    {filteredSubgroups.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  <NumericInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    fieldRef={field.ref}
+                    placeholder="0.00"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
                 )}
               />
             </div>
 
-            {/* Brand */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
-              <Controller
-                name="brandId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {brandOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+            {/* Serial Number — only when this item is serial-tracked */}
+            {isSerialTrackedValue && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Serial Number
+                </label>
+                <Controller
+                  name="initialSerialNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. GT248004"
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    />
+                  )}
+                />
+                {errors.initialSerialNumber && (
+                  <p className="mt-1 text-xs text-red-600">{errors.initialSerialNumber.message}</p>
                 )}
-              />
-            </div>
-
-            {/* Item Type */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
-              <Controller
-                name="typeId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {typeOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-            </div>
+              </div>
+            )}
           </FormSection>
 
           {/* Images */}
