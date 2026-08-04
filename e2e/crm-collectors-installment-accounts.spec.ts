@@ -516,11 +516,23 @@ test.describe('CRM — Collection Incentives', () => {
 })
 
 test.describe('CRM — Installment Account collections reminders (Scenario 20 NAMIDRe)', () => {
+  let createdCustomerIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, CUSTOMER_NAME_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdCustomerIds)
+    createdCustomerIds = []
+  })
+
   test('schedules a reminder against an installment account and completes it with outcome/contact phone', async ({
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-NDR-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -607,14 +619,14 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('blocks scheduling a second open reminder on the same account until the first is completed', async ({
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-DUP-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -701,12 +713,12 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('recording a payment auto-closes the account’s open reminder', async ({ page }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-AUTOCLOSE-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -786,12 +798,12 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('captures a structured Promise to Pay when completing a reminder', async ({ page }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-PTP-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -863,14 +875,14 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('the legal escalation section only appears once the account is in DAM, and its status is editable', async ({
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-LEGAL-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -919,14 +931,14 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 
   test('the global Reminders page shows a linked account badge for collections tasks', async ({
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName } = await createCustomerViaUi(page, suffix)
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-CTX-${suffix}`
     await gotoReady(page, '/crm/installment-accounts/new')
@@ -978,6 +990,5 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     // Cleanup
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
-    await deleteCustomerViaUi(page, fullName)
   })
 })
