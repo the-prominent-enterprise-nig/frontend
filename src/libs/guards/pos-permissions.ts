@@ -8,6 +8,7 @@ export const POS_PERMISSIONS = {
   TRANSACTIONS_CREATE: 'pos:transactions:create',
   TRANSACTIONS_VOID: 'pos:transactions:void',
   TRANSACTIONS_OVERRIDE: 'pos:transaction:override',
+  TRANSACTIONS_PRICE_OVERRIDE: 'pos:transactions:price_override',
   PROMO_CODES_READ: 'pos:promo-codes:read',
   PROMO_CODES_MANAGE: 'pos:promo-codes:manage',
   GIFT_CARDS_READ: 'pos:gift-cards:read',
@@ -47,6 +48,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:transactions:void': 'Void POS transactions',
   'pos:transaction:override':
     'Approve manager overrides: high-value discounts, receiptless returns, and void transactions',
+  'pos:transactions:price_override':
+    'Approve a manual price override at checkout — no matching price-list entry, or adjusting the resolved price',
   'pos:promo-codes:read': 'View promo codes',
   'pos:promo-codes:manage': 'Create, edit, and delete promo codes',
   'pos:gift-cards:read': 'View gift cards',

@@ -6,6 +6,11 @@ const PRICE_LIST_ERROR_MESSAGES: Record<string, string> = {
   price_list_not_rejected: 'This price list has not been rejected.',
   price_list_item_not_found: 'That item is not in this price list.',
   invalid_supersedes_id: "The price list you're replacing could not be found.",
+  invalid_price_use_type_id: 'Select a valid price use type.',
+  price_use_type_not_found: 'This price use type could not be found.',
+  price_use_type_name_already_exists: 'A price use type with that name already exists.',
+  price_use_type_in_use:
+    'This price use type is still used by one or more price lists — reassign or remove those first.',
 }
 
 /**

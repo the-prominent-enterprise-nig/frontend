@@ -114,6 +114,7 @@ export const INVENTORY_PERMISSIONS = {
   PRICE_LISTS_UPDATE: 'inventory:price-lists:update',
   PRICE_LISTS_DELETE: 'inventory:price-lists:delete',
   PRICE_LISTS_APPROVE: 'inventory:price-lists:approve',
+  PRICE_LISTS_MANAGE_PRICE_USE_TYPES: 'inventory:price-lists:manage_price_use_types',
 
   // ── Stock Level Boundaries (INV-33) ────────────────────────────────────────
   STOCK_LEVELS_READ: 'inventory:stock-levels:read',
@@ -243,6 +244,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:price-lists:delete': 'Delete price lists',
   'inventory:price-lists:approve':
     'Approve or reject a pending price list (Sales/Finance Approver)',
+  'inventory:price-lists:manage_price_use_types':
+    'Create, rename, or delete price-use types (e.g. WIP, CR-BR, SSC)',
   'inventory:stock-levels:read': 'View min / max stock level boundaries',
   'inventory:stock-levels:manage': 'Configure min / max stock level boundaries',
   'inventory:reservations:read': 'View stock reservations',

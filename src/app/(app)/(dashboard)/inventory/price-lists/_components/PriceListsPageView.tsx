@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   Plus,
   RefreshCw,
   Tag,
+  Tags,
   Pencil,
   CheckCircle,
   XCircle,
@@ -51,17 +53,6 @@ function statusBadge(status: string) {
   return STATUS_BADGE_CLASS[status] ?? 'bg-zinc-100 text-zinc-500'
 }
 
-function listTypeBadge(type: string) {
-  const map: Record<string, string> = {
-    retail: 'bg-blue-100 text-blue-700',
-    wholesale: 'bg-teal-100 text-teal-700',
-    member: 'bg-violet-100 text-violet-700',
-    promotional: 'bg-pink-100 text-pink-700',
-    custom: 'bg-amber-100 text-amber-700',
-  }
-  return map[type] ?? 'bg-zinc-100 text-zinc-500'
-}
-
 function branchScopeLabel(allowedBranchIds: string[] | undefined, branches: Branch[]) {
   if (!allowedBranchIds || allowedBranchIds.length === 0) return 'All branches'
   const names = branches.filter((b) => allowedBranchIds.includes(b.id)).map((b) => b.name)
@@ -102,6 +93,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     setPage,
     currencies,
     branches,
+    priceUseTypes,
+    createPriceUseType,
+    isCreatingPriceUseType,
     createPriceList,
     isCreating,
     updatePriceList,
@@ -157,6 +151,13 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/inventory/price-use-types"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+            >
+              <Tags className="h-4 w-4" />
+              <span className="hidden sm:inline">Price Use Types</span>
+            </Link>
             <button
               type="button"
               onClick={() => refetch()}
@@ -233,11 +234,11 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                         <p className="truncate text-xs text-zinc-400">{pl.description}</p>
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${listTypeBadge(pl.listType)}`}
-                        >
-                          {pl.listType}
-                        </span>
+                        {pl.priceUseType && (
+                          <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                            {pl.priceUseType.name}
+                          </span>
+                        )}
                         <span className="text-[11px] text-zinc-400">
                           {pl.currency} · Priority {pl.priority}
                         </span>
@@ -362,6 +363,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         isSubmitting={editingList ? isUpdating : isCreating}
         currencies={currencies}
         branches={branches}
+        priceUseTypes={priceUseTypes}
+        onCreatePriceUseType={createPriceUseType}
+        isCreatingPriceUseType={isCreatingPriceUseType}
         initial={editingList}
         supersedesFrom={versioningFrom}
       />
