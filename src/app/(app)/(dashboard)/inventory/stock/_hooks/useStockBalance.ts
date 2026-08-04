@@ -7,7 +7,7 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 
 export function useStockBalance() {
   const [page, setPage] = useState(1)
-  const [limit] = useState(25)
+  const [limit, setLimit] = useState(20)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
   const [belowReorder, setBelowReorder] = useState(false)
@@ -75,6 +75,11 @@ export function useStockBalance() {
 
     page,
     setPage,
+    limit,
+    setLimit: (v: number) => {
+      setLimit(v)
+      setPage(1)
+    },
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
 

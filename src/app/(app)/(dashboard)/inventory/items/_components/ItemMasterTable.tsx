@@ -5,6 +5,22 @@ import { Pencil, Trash2, ChevronDown, Layers, Palette, MoreVertical } from 'luci
 import type { ComponentType } from 'react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
+import { displayClassificationLabel } from '@/src/libs/format/text'
+
+// "Group/Subgroup" classification lives on the category's own parent —
+// primaryCategory is the leaf (subgroup) when it has a parent, in which case
+// the parent is the main category to show here (matches OverviewTab).
+function mainCategoryName(item: ItemSummary): string | undefined {
+  const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name
+  return displayClassificationLabel(name)
+}
+
+function brandModelLabel(item: ItemSummary): string {
+  const brand = displayClassificationLabel(item.brand?.name)
+  const model = item.modelNumber ?? undefined
+  if (brand && model) return `${brand} — ${model}`
+  return brand ?? model ?? '—'
+}
 
 const LIFECYCLE_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -293,16 +309,13 @@ export default function ItemMasterTable({
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50">
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                SKU
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Name
+                Item
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Category
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Unit
+                Brand / Model
               </th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Cost Price
@@ -324,37 +337,43 @@ export default function ItemMasterTable({
                 className="cursor-pointer hover:bg-zinc-50"
                 onClick={() => pushPanel({ type: 'item360', itemId: item.id, itemName: item.name })}
               >
-                <td className="px-4 py-3 font-mono text-xs font-medium text-zinc-700">
-                  {item.sku}
-                </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-zinc-900">{item.name}</span>
-                    {item.isBundle === true && (
-                      <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
-                        Bundle
-                      </span>
-                    )}
-                    {item.hasVariants === true && (
-                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
-                        Variants
-                      </span>
-                    )}
-                    {item.isService === true && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                        Service
-                      </span>
-                    )}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-zinc-900">{item.name}</span>
+                      {item.isBundle === true && (
+                        <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                          Bundle
+                        </span>
+                      )}
+                      {item.hasVariants === true && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+                          Variants
+                        </span>
+                      )}
+                      {item.isService === true && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                          Service
+                        </span>
+                      )}
+                      {(item._count?.serialNumbers ?? 0) > 0 && (
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                          {item._count?.serialNumbers} unit
+                          {item._count?.serialNumbers !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-xs text-zinc-500">{item.sku}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-500">{item.primaryCategory?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-zinc-500">{item.baseUnit?.code ?? '—'}</td>
+                <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
+                <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">
                   {item.costPrice != null
                     ? `₱${Number(item.costPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
                     : '—'}
                 </td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                   {/* Scenario 16: lifecycle (active/discontinued/archived) is a
                       post-publish concept — showing it alongside "Pending
                       Approval" reads as contradictory, so a governed item
