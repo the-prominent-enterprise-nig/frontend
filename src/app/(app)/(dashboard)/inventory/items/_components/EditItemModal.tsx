@@ -102,7 +102,6 @@ export default function EditItemModal({
       primaryCategoryId: '',
       baseUnitId: '',
       costPrice: undefined,
-      sellingPrice: undefined,
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: false,
@@ -133,7 +132,6 @@ export default function EditItemModal({
         primaryCategoryId: item.primaryCategory?.id ?? undefined,
         baseUnitId: item.baseUnit?.id ?? undefined,
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
-        sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
         costingMethod: 'weighted_average',
         isBatchTracked: item.isBatchTracked ?? false,
         isSerialTracked: item.isSerialTracked ?? false,
@@ -284,7 +282,7 @@ export default function EditItemModal({
     errors.primaryCategoryId,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
   return (
@@ -508,27 +506,6 @@ export default function EditItemModal({
               {errors.costPrice && (
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
-            </div>
-
-            {/* Selling Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Selling Price (₱)
-              </label>
-              <Controller
-                name="sellingPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
             </div>
 
             {/* Tax Rate */}

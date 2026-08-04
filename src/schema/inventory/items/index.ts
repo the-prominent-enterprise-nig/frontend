@@ -3,6 +3,17 @@ import { z } from 'zod'
 export const CostingMethodSchema = z.enum(['fifo', 'lifo', 'weighted_average'])
 export const ItemLifecycleSchema = z.enum(['active', 'discontinued', 'archived'])
 
+// Scenario 16 — Item Master Governance: gates new-item creation only, not
+// edits to already-approved items.
+export const ItemApprovalStatusSchema = z.enum([
+  'draft',
+  'pending_accounting_confirmation',
+  'pending_approval',
+  'approved',
+  'rejected',
+])
+export type ItemApprovalStatus = z.infer<typeof ItemApprovalStatusSchema>
+
 export const ItemTagLabelSchema = z.enum(['best_seller', 'holiday', 'clearance', 'new_arrival'])
 export type ItemTagLabel = z.infer<typeof ItemTagLabelSchema>
 
@@ -149,9 +160,43 @@ export const UpdateLifecycleFormSchema = z.object({
   lifecycle: ItemLifecycleSchema,
 })
 
+// ─── Item Master Governance forms (Scenario 16) ────────────────────────────
+
+export const ConfirmAccountingFormSchema = z.object({
+  remarks: z.string().max(500).optional(),
+})
+
+export const RejectAccountingFormSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(500, 'Reason must be 500 characters or less'),
+})
+
+export const ApproveItemFormSchema = z.object({
+  remarks: z.string().max(500).optional(),
+})
+
+export const RejectItemFormSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(500, 'Reason must be 500 characters or less'),
+})
+
 export type CreateItemFormValues = z.infer<typeof CreateItemFormSchema>
 export type UpdateItemFormValues = z.infer<typeof UpdateItemFormSchema>
 export type UpdateLifecycleFormValues = z.infer<typeof UpdateLifecycleFormSchema>
+export type ConfirmAccountingFormValues = z.infer<typeof ConfirmAccountingFormSchema>
+export type RejectAccountingFormValues = z.infer<typeof RejectAccountingFormSchema>
+export type ApproveItemFormValues = z.infer<typeof ApproveItemFormSchema>
+export type RejectItemFormValues = z.infer<typeof RejectItemFormSchema>
+
+// Scenario 16 gap #3 — near-duplicate warning (non-blocking, trigram
+// similarity on name). The hard duplicate block stays the SKU uniqueness
+// check, surfaced separately via the 'duplicate_sku' error code.
+export const DuplicateCandidateSchema = z.object({
+  id: z.string(),
+  sku: z.string(),
+  name: z.string(),
+  brandName: z.string().nullable(),
+  similarity: z.coerce.number(),
+})
+export type DuplicateCandidate = z.infer<typeof DuplicateCandidateSchema>
 
 const classificationRefSchema = z.object({ id: z.string(), name: z.string() }).nullable().optional()
 
@@ -164,6 +209,12 @@ export const ItemSummarySchema = z.object({
   costPrice: z.coerce.number().nullable().optional(),
   sellingPrice: z.coerce.number().nullable().optional(),
   lifecycle: ItemLifecycleSchema.optional(),
+  approvalStatus: ItemApprovalStatusSchema.optional(),
+  submittedAt: z.string().nullable().optional(),
+  accountingConfirmedAt: z.string().nullable().optional(),
+  approvedAt: z.string().nullable().optional(),
+  rejectedAt: z.string().nullable().optional(),
+  rejectedReason: z.string().nullable().optional(),
   primaryCategory: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
   baseUnit: z.object({ id: z.string(), name: z.string(), code: z.string() }).nullable().optional(),
   createdAt: z.string().optional(),

@@ -2,7 +2,7 @@
 
 One-page status for all module scenarios (14 from the original source, plus 15-21 added 2026-07-31 from a second client scenario map — see [module-scenarios.md](./module-scenarios.md)'s "Draft 2 additions" for the full routing table). Each row is re-verified against the actual `development` branch code in both repos (not just the plan docs' own checkmarks, which can drift) — see the full gap analysis and Implementation Log in each scenario's own plan doc for file/line evidence.
 
-Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-verified 2026-07-31, this branch).
+Last verified: 2026-08-04 (Scenario 16 implemented and closed this pass).
 
 - [x] **01 — POS Installment Sale** — fully closed. [plan](./scenario-01-pos-installment-sale-plan.md)
 - [ ] **02 — CRM Customer Profile** — core done (2026-08-01: co-maker, duplicate detection, BM/AR merge-resolution, ID/consent capture, Lead-conversion loyalty bug); Smart SMS + segment campaigns remain out of scope pending their own integration/scoping pass. [plan](./scenario-02-crm-customer-profile-plan.md) / [updates](./scenario-02-crm-customer-profile-updates.md)
@@ -40,8 +40,7 @@ Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-ver
   - [ ] `costCenter` is captured on records but never read back in any report
 - [ ] **15 — Price List Management & Approval** — branch scoping, approval workflow (`pending_approval` → `active`/`rejected`/resubmit), floor-price validation, and true versioning via `supersedesId` implemented on both repos (2026-08-04); open PRs not yet merged to `development`. [plan](./scenario-15-price-list-management-plan.md)
   - [ ] Frontend [PR #103](https://github.com/the-prominent-enterprise-nig/frontend/pull/103) and backend [PR #99](https://github.com/the-prominent-enterprise-nig/backend/pull/99) — pending review/merge
-- [ ] **16 — Item Master Governance** — new (2026-07-31), not started. [plan](./scenario-16-item-master-governance-plan.md)
-  - [ ] No draft/approve workflow, no Master Data Approver role, dedupe is exact-SKU-only
+- [x] **16 — Item Master Governance** — fully closed (2026-08-04): draft→submit→confirm-accounting→approve workflow, Master Data Approver role, pg_trgm near-duplicate warning. [plan](./scenario-16-item-master-governance-plan.md)
 - [ ] **17 — Credit Application, Investigation & Promissory Note** — new (2026-07-31), not started; depends on Scenario 02's co-maker entity. [plan](./scenario-17-credit-application-promissory-note-plan.md)
   - [ ] No `CreditApplication` entity, no Credit Investigator role/CI record, no `PromissoryNote`
 - [ ] **18 — Customer Returns, Exchanges & Disposition** — new (2026-07-31), not started. [plan](./scenario-18-returns-exchanges-disposition-plan.md)
