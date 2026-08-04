@@ -47,6 +47,8 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     setSelectedCount,
     warehouseOptions,
     itemOptions,
+    batchOptions,
+    serialOptions,
     countLines,
     isCountLinesLoading,
     createCount,
@@ -312,6 +314,8 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         isCancelling={isCancelling}
         isAdjusting={isAdjusting}
         items={itemOptions}
+        batches={batchOptions}
+        serials={serialOptions}
         canAdjust={canAdjust}
         countLines={countLines}
         isCountLinesLoading={isCountLinesLoading}

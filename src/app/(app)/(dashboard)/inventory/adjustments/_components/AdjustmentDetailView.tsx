@@ -12,6 +12,14 @@ import {
   type RejectAdjustmentFormValues,
 } from '@/src/schema/inventory/adjustments'
 import { ADJUSTMENT_REASON_LABELS } from '@/src/schema/inventory/stock-counts'
+import { BATCH_STATUS_LABELS, BATCH_STATUS_COLORS } from '@/src/schema/inventory/batches'
+import {
+  SERIAL_STATUS_LABELS,
+  SERIAL_STATUS_COLORS,
+  NON_SALEABLE_SERIAL_STATUSES,
+} from '@/src/schema/inventory/serial-numbers'
+
+const NON_SALEABLE_BATCH_STATUSES = ['quarantine', 'expired', 'recalled'] as const
 
 type Props = {
   adjustment: AdjustmentDetail | null
@@ -153,6 +161,9 @@ export default function AdjustmentDetailView({
                     <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500">
                       Item
                     </th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-zinc-500">
+                      Batch / Serial
+                    </th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-zinc-500">
                       Expected
                     </th>
@@ -167,10 +178,47 @@ export default function AdjustmentDetailView({
                 <tbody className="divide-y divide-zinc-100">
                   {adjustment.lines.map((line) => {
                     const variance = line.actualQty - line.expectedQty
+                    const batchNonSaleable =
+                      line.batch &&
+                      (NON_SALEABLE_BATCH_STATUSES as readonly string[]).includes(line.batch.status)
+                    const serialNonSaleable =
+                      line.serialNumber &&
+                      NON_SALEABLE_SERIAL_STATUSES.includes(line.serialNumber.status)
                     return (
                       <tr key={line.id}>
                         <td className="px-3 py-2 text-zinc-700">
                           {line.item.sku} — {line.item.name}
+                        </td>
+                        <td className="px-3 py-2">
+                          {line.batch && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-zinc-600">
+                                {line.batch.batchNumber}
+                              </span>
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${BATCH_STATUS_COLORS[line.batch.status]}`}
+                              >
+                                {batchNonSaleable ? 'Non-saleable — ' : ''}
+                                {BATCH_STATUS_LABELS[line.batch.status]}
+                              </span>
+                            </div>
+                          )}
+                          {line.serialNumber && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-zinc-600">
+                                {line.serialNumber.serialNumber}
+                              </span>
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${SERIAL_STATUS_COLORS[line.serialNumber.status]}`}
+                              >
+                                {serialNonSaleable ? 'Non-saleable — ' : ''}
+                                {SERIAL_STATUS_LABELS[line.serialNumber.status]}
+                              </span>
+                            </div>
+                          )}
+                          {!line.batch && !line.serialNumber && (
+                            <span className="text-xs text-zinc-300">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right text-zinc-500">{line.expectedQty}</td>
                         <td className="px-3 py-2 text-right text-zinc-500">{line.actualQty}</td>

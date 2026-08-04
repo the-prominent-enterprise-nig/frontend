@@ -12,6 +12,8 @@ import { cancelCount } from '../_actions/cancel-count'
 import { createAdjustment } from '../_actions/create-adjustment'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
+import { getBatches } from '../../batches/_actions/get-batches'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import type {
   CreateCountFormValues,
   SubmitCountFormValues,
@@ -64,6 +66,24 @@ export function useStockCounts() {
     queryKey: ['inventory-stock-count-lines', selectedCount?.id],
     queryFn: () => getCountLines(selectedCount!.id),
     enabled: !!selectedCount?.id && selectedCount.status === 'in_progress',
+  })
+
+  // Scenario 19 Part 4 — batch/serial pickers on the Create Adjustment tab,
+  // so an existing non-saleable batch (quarantine/expired/recalled) or
+  // serial (held/defective/in_repair/pulled_out) status is visible while
+  // adjusting, instead of just a bare quantity.
+  const batchesQuery = useQuery({
+    queryKey: ['inventory-batches-lookup'],
+    queryFn: () => getBatches({ limit: 200 }),
+    staleTime: 60 * 1000,
+  })
+
+  const adjustWarehouseId = selectedCount?.warehouse?.id
+  const serialNumbersQuery = useQuery({
+    queryKey: ['inventory-serial-numbers-lookup', adjustWarehouseId],
+    queryFn: () => getSerialNumbers({ warehouseId: adjustWarehouseId, limit: 200 }),
+    enabled: !!adjustWarehouseId,
+    staleTime: 60 * 1000,
   })
 
   const createMutation = useMutation({
@@ -180,6 +200,8 @@ export function useStockCounts() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
+    batchOptions: batchesQuery.data?.data?.data ?? [],
+    serialOptions: serialNumbersQuery.data?.data?.data ?? [],
 
     countLines: countLinesQuery.data?.data ?? [],
     isCountLinesLoading: countLinesQuery.isLoading,

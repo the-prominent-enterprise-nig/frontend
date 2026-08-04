@@ -17,6 +17,9 @@ import {
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
+import type { BatchSummary } from '@/src/schema/inventory/batches'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
+import AdjustmentLineRow from './AdjustmentLineRow'
 
 type Props = {
   count: CountSummary | null
@@ -30,6 +33,8 @@ type Props = {
   isCancelling: boolean
   isAdjusting: boolean
   items: ItemSummary[]
+  batches: BatchSummary[]
+  serials: SerialNumberSummary[]
   canAdjust: boolean
   countLines: CountLineSnapshot[]
   isCountLinesLoading: boolean
@@ -59,6 +64,8 @@ export default function CountSessionView({
   isCancelling,
   isAdjusting,
   items,
+  batches,
+  serials,
   canAdjust,
   countLines,
   isCountLinesLoading,
@@ -453,68 +460,16 @@ export default function CountSessionView({
                 )}
 
                 {adjustLines.fields.map((line, i) => (
-                  <div key={line.id} className="grid grid-cols-12 items-start gap-2">
-                    <div className="col-span-5">
-                      <Controller
-                        name={`lines.${i}.itemId`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <select {...field} className={`${fieldClass} bg-white`}>
-                            <option value="">Select item…</option>
-                            {items.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.sku} — {item.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Controller
-                        name={`lines.${i}.expectedQty`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <input
-                            {...field}
-                            type="number"
-                            placeholder="Expected"
-                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                            onChange={(e) =>
-                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                            }
-                          />
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Controller
-                        name={`lines.${i}.actualQty`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <input
-                            {...field}
-                            type="number"
-                            min="0"
-                            placeholder="Actual"
-                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                            onChange={(e) =>
-                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                            }
-                          />
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center pt-2">
-                      <button
-                        type="button"
-                        onClick={() => adjustLines.remove(i)}
-                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                  <AdjustmentLineRow
+                    key={line.id}
+                    index={i}
+                    control={adjustForm.control}
+                    items={items}
+                    batches={batches}
+                    serials={serials}
+                    fieldClass={fieldClass}
+                    onRemove={() => adjustLines.remove(i)}
+                  />
                 ))}
 
                 {typeof adjustForm.formState.errors.lines?.message === 'string' && (

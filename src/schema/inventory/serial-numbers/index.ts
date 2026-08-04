@@ -1,23 +1,49 @@
 import { z } from 'zod'
 
-export const SerialStatusSchema = z.enum(['in_stock', 'sold', 'returned', 'defective', 'scrapped'])
+// Mirrors the backend's SerialNumberStatus enum exactly (backend/prisma/schema.prisma)
+export const SerialStatusSchema = z.enum([
+  'in_stock',
+  'held',
+  'sold',
+  'returned',
+  'defective',
+  'scrapped',
+  'in_repair',
+  'pulled_out',
+])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_stock: 'In Stock',
+  held: 'Held',
   sold: 'Sold',
   returned: 'Returned',
   defective: 'Defective',
   scrapped: 'Scrapped',
+  in_repair: 'In Repair',
+  pulled_out: 'Pulled Out',
 }
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   in_stock: 'bg-green-100 text-green-700',
+  held: 'bg-amber-100 text-amber-700',
   sold: 'bg-blue-100 text-blue-700',
   returned: 'bg-yellow-100 text-yellow-700',
   defective: 'bg-red-100 text-red-700',
   scrapped: 'bg-zinc-100 text-zinc-600',
+  in_repair: 'bg-orange-100 text-orange-700',
+  pulled_out: 'bg-purple-100 text-purple-700',
 }
+
+// Statuses that mean this specific unit should not be sold as-is — the
+// "non-saleable" concept Scenario 19 Part 5 surfaces in the count/adjustment
+// UI, without a new dedicated status field (reuses this existing enum).
+export const NON_SALEABLE_SERIAL_STATUSES: SerialStatus[] = [
+  'held',
+  'defective',
+  'in_repair',
+  'pulled_out',
+]
 
 export const RegisterSerialsFormSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),

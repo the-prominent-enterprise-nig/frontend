@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { AdjustmentReasonCodeSchema } from '@/src/schema/inventory/stock-counts'
+import { BatchStatusSchema } from '@/src/schema/inventory/batches'
+import { SerialStatusSchema } from '@/src/schema/inventory/serial-numbers'
 
 export const AdjustmentStatusSchema = z.enum([
   'submitted',
@@ -30,14 +32,28 @@ const AdjustmentLineItemSchema = z.object({
   name: z.string(),
 })
 
+const AdjustmentLineBatchSchema = z.object({
+  id: z.string(),
+  batchNumber: z.string(),
+  status: BatchStatusSchema,
+})
+
+const AdjustmentLineSerialSchema = z.object({
+  id: z.string(),
+  serialNumber: z.string(),
+  status: SerialStatusSchema,
+})
+
 export const AdjustmentLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   item: AdjustmentLineItemSchema,
   variantId: z.string().optional().nullable(),
   batchId: z.string().optional().nullable(),
+  batch: AdjustmentLineBatchSchema.optional().nullable(),
   locationId: z.string().optional().nullable(),
   serialNumberId: z.string().optional().nullable(),
+  serialNumber: AdjustmentLineSerialSchema.optional().nullable(),
   expectedQty: z.coerce.number(),
   actualQty: z.coerce.number(),
   unitCost: z.coerce.number().optional().nullable(),

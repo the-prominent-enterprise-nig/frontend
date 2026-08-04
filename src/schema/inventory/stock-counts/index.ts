@@ -120,6 +120,7 @@ export const CreateAdjustmentFormSchema = z.object({
         variantId: z.string().optional(),
         batchId: z.string().optional(),
         locationId: z.string().optional(),
+        serialNumberId: z.string().optional(),
         expectedQty: z.number(),
         actualQty: z.number().min(0),
         unitCost: z.number().min(0).optional(),
