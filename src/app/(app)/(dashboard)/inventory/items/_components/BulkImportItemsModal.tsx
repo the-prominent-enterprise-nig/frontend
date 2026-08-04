@@ -1,20 +1,9 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import Link from 'next/link'
-import {
-  ArrowRight,
-  X,
-  Loader2,
-  Upload,
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-  Download,
-} from 'lucide-react'
+import { X, Loader2, Upload, CheckCircle2, AlertCircle, FileText } from 'lucide-react'
 import { bulkImportItems } from '../_actions/bulk-import-items'
 import { showToast } from '@/src/components/ui/toast'
-import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { BulkImportItemsResult } from '@/src/schema/inventory/items/bulk-import'
 
 type Props = {
@@ -31,30 +20,6 @@ export default function BulkImportItemsModal({ isOpen, onClose }: Props) {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0]
     if (selected) setFile(selected)
-  }
-
-  function handleDownloadErrors() {
-    if (!result?.errors.length) return
-    const filename = `item-import-errors-${Date.now()}.csv`
-    // Mirror the original file's own columns (plus an appended error column)
-    // when we have them, so failed rows can be reviewed/fixed and re-uploaded
-    // directly. Falls back to a plain summary if a row has no raw data for
-    // some reason.
-    const sample = result.errors.find((e) => e.record)?.record
-    if (sample) {
-      const columns = Object.keys(sample)
-      downloadCsv(
-        filename,
-        [...columns, 'error'],
-        result.errors.map((e) => [...columns.map((c) => e.record?.[c] ?? ''), e.error])
-      )
-    } else {
-      downloadCsv(
-        filename,
-        ['row', 'sku', 'error'],
-        result.errors.map((e) => [e.row, e.sku ?? '', e.error])
-      )
-    }
   }
 
   async function handleSubmit() {
@@ -123,28 +88,11 @@ export default function BulkImportItemsModal({ isOpen, onClose }: Props) {
                 </div>
               </div>
 
-              {!!result.skippedBlankRows && (
-                <p className="text-xs text-zinc-400">
-                  {result.skippedBlankRows} fully blank row(s) skipped (e.g. trailing commas from an
-                  Excel export) — not counted as errors.
-                </p>
-              )}
-
               {result.errors.length > 0 && (
                 <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-red-500">
-                      Row errors
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleDownloadErrors}
-                      className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      Download CSV
-                    </button>
-                  </div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-red-500">
+                    Row errors
+                  </p>
                   <ul className="max-h-48 space-y-1 overflow-y-auto">
                     {result.errors.map((e, i) => (
                       <li key={i} className="flex gap-2 text-xs text-red-600">
@@ -160,42 +108,15 @@ export default function BulkImportItemsModal({ isOpen, onClose }: Props) {
             </div>
           ) : (
             <div className="space-y-4">
-              <Link
-                href="/inventory/catalog?tab=serials"
-                onClick={handleClose}
-                className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 hover:bg-amber-100"
-              >
-                <span>
-                  Have unit-level data (serial numbers, RR, date-in)? That belongs in{' '}
-                  <span className="font-semibold">Import Serialized Inventory</span>, under{' '}
-                  <span className="font-semibold">Catalog → Serial Numbers</span> — this importer
-                  only creates catalog items with no stock or serial numbers.
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
-              </Link>
-
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-600">
                 <p className="font-semibold text-zinc-700">Required columns</p>
-                <p className="mt-1 font-mono">name</p>
+                <p className="mt-1 font-mono">sku, name, baseUnitCode</p>
                 <p className="mt-2 font-semibold text-zinc-700">Optional columns</p>
-                <p className="mt-1 font-mono">
-                  sku, baseUnitCode, description, costPrice, sellingPrice, modelNumber, brand, type,
-                  category, subcategory
-                </p>
+                <p className="mt-1 font-mono">description, costPrice, sellingPrice</p>
                 <p className="mt-2 text-zinc-500">
-                  <span className="font-medium">sku</span> is auto-generated when left blank.{' '}
-                  <span className="font-medium">baseUnitCode</span> defaults to{' '}
-                  <span className="font-medium">pcs</span> when left blank, and must otherwise match
-                  an existing Unit of Measure code. <span className="font-medium">brand</span>/
-                  <span className="font-medium">type</span>/
-                  <span className="font-medium">category</span>/
-                  <span className="font-medium">subcategory</span> are resolved by name and created
-                  automatically if they don&apos;t exist yet (subcategory needs category on the same
-                  row). Column headers are matched case-insensitively, and{' '}
-                  <span className="font-medium">group</span>/
-                  <span className="font-medium">subgroup</span> are accepted as aliases for
-                  category/subcategory. Each row is processed independently — a bad row won&apos;t
-                  block the rest of the file.
+                  <span className="font-medium">baseUnitCode</span> must match an existing Unit of
+                  Measure code. Each row is processed independently — a bad row won&apos;t block the
+                  rest of the file.
                 </p>
               </div>
 

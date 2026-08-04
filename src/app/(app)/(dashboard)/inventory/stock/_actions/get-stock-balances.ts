@@ -1,10 +1,7 @@
 'use server'
 
-import { api, ApiResponse } from '@/src/libs/api/client'
-import {
-  StockBalanceListResponseSchema,
-  type StockBalanceListResponse,
-} from '@/src/schema/inventory/goods-receiving'
+import { api } from '@/src/libs/api/client'
+import type { StockBalanceListResponse } from '@/src/schema/inventory/goods-receiving'
 
 type Params = {
   page?: number
@@ -16,9 +13,7 @@ type Params = {
   belowReorder?: boolean
 }
 
-export async function getStockBalances(
-  params: Params = {}
-): Promise<ApiResponse<StockBalanceListResponse>> {
+export async function getStockBalances(params: Params = {}) {
   const query: Record<string, string | number | boolean | undefined> = {
     page: params.page,
     limit: params.limit,
@@ -33,23 +28,7 @@ export async function getStockBalances(
     belowReorderPoint: params.belowReorder,
   }
 
-  const result = await api.get<StockBalanceListResponse>('/inventory/stock/balances', query, {
+  return api.get<StockBalanceListResponse>('/inventory/stock/balances', query, {
     tags: ['inventory-stock-balances'],
   })
-
-  if (!result.success || !result.data) {
-    return {
-      success: false,
-      error: result.error || 'Failed to fetch stock balances',
-      message: result.message,
-    }
-  }
-
-  const validated = StockBalanceListResponseSchema.safeParse(result.data)
-  if (!validated.success) {
-    // Return raw data if shape differs slightly — backend evolves independently
-    return { success: true, data: result.data as StockBalanceListResponse }
-  }
-
-  return { success: true, data: validated.data }
 }

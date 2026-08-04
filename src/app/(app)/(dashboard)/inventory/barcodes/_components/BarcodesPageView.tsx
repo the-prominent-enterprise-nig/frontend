@@ -20,7 +20,6 @@ import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { BarcodeType, CreateBarcodeFormValues } from '@/src/schema/inventory/barcodes'
 import { BARCODE_TYPES } from '@/src/schema/inventory/barcodes'
 import { useBarcodeManager } from '../_hooks/useBarcodeManager'
-import { displayClassificationLabel } from '@/src/libs/format/text'
 
 const BARCODE_TYPE_LABELS: Record<BarcodeType, string> = {
   upc: 'UPC',
@@ -531,7 +530,7 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
                         </code>
                       </td>
                       <td className="hidden px-4 py-3 text-zinc-500 md:table-cell">
-                        {displayClassificationLabel(item.primaryCategory?.name) ?? '—'}
+                        {item.primaryCategory?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-2">

@@ -8,7 +8,6 @@ import { useCategoryManager } from '../_hooks/useCategoryManager'
 import CategoryTree from './CategoryTree'
 import CategoryFormModal from './CategoryFormModal'
 import type { CategoryNode } from '@/src/schema/inventory/categories'
-import { formatClassificationLabel } from '@/src/libs/format/text'
 
 interface SessionUser {
   id: string
@@ -176,11 +175,8 @@ export default function CategoryManager({ session }: { session: SessionUser | nu
             <h3 className="text-base font-semibold text-zinc-900">Delete category?</h3>
             <p className="mt-2 text-sm text-zinc-600">
               This will permanently delete{' '}
-              <span className="font-medium text-zinc-900">
-                "{formatClassificationLabel(deleteTarget.name)}"
-              </span>
-              . This action cannot be undone. Categories with sub-categories or assigned items
-              cannot be deleted.
+              <span className="font-medium text-zinc-900">"{deleteTarget.name}"</span>. This action
+              cannot be undone. Categories with sub-categories or assigned items cannot be deleted.
             </p>
 
             <p className="mt-4 text-xs text-zinc-500">

@@ -20,7 +20,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [limit, setLimit] = useState(20)
+  const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
   const [itemFilter, setItemFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
@@ -177,11 +177,6 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
 
     page,
     setPage,
-    limit,
-    setLimit: (v: number) => {
-      setLimit(v)
-      setPage(1)
-    },
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],

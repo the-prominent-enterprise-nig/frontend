@@ -13,7 +13,6 @@ import {
   ImageOff,
 } from 'lucide-react'
 import type { CategoryNode } from '@/src/schema/inventory/categories'
-import { formatClassificationLabel } from '@/src/libs/format/text'
 
 type Props = {
   nodes: CategoryNode[]
@@ -117,9 +116,7 @@ function CategoryRow({
 
         <CoverThumb node={node} />
 
-        <span className="flex-1 truncate text-[13.5px] font-medium text-zinc-800">
-          {formatClassificationLabel(node.name)}
-        </span>
+        <span className="flex-1 truncate text-[13.5px] font-medium text-zinc-800">{node.name}</span>
 
         <StatusBadge status={node.status} />
 
