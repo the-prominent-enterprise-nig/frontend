@@ -38,8 +38,8 @@ Last verified: 2026-08-01 (Scenario 02 re-verified that pass; Scenario 05 re-ver
   - [ ] P&L report has no branch filter
   - [ ] No gross-vs-net report variant
   - [ ] `costCenter` is captured on records but never read back in any report
-- [ ] **15 — Price List Management & Approval** — new (2026-07-31), not started. [plan](./scenario-15-price-list-management-plan.md)
-  - [ ] No branch scoping, no approval workflow, no floor price, no true versioning on `PriceList`
+- [ ] **15 — Price List Management & Approval** — branch scoping, approval workflow (`pending_approval` → `active`/`rejected`/resubmit), floor-price validation, and true versioning via `supersedesId` implemented on both repos (2026-08-04); open PRs not yet merged to `development`. [plan](./scenario-15-price-list-management-plan.md)
+  - [ ] Frontend [PR #103](https://github.com/the-prominent-enterprise-nig/frontend/pull/103) and backend [PR #99](https://github.com/the-prominent-enterprise-nig/backend/pull/99) — pending review/merge
 - [ ] **16 — Item Master Governance** — new (2026-07-31), not started. [plan](./scenario-16-item-master-governance-plan.md)
   - [ ] No draft/approve workflow, no Master Data Approver role, dedupe is exact-SKU-only
 - [ ] **17 — Credit Application, Investigation & Promissory Note** — new (2026-07-31), not started; depends on Scenario 02's co-maker entity. [plan](./scenario-17-credit-application-promissory-note-plan.md)
