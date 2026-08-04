@@ -154,10 +154,33 @@ export function PoDetailModal({ po, onClose }: Props) {
                   {po.lines.map((line) => (
                     <tr key={line.id}>
                       <td className="px-3 py-2">
-                        <p className="font-medium text-zinc-900">{line.item.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-medium text-zinc-900">{line.item.name}</p>
+                          {line.isFreebie && (
+                            <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">
+                              Freebie
+                            </span>
+                          )}
+                        </div>
                         <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
                         {line.description && (
                           <p className="mt-0.5 text-xs text-zinc-500">{line.description}</p>
+                        )}
+                        {line.srp != null && (
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            SRP {fmtPHP(Number(line.srp))}
+                            {line.discountType && line.discountValue != null && (
+                              <>
+                                {' · '}
+                                {line.discountType === 'percentage'
+                                  ? `${Number(line.discountValue)}%`
+                                  : fmtPHP(Number(line.discountValue))}{' '}
+                                off
+                                {line.discountedCost != null &&
+                                  ` → ${fmtPHP(Number(line.discountedCost))}`}
+                              </>
+                            )}
+                          </p>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-700">{line.quantity}</td>
