@@ -4,9 +4,9 @@
 
 ## 🔗 References
 
-<!-- Link to the relevant ticket. -->
+<!-- Link to the Jira ticket. Example: [JIRA-123](https://your-domain.atlassian.net/browse/JIRA-123) -->
 
-- **Ticket:** [Link to ticket]()
+- **Jira Ticket:** [Link to ticket]()
 <!-- Link to any design specification or related documentation. -->
 - **Design/Spec:** [Link if applicable]()
 
@@ -28,32 +28,35 @@
 - [ ] Human Resources (HR)
 - [ ] Accounting
 - [ ] Inventory
-- [ ] POS
-- [ ] CRM
-- [ ] Procurement
-- [ ] Sales
-- [ ] Settings
-- [ ] Workspace
 - [ ] Dashboard
 - [ ] Core/Shared
 
 ## 🔐 Security & Data Considerations
 
-- [ ] No sensitive data (salaries, deductions, tax info, tokens) is logged
-- [ ] Routes/actions are guarded with appropriate permission checks (`can` / `canAny` / `canAll`)
-- [ ] Input validated with Zod schemas
-- [ ] No direct `fetch()` calls bypassing the `api` client
-- [ ] Auth guards are applied at the layout level, not the page level
+<!-- If applicable, describe security impacts or data protection measures -->
+
+- [ ] No sensitive data (salaries, deductions, tax info) is logged
+- [ ] Authentication/authorization checks are in place (if applicable)
+- [ ] Database queries properly parameterized
+- [ ] User input validated with Zod schemas
+
+## 📸 Screenshots / Visuals
+
+<!-- If this PR includes UI changes, attach screenshots, recordings, or GIFs to facilitate review. -->
 
 ## ✅ Quality Assurance Checklist
 
-- [ ] I have performed a self-review of my own code
 - [ ] TypeScript strict mode compliance (no `any` types)
-- [ ] Zod schemas are properly defined for all form/mutation inputs
-- [ ] Forms use React Hook Form + `Controller` for every field (no `register()`)
-- [ ] Business logic lives in Server Actions/hooks, not components
-- [ ] Error handling surfaces meaningful, user-facing messages
-- [ ] No unused imports or dead code
+- [ ] I have performed a self-review of my own code
+- [ ] Code follows project naming conventions (see `.skills/clean-code/SKILL.md`)
+- [ ] All functions are under 20 lines with single responsibility
+- [ ] Error handling includes meaningful context
+- [ ] I have updated relevant comments and documentation
+- [ ] I have verified forms use React Hook Form + Zod pattern (if applicable)
+- [ ] I have verified component reuse (no duplicate components created)
+- [ ] All database migrations are included (if schema changes)
+- [ ] Server actions validate input with Zod (for mutations)
+- [ ] Routes follow `(app)/(admin/user)/module/` structure
 
 ## 🧪 Testing Verification
 
@@ -68,8 +71,8 @@
 <!-- Describe what you tested manually -->
 
 - [ ] Happy path tested
-- [ ] Error / edge cases tested
-- [ ] Auth & permission restrictions verified
+- [ ] Error cases tested
+- [ ] Edge cases considered
 - [ ] Mobile responsiveness verified (if UI changes)
 - [ ] Accessibility (WCAG AA) verified (if UI changes)
 
@@ -79,19 +82,29 @@
 
 ## 🚀 Deployment Notes
 
-<!-- Any special deployment considerations -->
+<!-- Any special deployment considerations or database migrations needed? -->
 
+- Database migrations: [ ] Yes [ ] No
 - Environment variables needed: [ ] Yes [ ] No
 - Feature flags needed: [ ] Yes [ ] No
-- Requires coordination with backend: [ ] Yes [ ] No
+
+## 📚 Related Documentation
+
+<!-- Link to any relevant documentation or skills -->
+
+- [Route Architecture](../.skills/route-architecture/SKILL.md)
+- [React Forms](../.skills/react-forms/SKILL.md)
+- [Component Reuse](../.skills/component-reuse/SKILL.md)
+- [API Integration](../.skills/api-integration/SKILL.md)
+- [Clean Code](../.skills/clean-code/SKILL.md)
 
 ## 🔄 Reviewers Checklist
 
 **For reviewers only:**
 
 - [ ] Changes align with project architecture
-- [ ] No business logic in components/pages (lives in hooks/server actions)
+- [ ] No duplicate components or code
 - [ ] Error handling is comprehensive
 - [ ] Sensitive data is properly protected
-- [ ] Shared component/prop changes are backward compatible for existing usages
-- [ ] New routes/components follow existing conventions
+- [ ] Database schema changes are backward compatible
+- [ ] Tests are adequate coverage for changes
