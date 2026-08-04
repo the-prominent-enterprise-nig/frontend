@@ -242,6 +242,9 @@ export interface Reminder {
   completedAt?: string | null
   isOverdue?: boolean
   createdAt: string
+  customer?: { name: string } | null
+  lead?: { firstName: string; lastName?: string | null } | null
+  installmentAccount?: { accountNumber: string } | null
 }
 
 export interface CustomerSegment {

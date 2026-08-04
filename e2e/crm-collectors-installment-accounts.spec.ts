@@ -906,4 +906,63 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     expect(del.ok()).toBeTruthy()
     await deleteCustomerViaUi(page, fullName)
   })
+
+  test('the global Reminders page shows a linked account badge for collections tasks', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const { fullName } = await createCustomerViaUi(page, suffix)
+
+    const accountNumber = `E2E-IA-CTX-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '10' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    await clickStable(
+      page.getByRole('button', { name: 'Schedule reminder' }),
+      page.getByRole('heading', { name: 'Schedule reminder' })
+    )
+    await submitStable(
+      async () => {
+        await fillStable(page.locator('#reminder-due-at'), '2026-08-10T09:00')
+        await fillStable(
+          page.locator('#reminder-note'),
+          `Global reminders context badge test ${suffix}`
+        )
+      },
+      () => page.locator('form').getByRole('button', { name: 'Schedule', exact: true }).click(),
+      () =>
+        expect(page.getByRole('heading', { name: 'Schedule reminder' })).toHaveCount(0, {
+          timeout: 8_000,
+        })
+    )
+
+    await gotoReady(page, '/crm/reminders')
+    await expect(page.getByText(`Global reminders context badge test ${suffix}`)).toBeVisible({
+      timeout: 10_000,
+    })
+
+    const badge = page.getByRole('link', { name: accountNumber })
+    await expect(badge).toBeVisible()
+    await badge.click()
+    await expect(page).toHaveURL(`/crm/installment-accounts/${accountId}`, { timeout: 10_000 })
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
+    await deleteCustomerViaUi(page, fullName)
+  })
 })
