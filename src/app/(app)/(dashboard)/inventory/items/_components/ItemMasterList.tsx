@@ -6,6 +6,8 @@ import { useItemMaster } from '../_hooks/useItemMaster'
 import CreateItemModal from './CreateItemModal'
 import EditItemModal from './EditItemModal'
 import ItemMasterTable from './ItemMasterTable'
+import ItemApprovalActionModal from './ItemApprovalActionModal'
+import ItemRejectModal from './ItemRejectModal'
 import CreateBundleModal from '../../bundles/_components/CreateBundleModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
 import VariantsModal from './VariantsModal'
@@ -26,6 +28,15 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canCreateBundle = hasPermission(session, INVENTORY_PERMISSIONS.BUNDLES_CREATE)
   const canViewVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_READ)
   const canManageVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_MANAGE)
+  // Scenario 16 — Item Master Governance. Submitting a draft reuses the
+  // update permission (same convention Purchase Requests uses for its own
+  // submit action) rather than introducing a separate permission for it.
+  const canSubmitReview = canUpdate
+  const canConfirmAccounting = hasPermission(
+    session,
+    INVENTORY_PERMISSIONS.ITEMS_CONFIRM_TAX_MAPPING
+  )
+  const canApproveItem = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_APPROVE)
 
   const {
     items,
@@ -43,6 +54,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setSearch,
     lifecycle,
     setLifecycle,
+    approvalStatus,
+    setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
     resetFilters,
@@ -83,6 +96,16 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     isUpdatingVariant,
     deleteVariant,
     isDeletingVariant,
+    submitItem,
+    isSubmitting,
+    confirmAccounting,
+    isConfirmingAccounting,
+    rejectAccounting,
+    isRejectingAccounting,
+    approveItem,
+    isApprovingItem,
+    rejectItem,
+    isRejectingItem,
   } = useItemMaster()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -91,6 +114,11 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   const [isCsvImportOpen, setIsCsvImportOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
+  // Scenario 16 — Item Master Governance
+  const [confirmingAccountingItem, setConfirmingAccountingItem] = useState<ItemSummary | null>(null)
+  const [rejectingAccountingItem, setRejectingAccountingItem] = useState<ItemSummary | null>(null)
+  const [approvingItem, setApprovingItem] = useState<ItemSummary | null>(null)
+  const [rejectingItem, setRejectingItem] = useState<ItemSummary | null>(null)
 
   function handleDelete(item: ItemSummary) {
     setDeleteTarget(item)
@@ -190,6 +218,22 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
             <option value="discontinued">Discontinued</option>
             <option value="archived">Archived</option>
           </select>
+          {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
+            <select
+              value={approvalStatus ?? ''}
+              onChange={(e) =>
+                setApprovalStatus((e.target.value || undefined) as typeof approvalStatus)
+              }
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Approval Statuses</option>
+              <option value="draft">Draft</option>
+              <option value="pending_accounting_confirmation">Pending Accounting</option>
+              <option value="pending_approval">Pending Approval</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          )}
           {categories.length > 0 && (
             <CategorySelect
               value={primaryCategoryId}
@@ -220,6 +264,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           </select>
           {(search ||
             lifecycle ||
+            approvalStatus ||
             primaryCategoryId ||
             sortBy !== 'createdAt' ||
             sortOrder !== 'desc') && (
@@ -255,6 +300,15 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
           onViewBundle={(item) => setSelectedBundleItem(item)}
           onViewVariants={canViewVariants ? (item) => setSelectedVariantItem(item) : undefined}
+          canSubmitReview={canSubmitReview}
+          canConfirmAccounting={canConfirmAccounting}
+          canApproveItem={canApproveItem}
+          isSubmittingReview={isSubmitting}
+          onSubmitReview={(item) => submitItem(item.id)}
+          onConfirmAccounting={(item) => setConfirmingAccountingItem(item)}
+          onRejectAccounting={(item) => setRejectingAccountingItem(item)}
+          onApproveItem={(item) => setApprovingItem(item)}
+          onRejectItem={(item) => setRejectingItem(item)}
         />
 
         {/* Pagination */}
@@ -376,6 +430,50 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         isUpdating={isUpdatingVariant}
         onDeleteVariant={deleteVariant}
         isDeleting={isDeletingVariant}
+      />
+
+      {/* Scenario 16 — Item Master Governance modals */}
+      <ItemApprovalActionModal
+        open={!!confirmingAccountingItem}
+        onClose={() => setConfirmingAccountingItem(null)}
+        item={confirmingAccountingItem}
+        title="Confirm Tax/GL Mapping"
+        actionLabel="Confirm"
+        onConfirm={async (id, data) => {
+          await confirmAccounting(id, data)
+        }}
+        isSubmitting={isConfirmingAccounting}
+      />
+      <ItemRejectModal
+        open={!!rejectingAccountingItem}
+        onClose={() => setRejectingAccountingItem(null)}
+        item={rejectingAccountingItem}
+        title="Reject — Tax/GL Mapping"
+        onConfirm={async (id, data) => {
+          await rejectAccounting(id, data)
+        }}
+        isSubmitting={isRejectingAccounting}
+      />
+      <ItemApprovalActionModal
+        open={!!approvingItem}
+        onClose={() => setApprovingItem(null)}
+        item={approvingItem}
+        title="Approve Item"
+        actionLabel="Approve"
+        onConfirm={async (id, data) => {
+          await approveItem(id, data)
+        }}
+        isSubmitting={isApprovingItem}
+      />
+      <ItemRejectModal
+        open={!!rejectingItem}
+        onClose={() => setRejectingItem(null)}
+        item={rejectingItem}
+        title="Reject Item"
+        onConfirm={async (id, data) => {
+          await rejectItem(id, data)
+        }}
+        isSubmitting={isRejectingItem}
       />
 
       {/* Delete Confirm */}

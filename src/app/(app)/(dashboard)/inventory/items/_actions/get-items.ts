@@ -8,6 +8,12 @@ export async function getItems(params?: {
   limit?: number
   search?: string
   lifecycle?: 'active' | 'discontinued' | 'archived'
+  approvalStatus?:
+    | 'draft'
+    | 'pending_accounting_confirmation'
+    | 'pending_approval'
+    | 'approved'
+    | 'rejected'
   primaryCategoryId?: string
 }): Promise<ApiResponse<ItemListResponse>> {
   try {

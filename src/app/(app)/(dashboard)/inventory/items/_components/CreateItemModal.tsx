@@ -19,6 +19,8 @@ import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
+import { checkItemDuplicates } from '../_actions/check-item-duplicates'
+import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 
 interface PendingImage {
   fileId: string
@@ -117,6 +119,23 @@ export default function CreateItemModal({
     if (!isServiceValue) return
     TRACKING_FIELDS_DISABLED_BY_SERVICE.forEach((name) => setValue(name, false))
   }, [isServiceValue, setValue])
+
+  // Scenario 16 gap #3: non-blocking near-duplicate warning, debounced as the
+  // name is typed — never blocks submission, only informs.
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([])
+  const nameValue = useWatch({ control, name: 'name' })
+  const brandIdValue = useWatch({ control, name: 'brandId' })
+  useEffect(() => {
+    if (!isOpen || !nameValue || nameValue.trim().length < 3) {
+      setDuplicates([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      const result = await checkItemDuplicates(nameValue, brandIdValue)
+      if (result.success) setDuplicates(result.data ?? [])
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [isOpen, nameValue, brandIdValue])
 
   function handleRequestClose() {
     if (hasUnsavedChanges) {
@@ -234,12 +253,17 @@ export default function CreateItemModal({
     errors.primaryCategoryId,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
 
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add New Item"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+    >
       <div
         ref={scrollRef}
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
@@ -284,6 +308,15 @@ export default function CreateItemModal({
           )}
         </div>
 
+        {/* Governance notice (Scenario 16) */}
+        <div className="border-b border-blue-100 bg-blue-50 px-6 py-2.5">
+          <p className="text-xs text-blue-800">
+            This item saves as a <span className="font-medium">draft</span>. Submit it for
+            Accounting confirmation and Master Data Approver sign-off before it becomes available in
+            PO, receiving, inventory, and POS.
+          </p>
+        </div>
+
         {/* Form */}
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           {/* Basic Info */}
@@ -311,6 +344,22 @@ export default function CreateItemModal({
                 )}
               />
               {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+              {duplicates.length > 0 && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800">
+                    {duplicates.length} similar item{duplicates.length !== 1 ? 's' : ''} found —
+                    review before creating:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {duplicates.map((d) => (
+                      <li key={d.id} className="text-xs text-amber-700">
+                        <span className="font-mono">{d.sku}</span> — {d.name}
+                        {d.brandName ? ` (${d.brandName})` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* SKU */}
@@ -433,27 +482,6 @@ export default function CreateItemModal({
               {errors.costPrice && (
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
-            </div>
-
-            {/* Selling Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Selling Price (₱)
-              </label>
-              <Controller
-                name="sellingPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
             </div>
 
             {/* Costing Method */}
