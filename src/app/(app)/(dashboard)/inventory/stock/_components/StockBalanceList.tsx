@@ -20,6 +20,8 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     warehouseOptions,
     refetch,
   } = useStockBalance()
@@ -238,33 +240,49 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
         </div>
 
         {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>
-              Showing {(page - 1) * pagination.limit + 1}–
-              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} records
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1.5 font-medium text-zinc-700">
-                {page} / {pagination.totalPages}
+        {pagination.total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {(page - 1) * pagination.limit + 1}–
+                {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} records
               </span>
-              <button
-                type="button"
-                onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                disabled={page >= pagination.totalPages}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Next
-              </button>
+              <label className="flex items-center gap-1.5">
+                <span className="text-zinc-400">Per page</span>
+                <select
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
+                >
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
             </div>
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page <= 1}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 font-medium text-zinc-700">
+                  {page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                  disabled={page >= pagination.totalPages}
+                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

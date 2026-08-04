@@ -9,6 +9,7 @@ import {
   type RegisterSerialsFormInput,
 } from '@/src/schema/inventory/serial-numbers'
 import type { ApiResponse } from '@/src/libs/api/client'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type ItemOption = { id: string; name: string; sku: string }
 type WarehouseOption = { id: string; name: string; code: string }
@@ -98,14 +99,15 @@ export default function RegisterSerialsModal({
                 name="itemId"
                 control={control}
                 render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select item…</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.sku} — {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    placeholder="Search item by SKU or name…"
+                    options={items.map((item) => ({
+                      value: item.id,
+                      label: `${item.sku} — ${item.name}`,
+                    }))}
+                  />
                 )}
               />
               {errors.itemId && (
