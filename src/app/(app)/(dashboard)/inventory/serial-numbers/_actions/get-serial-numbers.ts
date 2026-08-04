@@ -1,10 +1,7 @@
 'use server'
 
-import { api, ApiResponse } from '@/src/libs/api/client'
-import {
-  SerialNumberListResponseSchema,
-  type SerialNumberListResponse,
-} from '@/src/schema/inventory/serial-numbers'
+import { api } from '@/src/libs/api/client'
+import type { SerialNumberListResponse } from '@/src/schema/inventory/serial-numbers'
 
 type Params = {
   page?: number
@@ -21,9 +18,7 @@ type Params = {
   consignedToBranchId?: string
 }
 
-export async function getSerialNumbers(
-  params: Params = {}
-): Promise<ApiResponse<SerialNumberListResponse>> {
+export async function getSerialNumbers(params: Params = {}) {
   const query: Record<string, string | number | undefined> = {
     page: params.page,
     limit: params.limit,
@@ -34,21 +29,5 @@ export async function getSerialNumbers(
     consignedToBranchId: params.consignedToBranchId,
   }
 
-  const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)
-
-  if (!result.success || !result.data) {
-    return {
-      success: false,
-      error: result.error || 'Failed to fetch serial numbers',
-      message: result.message,
-    }
-  }
-
-  const validated = SerialNumberListResponseSchema.safeParse(result.data)
-  if (!validated.success) {
-    // Return raw data if shape differs slightly — backend evolves independently
-    return { success: true, data: result.data as SerialNumberListResponse }
-  }
-
-  return { success: true, data: validated.data }
+  return api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)
 }
