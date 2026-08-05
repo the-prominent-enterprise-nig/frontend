@@ -8,6 +8,8 @@ import type {
   CountSummary,
   SubmitCountFormValues,
   CreateAdjustmentFormValues,
+  CountLine,
+  AddCountLineFormValues,
 } from '@/src/schema/inventory/stock-counts'
 import {
   ADJUSTMENT_REASON_LABELS,
@@ -30,6 +32,10 @@ type Props = {
   isAdjusting: boolean
   items: ItemSummary[]
   canAdjust: boolean
+  lines: CountLine[]
+  isLoadingLines: boolean
+  onAddLine: (args: { id: string; data: AddCountLineFormValues }) => Promise<ApiResponse<unknown>>
+  isAddingLine: boolean
 }
 
 const reasonCodes = AdjustmentReasonCodeSchema.options
@@ -47,11 +53,14 @@ export default function CountSessionView({
   isAdjusting,
   items,
   canAdjust,
+  lines,
+  isLoadingLines,
+  onAddLine,
+  isAddingLine,
 }: Props) {
   const [tab, setTab] = useState<'count' | 'adjust'>('count')
-  const [lines, setLines] = useState<
-    { itemId: string; expectedQty: number | ''; countedQty: number | '' }[]
-  >([])
+  const [countedQtyById, setCountedQtyById] = useState<Record<string, string>>({})
+  const [addItemId, setAddItemId] = useState('')
 
   const adjustForm = useForm<CreateAdjustmentFormValues>({
     resolver: zodResolver(CreateAdjustmentFormSchema),
@@ -78,26 +87,23 @@ export default function CountSessionView({
   const isCompleted = count.status === 'completed'
   const isCancelled = count.status === 'cancelled'
 
-  function addLine() {
-    setLines((prev) => [...prev, { itemId: '', expectedQty: '', countedQty: '' }])
+  function updateCounted(lineId: string, value: string) {
+    setCountedQtyById((prev) => ({ ...prev, [lineId]: value }))
   }
 
-  function updateLine(index: number, field: keyof (typeof lines)[0], value: string | number) {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)))
-  }
-
-  function removeLine(index: number) {
-    setLines((prev) => prev.filter((_, i) => i !== index))
+  async function handleAddItem() {
+    if (!count || !addItemId) return
+    await onAddLine({ id: count.id, data: { itemId: addItemId } })
+    setAddItemId('')
   }
 
   async function handleSubmitCount() {
     if (!count) return
     const validLines = lines
-      .filter((l) => l.itemId && l.countedQty !== '')
+      .filter((l) => countedQtyById[l.id] !== undefined && countedQtyById[l.id] !== '')
       .map((l) => ({
-        itemId: l.itemId,
-        expectedQty: Number(l.expectedQty),
-        countedQty: Number(l.countedQty),
+        countLineId: l.id,
+        countedQty: Number(countedQtyById[l.id]),
       }))
 
     if (validLines.length === 0) return
@@ -105,9 +111,13 @@ export default function CountSessionView({
     await onSubmit({ id: count.id, data: { lines: validLines } })
   }
 
-  const variantLines = lines.filter(
-    (l) => l.countedQty !== '' && l.countedQty !== (l.expectedQty === '' ? 0 : l.expectedQty)
-  )
+  const lineIds = new Set(lines.map((l) => l.itemId))
+  const addableItems = items.filter((item) => !lineIds.has(item.id))
+
+  const variantLines = lines.filter((l) => {
+    const entered = countedQtyById[l.id]
+    return entered !== undefined && entered !== '' && Number(entered) !== Number(l.expectedQty)
+  })
 
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500'
@@ -202,6 +212,11 @@ export default function CountSessionView({
 
           {isInProgress && tab === 'count' && (
             <div className="space-y-4">
+              <p className="text-xs text-zinc-500">
+                Expected quantities below were captured by the system when this count started —
+                enter what you actually counted.
+              </p>
+
               {variantLines.length > 0 && (
                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -211,113 +226,105 @@ export default function CountSessionView({
                 </div>
               )}
 
-              <div className="space-y-3">
-                {lines.map((line, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                    <div className="col-span-5">
-                      <select
-                        value={line.itemId}
-                        onChange={(e) => updateLine(i, 'itemId', e.target.value)}
-                        className={`${fieldClass} bg-white`}
-                      >
-                        <option value="">Select item…</option>
-                        {items.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.sku} — {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.expectedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'expectedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Expected"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.countedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'countedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Counted"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                          line.countedQty !== '' && line.countedQty !== line.expectedQty
-                            ? 'border-amber-400 bg-amber-50'
-                            : ''
-                        }`}
-                      />
-                    </div>
-                    <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
-                      {line.countedQty !== '' ? (
-                        <span
-                          className={
-                            Number(line.countedQty) - Number(line.expectedQty) >= 0
-                              ? 'text-green-600'
-                              : 'text-red-600'
-                          }
-                        >
-                          {Number(line.countedQty) - Number(line.expectedQty) >= 0 ? '+' : ''}
-                          {Number(line.countedQty) - Number(line.expectedQty)}
-                        </span>
-                      ) : (
-                        <span className="text-zinc-300">—</span>
-                      )}
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {isLoadingLines ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {lines.map((line) => {
+                    const entered = countedQtyById[line.id] ?? ''
+                    const hasVariance =
+                      entered !== '' && Number(entered) !== Number(line.expectedQty)
+                    return (
+                      <div key={line.id} className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-5">
+                          <p className="truncate text-sm font-medium text-zinc-900">
+                            {line.item?.name ?? line.itemId}
+                          </p>
+                          <p className="font-mono text-xs text-zinc-400">{line.item?.sku}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p
+                            className={`${fieldClass} border-transparent bg-zinc-50 text-zinc-600`}
+                          >
+                            {Number(line.expectedQty)}
+                          </p>
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            value={entered}
+                            onChange={(e) => updateCounted(line.id, e.target.value)}
+                            placeholder="Counted"
+                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                              hasVariance ? 'border-amber-400 bg-amber-50' : ''
+                            }`}
+                          />
+                        </div>
+                        <div className="col-span-3 flex items-center justify-center text-sm font-semibold">
+                          {entered !== '' ? (
+                            <span className={hasVariance ? 'text-red-600' : 'text-green-600'}>
+                              {Number(entered) - Number(line.expectedQty) >= 0 ? '+' : ''}
+                              {Number(entered) - Number(line.expectedQty)}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
 
-              {lines.length === 0 && (
+              {!isLoadingLines && lines.length === 0 && (
                 <p className="text-center text-sm text-zinc-400 py-4">
-                  Add items to begin counting.
+                  No existing balances in this warehouse. Add an item below to begin counting.
                 </p>
               )}
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <select
+                  value={addItemId}
+                  onChange={(e) => setAddItemId(e.target.value)}
+                  className={`${fieldClass} bg-white`}
+                >
+                  <option value="">Add item not listed above…</option>
+                  {addableItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.sku} — {item.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
-                  onClick={addLine}
-                  className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
+                  onClick={handleAddItem}
+                  disabled={!addItemId || isAddingLine}
+                  className="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700 disabled:opacity-50"
                 >
-                  <Plus className="h-4 w-4" /> Add Line
+                  {isAddingLine ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  Add
                 </button>
+              </div>
 
-                {lines.length > 0 && (
+              {lines.length > 0 && (
+                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={handleSubmitCount}
                     disabled={isSubmitting}
-                    className="ml-auto flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
                   >
                     {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
                     {isSubmitting ? 'Submitting…' : 'Submit Count'}
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -475,7 +482,7 @@ export default function CountSessionView({
                   className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
                 >
                   {isAdjusting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isAdjusting ? 'Posting…' : 'Post Adjustment'}
+                  {isAdjusting ? 'Submitting…' : 'Submit Adjustment'}
                 </button>
               </div>
             </form>

@@ -1,0 +1,36 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { api, type ApiResponse } from '@/src/libs/api/client'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+
+export async function withdrawAdjustment(id: string): Promise<ApiResponse<unknown>> {
+  const session = await getSessionOrNull()
+  if (!session) {
+    return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  }
+  if (!can(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: 'You do not have permission to withdraw stock adjustments',
+    }
+  }
+
+  const result = await api.delete(`/inventory/adjustments/${id}`)
+
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error ?? 'Failed to withdraw adjustment',
+      message:
+        typeof result.message === 'string' ? result.message : 'Failed to withdraw adjustment',
+    }
+  }
+
+  revalidatePath('/inventory/adjustment-approvals')
+
+  return { success: true, data: result.data, message: 'Adjustment withdrawn' }
+}

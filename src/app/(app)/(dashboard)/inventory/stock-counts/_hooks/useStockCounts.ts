@@ -9,12 +9,15 @@ import { startCount } from '../_actions/start-count'
 import { submitCount } from '../_actions/submit-count'
 import { cancelCount } from '../_actions/cancel-count'
 import { createAdjustment } from '../_actions/create-adjustment'
+import { getCountLines } from '../_actions/get-count-lines'
+import { addCountLine } from '../_actions/add-count-line'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import type {
   CreateCountFormValues,
   SubmitCountFormValues,
   CreateAdjustmentFormValues,
+  AddCountLineFormValues,
   CountSummary,
   CountStatus,
 } from '@/src/schema/inventory/stock-counts'
@@ -59,6 +62,13 @@ export function useStockCounts() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const linesQuery = useQuery({
+    queryKey: ['inventory-stock-count-lines', selectedCount?.id],
+    queryFn: () => getCountLines(selectedCount!.id),
+    enabled: !!selectedCount?.id && selectedCount.status !== 'scheduled',
+    staleTime: 10 * 1000,
+  })
+
   const createMutation = useMutation({
     mutationFn: (data: CreateCountFormValues) => createCount(data),
     onSuccess: (result) => {
@@ -81,8 +91,31 @@ export function useStockCounts() {
       if (result.success) {
         showToast({ title: 'Count started', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-counts'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-stock-count-lines'] })
+        // selectedCount is a snapshot taken when "Open" was clicked, not a
+        // live reference into the (now-invalidated) list — without this the
+        // open modal keeps showing 'scheduled' until manually closed and
+        // reopened, and the Start Count button stays clickable in the
+        // meantime.
+        if (result.data) {
+          setSelectedCount(result.data as CountSummary)
+        }
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const addLineMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: AddCountLineFormValues }) =>
+      addCountLine(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        queryClient.invalidateQueries({
+          queryKey: ['inventory-stock-count-lines', selectedCount?.id],
+        })
+      } else {
+        showToast({ title: 'Failed to add item', description: result.message, status: 'error' })
       }
     },
   })
@@ -171,11 +204,17 @@ export function useStockCounts() {
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
 
+    lines: linesQuery.data?.data ?? [],
+    isLoadingLines: linesQuery.isLoading || linesQuery.isFetching,
+
     createCount: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
 
     startCount: startMutation.mutateAsync,
     isStarting: startMutation.isPending,
+
+    addLine: addLineMutation.mutateAsync,
+    isAddingLine: addLineMutation.isPending,
 
     submitCount: submitMutation.mutateAsync,
     isSubmitting: submitMutation.isPending,

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { gotoReady, loginAs, clickStable } from './utils'
 
 // INV-64 — "record stock adjustments with reason codes". Ticket was marked
@@ -13,20 +13,89 @@ test.use({ storageState: { cookies: [], origins: [] } })
 
 const STOCK_CONTROLLER_EMAIL = process.env.E2E_STOCK_EMAIL ?? 'technova.b1.stock@test.com'
 const CASHIER_EMAIL = process.env.E2E_CASHIER_EMAIL ?? 'technova.b1.cashier@test.com'
-const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2025'
+const OWNER_EMAIL = process.env.E2E_OWNER_EMAIL ?? 'technova.owner@test.com'
+const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+
+// loginAs assumes a fresh, unauthenticated session (visiting /login while
+// already signed in just redirects away) — clear cookies first so each
+// subsequent loginAs call actually lands on the login form.
+async function switchTo(page: Page, email: string): Promise<void> {
+  await page.context().clearCookies()
+  await loginAs(page, email, PASSWORD)
+}
+
+// A dedicated, disposable test item — picking an arbitrary dropdown item
+// (index 1) previously landed repeatedly on another suite's shared fixture
+// item ("E2E Transfer Manager Approval Bulk Item"), leaving submitted-only
+// adjustment noise against it on every run. Scenario 19 Part 3 added
+// DELETE /inventory/adjustments/:id (withdraw), which is a safe hard delete
+// for still-'submitted' adjustments — zero stock/ledger/GL side effects ever
+// posted for them. That means this test's adjustment no longer has to be
+// left behind, so its item's stock_adjustment_lines FK no longer blocks
+// deletion either: fresh SKU per run, withdrawn + deleted in afterEach, zero
+// permanent footprint.
+async function createTestItem(page: Page): Promise<{ id: string; sku: string; name: string }> {
+  const listRes = await page.request.get('/api/inventory/items?limit=1')
+  const listJson = await listRes.json()
+  const baseUnitId = listJson.data[0].baseUnit.id
+  const sku = `E2E-ADJUST-${Date.now()}`
+  const name = 'E2E Stock Adjustment Test Item'
+  const createRes = await page.request.post('/api/inventory/items', {
+    data: { sku, name, baseUnitId },
+  })
+  const item = await createRes.json()
+  if (!item?.id) {
+    throw new Error(`createTestItem failed (status ${createRes.status()}): ${JSON.stringify(item)}`)
+  }
+
+  // New items default to draft (Scenario 16 governance) and are invisible to
+  // anyone without a governance permission — push it through
+  // submit -> confirm-accounting -> approve as Owner so Stock Controller can
+  // actually select it.
+  await page.request.post(`/api/inventory/items/${item.id}/submit`)
+  await page.request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
+  await page.request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
+  return { id: item.id as string, sku, name }
+}
 
 test.describe('Inventory — Stock Adjustments (INV-64)', () => {
+  const createdItemIds: string[] = []
+
+  test.afterEach(async ({ page }) => {
+    if (!createdItemIds.length) return
+    await switchTo(page, OWNER_EMAIL)
+    for (const id of createdItemIds.splice(0)) {
+      await page.request.delete(`/api/inventory/items/${id}`).catch(() => {})
+    }
+  })
+
   test('Stock Controller can post a stock adjustment with reason code and line items', async ({
     page,
   }) => {
-    await loginAs(page, STOCK_CONTROLLER_EMAIL, PASSWORD)
+    await loginAs(page, OWNER_EMAIL, PASSWORD)
+    await gotoReady(page, '/inventory/items')
+    const testItem = await createTestItem(page)
+    createdItemIds.push(testItem.id)
+
+    await switchTo(page, STOCK_CONTROLLER_EMAIL)
     await gotoReady(page, '/inventory/stock-counts')
 
+    // A branch-scoped Stock Controller now only sees their own branch's
+    // warehouse, which the modal auto-fills (no <select> at all) — only
+    // pick an option when there's an actual choice to make.
+    const createSessionButton = page.getByRole('button', { name: 'Create Session' })
+    await clickStable(page.getByRole('button', { name: 'New Count' }), createSessionButton)
+    // The warehouse field briefly renders as a <select> before the
+    // warehouses query resolves into its final auto-fill-or-not state, then
+    // swaps out from under an in-flight interaction — bounded settle before
+    // touching it.
+    await page.waitForTimeout(500)
     const warehouseSelect = page
       .locator('select')
       .filter({ has: page.locator('option', { hasText: 'Select warehouse' }) })
-    await clickStable(page.getByRole('button', { name: 'New Count' }), warehouseSelect)
-    await warehouseSelect.selectOption({ index: 1 })
+    if (await warehouseSelect.isVisible().catch(() => false)) {
+      await warehouseSelect.selectOption({ index: 1 })
+    }
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Create Session' }).click()
@@ -71,44 +140,57 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
       await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
     }
     await expect(adjustTabButton).toBeVisible({ timeout: 10_000 })
-    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Post Adjustment' }))
+    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Submit Adjustment' }))
 
     const adjustForm = page.locator('form').last()
-    await adjustForm.locator('textarea').fill('E2E: recount variance from automated test.')
+    const submitNotes = 'E2E: recount variance from automated test.'
+    await adjustForm.locator('textarea').fill(submitNotes)
 
     // Submitting with zero lines must still be blocked client-side — this is
     // the exact bug INV-64 shipped with (the array was always empty).
     const lineRequiredError = page.getByText('At least one line is required').first()
     await expect(async () => {
-      await page.getByRole('button', { name: 'Post Adjustment' }).click()
+      await page.getByRole('button', { name: 'Submit Adjustment' }).click()
       await expect(lineRequiredError).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
-    await expect(page.getByText('Adjustment recorded successfully').first()).toHaveCount(0)
+    await expect(page.getByText('pending Branch Manager confirmation').first()).toHaveCount(0)
 
     const itemSelect = adjustForm
       .locator('select')
       .filter({ has: page.locator('option', { hasText: 'Select item' }) })
     await clickStable(page.getByRole('button', { name: 'Add Line' }), itemSelect)
-    await itemSelect.selectOption({ index: 1 })
+    await itemSelect.selectOption({ label: `${testItem.sku} — ${testItem.name}` })
     const qtyInputs = adjustForm.locator('input[type="number"]')
     await qtyInputs.nth(0).fill('10')
     await qtyInputs.nth(1).fill('8')
 
     await expect(async () => {
-      await page.getByRole('button', { name: 'Post Adjustment' }).click()
-      await expect(page.getByText('Adjustment recorded successfully').first()).toBeVisible({
+      await page.getByRole('button', { name: 'Submit Adjustment' }).click()
+      await expect(page.getByText('pending Branch Manager confirmation').first()).toBeVisible({
         timeout: 3_000,
       })
     }).toPass({ timeout: 15_000 })
 
     // Cleanup: cancel the session so repeated runs don't pile up count
-    // sessions in the shared dev database (the posted adjustment/ledger entry
-    // itself has no UI delete path, same tradeoff the backend e2e suite
-    // accepts for adjustment fixtures).
+    // sessions in the shared dev database.
     await expect(async () => {
       await page.getByRole('button', { name: 'Cancel' }).click()
       await expect(page.getByText('Count cancelled').first()).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
+
+    // Cleanup: withdraw the adjustment itself. A still-'submitted'
+    // adjustment carries zero stock/ledger/GL side effects (posting only
+    // happens on approve()), so DELETE /inventory/adjustments/:id is a safe
+    // hard delete — Scenario 19 Part 3 added this specifically so tests like
+    // this one don't leave permanent rows in the real Adjustment Approvals
+    // list that a real Branch Manager/Owner would otherwise see forever.
+    await switchTo(page, OWNER_EMAIL)
+    const listRes = await page.request.get('/api/inventory/adjustments?status=submitted&limit=50')
+    const listJson = await listRes.json()
+    const created = (listJson.data ?? []).find((a: { notes?: string }) => a.notes === submitNotes)
+    if (created) {
+      await page.request.delete(`/api/inventory/adjustments/${created.id}`)
+    }
   })
 
   test('user without inventory:stock:adjust cannot reach Stock Counts', async ({ page }) => {

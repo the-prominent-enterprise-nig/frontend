@@ -46,11 +46,7 @@ export const CreateCountFormSchema = z.object({
 export type CreateCountFormValues = z.infer<typeof CreateCountFormSchema>
 
 export const CountLineSubmitSchema = z.object({
-  itemId: z.string(),
-  variantId: z.string().optional(),
-  batchId: z.string().optional(),
-  locationId: z.string().optional(),
-  expectedQty: z.number(),
+  countLineId: z.string().min(1),
   countedQty: z.number().min(0, 'Counted quantity cannot be negative'),
 })
 export type CountLineSubmit = z.infer<typeof CountLineSubmitSchema>
@@ -59,6 +55,37 @@ export const SubmitCountFormSchema = z.object({
   lines: z.array(CountLineSubmitSchema).min(1, 'At least one line is required'),
 })
 export type SubmitCountFormValues = z.infer<typeof SubmitCountFormSchema>
+
+// Scenario 19 Part 1 — server-snapshotted count line (expectedQty always
+// comes from the backend, never client-supplied).
+export const CountLineItemSchema = z.object({
+  id: z.string(),
+  sku: z.string(),
+  name: z.string(),
+})
+
+export const CountLineSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  variantId: z.string().optional().nullable(),
+  batchId: z.string().optional().nullable(),
+  locationId: z.string().optional().nullable(),
+  // Prisma Decimal serializes over JSON as a string — always read via Number(line.expectedQty).
+  expectedQty: z.union([z.number(), z.string()]),
+  countedQty: z.union([z.number(), z.string()]).optional().nullable(),
+  item: CountLineItemSchema.optional().nullable(),
+})
+export type CountLine = z.infer<typeof CountLineSchema>
+
+export const CountLinesResponseSchema = z.array(CountLineSchema)
+
+export const AddCountLineFormSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  variantId: z.string().optional(),
+  batchId: z.string().optional(),
+  locationId: z.string().optional(),
+})
+export type AddCountLineFormValues = z.infer<typeof AddCountLineFormSchema>
 
 const CountWarehouseSchema = z.object({
   id: z.string(),

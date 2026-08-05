@@ -44,5 +44,9 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
 
   revalidatePath('/inventory/stock-counts')
 
-  return { success: true, data: result.data, message: 'Adjustment recorded successfully' }
+  return {
+    success: true,
+    data: result.data,
+    message: 'Adjustment submitted — pending Branch Manager confirmation before it takes effect',
+  }
 }

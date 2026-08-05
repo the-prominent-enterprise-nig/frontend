@@ -31,6 +31,10 @@ export const INVENTORY_PERMISSIONS = {
   STOCKS_CREATE: 'inventory:stock:create',
   STOCK_ADJUST: 'inventory:stock:adjust',
 
+  // ── Stock Adjustment approval chain (Scenario 19 Part 2) ────────────────────
+  STOCK_ADJUSTMENT_CONFIRM: 'inventory:stock-adjustment:confirm',
+  STOCK_ADJUSTMENT_APPROVE: 'inventory:stock-adjustment:approve',
+
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
@@ -194,6 +198,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock:read': 'View real-time stock balances',
   'inventory:stock:create': 'Post stock entries',
   'inventory:stock:adjust': 'Create stock adjustments with reason codes',
+  'inventory:stock-adjustment:confirm':
+    'Confirm a submitted stock adjustment before HQ review (Branch Manager)',
+  'inventory:stock-adjustment:approve':
+    'Investigate and approve/reject a confirmed stock adjustment (Business Owner)',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
   'inventory:transfers:accept':

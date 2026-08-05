@@ -8,10 +8,12 @@ import MobileCountInterface from '../../mobile-count/_components/MobileCountInte
 import BatchList from '../../batches/_components/BatchList'
 import SerialNumberList from '../../serial-numbers/_components/SerialNumberList'
 import ExpiryDashboard from '../../expiry/_components/ExpiryDashboard'
+import AdjustmentApprovalsList from '../../adjustment-approvals/_components/AdjustmentApprovalsList'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 const TABS = [
   { id: 'counts', label: 'Stock Counts' },
+  { id: 'approvals', label: 'Adjustment Approvals' },
   { id: 'cycles', label: 'Cycle Schedules' },
   { id: 'mobile', label: 'Mobile Count' },
   { id: 'batches', label: 'Batches' },
@@ -26,7 +28,9 @@ export function CountingHub({ session }: { session: SessionUser }) {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
       <InventoryTabNav tabs={TABS} />
-      {tab === 'cycles' ? (
+      {tab === 'approvals' ? (
+        <AdjustmentApprovalsList session={session} />
+      ) : tab === 'cycles' ? (
         <CycleCountList session={session} />
       ) : tab === 'mobile' ? (
         <MobileCountInterface session={session} />

@@ -47,10 +47,14 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     setSelectedCount,
     warehouseOptions,
     itemOptions,
+    lines,
+    isLoadingLines,
     createCount,
     isCreating,
     startCount,
     isStarting,
+    addLine,
+    isAddingLine,
     submitCount,
     isSubmitting,
     cancelCount,
@@ -99,18 +103,25 @@ export default function StockCountList({ session }: { session: SessionUser }) {
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
-          <select
-            value={warehouseFilter ?? ''}
-            onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Warehouses</option>
-            {warehouseOptions.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
-              </option>
-            ))}
-          </select>
+          {/* A branch-scoped user's warehouse list is already backend-filtered
+              down to their own branch — with only one possible warehouse,
+              "All Warehouses" vs. picking it are the same result, so the
+              filter adds nothing. HQ/Business Owner sees every branch and
+              keeps it. */}
+          {warehouseOptions.length > 1 && (
+            <select
+              value={warehouseFilter ?? ''}
+              onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Warehouses</option>
+              {warehouseOptions.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.code} — {wh.name}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={countTypeFilter ?? ''}
             onChange={(e) => setCountTypeFilter(e.target.value || undefined)}
@@ -311,6 +322,10 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         isAdjusting={isAdjusting}
         items={itemOptions}
         canAdjust={canAdjust}
+        lines={lines}
+        isLoadingLines={isLoadingLines}
+        onAddLine={addLine}
+        isAddingLine={isAddingLine}
       />
     </div>
   )

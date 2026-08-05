@@ -38,12 +38,28 @@ export default function CreateCountModal({
     formState: { errors },
   } = useForm<CreateCountFormValues>({
     resolver: zodResolver(CreateCountFormSchema),
-    defaultValues: { countType: 'full', scheduledDate: new Date().toISOString().slice(0, 10) },
+    defaultValues: {
+      countType: 'full',
+      scheduledDate: new Date().toISOString().slice(0, 10),
+      warehouseId: '',
+    },
   })
 
+  // A branch-scoped user's warehouse list is already backend-filtered down
+  // to their own branch — when that leaves exactly one option, there's
+  // nothing to choose between, so auto-fill it instead of making them pick.
+  // HQ/Business Owner sees every branch's warehouse and keeps the dropdown.
+  const onlyWarehouse = warehouses.length === 1 ? warehouses[0] : null
+
   useEffect(() => {
-    if (!isOpen) reset({ countType: 'full', scheduledDate: new Date().toISOString().slice(0, 10) })
-  }, [isOpen, reset])
+    if (isOpen) {
+      reset({
+        countType: 'full',
+        scheduledDate: new Date().toISOString().slice(0, 10),
+        warehouseId: onlyWarehouse?.id ?? '',
+      })
+    }
+  }, [isOpen, onlyWarehouse, reset])
 
   if (!isOpen) return null
 
@@ -75,20 +91,33 @@ export default function CreateCountModal({
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Warehouse <span className="text-red-500">*</span>
               </label>
-              <Controller
-                name="warehouseId"
-                control={control}
-                render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select warehouse…</option>
-                    {warehouses.map((wh) => (
-                      <option key={wh.id} value={wh.id}>
-                        {wh.code} — {wh.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
+              {onlyWarehouse ? (
+                <>
+                  <p className={`${fieldClass} border-transparent bg-zinc-50 text-zinc-600`}>
+                    {onlyWarehouse.code} — {onlyWarehouse.name}
+                  </p>
+                  <Controller
+                    name="warehouseId"
+                    control={control}
+                    render={({ field }) => <input type="hidden" {...field} />}
+                  />
+                </>
+              ) : (
+                <Controller
+                  name="warehouseId"
+                  control={control}
+                  render={({ field }) => (
+                    <select {...field} className={`${fieldClass} bg-white`}>
+                      <option value="">Select warehouse…</option>
+                      {warehouses.map((wh) => (
+                        <option key={wh.id} value={wh.id}>
+                          {wh.code} — {wh.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                />
+              )}
               {errors.warehouseId && (
                 <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
               )}
