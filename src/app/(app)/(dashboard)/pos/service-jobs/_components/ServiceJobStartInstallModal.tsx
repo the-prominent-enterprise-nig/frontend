@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { X, Wrench } from 'lucide-react'
-import { TechnicianSearchCombobox } from './TechnicianSearchCombobox'
 import type { StartInstallFormValues } from '@/src/schema/pos/service-drafts'
 
 type Props = {
@@ -23,14 +22,14 @@ export function ServiceJobStartInstallModal({
   onConfirm,
   isConfirming,
 }: Props) {
-  const [technicianId, setTechnicianId] = useState('')
+  const [technicianName, setTechnicianName] = useState('')
 
   if (!open) return null
 
   async function handleConfirm() {
-    if (!draftId || !technicianId) return
-    await onConfirm(draftId, { technicianId })
-    setTechnicianId('')
+    if (!draftId || !technicianName.trim()) return
+    await onConfirm(draftId, { technicianName: technicianName.trim() })
+    setTechnicianName('')
     onClose()
   }
 
@@ -57,7 +56,13 @@ export function ServiceJobStartInstallModal({
           <label className="mb-1 block text-sm font-medium text-zinc-700">
             Technician <span className="text-red-500">*</span>
           </label>
-          <TechnicianSearchCombobox value={technicianId} onChange={setTechnicianId} />
+          <input
+            type="text"
+            value={technicianName}
+            onChange={(e) => setTechnicianName(e.target.value)}
+            placeholder="Technician's name"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+          />
           <p className="mt-2 text-xs text-zinc-500">
             Assigns who&apos;s performing the install, issues each line&apos;s estimated quantity
             out of branch stock, and moves this job to Installing.
@@ -75,7 +80,7 @@ export function ServiceJobStartInstallModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!technicianId || isConfirming}
+            disabled={!technicianName.trim() || isConfirming}
             className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
           >
             {isConfirming ? 'Starting…' : 'Confirm & Start Install'}
