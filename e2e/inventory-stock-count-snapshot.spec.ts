@@ -27,7 +27,7 @@ test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => 
     }
     const warehouse = (await createWarehouseRes.json()) as { id: string }
 
-    await gotoReady(page, '/inventory/stock-counts')
+    await gotoReady(page, '/inventory/counting')
 
     const warehouseSelect = page
       .locator('select')

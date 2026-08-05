@@ -380,12 +380,23 @@ export async function loginAs(page: Page, email: string, password: string): Prom
   // can silently wipe fields *after* fillAllStable's own verification passes
   // but *before* the click lands (same race fillAllStable's own docstring
   // describes) — retrying fill+click together is the only way to close it.
+  //
+  // The success check must not false-positive on /login?email=...&password=...
+  // — if the login form's React submit handler hasn't (re)attached yet when
+  // the click fires (e.g. right after a mid-test clearCookies() invalidates
+  // the SPA's auth context), the browser falls back to native HTML form
+  // submission (default GET), landing back on /login with the credentials
+  // leaked into the query string. A plain `not.toHaveURL('/login')` treats
+  // that as a successful navigation away from the login page (the string
+  // isn't an exact match), when the login API was never actually called —
+  // every action after this silently runs unauthenticated. Matching against
+  // a regex that also catches the query-string-suffixed form closes that.
   await expect(async () => {
     await fillAllStable([
       { locator: page.locator('#email'), value: email },
       { locator: page.locator('#password'), value: password },
     ])
     await page.click('button[type="submit"]')
-    await expect(page).not.toHaveURL('/login', { timeout: 3_000 })
+    await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 3_000 })
   }).toPass({ timeout: 20_000 })
 }

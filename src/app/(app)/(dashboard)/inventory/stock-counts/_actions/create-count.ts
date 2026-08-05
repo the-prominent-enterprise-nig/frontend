@@ -42,7 +42,7 @@ export async function createCount(input: unknown): Promise<ApiResponse<{ id: str
     }
   }
 
-  revalidatePath('/inventory/stock-counts')
+  revalidatePath('/inventory/counting')
 
   return { success: true, data: result.data, message: 'Count session created' }
 }

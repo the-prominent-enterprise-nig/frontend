@@ -29,7 +29,7 @@ export async function startCount(id: string): Promise<ApiResponse<unknown>> {
     }
   }
 
-  revalidatePath('/inventory/stock-counts')
+  revalidatePath('/inventory/counting')
 
   return { success: true, data: result.data, message: 'Count started' }
 }

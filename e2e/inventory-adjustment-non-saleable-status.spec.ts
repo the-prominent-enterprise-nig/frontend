@@ -60,7 +60,7 @@ test.describe('Inventory — Adjustment Non-Saleable Status (Scenario 19, Part 4
     }
 
     // Now drive the actual UI: open a count session's Create Adjustment tab.
-    await gotoReady(page, '/inventory/stock-counts')
+    await gotoReady(page, '/inventory/counting')
 
     const warehouseSelect = page
       .locator('select')

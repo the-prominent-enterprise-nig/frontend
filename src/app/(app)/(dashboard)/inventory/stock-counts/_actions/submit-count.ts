@@ -42,7 +42,7 @@ export async function submitCount(id: string, input: unknown): Promise<ApiRespon
     }
   }
 
-  revalidatePath('/inventory/stock-counts')
+  revalidatePath('/inventory/counting')
 
   return { success: true, data: result.data, message: 'Count submitted and variances reconciled' }
 }

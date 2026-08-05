@@ -1327,7 +1327,7 @@ export default function InventoryPage() {
                   href: '/inventory/operations?tab=receiving',
                   icon: Package,
                 },
-                { label: 'Stock Counts', href: '/inventory/stock-counts', icon: Layers },
+                { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
                 {
                   label: 'Stock Adjustments',
                   href: '/inventory/counting?tab=adjustments',

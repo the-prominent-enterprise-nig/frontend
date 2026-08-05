@@ -55,7 +55,7 @@ test.describe('Inventory — Serial-Level Counting (Scenario 19, Part 5)', () =>
       throw new Error(`Failed to register serials: ${await registerRes.text()}`)
     }
 
-    await gotoReady(page, '/inventory/stock-counts')
+    await gotoReady(page, '/inventory/counting')
 
     const warehouseSelect = page
       .locator('select')
