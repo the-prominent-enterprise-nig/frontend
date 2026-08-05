@@ -10,10 +10,14 @@ import {
   clearDefaultTaxRate,
   deleteTaxRate,
   getAccounts,
+  getTaxRateChangeRequests,
+  approveTaxRateChange,
+  rejectTaxRateChange,
   TAX_RATE_TYPES,
   type TaxRate,
   type TaxRateInput,
   type TaxRateType,
+  type TaxRateChangeRequest,
   type Account,
 } from '@/src/libs/data/AccountingData'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -84,9 +88,14 @@ function TaxRateModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-gray-900">
-            {isEdit ? 'Edit Tax Rate' : 'New Tax Rate'}
-          </h3>
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              {isEdit ? 'Edit Tax Rate' : 'New Tax Rate'}
+            </h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Submitted for Business Owner approval — won&apos;t take effect until approved.
+            </p>
+          </div>
           <button onClick={onClose} className="rounded p-1 hover:bg-gray-100">
             <X className="h-4 w-4 text-gray-500" />
           </button>
@@ -117,6 +126,7 @@ function TaxRateModal({
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">Type *</label>
               <select
+                aria-label="Type"
                 value={type}
                 onChange={(e) => setType(e.target.value as TaxRateType)}
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
@@ -166,11 +176,169 @@ function TaxRateModal({
               className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create'}
+              {saving ? 'Submitting…' : 'Submit for Approval'}
             </button>
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// ─── Pending Changes Panel ─────────────────────────────────────────────────────
+// SCEN-14 Closing Gap 1: create/update/deactivate now stage a
+// TaxRateChangeRequest instead of applying immediately — this panel is where
+// a Business Owner reviews and approves/rejects them.
+
+const ACTION_LABELS: Record<TaxRateChangeRequest['action'], string> = {
+  create: 'Create',
+  update: 'Update',
+  deactivate: 'Deactivate',
+}
+
+function RejectDialog({
+  onClose,
+  onConfirm,
+}: {
+  onClose: () => void
+  onConfirm: (reason: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h3 className="text-base font-semibold text-gray-900">Reject Change</h3>
+        </div>
+        <div className="p-5 space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-700">Reason *</span>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="rounded-lg px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => reason.trim() && onConfirm(reason.trim())}
+              disabled={!reason.trim()}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PendingChangesPanel({
+  requests,
+  canApprove,
+  onDecided,
+}: {
+  requests: TaxRateChangeRequest[]
+  canApprove: boolean
+  onDecided: () => void
+}) {
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  async function handleApprove(id: string) {
+    setActingId(id)
+    setError('')
+    const res = await approveTaxRateChange(id)
+    setActingId(null)
+    if (!res.success) {
+      setError(res.error ?? res.message ?? 'Approval failed')
+      return
+    }
+    onDecided()
+  }
+
+  async function handleReject(id: string, reason: string) {
+    setActingId(id)
+    setError('')
+    const res = await rejectTaxRateChange(id, reason)
+    setActingId(null)
+    setRejectingId(null)
+    if (!res.success) {
+      setError(res.error ?? res.message ?? 'Rejection failed')
+      return
+    }
+    onDecided()
+  }
+
+  if (requests.length === 0) return null
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-lg border border-amber-200 bg-amber-50">
+      <div className="border-b border-amber-200 px-4 py-3">
+        <h3 className="text-sm font-semibold text-amber-900">
+          Pending Tax Rate Changes ({requests.length})
+        </h3>
+        <p className="text-xs text-amber-700">
+          Awaiting Business Owner approval — the tax rate stays unchanged until decided.
+        </p>
+      </div>
+      {error && <div className="px-4 py-2 text-sm text-red-700">{error}</div>}
+      <table className="w-full text-sm" data-testid="pending-tax-rate-changes-table">
+        <tbody className="divide-y divide-amber-100">
+          {requests.map((cr) => (
+            <tr key={cr.id}>
+              <td className="px-4 py-2.5">
+                <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {ACTION_LABELS[cr.action]}
+                </span>
+              </td>
+              <td className="px-4 py-2.5 text-gray-900">
+                {cr.payload.name ?? cr.taxRate?.name ?? '—'}
+              </td>
+              <td className="px-4 py-2.5 text-xs text-gray-500">
+                Submitted {new Date(cr.submittedAt).toLocaleDateString()}
+              </td>
+              <td className="px-4 py-2.5 text-right">
+                {canApprove ? (
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setRejectingId(cr.id)}
+                      disabled={actingId === cr.id}
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => handleApprove(cr.id)}
+                      disabled={actingId === cr.id}
+                      className="rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-800 disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-400">Awaiting approval</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rejectingId && (
+        <RejectDialog
+          onClose={() => setRejectingId(null)}
+          onConfirm={(reason) => handleReject(rejectingId, reason)}
+        />
+      )}
     </div>
   )
 }
@@ -180,6 +348,7 @@ function TaxRateModal({
 function ConfigurationTab({ session }: { session: SessionUser | null }) {
   const [rates, setRates] = useState<TaxRate[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [pending, setPending] = useState<TaxRateChangeRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
@@ -196,6 +365,12 @@ function ConfigurationTab({ session }: { session: SessionUser | null }) {
   const canCreate = hasPermission(session, ACCOUNTING_PERMISSIONS.TAX_CREATE)
   const canUpdate = hasPermission(session, ACCOUNTING_PERMISSIONS.TAX_UPDATE)
   const canDelete = hasPermission(session, ACCOUNTING_PERMISSIONS.TAX_DELETE)
+  const canApprove = hasPermission(session, ACCOUNTING_PERMISSIONS.TAX_APPROVE)
+
+  async function loadPending() {
+    const res = await getTaxRateChangeRequests('pending')
+    if (res.success) setPending((res.data as TaxRateChangeRequest[]) ?? [])
+  }
 
   async function load() {
     setLoading(true)
@@ -212,6 +387,7 @@ function ConfigurationTab({ session }: { session: SessionUser | null }) {
       setAccounts(d?.items ?? d ?? [])
     }
     setLoading(false)
+    loadPending()
   }
 
   useEffect(() => {
@@ -228,13 +404,18 @@ function ConfigurationTab({ session }: { session: SessionUser | null }) {
   }
 
   async function handleDelete(rate: TaxRate) {
-    if (!confirm(`Delete "${rate.name}"? This cannot be undone.`)) return
+    if (
+      !confirm(
+        `Submit "${rate.name}" for deactivation? A Business Owner must approve it before it takes effect.`
+      )
+    )
+      return
     const res = await deleteTaxRate(rate.id)
     if (!res.success) {
-      alert(res.error ?? res.message ?? 'Delete failed')
+      alert(res.error ?? res.message ?? 'Submission failed')
       return
     }
-    load()
+    loadPending()
   }
 
   async function handleToggleApply(rate: TaxRate) {
@@ -290,8 +471,10 @@ function ConfigurationTab({ session }: { session: SessionUser | null }) {
         <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
       )}
 
+      <PendingChangesPanel requests={pending} canApprove={canApprove} onDecided={load} />
+
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" data-testid="tax-rates-table">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
               <th className="px-4 py-3 text-left">Name</th>

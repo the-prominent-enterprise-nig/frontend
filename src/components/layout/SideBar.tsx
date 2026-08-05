@@ -61,7 +61,7 @@ type NavItem = {
   label: string
   href: string
   icon: LucideIcon
-  requiredPermission?: string
+  requiredPermission?: string | string[]
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
   subItems?: Array<{ label: string; href: string; icon: LucideIcon }>
   section?: string
@@ -121,7 +121,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Operations',
         href: '/inventory/operations',
         icon: ArrowLeftRight,
-        requiredPermission: INVENTORY_PERMISSIONS.TRANSFERS_READ,
+        requiredPermission: [
+          INVENTORY_PERMISSIONS.TRANSFERS_READ,
+          INVENTORY_PERMISSIONS.RECEIVE_READ,
+          INVENTORY_PERMISSIONS.RETURNS_READ,
+          INVENTORY_PERMISSIONS.QUALITY_HOLD_READ,
+          INVENTORY_PERMISSIONS.BACKORDERS_READ,
+          INVENTORY_PERMISSIONS.STOCK_ADJUST,
+          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_CONFIRM,
+          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE,
+          INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_APPROVE,
+        ],
       },
       {
         label: 'Purchase Requests',
@@ -875,8 +885,11 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const filterItem = (item: NavItem) => {
     // Branch managers see all module items — data is scoped server-side by their branchId
     if (isBranchManager) return true
-    if (item.requiredPermission && !hasPermission(session, item.requiredPermission)) return false
-    return true
+    if (!item.requiredPermission) return true
+    const required = Array.isArray(item.requiredPermission)
+      ? item.requiredPermission
+      : [item.requiredPermission]
+    return required.some((p) => hasPermission(session, p))
   }
 
   // Module nav items — filtered by the user's moduleAccess

@@ -4,20 +4,20 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getCounts } from '../_actions/get-counts'
+import { getCountLines } from '../_actions/get-count-lines'
 import { createCount } from '../_actions/create-count'
 import { startCount } from '../_actions/start-count'
 import { submitCount } from '../_actions/submit-count'
 import { cancelCount } from '../_actions/cancel-count'
 import { createAdjustment } from '../_actions/create-adjustment'
-import { getCountLines } from '../_actions/get-count-lines'
-import { addCountLine } from '../_actions/add-count-line'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
+import { getBatches } from '../../batches/_actions/get-batches'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import type {
   CreateCountFormValues,
   SubmitCountFormValues,
   CreateAdjustmentFormValues,
-  AddCountLineFormValues,
   CountSummary,
   CountStatus,
 } from '@/src/schema/inventory/stock-counts'
@@ -62,11 +62,28 @@ export function useStockCounts() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const linesQuery = useQuery({
+  const countLinesQuery = useQuery({
     queryKey: ['inventory-stock-count-lines', selectedCount?.id],
     queryFn: () => getCountLines(selectedCount!.id),
-    enabled: !!selectedCount?.id && selectedCount.status !== 'scheduled',
-    staleTime: 10 * 1000,
+    enabled: !!selectedCount?.id && selectedCount.status === 'in_progress',
+  })
+
+  // Scenario 19 Part 4 — batch/serial pickers on the Create Adjustment tab,
+  // so an existing non-saleable batch (quarantine/expired/recalled) or
+  // serial (held/defective/in_repair/pulled_out) status is visible while
+  // adjusting, instead of just a bare quantity.
+  const batchesQuery = useQuery({
+    queryKey: ['inventory-batches-lookup'],
+    queryFn: () => getBatches({ limit: 200 }),
+    staleTime: 60 * 1000,
+  })
+
+  const adjustWarehouseId = selectedCount?.warehouse?.id
+  const serialNumbersQuery = useQuery({
+    queryKey: ['inventory-serial-numbers-lookup', adjustWarehouseId],
+    queryFn: () => getSerialNumbers({ warehouseId: adjustWarehouseId, limit: 200 }),
+    enabled: !!adjustWarehouseId,
+    staleTime: 60 * 1000,
   })
 
   const createMutation = useMutation({
@@ -91,31 +108,11 @@ export function useStockCounts() {
       if (result.success) {
         showToast({ title: 'Count started', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-counts'] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-stock-count-lines'] })
-        // selectedCount is a snapshot taken when "Open" was clicked, not a
-        // live reference into the (now-invalidated) list — without this the
-        // open modal keeps showing 'scheduled' until manually closed and
-        // reopened, and the Start Count button stays clickable in the
-        // meantime.
-        if (result.data) {
-          setSelectedCount(result.data as CountSummary)
-        }
+        setSelectedCount((prev) =>
+          prev ? { ...prev, ...(result.data as Partial<CountSummary>) } : prev
+        )
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
-      }
-    },
-  })
-
-  const addLineMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: AddCountLineFormValues }) =>
-      addCountLine(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        queryClient.invalidateQueries({
-          queryKey: ['inventory-stock-count-lines', selectedCount?.id],
-        })
-      } else {
-        showToast({ title: 'Failed to add item', description: result.message, status: 'error' })
       }
     },
   })
@@ -150,7 +147,7 @@ export function useStockCounts() {
     mutationFn: (data: CreateAdjustmentFormValues) => createAdjustment(data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Adjustment recorded', description: result.message, status: 'success' })
+        showToast({ title: 'Adjustment submitted', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-counts'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
@@ -203,18 +200,17 @@ export function useStockCounts() {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
+    batchOptions: batchesQuery.data?.data?.data ?? [],
+    serialOptions: serialNumbersQuery.data?.data?.data ?? [],
 
-    lines: linesQuery.data?.data ?? [],
-    isLoadingLines: linesQuery.isLoading || linesQuery.isFetching,
+    countLines: countLinesQuery.data?.data ?? [],
+    isCountLinesLoading: countLinesQuery.isLoading,
 
     createCount: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
 
     startCount: startMutation.mutateAsync,
     isStarting: startMutation.isPending,
-
-    addLine: addLineMutation.mutateAsync,
-    isAddingLine: addLineMutation.isPending,
 
     submitCount: submitMutation.mutateAsync,
     isSubmitting: submitMutation.isPending,

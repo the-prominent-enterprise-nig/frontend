@@ -11,12 +11,15 @@ import { rejectPriceList } from '../_actions/reject-price-list'
 import { resubmitPriceList } from '../_actions/resubmit-price-list'
 import { getCurrencies } from '../_actions/get-currencies'
 import { getBranches } from '../_actions/get-branches'
+import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
+import { createPriceUseType } from '../../price-use-types/_actions/create-price-use-type'
 import { humanizePriceListError } from '../_lib/humanize-error'
 import type {
   ApprovePriceListFormValues,
   PriceListFormValues,
   RejectPriceListFormValues,
 } from '@/src/schema/inventory/price-lists'
+import type { PriceUseTypeFormValues } from '@/src/schema/inventory/price-use-types'
 
 export function usePriceLists() {
   const queryClient = useQueryClient()
@@ -44,6 +47,12 @@ export function usePriceLists() {
     queryKey: ['branches'],
     queryFn: getBranches,
     staleTime: 10 * 60 * 1000,
+  })
+
+  const priceUseTypesQuery = useQuery({
+    queryKey: ['inventory-price-use-types'],
+    queryFn: getPriceUseTypes,
+    staleTime: 30 * 1000,
   })
 
   const createMutation = useMutation({
@@ -113,6 +122,22 @@ export function usePriceLists() {
     },
   })
 
+  const createPriceUseTypeMutation = useMutation({
+    mutationFn: (data: PriceUseTypeFormValues) => createPriceUseType(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price use type created', status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-use-types'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const resubmitMutation = useMutation({
     mutationFn: (id: string) => resubmitPriceList(id),
     onSuccess: (result) => {
@@ -151,6 +176,9 @@ export function usePriceLists() {
     setPage,
     currencies: currenciesQuery.data ?? [],
     branches: branchesQuery.data ?? [],
+    priceUseTypes: priceUseTypesQuery.data ?? [],
+    createPriceUseType: createPriceUseTypeMutation.mutateAsync,
+    isCreatingPriceUseType: createPriceUseTypeMutation.isPending,
     createPriceList: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
     updatePriceList: updateMutation.mutateAsync,

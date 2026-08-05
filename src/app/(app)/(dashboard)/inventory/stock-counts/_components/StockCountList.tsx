@@ -47,14 +47,14 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     setSelectedCount,
     warehouseOptions,
     itemOptions,
-    lines,
-    isLoadingLines,
+    batchOptions,
+    serialOptions,
+    countLines,
+    isCountLinesLoading,
     createCount,
     isCreating,
     startCount,
     isStarting,
-    addLine,
-    isAddingLine,
     submitCount,
     isSubmitting,
     cancelCount,
@@ -215,14 +215,15 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Created By
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {counts.map((count: CountSummary) => (
-                    <tr key={count.id} className="hover:bg-zinc-50">
+                    <tr
+                      key={count.id}
+                      onClick={() => setSelectedCount(count)}
+                      className="cursor-pointer hover:bg-zinc-50"
+                    >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-500">
                         #{count.id.slice(0, 8).toUpperCase()}
                       </td>
@@ -252,15 +253,6 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
                         {count.createdBy?.name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCount(count)}
-                          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                        >
-                          Open
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -321,11 +313,11 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         isCancelling={isCancelling}
         isAdjusting={isAdjusting}
         items={itemOptions}
+        batches={batchOptions}
+        serials={serialOptions}
         canAdjust={canAdjust}
-        lines={lines}
-        isLoadingLines={isLoadingLines}
-        onAddLine={addLine}
-        isAddingLine={isAddingLine}
+        countLines={countLines}
+        isCountLinesLoading={isCountLinesLoading}
       />
     </div>
   )

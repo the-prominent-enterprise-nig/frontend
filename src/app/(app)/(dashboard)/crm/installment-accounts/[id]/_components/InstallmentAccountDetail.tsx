@@ -1,16 +1,52 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Pencil, Banknote, Coins, ArrowUpCircle, Check, X as XIcon } from 'lucide-react'
-import { installmentAccountsApi } from '@/src/libs/api/crm'
+import {
+  ArrowLeft,
+  Pencil,
+  Banknote,
+  Coins,
+  ArrowUpCircle,
+  AlertOctagon,
+  Check,
+  X as XIcon,
+  BellRing,
+  Phone,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  CalendarClock,
+} from 'lucide-react'
+import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
 import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
 import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
+import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import type {
   InstallmentAccountDetail as DetailType,
   CategoryGraduationRequest,
+  DamEscalationRequest,
+  LegalEscalationStatus,
+  Reminder,
+  ReminderType,
 } from '@/src/schema/crm/types'
+
+const LEGAL_ESCALATION_LABELS: Record<LegalEscalationStatus, string> = {
+  none: 'Not started',
+  soa_prepared: 'SOA prepared',
+  demand_letter_sent: 'Demand letter sent',
+  small_claims_pack_ready: 'Small Claims pack ready',
+  filed: 'Filed',
+}
+
+const REMINDER_TYPE_ICON: Record<ReminderType, React.ElementType> = {
+  call: Phone,
+  email: Mail,
+  visit: MapPin,
+  other: MoreHorizontal,
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -49,12 +85,22 @@ export default function InstallmentAccountDetail({
   canEarlyPayoff,
   canRecordPayment,
   canApproveGraduation,
+  canApproveDamEscalation,
+  canManageLegalEscalation,
+  canScheduleReminder,
+  currentUserId,
+  tenantId,
 }: {
   id: string
   canEdit: boolean
   canEarlyPayoff: boolean
   canRecordPayment: boolean
   canApproveGraduation: boolean
+  canApproveDamEscalation: boolean
+  canManageLegalEscalation: boolean
+  canScheduleReminder: boolean
+  currentUserId: string
+  tenantId: string
 }) {
   const [account, setAccount] = useState<DetailType | null>(null)
   const [loading, setLoading] = useState(true)
@@ -83,6 +129,33 @@ export default function InstallmentAccountDetail({
   const [graduationError, setGraduationError] = useState<string | null>(null)
   const [rejectingRequestId, setRejectingRequestId] = useState<string | null>(null)
 
+  const [damEscalationRequests, setDamEscalationRequests] = useState<DamEscalationRequest[]>([])
+  const [requestingDamEscalation, setRequestingDamEscalation] = useState(false)
+  const [damEscalationError, setDamEscalationError] = useState<string | null>(null)
+  const [rejectingDamRequestId, setRejectingDamRequestId] = useState<string | null>(null)
+
+  const [legalStatus, setLegalStatus] = useState<LegalEscalationStatus>('none')
+  const [legalNotes, setLegalNotes] = useState('')
+  const [savingLegalEscalation, setSavingLegalEscalation] = useState(false)
+  const [legalEscalationError, setLegalEscalationError] = useState<string | null>(null)
+
+  const [reminders, setReminders] = useState<Reminder[]>([])
+  const [remindersLoading, setRemindersLoading] = useState(true)
+  const [scheduleReminderOpen, setScheduleReminderOpen] = useState(false)
+  const [completingReminderId, setCompletingReminderId] = useState<string | null>(null)
+
+  const loadReminders = useCallback(() => {
+    setRemindersLoading(true)
+    remindersApi.list({ installmentAccountId: id, limit: 50 }).then((res) => {
+      if (res.success && res.data) setReminders(res.data.data)
+      setRemindersLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    loadReminders()
+  }, [loadReminders])
+
   function reload() {
     installmentAccountsApi.get(id).then((res) => {
       if (res.success && res.data) setAccount(res.data)
@@ -95,6 +168,12 @@ export default function InstallmentAccountDetail({
     })
   }
 
+  function reloadDamEscalationRequests() {
+    installmentAccountsApi.listDamEscalationRequests(id).then((res) => {
+      if (res.success && res.data) setDamEscalationRequests(res.data)
+    })
+  }
+
   useEffect(() => {
     installmentAccountsApi.get(id).then((res) => {
       if (res.success && res.data) setAccount(res.data)
@@ -102,9 +181,20 @@ export default function InstallmentAccountDetail({
       setLoading(false)
     })
     reloadGraduationRequests()
+    reloadDamEscalationRequests()
   }, [id])
 
+  // Keep the editable legal-escalation fields in sync with the account
+  // whenever it (re)loads, so a save-then-reload reflects the persisted
+  // value rather than stale local state.
+  useEffect(() => {
+    if (!account) return
+    setLegalStatus(account.legalEscalationStatus ?? 'none')
+    setLegalNotes(account.legalEscalationNotes ?? '')
+  }, [account])
+
   const pendingGraduation = graduationRequests.find((r) => r.status === 'pending')
+  const pendingDamEscalation = damEscalationRequests.find((r) => r.status === 'pending')
 
   async function handleRequestGraduation() {
     setGraduationError(null)
@@ -131,6 +221,49 @@ export default function InstallmentAccountDetail({
     if (res.success) {
       setRejectingRequestId(null)
       reloadGraduationRequests()
+    }
+  }
+
+  async function handleRequestDamEscalation() {
+    setDamEscalationError(null)
+    setRequestingDamEscalation(true)
+    const res = await installmentAccountsApi.requestDamEscalation(id, {})
+    setRequestingDamEscalation(false)
+    if (res.success) {
+      reloadDamEscalationRequests()
+    } else {
+      setDamEscalationError(res.error ?? 'Failed to request DAM escalation')
+    }
+  }
+
+  async function handleApproveDamEscalation(requestId: string) {
+    const res = await installmentAccountsApi.approveDamEscalation(id, requestId)
+    if (res.success) {
+      reload()
+      reloadDamEscalationRequests()
+    }
+  }
+
+  async function handleRejectDamEscalation(requestId: string, reason: string) {
+    const res = await installmentAccountsApi.rejectDamEscalation(id, requestId, { reason })
+    if (res.success) {
+      setRejectingDamRequestId(null)
+      reloadDamEscalationRequests()
+    }
+  }
+
+  async function handleSaveLegalEscalation() {
+    setLegalEscalationError(null)
+    setSavingLegalEscalation(true)
+    const res = await installmentAccountsApi.updateLegalEscalation(id, {
+      status: legalStatus,
+      notes: legalNotes || undefined,
+    })
+    setSavingLegalEscalation(false)
+    if (res.success) {
+      reload()
+    } else {
+      setLegalEscalationError(res.error ?? 'Failed to update legal escalation status')
     }
   }
 
@@ -176,6 +309,12 @@ export default function InstallmentAccountDetail({
             <span>·</span>
             <Badge value={account.status} colors={STATUS_COLORS} />
             <Badge value={account.category} colors={CATEGORY_COLORS} />
+            {account.inDam && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">
+                <AlertOctagon className="h-3 w-3" />
+                DAM
+              </span>
+            )}
             {account.recommendedCategory && account.recommendedCategory !== account.category && (
               <span
                 title="Computed from this account's aging data — not applied automatically"
@@ -238,6 +377,12 @@ export default function InstallmentAccountDetail({
           <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Collection tags</h2>
           <dl className="space-y-2 text-[13px]">
             <Row label="Classification" value={account.classification ?? '—'} />
+            <Row
+              label="DAM entered"
+              value={
+                account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'
+              }
+            />
             <Row label="Aging bucket" value={account.agingBucket ?? '—'} />
             <Row label="Months run" value={String(account.monthsRun)} />
             <Row label="Points" value={String(account.points)} />
@@ -296,6 +441,49 @@ export default function InstallmentAccountDetail({
               )}
             </div>
           )}
+
+          {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <button
+                onClick={handleRequestDamEscalation}
+                disabled={requestingDamEscalation}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <AlertOctagon className="h-4 w-4" />
+                {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
+              </button>
+              {damEscalationError && (
+                <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+              )}
+            </div>
+          )}
+
+          {pendingDamEscalation && (
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-[13px] font-medium text-red-900">Pending DAM escalation</p>
+              <p className="mt-0.5 text-[12px] text-red-700">
+                Requires management approval before the account moves to DAM.
+              </p>
+              {canApproveDamEscalation && (
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => handleApproveDamEscalation(pendingDamEscalation.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setRejectingDamRequestId(pendingDamEscalation.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
@@ -341,11 +529,175 @@ export default function InstallmentAccountDetail({
         </section>
       </div>
 
+      {account.inDam && (
+        <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="text-[14px] font-semibold text-gray-900">Legal escalation</h2>
+          <p className="mt-0.5 text-[12px] text-gray-400">
+            Checklist/status tracking only (Scenario 20) — no document generation.
+          </p>
+
+          {canManageLegalEscalation ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[200px_1fr_auto] sm:items-end">
+              <div>
+                <label
+                  htmlFor="legal-escalation-status"
+                  className="block text-[13px] font-medium text-gray-700"
+                >
+                  Status
+                </label>
+                <select
+                  id="legal-escalation-status"
+                  value={legalStatus}
+                  onChange={(e) => setLegalStatus(e.target.value as LegalEscalationStatus)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  {Object.entries(LEGAL_ESCALATION_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="legal-escalation-notes"
+                  className="block text-[13px] font-medium text-gray-700"
+                >
+                  Notes
+                </label>
+                <input
+                  id="legal-escalation-notes"
+                  type="text"
+                  value={legalNotes}
+                  onChange={(e) => setLegalNotes(e.target.value)}
+                  placeholder="e.g. SOA drafted, awaiting BM sign-off"
+                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                onClick={handleSaveLegalEscalation}
+                disabled={savingLegalEscalation}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
+              >
+                {savingLegalEscalation ? 'Saving…' : 'Update'}
+              </button>
+            </div>
+          ) : (
+            <dl className="mt-3 space-y-2 text-[13px]">
+              <Row
+                label="Status"
+                value={LEGAL_ESCALATION_LABELS[account.legalEscalationStatus ?? 'none']}
+              />
+              <Row label="Notes" value={account.legalEscalationNotes ?? '—'} />
+            </dl>
+          )}
+          {legalEscalationError && (
+            <p className="mt-2 text-[12px] text-red-600">{legalEscalationError}</p>
+          )}
+          {account.legalEscalationUpdatedAt && (
+            <p className="mt-2 text-[11px] text-gray-400">
+              Last updated {new Date(account.legalEscalationUpdatedAt).toLocaleString()}
+            </p>
+          )}
+        </section>
+      )}
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-[14px] font-semibold text-gray-900">Collections reminders</h2>
+          {canScheduleReminder && (
+            <button
+              onClick={() => setScheduleReminderOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              <BellRing className="h-3.5 w-3.5" />
+              Schedule reminder
+            </button>
+          )}
+        </div>
+
+        {remindersLoading && <p className="mt-3 text-[13px] text-gray-400">Loading…</p>}
+
+        {!remindersLoading && reminders.length === 0 && (
+          <p className="mt-3 text-[13px] text-gray-400">
+            No reminders logged for this account yet.
+          </p>
+        )}
+
+        {!remindersLoading && reminders.length > 0 && (
+          <ul className="mt-3 divide-y divide-gray-50">
+            {reminders.map((r) => {
+              const Icon = REMINDER_TYPE_ICON[r.reminderType] ?? MoreHorizontal
+              const isPending = r.status === 'pending' || r.status === 'overdue'
+              return (
+                <li key={r.id} className="flex items-center gap-3 py-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+                    <Icon className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-gray-900">
+                      {r.note ?? r.reminderType}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gray-400">
+                      <CalendarClock className="h-3 w-3" />
+                      {new Date(r.dueAt).toLocaleString('en-PH', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {r.status === 'overdue' && (
+                        <span className="ml-1 font-semibold text-red-600">Overdue</span>
+                      )}
+                    </p>
+                  </div>
+                  {isPending ? (
+                    <button
+                      onClick={() => setCompletingReminderId(r.id)}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Complete
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[11px] font-medium text-gray-400">
+                      Completed
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <ScheduleReminderModal
+        open={scheduleReminderOpen}
+        onClose={() => setScheduleReminderOpen(false)}
+        onCreated={loadReminders}
+        tenantId={tenantId}
+        assignedTo={currentUserId}
+        target={{ installmentAccountId: id, collectorId: account.collector?.id }}
+      />
+
+      <CompleteReminderModal
+        open={completingReminderId !== null}
+        onClose={() => setCompletingReminderId(null)}
+        onCompleted={loadReminders}
+        reminderId={completingReminderId}
+      />
+
       <EarlyPayoffModal
         key={payoffModalKey}
         open={payoffOpen}
         onClose={() => setPayoffOpen(false)}
-        onSettled={reload}
+        onSettled={() => {
+          reload()
+          // Scenario 20 (NAMIDRe): an early payoff auto-closes any open
+          // reminder on this account server-side — refresh the list so
+          // that shows up without a manual page reload.
+          loadReminders()
+        }}
         accountId={id}
         suggestedAmount={payoffQuote ?? Number(account.currentBalance)}
       />
@@ -353,25 +705,42 @@ export default function InstallmentAccountDetail({
       <RecordPaymentModal
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
-        onRecorded={reload}
+        onRecorded={() => {
+          reload()
+          // Scenario 20 (NAMIDRe): a recorded payment auto-closes any open
+          // reminder on this account server-side — refresh the list so
+          // that shows up without a manual page reload.
+          loadReminders()
+        }}
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
       />
 
       {rejectingRequestId && (
-        <RejectGraduationModal
+        <RejectRequestModal
+          title="Reject graduation request"
           onClose={() => setRejectingRequestId(null)}
           onReject={(reason) => handleRejectGraduation(rejectingRequestId, reason)}
+        />
+      )}
+
+      {rejectingDamRequestId && (
+        <RejectRequestModal
+          title="Reject DAM escalation request"
+          onClose={() => setRejectingDamRequestId(null)}
+          onReject={(reason) => handleRejectDamEscalation(rejectingDamRequestId, reason)}
         />
       )}
     </div>
   )
 }
 
-function RejectGraduationModal({
+function RejectRequestModal({
+  title,
   onClose,
   onReject,
 }: {
+  title: string
   onClose: () => void
   onReject: (reason: string) => void
 }) {
@@ -379,15 +748,15 @@ function RejectGraduationModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Reject graduation request</h2>
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
         <label
-          htmlFor="reject-graduation-reason"
+          htmlFor="reject-request-reason"
           className="block text-[13px] font-medium text-gray-700"
         >
           Reason
         </label>
         <textarea
-          id="reject-graduation-reason"
+          id="reject-request-reason"
           rows={3}
           value={reason}
           onChange={(e) => setReason(e.target.value)}

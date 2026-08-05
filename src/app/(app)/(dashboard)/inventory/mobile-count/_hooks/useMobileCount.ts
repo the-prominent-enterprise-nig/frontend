@@ -14,9 +14,8 @@ export type ScanEntry = {
   itemId: string
   itemName: string
   sku: string
-  countLineId: string
   countedQty: number
-  expectedQty: number
+  systemQty: number
   synced: boolean
   timestamp: number
 }
@@ -45,7 +44,7 @@ export function useMobileCount() {
       data,
     }: {
       id: string
-      data: { lines: { countLineId: string; countedQty: number }[] }
+      data: { lines: { itemId: string; countedQty: number }[] }
     }) => submitCount(id, data),
     onSuccess: (result) => {
       if (result.success) {
@@ -89,8 +88,8 @@ export function useMobileCount() {
 
       if (!selectedSession) return
 
-      // Server resolves expectedQty (and the countLineId to submit against) —
-      // never trust a client-side value for the "expected" side of a count.
+      // Server resolves systemQty — never trust a client-side value for the
+      // "expected" side of a count.
       const res = await addCountLine(selectedSession.id, { itemId: matchedItem.id })
       if (!res.success || !res.data) {
         showToast({
@@ -108,9 +107,8 @@ export function useMobileCount() {
           itemId: matchedItem.id,
           itemName: matchedItem.name,
           sku: matchedItem.sku,
-          countLineId: res.data!.id,
           countedQty: 1,
-          expectedQty: Number(res.data!.expectedQty),
+          systemQty: Number(res.data!.systemQty),
           synced: false,
           timestamp: Date.now(),
         },
@@ -135,7 +133,7 @@ export function useMobileCount() {
     if (!selectedSession || scanEntries.length === 0) return
 
     const lines = scanEntries.map((e) => ({
-      countLineId: e.countLineId,
+      itemId: e.itemId,
       countedQty: e.countedQty,
     }))
 

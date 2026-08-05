@@ -16,7 +16,7 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to post stock adjustments',
+      message: 'You do not have permission to submit stock adjustments',
     }
   }
 

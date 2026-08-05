@@ -5,7 +5,10 @@ import { X } from 'lucide-react'
 import { remindersApi } from '@/src/libs/api/crm'
 import type { ReminderType } from '@/src/schema/crm/types'
 
-type Target = { leadId: string } | { customerId: string }
+type Target =
+  | { leadId: string }
+  | { customerId: string }
+  | { installmentAccountId: string; collectorId?: string }
 
 export default function ScheduleReminderModal({
   open,
@@ -54,6 +57,10 @@ export default function ScheduleReminderModal({
       onClose()
       // Reset for next open
       setNote('')
+    } else if (res.message === 'duplicate_open_reminder_for_account') {
+      setError(
+        'This account already has an open reminder. Complete it before scheduling a new one.'
+      )
     } else {
       setError(res.message ?? 'Failed to schedule reminder')
     }
@@ -75,8 +82,11 @@ export default function ScheduleReminderModal({
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Type</label>
+            <label htmlFor="reminder-type" className="block text-[13px] font-medium text-gray-700">
+              Type
+            </label>
             <select
+              id="reminder-type"
               value={reminderType}
               onChange={(e) => setReminderType(e.target.value as ReminderType)}
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -89,8 +99,14 @@ export default function ScheduleReminderModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Due at *</label>
+            <label
+              htmlFor="reminder-due-at"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              Due at *
+            </label>
             <input
+              id="reminder-due-at"
               type="datetime-local"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
@@ -100,8 +116,11 @@ export default function ScheduleReminderModal({
           </div>
 
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Note</label>
+            <label htmlFor="reminder-note" className="block text-[13px] font-medium text-gray-700">
+              Note
+            </label>
             <textarea
+              id="reminder-note"
               rows={3}
               value={note}
               onChange={(e) => setNote(e.target.value)}

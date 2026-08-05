@@ -1,52 +1,39 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, loginAs, clickStable } from './utils'
+import { gotoReady, clickStable } from './utils'
 
-// Scenario 19 Part 1 — server-snapshotted expected quantity. Before this
-// change, the Count Sheet let the operator freely type both "Expected" and
-// "Counted" values client-side, so the variance was never provably against a
-// real system baseline. Now "Expected" is read-only (server-derived at count
-// start), and a new line is added via a dedicated "Add item not listed
-// above" control that resolves expectedQty server-side instead of accepting
-// client input. Opts out of the shared Business Owner storageState like the
-// sibling stock-adjustment spec, since it exercises the Stock Controller
-// role that actually owns this flow.
-test.use({ storageState: { cookies: [], origins: [] } })
-
-const STOCK_CONTROLLER_EMAIL = process.env.E2E_STOCK_EMAIL ?? 'technova.b1.stock@test.com'
-const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
-
-test.describe('Inventory — Stock Count server-side snapshot (Scenario 19 Part 1)', () => {
-  test('Expected quantity is read-only and a new line resolves expectedQty server-side', async ({
+// Scenario 19, Part 1 — expected quantity on a stock count now comes from a
+// server-side snapshot of StockBalance taken when the count starts, not
+// whatever the counter types in. This exercises the "found item" path (no
+// prior system balance) since it doesn't depend on the shared dev database
+// already having stock seeded for whichever warehouse gets picked.
+//
+// The warehouse must be a fresh, dedicated one rather than whichever shared
+// WH-0x lands at dropdown index 1 — Scenario 19 Part 5 made start()/submit()
+// snapshot and reconcile every serial-tracked unit physically in the target
+// warehouse, and the shared dev warehouses carry ~1000 real serials each.
+// Submitting this count against one of them would sweep all of that
+// inventory into a single giant pending adjustment (see the backend's
+// inventory-stock-count-snapshot.e2e-spec.ts for the same fix).
+test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => {
+  test('expected quantity is a read-only system snapshot, never a typed-in field', async ({
     page,
   }) => {
-    await loginAs(page, STOCK_CONTROLLER_EMAIL, PASSWORD)
+    const warehouseCode = `E2E-CNT19P1-${Date.now()}`
+    const createWarehouseRes = await page.request.post('/api/inventory/warehouses', {
+      data: { code: warehouseCode, name: 'E2E Isolated Count Warehouse' },
+    })
+    if (!createWarehouseRes.ok()) {
+      throw new Error(`Failed to create isolated warehouse: ${await createWarehouseRes.text()}`)
+    }
+    const warehouse = (await createWarehouseRes.json()) as { id: string }
+
     await gotoReady(page, '/inventory/stock-counts')
 
-    // A branch-scoped Stock Controller now only sees their own branch's
-    // warehouse, which the modal auto-fills (no <select> at all) — wait for
-    // the modal via a control that's always present regardless.
-    const createSessionButton = page.getByRole('button', { name: 'Create Session' })
-    await clickStable(page.getByRole('button', { name: 'New Count' }), createSessionButton)
-    // The warehouse field briefly renders as a <select> before the
-    // warehouses query resolves into its final auto-fill-or-not state, then
-    // swaps out from under an in-flight interaction — bounded settle before
-    // touching it.
-    await page.waitForTimeout(500)
     const warehouseSelect = page
       .locator('select')
       .filter({ has: page.locator('option', { hasText: 'Select warehouse' }) })
-    if (await warehouseSelect.isVisible().catch(() => false)) {
-      // Prefer one of the dedicated E2E-isolated warehouses other specs use
-      // (only relevant for a multi-warehouse account, e.g. Business Owner)
-      // — general-catalog warehouses (Manila/Cebu/Davao) accumulate
-      // balances across every run of every count-related spec and can
-      // eventually cover the whole catalog, leaving nothing for "Add item
-      // not listed above" to offer. An isolated warehouse is far less
-      // likely to already carry a balance for an arbitrary catalog item.
-      const warehouseOptions = await warehouseSelect.locator('option').allTextContents()
-      const isolatedIndex = warehouseOptions.findIndex((t) => t.includes('Isolated Warehouse'))
-      await warehouseSelect.selectOption({ index: isolatedIndex >= 0 ? isolatedIndex : 1 })
-    }
+    await clickStable(page.getByRole('button', { name: 'New Count' }), warehouseSelect)
+    await warehouseSelect.selectOption({ value: warehouse.id })
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Create Session' }).click()
@@ -55,82 +42,63 @@ test.describe('Inventory — Stock Count server-side snapshot (Scenario 19 Part 
       })
     }).toPass({ timeout: 15_000 })
 
-    // Scope subsequent actions to this session's own row (by its permanent
-    // short ID), not by list position — the shared dev database accumulates
-    // sessions across runs.
+    // Scope every subsequent "Open" click to this session's own row — the
+    // shared dev database accumulates sessions across runs.
     const freshRow = page.locator('tr').filter({ hasText: 'Scheduled' })
     const sessionId = await freshRow.locator('td').first().innerText()
     const ownRow = page.locator('tr').filter({ hasText: sessionId })
 
     const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+    await clickStable(ownRow, sessionHeading)
 
+    const countSheetTab = page.getByRole('button', { name: 'Count Sheet' })
     await expect(async () => {
       await page.getByRole('button', { name: 'Start Count' }).click()
       await expect(page.getByText('Count started').first()).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
 
-    // Regression guard: the open modal must reflect 'in_progress' right away
-    // — no manual close/reopen should be required to see the Count Sheet.
-    // (Previously selectedCount was a stale snapshot from before start()
-    // landed, so this needed a close+reopen dance to pick up the fresh
-    // status; useStockCounts' startMutation now patches selectedCount
-    // directly from the mutation response.)
-    const addItemSelect = page
+    // The tab bar must appear immediately after starting, with no need to
+    // close and reopen the modal — Part 1 also fixed the stale
+    // `selectedCount` snapshot that used to require that workaround.
+    await expect(countSheetTab).toBeVisible({ timeout: 5_000 })
+
+    // No manual "Expected" input exists anywhere on the count sheet now —
+    // it's always a read-only display sourced from the snapshot.
+    await expect(page.getByPlaceholder('Expected')).toHaveCount(0)
+
+    // Starting the count enables the count-lines snapshot query, which
+    // resolves asynchronously. The seeding effect that maps that response
+    // into local sheet state re-runs on every resolution, so clicking "Add
+    // Found Item" before the first resolution lands can have a found row
+    // appended locally only to be wiped out moments later when the
+    // snapshot query finally settles. Wait for the loading state to clear
+    // first so the seed has already happened once.
+    await expect(page.getByText('Loading snapshot…')).toHaveCount(0, { timeout: 10_000 })
+
+    const addFoundButton = page.getByRole('button', { name: 'Add Found Item' })
+    await addFoundButton.click()
+
+    // Scope everything to this one prepended row — the sheet shows
+    // most-recently-added first, so a freshly added found row is always
+    // the first ".grid-cols-12" row on the count sheet, not the last.
+    const foundRow = page.locator('.grid-cols-12').first()
+    const itemSelect = foundRow
       .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Add item not listed above' }) })
-    await expect(addItemSelect).toBeVisible({ timeout: 5_000 })
+      .filter({ has: page.locator('option', { hasText: 'Select found item' }) })
+    await expect(itemSelect).toBeVisible({ timeout: 5_000 })
+    await itemSelect.selectOption({ index: 1 })
 
-    // The old free-typed "Expected" input must be gone entirely — expected
-    // quantity is now always server-rendered text, never an editable field.
-    await expect(page.locator('input[placeholder="Expected"]')).toHaveCount(0)
+    // A newly-added found line shows "New find" in place of an expected qty
+    // — there was never a system balance for it to snapshot.
+    await expect(foundRow.getByText('New find')).toBeVisible()
 
-    // The shared dev database already has many pre-existing count lines in
-    // most warehouses, so `.last()` on the "Counted" input is visible before
-    // Add is even clicked — wait for the row count to actually increase
-    // instead, then read whatever expectedQty the server resolved for the
-    // newly-added item (never assume it's 0). The Add dropdown/button render
-    // regardless of the lines query's own loading state, so wait for that to
-    // settle (rows present, or the explicit "no balances" empty state) before
-    // capturing the baseline count.
-    const rowLocator = page.locator('div.grid.grid-cols-12.gap-2.items-center')
-    await expect(async () => {
-      const loaded =
-        (await rowLocator.count()) > 0 ||
-        (await page
-          .getByText('No existing balances')
-          .isVisible()
-          .catch(() => false))
-      expect(loaded).toBe(true)
-    }).toPass({ timeout: 10_000 })
-    const rowCountBefore = await rowLocator.count()
+    await foundRow.locator('input[placeholder="Counted"]').fill('5')
 
-    // Only exercise the "add a new line" path if this warehouse actually has
-    // an item left to add — after enough repeated runs (of this spec or any
-    // other count spec) a warehouse's catalog coverage can become saturated
-    // (every item already has a balance/line), leaving nothing but the
-    // placeholder option. That's still a legitimate live-data state, not a
-    // bug: fall back to exercising the read-only/variance assertions against
-    // an existing pre-populated row instead. The "add resolves expectedQty
-    // server-side" behavior itself is covered unconditionally by the backend
-    // e2e suite (inventory-stock-count-snapshot.e2e-spec.ts) against
-    // dedicated, isolated test items.
-    const addableOptionCount = await addItemSelect.locator('option').count()
-    if (addableOptionCount > 1) {
-      await addItemSelect.selectOption({ index: 1 })
-      await expect(async () => {
-        await page.getByRole('button', { name: 'Add' }).click()
-        await expect(rowLocator).toHaveCount(rowCountBefore + 1, { timeout: 3_000 })
-      }).toPass({ timeout: 15_000 })
-    }
+    // Variance is computed against the (zero) system baseline for a find.
+    await expect(foundRow.getByText('+5')).toBeVisible()
 
-    const targetRow = rowLocator.last()
-    const expectedQty = Number(await targetRow.locator('p').nth(2).innerText())
-    const countedInput = targetRow.locator('input[placeholder="Counted"]')
-
-    await countedInput.fill(String(expectedQty + 5))
-    await expect(targetRow.getByText('+5', { exact: true })).toBeVisible({ timeout: 5_000 })
-
+    // Submitting completes the count — there's no UI delete/undo path, same
+    // tradeoff the adjustment spec accepts for its own fixtures.
     await expect(async () => {
       await page.getByRole('button', { name: 'Submit Count' }).click()
       await expect(page.getByText('Count submitted').first()).toBeVisible({ timeout: 3_000 })

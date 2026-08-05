@@ -536,18 +536,47 @@ export interface TaxRateInput {
   glAccountId?: string | null
 }
 
+// SCEN-14 Closing Gap 1: create/update/deactivate stage a pending change
+// instead of mutating the tax rate directly — a Business Owner must approve
+// it (see approveTaxRateChange/rejectTaxRateChange below) before it applies.
+export type TaxRateChangeAction = 'create' | 'update' | 'deactivate'
+export type TaxRateApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+export interface TaxRateChangeRequest {
+  id: string
+  tenantId: string
+  taxRateId: string | null
+  taxRate?: TaxRate | null
+  action: TaxRateChangeAction
+  payload: Partial<TaxRateInput>
+  status: TaxRateApprovalStatus
+  submittedById: string
+  submittedAt: string
+  approverId?: string | null
+  actedAt?: string | null
+  remarks?: string | null
+}
+
 export function getTaxRates() {
   return api.get<TaxRate[]>('/accounting/tax-rates', undefined, {
     tags: ['accounting-tax-rates'],
   })
 }
 
+export function getTaxRateChangeRequests(status?: TaxRateApprovalStatus) {
+  return api.get<TaxRateChangeRequest[]>(
+    '/accounting/tax-rates/change-requests',
+    status ? { status } : undefined,
+    { tags: ['accounting-tax-rate-change-requests'] }
+  )
+}
+
 export function createTaxRate(data: TaxRateInput) {
-  return api.post<TaxRate>('/accounting/tax-rates', data)
+  return api.post<TaxRateChangeRequest>('/accounting/tax-rates', data)
 }
 
 export function updateTaxRate(id: string, data: Partial<TaxRateInput>) {
-  return api.patch<TaxRate>(`/accounting/tax-rates/${id}`, data)
+  return api.patch<TaxRateChangeRequest>(`/accounting/tax-rates/${id}`, data)
 }
 
 export function setDefaultTaxRate(id: string) {
@@ -559,7 +588,19 @@ export function clearDefaultTaxRate(id: string) {
 }
 
 export function deleteTaxRate(id: string) {
-  return api.delete(`/accounting/tax-rates/${id}`)
+  return api.delete<TaxRateChangeRequest>(`/accounting/tax-rates/${id}`)
+}
+
+export function approveTaxRateChange(id: string, remarks?: string) {
+  return api.post<TaxRate>(`/accounting/tax-rates/change-requests/${id}/approve`, {
+    ...(remarks && { remarks }),
+  })
+}
+
+export function rejectTaxRateChange(id: string, reason: string) {
+  return api.post<TaxRateChangeRequest>(`/accounting/tax-rates/change-requests/${id}/reject`, {
+    reason,
+  })
 }
 
 /* ------------------------------------------------------------------ */

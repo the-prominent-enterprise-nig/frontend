@@ -114,7 +114,7 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     const ownRow = page.locator('tr').filter({ hasText: sessionId })
 
     const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+    await clickStable(ownRow, sessionHeading)
 
     const startCountButton = page.getByRole('button', { name: 'Start Count' })
     if (await startCountButton.isVisible()) {
@@ -137,10 +137,10 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
         .filter({ has: page.locator('svg.lucide-x') })
         .click()
       await expect(sessionHeading).toBeHidden({ timeout: 5_000 })
-      await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+      await clickStable(ownRow, sessionHeading)
     }
     await expect(adjustTabButton).toBeVisible({ timeout: 10_000 })
-    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Submit Adjustment' }))
+    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Submit for Review' }))
 
     const adjustForm = page.locator('form').last()
     const submitNotes = 'E2E: recount variance from automated test.'
@@ -150,10 +150,10 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     // the exact bug INV-64 shipped with (the array was always empty).
     const lineRequiredError = page.getByText('At least one line is required').first()
     await expect(async () => {
-      await page.getByRole('button', { name: 'Submit Adjustment' }).click()
+      await page.getByRole('button', { name: 'Submit for Review' }).click()
       await expect(lineRequiredError).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
-    await expect(page.getByText('pending Branch Manager confirmation').first()).toHaveCount(0)
+    await expect(page.getByText('Adjustment submitted').first()).toHaveCount(0)
 
     const itemSelect = adjustForm
       .locator('select')
@@ -165,8 +165,8 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     await qtyInputs.nth(1).fill('8')
 
     await expect(async () => {
-      await page.getByRole('button', { name: 'Submit Adjustment' }).click()
-      await expect(page.getByText('pending Branch Manager confirmation').first()).toBeVisible({
+      await page.getByRole('button', { name: 'Submit for Review' }).click()
+      await expect(page.getByText('Adjustment submitted').first()).toBeVisible({
         timeout: 3_000,
       })
     }).toPass({ timeout: 15_000 })

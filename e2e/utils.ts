@@ -140,6 +140,22 @@ export async function ensureItemStock(
       `ensureItemStock: adjustment failed (${adjustRes.status()}): ${await adjustRes.text()}`
     )
   }
+
+  // Scenario 19 Part 2: an adjustment no longer posts to stock on creation —
+  // it sits 'submitted' until it clears confirm -> investigate -> approve.
+  // This helper needs the stock to actually land, so it drives the chain
+  // itself using the same session (Business Owner storageState bypasses
+  // every step's permission check, same as a real approver would need to
+  // pass through, just without the wait).
+  const { id: adjustmentId } = await adjustRes.json()
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await page.request.patch(`/api/inventory/adjustments/${adjustmentId}/${step}`)
+    if (!stepRes.ok()) {
+      throw new Error(
+        `ensureItemStock: ${step} failed (${stepRes.status()}): ${await stepRes.text()}`
+      )
+    }
+  }
 }
 
 /**
@@ -335,6 +351,26 @@ export async function sweepE2EPriceLists(
   const matches = list.filter((p) => p.name?.startsWith(namePrefix))
   for (const p of matches) {
     await request.delete(`/api/inventory/price-lists/${p.id}`).catch(() => {})
+  }
+}
+
+/**
+ * Self-heal sweep: hard-deletes any leftover PriceUseType whose name starts
+ * with `namePrefix` — same rationale as sweepE2EPriceLists. Unlike price
+ * lists, DELETE here is a real delete (no soft-deactivate), so this is a
+ * genuine cleanup, not just a status change.
+ */
+export async function sweepE2EPriceUseTypes(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get('/api/inventory/price-use-types')
+  if (!res.ok()) return
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const matches = list.filter((t) => t.name?.startsWith(namePrefix))
+  for (const t of matches) {
+    await request.delete(`/api/inventory/price-use-types/${t.id}`).catch(() => {})
   }
 }
 

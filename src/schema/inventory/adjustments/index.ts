@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { AdjustmentReasonCodeSchema } from '@/src/schema/inventory/stock-counts'
+import { BatchStatusSchema } from '@/src/schema/inventory/batches'
+import { SerialStatusSchema } from '@/src/schema/inventory/serial-numbers'
 
 // Scenario 19 Part 2 — approval chain status. submitted/confirmed/investigating
 // carry zero stock/GL side effects; those only happen on the transition to
@@ -20,60 +23,84 @@ export const ADJUSTMENT_STATUS_LABELS: Record<AdjustmentStatus, string> = {
   rejected: 'Rejected',
 }
 
-const AdjustmentItemSchema = z.object({
+const AdjustmentWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
-  sku: z.string(),
+  code: z.string(),
 })
 
-const AdjustmentLineSchema = z.object({
+const AdjustmentLineItemSchema = z.object({
   id: z.string(),
-  item: AdjustmentItemSchema.optional().nullable(),
-  expectedQty: z.number(),
-  actualQty: z.number(),
-  unitCost: z.number().optional().nullable(),
+  sku: z.string(),
+  name: z.string(),
+})
+
+const AdjustmentLineBatchSchema = z.object({
+  id: z.string(),
+  batchNumber: z.string(),
+  status: BatchStatusSchema,
+})
+
+const AdjustmentLineSerialSchema = z.object({
+  id: z.string(),
+  serialNumber: z.string(),
+  status: SerialStatusSchema,
+})
+
+export const AdjustmentLineSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  item: AdjustmentLineItemSchema,
+  variantId: z.string().optional().nullable(),
+  batchId: z.string().optional().nullable(),
+  batch: AdjustmentLineBatchSchema.optional().nullable(),
+  locationId: z.string().optional().nullable(),
+  serialNumberId: z.string().optional().nullable(),
+  serialNumber: AdjustmentLineSerialSchema.optional().nullable(),
+  expectedQty: z.coerce.number(),
+  actualQty: z.coerce.number(),
+  unitCost: z.coerce.number().optional().nullable(),
   // Scenario 19 Part 3 — the actual system on-hand snapshot at posting time,
   // only present once the adjustment is approved (approve() is the only
   // place that writes StockLedger beforeQty/afterQty). Distinct from
   // expectedQty/actualQty, which are the submission-time inputs.
-  beforeQty: z.number().optional().nullable(),
-  afterQty: z.number().optional().nullable(),
+  beforeQty: z.coerce.number().optional().nullable(),
+  afterQty: z.coerce.number().optional().nullable(),
 })
+export type AdjustmentLine = z.infer<typeof AdjustmentLineSchema>
 
-const AdjustmentWarehouseSchema = z.object({
+export const AdjustmentDetailSchema = z.object({
   id: z.string(),
-  name: z.string(),
-  code: z.string().optional(),
-})
-
-export const AdjustmentSummarySchema = z.object({
-  id: z.string(),
-  status: AdjustmentStatusSchema,
-  item: AdjustmentItemSchema.optional().nullable(),
+  adjustmentNumber: z.string(),
   warehouse: AdjustmentWarehouseSchema.optional().nullable(),
-  quantity: z.number().optional().nullable(),
-  unitCost: z.number().optional().nullable(),
-  lines: z.array(AdjustmentLineSchema).default([]),
-  reasonCode: z.string(),
+  adjustmentDate: z.string(),
+  reasonCode: AdjustmentReasonCodeSchema,
   notes: z.string().optional().nullable(),
-  writeOffDate: z.string(),
-  accountingEntry: z.object({ id: z.string() }).optional().nullable(),
+  status: AdjustmentStatusSchema,
+  totalImpactValue: z.coerce.number().optional().nullable(),
+  journalEntryId: z.string().optional().nullable(),
+  submittedById: z.string().optional().nullable(),
+  submittedByName: z.string().optional().nullable(),
+  confirmedAt: z.string().optional().nullable(),
   confirmedById: z.string().optional().nullable(),
   confirmedByName: z.string().optional().nullable(),
-  confirmedAt: z.string().optional().nullable(),
+  investigatingAt: z.string().optional().nullable(),
   investigatingById: z.string().optional().nullable(),
   investigatingByName: z.string().optional().nullable(),
-  investigatingAt: z.string().optional().nullable(),
-  decidedById: z.string().optional().nullable(),
-  decidedByName: z.string().optional().nullable(),
-  decidedAt: z.string().optional().nullable(),
-  decisionReason: z.string().optional().nullable(),
-  createdAt: z.string(),
+  approvedAt: z.string().optional().nullable(),
+  approvedById: z.string().optional().nullable(),
+  approvedByName: z.string().optional().nullable(),
+  rejectedAt: z.string().optional().nullable(),
+  rejectedById: z.string().optional().nullable(),
+  rejectedByName: z.string().optional().nullable(),
+  rejectedReason: z.string().optional().nullable(),
+  createdAt: z.string().optional(),
+  lines: z.array(AdjustmentLineSchema),
 })
-export type AdjustmentSummary = z.infer<typeof AdjustmentSummarySchema>
+export type AdjustmentDetail = z.infer<typeof AdjustmentDetailSchema>
 
 export const AdjustmentListResponseSchema = z.object({
-  data: z.array(AdjustmentSummarySchema),
+  data: z.array(AdjustmentDetailSchema),
   total: z.number(),
   page: z.number(),
   limit: z.number(),
@@ -81,6 +108,6 @@ export const AdjustmentListResponseSchema = z.object({
 export type AdjustmentListResponse = z.infer<typeof AdjustmentListResponseSchema>
 
 export const RejectAdjustmentFormSchema = z.object({
-  reason: z.string().min(1, 'A reason is required to reject an adjustment'),
+  reason: z.string().min(1, 'Reason is required').max(500),
 })
 export type RejectAdjustmentFormValues = z.infer<typeof RejectAdjustmentFormSchema>

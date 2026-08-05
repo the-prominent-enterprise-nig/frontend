@@ -1,234 +1,162 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, clickStable } from './utils'
+import { gotoReady, loginAs } from './utils'
 
-// Scenario 19 Part 2 — approval chain on stock adjustments. Before this
-// change, "Post Adjustment" posted ledger/balance/GL immediately with no
-// review. Now it only submits a pending adjustment; a Branch Manager must
-// confirm it, then the Business Owner investigates and approves/rejects
-// before anything actually posts. This spec walks the full chain across
-// three role logins on the new "Adjustment Approvals" tab.
+// Scenario 19, Part 2 — Stock Adjustment approval chain frontend UI. Backend
+// workflow itself is covered by
+// backend/test/inventory-stock-adjustment-approval-chain.e2e-spec.ts; this
+// spec exercises the actual UI: the status badge, and the
+// Confirm/Investigate/Approve/Reject actions across the approval personas.
+//
+// This repo's Scenario 19 role decision is Business Owner exclusively does
+// investigate + approve/reject; Branch Manager only confirms — there's no
+// separate "HO Inventory" or "Accountant" role in the chain, unlike the
+// PDF's generic description.
+//
+// The adjustment itself is created directly via the API (not through the
+// Stock Counts "Create Adjustment" tab — already covered by
+// inventory-stock-adjustment.spec.ts) so this spec can focus purely on the
+// approval-chain controls.
 
-const STOCK_CONTROLLER_EMAIL = process.env.E2E_STOCK_EMAIL ?? 'technova.b1.stock@test.com'
-const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL ?? 'technova.b1.manager@test.com'
-const OWNER_EMAIL = process.env.E2E_OWNER_EMAIL ?? 'technova.owner@test.com'
-const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
+const STOCK_EMAIL = 'technova.b1.stock@test.com'
+const MANAGER_EMAIL = 'technova.b1.manager@test.com'
+const OWNER_EMAIL = 'technova.owner@test.com'
 
 // loginAs assumes a fresh, unauthenticated session (visiting /login while
 // already signed in just redirects away) — clear cookies first so each
 // subsequent loginAs call actually lands on the login form.
 async function switchTo(page: Page, email: string): Promise<void> {
   await page.context().clearCookies()
-  await loginAs(page, email, PASSWORD)
-  // Bounded settle: a subsequent hard navigation fired immediately after
-  // login occasionally races the session cookie being fully committed,
-  // landing back on the previous user's page. This is a known-narrow
-  // mitigation for that specific race, not a substitute for the retry
-  // wrapper callers already use around switchTo.
-  await page.waitForTimeout(750)
+  await loginAs(page, email, DEV_PASSWORD)
 }
 
-// A dedicated, disposable test item — NOT one shared with other specs.
-// Picking an arbitrary dropdown item (index 1) previously landed on another
-// suite's fixture item and pushed its real balance negative across repeated
-// runs, since the approval chain actually posts real ledger/balance
-// mutations on approve(). Unlike the sibling inventory-stock-adjustment.spec
-// (which withdraws its still-'submitted' adjustment via
-// DELETE /inventory/adjustments/:id, added in Scenario 19 Part 3), THIS
-// spec's adjustment gets fully approved — real ledger/balance/GL postings —
-// so withdraw (submitted-only) doesn't apply, and there's no delete path for
-// an approved adjustment by design (audit integrity). Its
-// stock_adjustment_lines FK therefore still blocks the afterEach item
-// deletion below; that's a best-effort cleanup, and self-contained pollution
-// on our own dedicated item is an accepted tradeoff — corrupting someone
-// else's fixture is not.
-async function createTestItem(page: Page): Promise<{ id: string; sku: string; name: string }> {
-  const listRes = await page.request.get('/api/inventory/items?limit=1')
-  const listJson = await listRes.json()
-  const baseUnitId = listJson.data[0].baseUnit.id
-  const sku = `E2E-ADJCHAIN-${Date.now()}`
-  const name = 'E2E Adjustment Approval Chain Test Item'
-  const createRes = await page.request.post('/api/inventory/items', {
-    data: { sku, name, baseUnitId },
+// A hard navigation fired immediately after switchTo() occasionally races
+// the session cookie being fully committed, landing back on /login instead
+// of the target page — a known, only-partially-mitigated race in this
+// repo's multi-role specs. Retry the whole switch+navigate+assert until it
+// actually lands.
+async function switchToAndOpen(page: Page, email: string, locator: ReturnType<Page['locator']>) {
+  await expect(async () => {
+    await switchTo(page, email)
+    await gotoReady(page, '/inventory/counting?tab=adjustments')
+    await expect(locator).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
+}
+
+async function createAdjustment(page: Page): Promise<{ id: string; adjustmentNumber: string }> {
+  const warehousesRes = await page.request.get('/api/inventory/warehouses?limit=200')
+  const warehouses = ((await warehousesRes.json()).data ?? []) as { id: string }[]
+  const warehouseId = warehouses[0].id
+
+  const itemsRes = await page.request.get('/api/inventory/items?limit=1')
+  const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
+  const itemId = items[0].id
+
+  const res = await page.request.post('/api/inventory/adjustments', {
+    data: {
+      warehouseId,
+      adjustmentDate: new Date().toISOString().slice(0, 10),
+      reasonCode: 'miscounted',
+      notes: `E2E approval chain UI test ${Date.now()}`,
+      lines: [{ itemId, expectedQty: 10, actualQty: 8, unitCost: 5 }],
+    },
   })
-  const item = await createRes.json()
-  if (!item?.id) {
-    throw new Error(`createTestItem failed (status ${createRes.status()}): ${JSON.stringify(item)}`)
-  }
-
-  // New items default to draft (Scenario 16 governance) and are invisible to
-  // anyone without a governance permission — the adjustment line-item picker
-  // hard-locks non-governance callers to approvalStatus: 'approved'. Push it
-  // through submit -> confirm-accounting -> approve as Owner (holds every
-  // governance permission) so Stock Controller can actually select it.
-  await page.request.post(`/api/inventory/items/${item.id}/submit`)
-  await page.request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
-  await page.request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
-
-  return { id: item.id as string, sku, name }
+  const body = await res.json()
+  return { id: body.id as string, adjustmentNumber: body.adjustmentNumber as string }
 }
 
-test.describe('Inventory — Stock Adjustment approval chain (Scenario 19 Part 2)', () => {
+test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Part 2)', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  const createdItemIds: string[] = []
-
-  test.afterEach(async ({ page }) => {
-    if (!createdItemIds.length) return
-    // Best-effort — deleting an item with posted ledger/balance history
-    // (which approve() creates) may hit FK constraints; that's fine, same
-    // tradeoff the sibling adjustment spec already accepts.
-    await switchTo(page, OWNER_EMAIL)
-    for (const id of createdItemIds.splice(0)) {
-      await page.request.delete(`/api/inventory/items/${id}`).catch(() => {})
-    }
-  })
-
-  test('submit as Stock Controller, confirm as Branch Manager, investigate+approve as Business Owner', async ({
+  test('walks a submitted adjustment through confirm → investigate → approve across roles', async ({
     page,
   }) => {
-    // This test spans item-governance setup plus 3 role logins, each with
-    // its own retry budget for the session-settle race — well past the
-    // suite's default 60s per-test timeout.
+    // Spans item-governance-free adjustment creation plus 2 role logins,
+    // each with its own retry budget for the session-settle race — well
+    // past the suite's default 60s per-test timeout.
     test.setTimeout(180_000)
 
-    // ── Setup: create a dedicated test item as Owner (Stock Controller only
-    // holds inventory:items:read, not :create) ─────────────────────────────
-    await loginAs(page, OWNER_EMAIL, PASSWORD)
-    // Let the post-login navigation fully settle on a real page before
-    // firing page.request calls — every other multi-role spec in this repo
-    // does a gotoReady immediately after login for the same reason.
-    await gotoReady(page, '/inventory/items')
-    const testItem = await createTestItem(page)
-    createdItemIds.push(testItem.id)
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
+    const { id, adjustmentNumber } = await createAdjustment(page)
 
-    // ── Step 1: Stock Controller submits an adjustment ──────────────────────
-    // The role switch occasionally lands back on the previous user's
-    // dashboard instead of the target page (a stale-navigation race, not a
-    // feature bug) — retry the whole switch+navigate until it actually
-    // lands on Stock Counts.
-    const stockCountsHeading = page.getByRole('heading', { name: 'Stock Counts' })
-    await expect(async () => {
-      await switchTo(page, STOCK_CONTROLLER_EMAIL)
-      await gotoReady(page, '/inventory/stock-counts')
-      await expect(stockCountsHeading).toBeVisible({ timeout: 5_000 })
-    }).toPass({ timeout: 60_000 })
+    // Branch Manager confirms
+    const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
+    await switchToAndOpen(page, MANAGER_EMAIL, ownRow)
+    await expect(ownRow.getByText('Submitted', { exact: true })).toBeVisible()
 
-    // A branch-scoped Stock Controller now only sees their own branch's
-    // warehouse, which the modal auto-fills (no <select> at all) — only
-    // pick an option when there's an actual choice to make.
-    const createSessionButton = page.getByRole('button', { name: 'Create Session' })
-    await clickStable(page.getByRole('button', { name: 'New Count' }), createSessionButton)
-    // The warehouse field briefly renders as a <select> before the
-    // warehouses query resolves into its final auto-fill-or-not state, then
-    // swaps out from under an in-flight interaction — bounded settle before
-    // touching it (same mitigation as switchTo's session-settle race above).
-    await page.waitForTimeout(500)
-    const warehouseSelect = page
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Select warehouse' }) })
-    if (await warehouseSelect.isVisible().catch(() => false)) {
-      await warehouseSelect.selectOption({ index: 1 })
-    }
+    const detailHeading = page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })
+    await ownRow.click()
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Confirm' }).click()
+    await expect(page.getByText('Adjustment confirmed').first()).toBeVisible({ timeout: 5_000 })
 
-    await expect(async () => {
-      await page.getByRole('button', { name: 'Create Session' }).click()
-      await expect(page.getByText('Count session created').first()).toBeVisible({
-        timeout: 3_000,
-      })
-    }).toPass({ timeout: 15_000 })
+    // Business Owner moves it into investigation, then approves — this
+    // repo's role decision keeps both steps with the same actor.
+    await switchToAndOpen(page, OWNER_EMAIL, ownRow)
+    await ownRow.click()
+    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Move to Investigating' }).click()
+    await expect(page.getByText('Moved to investigating').first()).toBeVisible({ timeout: 5_000 })
 
-    const freshRow = page.locator('tr').filter({ hasText: 'Scheduled' })
-    const sessionId = await freshRow.locator('td').first().innerText()
-    const ownRow = page.locator('tr').filter({ hasText: sessionId })
+    await page.getByRole('button', { name: 'Approve' }).click()
+    await expect(page.getByText('Adjustment approved').first()).toBeVisible({ timeout: 5_000 })
 
-    const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+    const detail = await page.request.get(`/api/inventory/adjustments/${id}`)
+    const detailBody = await detail.json()
+    expect(detailBody.status).toBe('approved')
+    expect(detailBody.journalEntryId).toBeTruthy()
+  })
 
-    await expect(async () => {
-      await page.getByRole('button', { name: 'Start Count' }).click()
-      await expect(page.getByText('Count started').first()).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 15_000 })
+  test('Business Owner can reject an investigated adjustment, visible with its reason', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000)
 
-    const adjustTabButton = page.getByRole('button', { name: 'Create Adjustment' })
-    if (!(await adjustTabButton.isVisible().catch(() => false))) {
-      await page
-        .getByRole('button')
-        .filter({ has: page.locator('svg.lucide-x') })
-        .click()
-      await expect(sessionHeading).toBeHidden({ timeout: 5_000 })
-      await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
-    }
-    await expect(adjustTabButton).toBeVisible({ timeout: 10_000 })
-    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Submit Adjustment' }))
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
+    const { id, adjustmentNumber } = await createAdjustment(page)
 
-    const adjustForm = page.locator('form').last()
-    await adjustForm.locator('textarea').fill('E2E: Scenario 19 Part 2 approval chain test.')
+    await switchTo(page, MANAGER_EMAIL)
+    await page.request.patch(`/api/inventory/adjustments/${id}/confirm`)
 
-    const itemSelect = adjustForm
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Select item' }) })
-    await clickStable(page.getByRole('button', { name: 'Add Line' }), itemSelect)
-    await itemSelect.selectOption({ label: `${testItem.sku} — ${testItem.name}` })
-    const qtyInputs = adjustForm.locator('input[type="number"]')
-    await qtyInputs.nth(0).fill('10')
-    await qtyInputs.nth(1).fill('8')
+    const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
+    await switchToAndOpen(page, OWNER_EMAIL, ownRow)
+    await page.request.patch(`/api/inventory/adjustments/${id}/investigate`)
+    await page.reload()
+    await expect(ownRow).toBeVisible({ timeout: 10_000 })
+    await ownRow.click()
+    await expect(page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })).toBeVisible(
+      { timeout: 10_000 }
+    )
 
-    await expect(async () => {
-      await page.getByRole('button', { name: 'Submit Adjustment' }).click()
-      await expect(page.getByText('pending Branch Manager confirmation').first()).toBeVisible({
-        timeout: 3_000,
-      })
-    }).toPass({ timeout: 15_000 })
+    await page.getByRole('button', { name: 'Reject' }).click()
+    await page.getByPlaceholder('Reason for rejecting…').fill('E2E: recount looks like a mistake')
+    await page.getByRole('button', { name: 'Confirm Rejection' }).click()
+    await expect(page.getByText('Adjustment rejected').first()).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByText('E2E: recount looks like a mistake')).toBeVisible()
 
-    // ── Grab the new adjustment's short ID from the Approvals tab, while
-    // still logged in as the creator (who can read but not act on it) ──────
-    await gotoReady(page, '/inventory/counting?tab=approvals')
-    const submittedRow = page.locator('tr').filter({ hasText: 'Submitted' }).first()
-    const adjustmentId = await submittedRow.locator('td').first().innerText()
-    const myRow = page.locator('tr').filter({ hasText: adjustmentId })
-    await expect(myRow.getByRole('button', { name: 'Confirm' })).toHaveCount(0)
+    const detail = await page.request.get(`/api/inventory/adjustments/${id}`)
+    const detailBody = await detail.json()
+    expect(detailBody.status).toBe('rejected')
+    expect(detailBody.journalEntryId).toBeFalsy()
+  })
 
-    // ── Step 2: Branch Manager confirms ─────────────────────────────────────
-    const approvalsTabHeading = page.getByRole('button', { name: 'Adjustment Approvals' })
-    await expect(async () => {
-      await switchTo(page, MANAGER_EMAIL)
-      await gotoReady(page, '/inventory/counting?tab=approvals')
-      await expect(approvalsTabHeading).toBeVisible({ timeout: 5_000 })
-    }).toPass({ timeout: 60_000 })
-    const managerRow = page.locator('tr').filter({ hasText: adjustmentId })
-    await expect(async () => {
-      await managerRow.getByRole('button', { name: 'Confirm' }).click()
-      await expect(page.getByText('Adjustment confirmed').first()).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 15_000 })
-    await expect(managerRow.getByText('Confirmed', { exact: true })).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(managerRow.getByRole('button', { name: 'Investigate' })).toHaveCount(0)
+  test('the creator (Stock Controller) sees the list but has no action buttons on their own submission', async ({
+    page,
+  }) => {
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
+    const { adjustmentNumber } = await createAdjustment(page)
 
-    // ── Step 3: Business Owner investigates then approves ──────────────────
-    await expect(async () => {
-      await switchTo(page, OWNER_EMAIL)
-      await gotoReady(page, '/inventory/counting?tab=approvals')
-      await expect(approvalsTabHeading).toBeVisible({ timeout: 5_000 })
-    }).toPass({ timeout: 60_000 })
-    const ownerRow = page.locator('tr').filter({ hasText: adjustmentId })
+    await gotoReady(page, '/inventory/counting?tab=adjustments')
+    const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
+    await expect(ownRow).toBeVisible({ timeout: 10_000 })
+    await ownRow.click()
+    await expect(page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })).toBeVisible(
+      { timeout: 10_000 }
+    )
 
-    await expect(async () => {
-      await ownerRow.getByRole('button', { name: 'Investigate' }).click()
-      await expect(page.getByText('Investigation started').first()).toBeVisible({
-        timeout: 3_000,
-      })
-    }).toPass({ timeout: 15_000 })
-    await expect(ownerRow.getByText('Investigating', { exact: true })).toBeVisible({
-      timeout: 10_000,
-    })
-
-    await expect(async () => {
-      await ownerRow.getByRole('button', { name: 'Approve' }).click()
-      await expect(page.getByText('Adjustment approved and posted').first()).toBeVisible({
-        timeout: 3_000,
-      })
-    }).toPass({ timeout: 15_000 })
-    await expect(ownerRow.getByText('Approved', { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Confirm' })).toHaveCount(0)
+    await expect(
+      page.getByText(/Waiting on the next step — you don.t hold the permission for it\./)
+    ).toBeVisible()
   })
 })

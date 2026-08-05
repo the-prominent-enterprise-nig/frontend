@@ -1,12 +1,15 @@
 'use server'
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import { AddCountLineFormSchema, type CountLine } from '@/src/schema/inventory/stock-counts'
+import { AddCountLineFormSchema, type CountLineSnapshot } from '@/src/schema/inventory/stock-counts'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-export async function addCountLine(id: string, input: unknown): Promise<ApiResponse<CountLine>> {
+export async function addCountLine(
+  id: string,
+  input: unknown
+): Promise<ApiResponse<CountLineSnapshot>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -28,7 +31,7 @@ export async function addCountLine(id: string, input: unknown): Promise<ApiRespo
     }
   }
 
-  const result = await api.post<CountLine>(`/inventory/counts/${id}/lines`, parsed.data)
+  const result = await api.post<CountLineSnapshot>(`/inventory/counts/${id}/lines`, parsed.data)
 
   if (!result.success) {
     return {

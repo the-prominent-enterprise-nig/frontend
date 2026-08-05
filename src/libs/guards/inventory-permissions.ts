@@ -31,10 +31,6 @@ export const INVENTORY_PERMISSIONS = {
   STOCKS_CREATE: 'inventory:stock:create',
   STOCK_ADJUST: 'inventory:stock:adjust',
 
-  // ── Stock Adjustment approval chain (Scenario 19 Part 2) ────────────────────
-  STOCK_ADJUSTMENT_CONFIRM: 'inventory:stock-adjustment:confirm',
-  STOCK_ADJUSTMENT_APPROVE: 'inventory:stock-adjustment:approve',
-
   // ── Transfers ──────────────────────────────────────────────────────────────
   TRANSFERS_READ: 'inventory:transfers:read',
   TRANSFERS_CREATE: 'inventory:transfers:create',
@@ -63,6 +59,11 @@ export const INVENTORY_PERMISSIONS = {
   // receive-create permission Stock Controller/Branch Manager also hold.
   RECEIVE_COST_VIEW: 'inventory:receive:cost-view',
 
+  // ── Stock Adjustment approval chain (Scenario 19) ───────────────────────────
+  STOCK_ADJUSTMENT_CONFIRM: 'inventory:stock-adjustment:confirm',
+  STOCK_ADJUSTMENT_INVESTIGATE: 'inventory:stock-adjustment:investigate',
+  STOCK_ADJUSTMENT_APPROVE: 'inventory:stock-adjustment:approve',
+
   // ── Stock Count (Stock Controller) ─────────────────────────────────────────
   STOCK_COUNT_READ: 'inventory:stock-count:read',
   STOCK_COUNT_CREATE: 'inventory:stock-count:create',
@@ -87,14 +88,6 @@ export const INVENTORY_PERMISSIONS = {
   // ── Unit Document Sheets (UDS) ─────────────────────────────────────────────
   UDS_READ: 'inventory:uds:read',
   UDS_MANAGE: 'inventory:uds:manage',
-
-  // ── Expiry (Stock Controller) ──────────────────────────────────────────────
-  EXPIRY_READ: 'inventory:expiry:read',
-  EXPIRY_MANAGE: 'inventory:expiry:manage',
-
-  // ── Cycle Count (Stock Controller) ─────────────────────────────────────────
-  CYCLE_COUNT_READ: 'inventory:cycle-count:read',
-  CYCLE_COUNT_MANAGE: 'inventory:cycle-count:manage',
 
   // ── Mobile Count (Stock Controller) ────────────────────────────────────────
   MOBILE_COUNT_USE: 'inventory:mobile-count:use',
@@ -121,6 +114,7 @@ export const INVENTORY_PERMISSIONS = {
   PRICE_LISTS_UPDATE: 'inventory:price-lists:update',
   PRICE_LISTS_DELETE: 'inventory:price-lists:delete',
   PRICE_LISTS_APPROVE: 'inventory:price-lists:approve',
+  PRICE_LISTS_MANAGE_PRICE_USE_TYPES: 'inventory:price-lists:manage_price_use_types',
 
   // ── Stock Level Boundaries (INV-33) ────────────────────────────────────────
   STOCK_LEVELS_READ: 'inventory:stock-levels:read',
@@ -226,6 +220,7 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock-count:read': 'View stock count sheets',
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',
+  'inventory:stock-adjustment:investigate': 'Move a confirmed stock adjustment into investigation',
   'inventory:reorder:read': 'View reorder requests',
   'inventory:reorder:manage': 'Configure reorder points and manage reorder requests',
   'inventory:batch:read': 'View batch / lot records',
@@ -238,10 +233,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Consign stock to a host branch for a caravan event, and return/reassign it at close',
   'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
   'inventory:uds:manage': 'Issue and update Unit Document Sheets',
-  'inventory:expiry:read': 'View expiry-tracked stock',
-  'inventory:expiry:manage': 'Manage expiry dates and FEFO picking',
-  'inventory:cycle-count:read': 'View cycle count schedules',
-  'inventory:cycle-count:manage': 'Create and manage cycle count schedules',
   'inventory:mobile-count:use': 'Perform mobile barcode stock counts',
   'inventory:quality-hold:read': 'View quality-hold records',
   'inventory:quality-hold:manage': 'Place, release, or reject quality holds on received stock',
@@ -257,6 +248,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:price-lists:delete': 'Delete price lists',
   'inventory:price-lists:approve':
     'Approve or reject a pending price list (Sales/Finance Approver)',
+  'inventory:price-lists:manage_price_use_types':
+    'Create, rename, or delete price-use types (e.g. WIP, CR-BR, SSC)',
   'inventory:stock-levels:read': 'View min / max stock level boundaries',
   'inventory:stock-levels:manage': 'Configure min / max stock level boundaries',
   'inventory:reservations:read': 'View stock reservations',

@@ -29,6 +29,8 @@ export const CRM_PERMISSIONS = {
   INSTALLMENT_ACCOUNTS_EARLY_PAYOFF: 'crm:installment-accounts:early_payoff',
   INSTALLMENT_ACCOUNTS_RECORD_PAYMENT: 'crm:installment-accounts:record_payment',
   INSTALLMENT_ACCOUNTS_APPROVE_GRADUATION: 'crm:installment-accounts:approve_graduation',
+  INSTALLMENT_ACCOUNTS_APPROVE_DAM_ESCALATION: 'crm:installment-accounts:approve_dam_escalation',
+  INSTALLMENT_ACCOUNTS_MANAGE_LEGAL_ESCALATION: 'crm:installment-accounts:manage_legal_escalation',
   PIPELINE_READ: 'crm:pipeline:read',
   PIPELINE_MANAGE: 'crm:pipeline:manage',
   SETTINGS_CONFIGURE: 'crm:settings:configure',
