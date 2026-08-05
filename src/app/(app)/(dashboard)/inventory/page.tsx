@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Warehouse,
   Tag,
+  ClipboardCheck,
   Tags,
 } from 'lucide-react'
 
@@ -1327,6 +1328,11 @@ export default function InventoryPage() {
                   icon: Package,
                 },
                 { label: 'Stock Counts', href: '/inventory/stock-counts', icon: Layers },
+                {
+                  label: 'Stock Adjustments',
+                  href: '/inventory/operations?tab=adjustments',
+                  icon: ClipboardCheck,
+                },
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
