@@ -95,3 +95,14 @@ None found.
 - `docs/seed-data-reference.md` was out of date on role/account counts (16 accounts documented vs 22 actually seeded) — corrected this run alongside the Credit Investigator additions.
 - Discovered and fixed unrelated pre-existing gaps during manual testing: zero `FinancingTerm` rows existed anywhere in the seed (any installment sale would have hit this, not just this scenario's); a three-layer sidebar-visibility bug hid the Credit module from non-owner roles (backend `PERMISSION_MODULE_TO_NAV` map, tenant `enabledModules`, two super-admin module-toggle checklists).
 - Flagged but did not fix (out of scope): `pos-checkout-multi-serial-cart.spec.ts` and `pos-release-form-request.e2e-spec.ts` have pre-existing failures unrelated to this scenario (a stale-session serial-picker issue and a July 28 commit requiring a customer on every sale, respectively).
+
+## Implementation Log — 2026-08-06
+
+**For this scenario, I have done:**
+
+- Bug fix: `PromissoryNote.creditApplicationId` was `@unique`, which crashed (500) any resubmit of an installment sale after its first hold was rejected or cancelled — the application stays `approved`/unconsumed, so `ReleaseFormRequestsService.submit()` tried to insert a second `PromissoryNote` row for the same application and hit the constraint. Fixed by dropping that uniqueness (kept only on `releaseFormRequestId`) and adding a `pendingHold` guard in `TransactionsService.validateAndPrepare()` so a still-live pending hold on an application is rejected with a clear message instead — closes the ambiguity the uniqueness constraint was accidentally also preventing. `PromissoryNoteService.findByApplication` now returns the most-recently-generated note. New backend tests PN-05/PN-06.
+- UX gap fix: there was no way to reach a Promissory Note's print/sign controls other than the checkout Pending Approval screen, which is pure React state — lost on navigation, refresh, or tab close, permanently stranding that sale unsigned. Added the same Print + Mark as Signed controls to `ReleaseApprovalsList.tsx`'s detail modal (available to both the submitting Cashier's own-requests view and the reviewing manager). New frontend e2e test covers this fallback path.
+
+**Worth flagging:**
+
+- Both issues above were found by directly asking "is anything missing?" and reproducing edge cases (reject-then-resubmit; navigate-away-before-signing) rather than by a developer bug report — worth treating this kind of adversarial pass as standard before considering a part done, not just the happy-path manual test steps.
