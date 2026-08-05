@@ -7,6 +7,7 @@ import GoodsReceivingList from '../../goods-receiving/_components/GoodsReceiving
 import ReturnList from '../../returns/_components/ReturnList'
 import QualityHoldList from '../../quality-hold/_components/QualityHoldList'
 import BackordersPageView from '../../backorders/_components/BackordersPageView'
+import AdjustmentList from '../../adjustments/_components/AdjustmentList'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 const TABS = [
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'receiving', label: 'Receiving' },
   { id: 'returns', label: 'Returns' },
   { id: 'quality', label: 'Quality Hold' },
+  { id: 'adjustments', label: 'Stock Adjustments' },
   { id: 'backorders', label: 'Backorders' },
 ]
 
@@ -30,6 +32,8 @@ export function OperationsHub({ session }: { session: SessionUser }) {
         <ReturnList session={session} />
       ) : tab === 'quality' ? (
         <QualityHoldList session={session} />
+      ) : tab === 'adjustments' ? (
+        <AdjustmentList session={session} />
       ) : tab === 'backorders' ? (
         <BackordersPageView session={session} />
       ) : (

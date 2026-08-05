@@ -1329,7 +1329,7 @@ export default function InventoryPage() {
                 { label: 'Stock Counts', href: '/inventory/stock-counts', icon: Layers },
                 {
                   label: 'Stock Adjustments',
-                  href: '/inventory/adjustments',
+                  href: '/inventory/operations?tab=adjustments',
                   icon: ClipboardCheck,
                 },
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },

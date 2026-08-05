@@ -61,7 +61,7 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
 
     // Branch Manager confirms
     await switchTo(page, MANAGER_EMAIL)
-    await gotoReady(page, '/inventory/adjustments')
+    await gotoReady(page, '/inventory/operations?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
     await expect(ownRow.getByText('Submitted', { exact: true })).toBeVisible()
@@ -74,7 +74,7 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
 
     // Inventory role moves it into investigation
     await switchTo(page, INVENTORY_EMAIL)
-    await gotoReady(page, '/inventory/adjustments')
+    await gotoReady(page, '/inventory/operations?tab=adjustments')
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
     await ownRow.getByRole('button', { name: 'Open' }).click()
     await expect(detailHeading).toBeVisible({ timeout: 10_000 })
@@ -83,7 +83,7 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
 
     // Accountant approves — posts to stock/GL
     await switchTo(page, ACCOUNTING_EMAIL)
-    await gotoReady(page, '/inventory/adjustments')
+    await gotoReady(page, '/inventory/operations?tab=adjustments')
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
     await ownRow.getByRole('button', { name: 'Open' }).click()
     await expect(detailHeading).toBeVisible({ timeout: 10_000 })
@@ -108,7 +108,7 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
     await page.request.patch(`/api/inventory/adjustments/${id}/investigate`)
 
     await switchTo(page, ACCOUNTING_EMAIL)
-    await gotoReady(page, '/inventory/adjustments')
+    await gotoReady(page, '/inventory/operations?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
     await ownRow.getByRole('button', { name: 'Open' }).click()
@@ -134,7 +134,7 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { adjustmentNumber } = await createAdjustment(page)
 
-    await gotoReady(page, '/inventory/adjustments')
+    await gotoReady(page, '/inventory/operations?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
     await ownRow.getByRole('button', { name: 'Open' }).click()

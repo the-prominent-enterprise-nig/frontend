@@ -29,7 +29,7 @@ export async function confirmAdjustment(id: string): Promise<ApiResponse<unknown
     }
   }
 
-  revalidatePath('/inventory/adjustments')
+  revalidatePath('/inventory/operations')
 
   return { success: true, data: result.data, message: 'Adjustment confirmed' }
 }
