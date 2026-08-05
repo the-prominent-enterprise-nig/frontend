@@ -109,7 +109,7 @@ export default function AccountMappingPanel() {
   const seedPH = async () => {
     if (
       !confirm(
-        'This will create the standard PH chart of accounts and auto-configure account mappings. Continue?'
+        "This will create NIG's real chart of accounts (~155 Revenue/Cost of Sales/Expense accounts) and auto-configure the account mappings we have real matches for. Continue?"
       )
     )
       return
@@ -150,7 +150,7 @@ export default function AccountMappingPanel() {
             disabled={seeding}
             className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-lg disabled:opacity-50"
           >
-            <Sparkles className="w-4 h-4" /> {seeding ? 'Seeding...' : 'Seed PH Defaults'}
+            <Sparkles className="w-4 h-4" /> {seeding ? 'Seeding...' : 'Seed NIG Accounts'}
           </button>
           <button
             onClick={save}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Fragment, useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search,
   Plus,
@@ -103,11 +103,6 @@ import type {
   InstallmentPreview,
 } from '@/src/schema/pos'
 
-// Scenario 03, Part 3 — "Reserve" is a checkout-page-local mode only. It
-// never becomes a real PosTransaction.invoiceType, so it's deliberately not
-// added to the shared PosInvoiceType union — widened here instead.
-type CheckoutMode = PosInvoiceType | 'reserve'
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface LookupItem {
@@ -163,6 +158,12 @@ interface CartLine {
    * Price Use change must not silently clobber this. */
   priceOverrideBy?: string | null
   priceOverrideApproverName?: string
+  /** Per-line payment mode — a cart can mix cash/charge/installment lines.
+   * Defaults to 'cash' when unset. Installment lines carry their own
+   * financingTermId + down payment, independent of every other line. */
+  invoiceType?: PosInvoiceType
+  financingTermId?: string
+  downPaymentInput?: string
 }
 
 interface PaymentRow {
@@ -293,7 +294,7 @@ export default function CheckoutPage() {
 
   // Item search
   const [searchQuery, setSearchQuery] = useState('')
-  const [catalogViewMode, setCatalogViewMode] = useState<'grid' | 'list'>('grid')
+  const [catalogViewMode, setCatalogViewMode] = useState<'grid' | 'list'>('list')
   // Serial-number search from the same box — the item catalog is preloaded
   // client-side, but serials aren't (there can be thousands), so this is a
   // separate debounced backend call merged into displayItems.
@@ -376,20 +377,27 @@ export default function CheckoutPage() {
     import('@/src/schema/pos').PaymentMethodConfig[]
   >([])
 
-  // Invoice type: 'cash' (pay now at POS) | 'charge' (create AR invoice, pay later)
-  // | 'installment' (down payment now + the rest financed into an AR schedule)
-  // | 'reserve' (Scenario 03 — reserve one item by SKU, no serial required yet,
-  //   with an optional deposit; never creates a PosTransaction at all)
-  const [invoiceType, setInvoiceType] = useState<CheckoutMode>('cash')
+  // Sale mode: 'sale' is a normal checkout, where each cart line picks its
+  // own Cash / Charge / Installment mode independently (a cart can mix all
+  // three). 'reserve' (Scenario 03 — reserve one item by SKU, no serial
+  // required yet, with an optional deposit) stays a separate, whole-cart,
+  // single-item mode that never creates a PosTransaction at all — kept as
+  // its own top-level toggle since it isn't a payment mode a line can pick.
+  const [saleMode, setSaleMode] = useState<'sale' | 'reserve'>('sale')
   const [chargeDueDays, setChargeDueDays] = useState(30)
 
-  // Installment financing
+  // Installment financing — financingTerms is shared (fetched once), but
+  // the term/down-payment/preview a cashier picks are per cart LINE now,
+  // not one global selection, so a cart can finance different items under
+  // different terms. Keyed by CartLine.lineId.
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
-  const [financingTermId, setFinancingTermId] = useState('')
-  const [downPaymentInput, setDownPaymentInput] = useState('0')
-  const [installmentPreview, setInstallmentPreview] = useState<InstallmentPreview | null>(null)
-  const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState(false)
-  const installmentPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [installmentPreviews, setInstallmentPreviews] = useState<
+    Record<string, InstallmentPreview | null>
+  >({})
+  const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState<
+    Record<string, boolean>
+  >({})
+  const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -466,8 +474,15 @@ export default function CheckoutPage() {
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    invoiceType?: PosInvoiceType
-    installmentPreview?: InstallmentPreview | null
+    // Per-line outcome — a cart can mix cash/charge/installment lines, so
+    // there's no single invoiceType/installmentPreview for the whole sale
+    // anymore. Empty for an offline-buffered sale (always pure cash).
+    lineOutcomes: {
+      lineId: string
+      itemName: string
+      invoiceType: PosInvoiceType
+      installmentPreview?: InstallmentPreview | null
+    }[]
   } | null>(null)
 
   // Pending manager approval (serial-tracked sale awaiting Release Form review)
@@ -606,10 +621,17 @@ export default function CheckoutPage() {
   }, [])
 
   // Load Price Use types for the sale-level selector — data-driven, not a
-  // hardcoded list, since these are user-managed (Inventory > Price Use Types)
+  // hardcoded list, since these are user-managed (Inventory > Price Use Types).
+  // Defaults the selection to WIP (Walk-In Price) when present — the only
+  // Price Use with full price-list coverage today and the one a walk-in
+  // cash/installment sale should use unless the cashier picks otherwise.
   useEffect(() => {
     getPosPriceUseTypes().then((res) => {
-      if (res.success && Array.isArray(res.data)) setPriceUseTypes(res.data)
+      if (res.success && Array.isArray(res.data)) {
+        setPriceUseTypes(res.data)
+        const wip = res.data.find((t) => t.name === 'WIP')
+        if (wip) setPriceUseTypeId((prev) => prev || wip.id)
+      }
     })
   }, [])
 
@@ -797,18 +819,23 @@ export default function CheckoutPage() {
     // through here.
     const source = catalogItems.filter((item) => !item.isBundle || item.isSerialTracked)
     const q = searchQuery.trim().toLowerCase()
-    if (!q) return source
-    const serialMatchedItemIds = new Set(
-      serialSearchResults.map((s) => s.item?.id).filter((id): id is string => !!id)
-    )
-    return source.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        item.sku?.toLowerCase().includes(q) ||
-        item.barcode?.toLowerCase().includes(q) ||
-        item.brandName?.toLowerCase().includes(q) ||
-        serialMatchedItemIds.has(item.id)
-    )
+    let filtered = source
+    if (q) {
+      const serialMatchedItemIds = new Set(
+        serialSearchResults.map((s) => s.item?.id).filter((id): id is string => !!id)
+      )
+      filtered = source.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          item.sku?.toLowerCase().includes(q) ||
+          item.barcode?.toLowerCase().includes(q) ||
+          item.brandName?.toLowerCase().includes(q) ||
+          serialMatchedItemIds.has(item.id)
+      )
+    }
+    // Priced items first — unpriced parts (needing a manager override) sort
+    // to the bottom instead of interrupting the browsable, sellable catalog.
+    return [...filtered].sort((a, b) => (a.price > 0 ? 0 : 1) - (b.price > 0 ? 0 : 1))
   }, [catalogItems, searchQuery, serialSearchResults])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
@@ -841,16 +868,48 @@ export default function CheckoutPage() {
   const subtotal = rawSubtotal + additiveTax
 
   const totalAmount = Math.max(0, Math.round((subtotal - promoDiscount) * 100) / 100)
+
+  // ─── Per-line mode groupings ────────────────────────────────────────────
+  // A cart can mix cash/charge/installment lines. cash is the default for
+  // any line that hasn't explicitly picked charge/installment.
+  const cashCartLines = cart.filter((l) => (l.invoiceType ?? 'cash') === 'cash')
+  const chargeCartLines = cart.filter((l) => l.invoiceType === 'charge')
+  const installmentCartLines = cart.filter((l) => l.invoiceType === 'installment')
+  const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
+
+  // What's actually collectible at POS right now: cash-mode lines' full
+  // value (net of promo discount, prorated by the cash lines' share of the
+  // cart — for an all-cash cart that share is 1, so this reduces to exactly
+  // the old subtotal-minus-discount total) plus every installment line's
+  // own down payment. Charge-mode lines are excluded entirely (billed later
+  // via AR) and an installment line's financed remainder is excluded too
+  // (billed via its own schedule).
+  const cashLinesGross =
+    Math.round(
+      cashCartLines.reduce(
+        (s, l) => s + displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity,
+        0
+      ) * 100
+    ) / 100
+  const cashShareOfPromo = subtotal > 0 ? Math.min(1, cashLinesGross / subtotal) * promoDiscount : 0
+  const cashLinesTotal = Math.max(0, Math.round((cashLinesGross - cashShareOfPromo) * 100) / 100)
+  const installmentDownPaymentsTotal =
+    Math.round(
+      installmentCartLines.reduce((s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0), 0) *
+        100
+    ) / 100
+  const tenderTarget = Math.round((cashLinesTotal + installmentDownPaymentsTotal) * 100) / 100
+
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
-  const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
+  const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
+  const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
 
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
   // and "remaining at fulfilment" figure must track that instead of the
   // shared VAT/promo-inclusive totalAmount above.
   const reserveValue =
-    invoiceType === 'reserve' && cart.length === 1
+    saleMode === 'reserve' && cart.length === 1
       ? Math.round(cart[0].unitPrice * cart[0].quantity * 100) / 100
       : 0
   const reserveBalance = Math.max(0, Math.round((reserveValue - totalPaid) * 100) / 100)
@@ -871,32 +930,67 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
-  // ─── Installment financing ─────────────────────────────────────────────────
+  // ─── Installment financing (per-line) ──────────────────────────────────────
 
   useEffect(() => {
-    if (invoiceType !== 'installment') return
+    if (saleMode !== 'sale' || installmentCartLines.length === 0) return
     getActiveFinancingTerms(activeBranchId ?? undefined).then((res) => {
       setFinancingTerms(res.data ?? [])
     })
-  }, [invoiceType, activeBranchId])
+    // Only re-fetch when a line first enters installment mode, not on every
+    // keystroke — length-gated intentionally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, activeBranchId, installmentCartLines.length > 0])
+
+  // One debounced preview per installment line, keyed by lineId — each line
+  // has its own amount/term/down-payment, so each gets its own preview call
+  // (POST /pos/financing-terms/preview is already single-amount-scoped, no
+  // backend change needed to call it once per line instead of once per cart).
+  const installmentLinesDepKey = installmentCartLines
+    .map(
+      (l) =>
+        `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
+    )
+    .join('|')
 
   useEffect(() => {
-    if (invoiceType !== 'installment' || !financingTermId || totalAmount <= 0) {
-      setInstallmentPreview(null)
-      return
+    for (const line of installmentCartLines) {
+      const lineAmount =
+        Math.round(
+          displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity * 100
+        ) / 100
+      const financingTermId = line.financingTermId
+      if (!financingTermId || lineAmount <= 0) {
+        setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
+        continue
+      }
+      if (installmentPreviewTimers.current[line.lineId]) {
+        clearTimeout(installmentPreviewTimers.current[line.lineId])
+      }
+      installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
+        setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
+        const downPayment = parseFloat(line.downPaymentInput ?? '0') || 0
+        const res = await previewInstallment({
+          totalAmount: lineAmount,
+          downPayment,
+          financingTermId,
+        })
+        setInstallmentPreviews((prev) => ({
+          ...prev,
+          [line.lineId]: res.success ? (res.data ?? null) : null,
+        }))
+        setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: false }))
+      }, 300)
     }
-    if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
-    installmentPreviewTimer.current = setTimeout(async () => {
-      setInstallmentPreviewLoading(true)
-      const downPayment = parseFloat(downPaymentInput) || 0
-      const res = await previewInstallment({ totalAmount, downPayment, financingTermId })
-      setInstallmentPreview(res.success ? (res.data ?? null) : null)
-      setInstallmentPreviewLoading(false)
-    }, 300)
-    return () => {
-      if (installmentPreviewTimer.current) clearTimeout(installmentPreviewTimer.current)
+    const activeLineIds = new Set(installmentCartLines.map((l) => l.lineId))
+    for (const lineId of Object.keys(installmentPreviewTimers.current)) {
+      if (!activeLineIds.has(lineId)) {
+        clearTimeout(installmentPreviewTimers.current[lineId])
+        delete installmentPreviewTimers.current[lineId]
+      }
     }
-  }, [invoiceType, financingTermId, downPaymentInput, totalAmount])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installmentLinesDepKey])
 
   // ─── Push cart to customer display ────────────────────────────────────────
 
@@ -968,7 +1062,7 @@ export default function CheckoutPage() {
     // quantity, no serial required — treat every item as plain SKU+qty and
     // cap the cart at a single line (a new pick replaces it, matching this
     // page's no-toast convention of just updating the visible state).
-    const isReserveMode = invoiceType === 'reserve'
+    const isReserveMode = saleMode === 'reserve'
     const lineId = crypto.randomUUID()
     setCart((prev) => {
       const existing = prev.find((l) => l.itemId === item.id)
@@ -1047,9 +1141,43 @@ export default function CheckoutPage() {
   // isSerialTracked: false while in reserve mode) — a stale cart from a
   // different mode could silently skip serial selection or trip the
   // reserve mode's exactly-one-line check, so switching modes clears it.
-  function handleInvoiceTypeChange(mode: CheckoutMode) {
-    if (mode !== invoiceType) setCart([])
-    setInvoiceType(mode)
+  function handleSaleModeChange(mode: 'sale' | 'reserve') {
+    if (mode !== saleMode) setCart([])
+    setSaleMode(mode)
+  }
+
+  // Per-line payment mode (cash/charge/installment) — switching a line away
+  // from installment clears its financing term/down-payment so stale state
+  // doesn't linger if it's switched back later.
+  // lineIds accepts an array so a displayed row that collapses several
+  // physical-unit CartLines (grouped serial-tracked items, same item/qty>1)
+  // updates them all together — a customer doesn't split identical units of
+  // one item across different payment modes within a single row.
+  function setLineInvoiceType(lineIds: string | string[], mode: PosInvoiceType) {
+    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? {
+              ...l,
+              invoiceType: mode,
+              ...(mode !== 'installment'
+                ? { financingTermId: undefined, downPaymentInput: undefined }
+                : {}),
+            }
+          : l
+      )
+    )
+  }
+
+  function setLineFinancingTermId(lineIds: string | string[], financingTermId: string) {
+    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
+    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, financingTermId } : l)))
+  }
+
+  function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
+    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
+    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
   }
 
   function setQty(itemId: string, qty: number) {
@@ -1276,7 +1404,7 @@ export default function CheckoutPage() {
 
     // Reserve mode never creates a PosTransaction — its own submit path,
     // bypassing every transaction-specific check/branch below.
-    if (invoiceType === 'reserve') {
+    if (saleMode === 'reserve') {
       return handleConfirmReserve()
     }
 
@@ -1285,38 +1413,35 @@ export default function CheckoutPage() {
       return
     }
 
-    if (invoiceType === 'charge') {
+    if (hasChargeOrInstallmentLine) {
       if (!selectedCustomer) {
-        setError('A customer must be selected to issue a charge invoice.')
+        setError('A customer must be selected — this cart has a charge or installment item.')
         return
       }
       if (isOffline) {
-        setError('Charge invoices require an active network connection.')
+        setError('Charge and installment items require an active network connection.')
         return
       }
-    } else if (invoiceType === 'installment') {
-      if (!selectedCustomer) {
-        setError('A customer must be selected for an installment sale.')
+    } else if (!selectedCustomer) {
+      setError('A customer must be selected before completing a sale.')
+      return
+    }
+
+    const lineMissingTerm = installmentCartLines.find((l) => !l.financingTermId)
+    if (lineMissingTerm) {
+      setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
+      return
+    }
+    for (const l of installmentCartLines) {
+      const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
+      const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
+      if (downPayment < 0 || downPayment > lineAmount) {
+        setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
         return
       }
-      if (!financingTermId) {
-        setError('Select a financing term for this installment sale.')
-        return
-      }
-      const downPayment = parseFloat(downPaymentInput) || 0
-      if (downPayment < 0 || downPayment > totalAmount) {
-        setError('Down payment must be between 0 and the total sale amount.')
-        return
-      }
-      if (isOffline) {
-        setError('Installment sales require an active network connection.')
-        return
-      }
-    } else {
-      if (!selectedCustomer) {
-        setError('A customer must be selected before completing a sale.')
-        return
-      }
+    }
+
+    if (tenderTarget > 0) {
       if (payments.length === 0) {
         setError('Add at least one payment method.')
         return
@@ -1382,6 +1507,7 @@ export default function CheckoutPage() {
         change,
         loyaltyEarned: false,
         offlineBuffered: true,
+        lineOutcomes: [],
       })
       return
     }
@@ -1399,12 +1525,12 @@ export default function CheckoutPage() {
         const txRes = await createTransaction({
           sessionId,
           transactionType: 'sale',
-          invoiceType,
+          // No transaction-level invoiceType/financingTermId/downPayment —
+          // every line below sends its own explicit invoiceType, so the
+          // backend's transaction-level fallback (for older/other callers)
+          // never needs to apply here.
           priceUseTypeId: priceUseTypeId || undefined,
-          chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
-          financingTermId: invoiceType === 'installment' ? financingTermId : undefined,
-          downPayment:
-            invoiceType === 'installment' ? parseFloat(downPaymentInput) || 0 : undefined,
+          chargeDueDays: chargeCartLines.length > 0 ? chargeDueDays : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1430,6 +1556,12 @@ export default function CheckoutPage() {
             secondarySerialNumberId: l.secondarySerialNumberId,
             priceListItemId: l.priceListItemId ?? undefined,
             priceOverride: l.priceOverrideBy ? true : undefined,
+            invoiceType: l.invoiceType ?? 'cash',
+            financingTermId: l.invoiceType === 'installment' ? l.financingTermId : undefined,
+            downPayment:
+              l.invoiceType === 'installment'
+                ? parseFloat(l.downPaymentInput ?? '0') || 0
+                : undefined,
           })),
         })
 
@@ -1537,8 +1669,12 @@ export default function CheckoutPage() {
         txData = txRes.data
       }
 
-      if (invoiceType === 'cash') {
-        let remaining = totalAmount
+      if (tenderTarget > 0) {
+        // Covers both the cash-mode lines' total and every installment
+        // line's down payment in one pass — the backend's addPayment()
+        // allocates a single lump-sum tender across whichever of those
+        // applies (see TransactionsService.allocatePayments).
+        let remaining = tenderTarget
         for (const p of payments.filter((p) => p.amount > 0)) {
           const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
           if (actualAmount <= 0) break
@@ -1574,7 +1710,7 @@ export default function CheckoutPage() {
         )
         const redeemRes = await redeemPoints(loyaltyAccount.id, {
           points: pointsToRedeem,
-          orderTotal: totalAmount,
+          orderTotal: tenderTarget,
           posTransactionId: txId,
         })
         if (!redeemRes.success) {
@@ -1588,10 +1724,10 @@ export default function CheckoutPage() {
       let loyaltyEarned = false
       if (loyaltyAccount) {
         try {
-          const pointsEarned = Math.floor(totalAmount * (loyaltyProgram?.pointsPerUnit ?? 1))
+          const pointsEarned = Math.floor(tenderTarget * (loyaltyProgram?.pointsPerUnit ?? 1))
           const earnRes = await earnPoints(loyaltyAccount.id, {
             points: pointsEarned,
-            transactionAmount: totalAmount,
+            transactionAmount: tenderTarget,
             posTransactionId: txId,
           })
           loyaltyEarned = !!earnRes.success
@@ -1623,8 +1759,13 @@ export default function CheckoutPage() {
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
-        invoiceType,
-        installmentPreview: invoiceType === 'installment' ? installmentPreview : null,
+        lineOutcomes: cart.map((l) => ({
+          lineId: l.lineId,
+          itemName: l.itemName,
+          invoiceType: l.invoiceType ?? 'cash',
+          installmentPreview:
+            l.invoiceType === 'installment' ? (installmentPreviews[l.lineId] ?? null) : null,
+        })),
       })
     } catch (err) {
       console.error('[POS] handleConfirm error:', err)
@@ -1655,14 +1796,16 @@ export default function CheckoutPage() {
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
-    setPriceUseTypeId('')
+    // Re-default to WIP rather than clearing to unselected — matches the
+    // initial-load default so the next sale doesn't start with every line
+    // unpriced.
+    setPriceUseTypeId(priceUseTypes.find((t) => t.name === 'WIP')?.id ?? '')
     setPriceOverrideTargetLineId(null)
     setFromTab(null)
-    setInvoiceType('cash')
+    setSaleMode('sale')
     setChargeDueDays(30)
-    setFinancingTermId('')
-    setDownPaymentInput('0')
-    setInstallmentPreview(null)
+    setInstallmentPreviews({})
+    setInstallmentPreviewLoading({})
     localStorage.removeItem(POS_FROM_TAB_KEY)
     setCancellationReqId(null)
     if (cancellationPollRef.current) {
@@ -2138,162 +2281,166 @@ export default function CheckoutPage() {
                     const isGrouped = groupQty > 1
 
                     return (
-                      <tr key={line.lineId} className="group hover:bg-gray-50">
-                        <td className="px-4 py-2">
-                          <p className="text-xs font-medium text-gray-900">
-                            {line.itemName}
-                            {isGrouped && <span className="ml-1 text-gray-400">× {groupQty}</span>}
-                          </p>
-                          {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
-                          {line.isSerialTracked &&
-                            (isGrouped ? (
-                              group.some((l) => !l.serialNumberId) ? (
-                                <button
-                                  onClick={() =>
-                                    setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
-                                  }
-                                  className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
-                                >
-                                  ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
-                                  serial{groupQty !== 1 ? 's' : ''} needed
-                                </button>
+                      <Fragment key={line.lineId}>
+                        <tr className="group hover:bg-gray-50">
+                          <td className="px-4 py-2">
+                            <p className="text-xs font-medium text-gray-900">
+                              {line.itemName}
+                              {isGrouped && (
+                                <span className="ml-1 text-gray-400">× {groupQty}</span>
+                              )}
+                            </p>
+                            {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                            {line.isSerialTracked &&
+                              (isGrouped ? (
+                                group.some((l) => !l.serialNumberId) ? (
+                                  <button
+                                    onClick={() =>
+                                      setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
+                                    }
+                                    className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
+                                  >
+                                    ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
+                                    serial{groupQty !== 1 ? 's' : ''} needed
+                                  </button>
+                                ) : (
+                                  <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
+                                    <span className="text-gray-400">SN:</span>
+                                    {group.map((l, i) => (
+                                      <button
+                                        key={l.lineId}
+                                        onClick={() => setSerialPickerTarget(l)}
+                                        className="font-medium text-green-600 underline-offset-2 hover:underline"
+                                      >
+                                        {l.serialNumberLabel}
+                                        {i < group.length - 1 ? ',' : ''}
+                                      </button>
+                                    ))}
+                                  </p>
+                                )
                               ) : (
-                                <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
-                                  <span className="text-gray-400">SN:</span>
-                                  {group.map((l, i) => (
-                                    <button
-                                      key={l.lineId}
-                                      onClick={() => setSerialPickerTarget(l)}
-                                      className="font-medium text-green-600 underline-offset-2 hover:underline"
-                                    >
-                                      {l.serialNumberLabel}
-                                      {i < group.length - 1 ? ',' : ''}
-                                    </button>
-                                  ))}
-                                </p>
-                              )
+                                <button
+                                  onClick={() => setSerialPickerTarget(line)}
+                                  className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                                >
+                                  {line.serialNumberId
+                                    ? `SN: ${line.serialNumberLabel}`
+                                    : '⚠ Select serial'}
+                                </button>
+                              ))}
+                            {lineTaxRate != null ? (
+                              <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                                {line.taxRate == null
+                                  ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                  : `VAT ${lineTaxRate}%`}
+                              </span>
                             ) : (
-                              <button
-                                onClick={() => setSerialPickerTarget(line)}
-                                className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                              >
-                                {line.serialNumberId
-                                  ? `SN: ${line.serialNumberLabel}`
-                                  : '⚠ Select serial'}
-                              </button>
-                            ))}
-                          {lineTaxRate != null ? (
-                            <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
-                              {line.taxRate == null
-                                ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
-                                : `VAT ${lineTaxRate}%`}
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
-                              No Tax
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() =>
-                                line.isSerialTracked
-                                  ? removeLastUnitOfItem(line.itemId)
-                                  : line.allowDecimal
-                                    ? removeFromCart(line.itemId)
-                                    : setQty(line.itemId, line.quantity - 1)
-                              }
-                              disabled={!!cancellationReqId}
-                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                            >
-                              <Minus size={10} />
-                            </button>
-                            {line.allowDecimal ? (
-                              <div className="flex flex-col items-center gap-0.5">
-                                <input
-                                  type="number"
-                                  min="0.001"
-                                  step="0.1"
-                                  value={line.quantity}
-                                  onChange={(e) => {
-                                    const v = parseFloat(e.target.value)
-                                    if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                  }}
-                                  className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                />
-                                {line.uomCode && (
-                                  <span className="text-[9px] text-gray-400 uppercase">
-                                    {line.uomCode}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="w-6 text-center text-xs font-semibold">
-                                {line.isSerialTracked ? groupQty : line.quantity}
+                              <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
+                                No Tax
                               </span>
                             )}
-                            <button
-                              onClick={() =>
-                                line.isSerialTracked
-                                  ? addUnitOfItem(line.itemId)
-                                  : line.allowDecimal
-                                    ? setMeasuredItem({
-                                        id: line.itemId,
-                                        name: line.itemName,
-                                        sku: line.sku,
-                                        price: line.unitPrice,
-                                        taxRate: line.taxRate,
-                                        uomCode: line.uomCode,
-                                        allowDecimal: true,
-                                      })
-                                    : setQty(line.itemId, line.quantity + 1)
-                              }
-                              className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
-                            >
-                              <Plus size={10} />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                          {line.priceResolved ? (
-                            <div className="flex flex-col items-end gap-0.5">
-                              {fmt(
-                                displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                                  groupQty
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() =>
+                                  line.isSerialTracked
+                                    ? removeLastUnitOfItem(line.itemId)
+                                    : line.allowDecimal
+                                      ? removeFromCart(line.itemId)
+                                      : setQty(line.itemId, line.quantity - 1)
+                                }
+                                disabled={!!cancellationReqId}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
+                              >
+                                <Minus size={10} />
+                              </button>
+                              {line.allowDecimal ? (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <input
+                                    type="number"
+                                    min="0.001"
+                                    step="0.1"
+                                    value={line.quantity}
+                                    onChange={(e) => {
+                                      const v = parseFloat(e.target.value)
+                                      if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                    }}
+                                    className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
+                                  {line.uomCode && (
+                                    <span className="text-[9px] text-gray-400 uppercase">
+                                      {line.uomCode}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="w-6 text-center text-xs font-semibold">
+                                  {line.isSerialTracked ? groupQty : line.quantity}
+                                </span>
                               )}
-                              {line.priceOverrideBy && (
-                                <button
-                                  onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                  className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
-                                  title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
-                                >
-                                  Overridden
-                                </button>
-                              )}
+                              <button
+                                onClick={() =>
+                                  line.isSerialTracked
+                                    ? addUnitOfItem(line.itemId)
+                                    : line.allowDecimal
+                                      ? setMeasuredItem({
+                                          id: line.itemId,
+                                          name: line.itemName,
+                                          sku: line.sku,
+                                          price: line.unitPrice,
+                                          taxRate: line.taxRate,
+                                          uomCode: line.uomCode,
+                                          allowDecimal: true,
+                                        })
+                                      : setQty(line.itemId, line.quantity + 1)
+                                }
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                              >
+                                <Plus size={10} />
+                              </button>
                             </div>
-                          ) : !priceUseTypeId ? (
-                            <span className="text-[10px] font-medium text-gray-400">
-                              — Select Price Use
-                            </span>
-                          ) : (
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
+                            {line.priceResolved ? (
+                              <div className="flex flex-col items-end gap-0.5">
+                                {fmt(
+                                  displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                    groupQty
+                                )}
+                                {line.priceOverrideBy && (
+                                  <button
+                                    onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                                    className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
+                                    title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
+                                  >
+                                    Overridden
+                                  </button>
+                                )}
+                              </div>
+                            ) : !priceUseTypeId ? (
+                              <span className="text-[10px] font-medium text-gray-400">
+                                — Select Price Use
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                                className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                              >
+                                No price — Override
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">
                             <button
-                              onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                              className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                              onClick={() => removeFromCart(line.itemId)}
+                              className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
                             >
-                              No price — Override
+                              <X size={12} />
                             </button>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => removeFromCart(line.itemId)}
-                            className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-                          >
-                            <X size={12} />
-                          </button>
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+                      </Fragment>
                     )
                   })}
                 </tbody>
@@ -2625,7 +2772,7 @@ export default function CheckoutPage() {
           </div>
 
           {/* Price Use — sale-level selector, drives every line's price */}
-          {invoiceType !== 'reserve' && (
+          {saleMode !== 'reserve' && (
             <div className="border-b border-purple-200 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
                 Price Use
@@ -2712,55 +2859,30 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Invoice Type */}
+          {/* Sale Mode — each cart line below picks its own Cash / Charge /
+              Installment mode; Reserve stays a separate whole-cart mode. */}
           <div className="border-t border-purple-200 px-5 py-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Invoice Type
+              Sale Mode
             </p>
             <div className="flex gap-2">
               <button
-                onClick={() => handleInvoiceTypeChange('cash')}
+                onClick={() => handleSaleModeChange('sale')}
                 className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors active:scale-[0.97] ${
-                  invoiceType === 'cash'
+                  saleMode === 'sale'
                     ? 'border-purple-500 bg-purple-200 text-purple-700'
                     : 'border-purple-200 bg-white text-gray-700 hover:border-purple-300'
                 }`}
               >
-                Cash Invoice
+                Sale
                 <span className="mt-0.5 block text-[10px] font-normal opacity-70">
-                  Pay now at checkout
+                  Cash / charge / installment per item
                 </span>
               </button>
               <button
-                onClick={() => handleInvoiceTypeChange('charge')}
+                onClick={() => handleSaleModeChange('reserve')}
                 className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors active:scale-[0.97] ${
-                  invoiceType === 'charge'
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-purple-200 bg-white text-gray-700 hover:border-purple-300'
-                }`}
-              >
-                Charge Invoice
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
-                  Bill to customer account
-                </span>
-              </button>
-              <button
-                onClick={() => handleInvoiceTypeChange('installment')}
-                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors active:scale-[0.97] ${
-                  invoiceType === 'installment'
-                    ? 'border-prominent-purple-500 bg-prominent-purple-50 text-prominent-purple-700'
-                    : 'border-purple-200 bg-white text-gray-700 hover:border-purple-300'
-                }`}
-              >
-                Installment
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
-                  Down payment + financed schedule
-                </span>
-              </button>
-              <button
-                onClick={() => handleInvoiceTypeChange('reserve')}
-                className={`flex-1 rounded-xl border py-2.5 text-xs font-semibold transition-colors active:scale-[0.97] ${
-                  invoiceType === 'reserve'
+                  saleMode === 'reserve'
                     ? 'border-amber-500 bg-amber-50 text-amber-700'
                     : 'border-purple-200 bg-white text-gray-700 hover:border-purple-300'
                 }`}
@@ -2771,7 +2893,7 @@ export default function CheckoutPage() {
                 </span>
               </button>
             </div>
-            {invoiceType === 'reserve' && (
+            {saleMode === 'reserve' && (
               <div className="mt-2.5 space-y-2">
                 {!selectedCustomer && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -2784,105 +2906,135 @@ export default function CheckoutPage() {
                 </p>
               </div>
             )}
-            {invoiceType === 'charge' && (
-              <div className="mt-2.5 space-y-2">
-                {!selectedCustomer && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    A customer must be selected to issue a charge invoice.
-                  </p>
-                )}
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-700 whitespace-nowrap">Due in</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={chargeDueDays}
-                    onChange={(e) => setChargeDueDays(Math.max(1, parseInt(e.target.value) || 30))}
-                    className="w-20 rounded-lg border border-purple-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                  />
-                  <label className="text-xs text-gray-700">days</label>
-                </div>
+            {saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer && (
+              <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                A customer must be selected — this cart has a charge or installment item.
+              </p>
+            )}
+            {saleMode === 'sale' && chargeCartLines.length > 0 && (
+              <div className="mt-2.5 flex items-center gap-2">
+                <label className="text-xs text-gray-700 whitespace-nowrap">
+                  Charge items due in
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={chargeDueDays}
+                  onChange={(e) => setChargeDueDays(Math.max(1, parseInt(e.target.value) || 30))}
+                  className="w-20 rounded-lg border border-purple-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+                <label className="text-xs text-gray-700">days</label>
               </div>
             )}
-            {invoiceType === 'installment' && (
-              <div className="mt-2.5 space-y-2">
-                {!selectedCustomer && (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    A customer must be selected for an installment sale.
-                  </p>
-                )}
-                <div>
-                  <label className="mb-1 block text-[11px] text-gray-700">Financing Term</label>
-                  <div className="relative">
-                    <select
-                      value={financingTermId}
-                      onChange={(e) => setFinancingTermId(e.target.value)}
-                      className="w-full appearance-none rounded-lg border border-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                    >
-                      <option value="">Select a term…</option>
-                      {financingTerms.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
-                          {t.branch ? ` · ${t.branch.name}` : ' · Tenant-wide'}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown
-                      size={12}
-                      className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-700 whitespace-nowrap">Down payment</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    max={totalAmount}
-                    value={downPaymentInput}
-                    onChange={(e) => setDownPaymentInput(e.target.value)}
-                    className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                  />
-                </div>
-                {financingTermId && (
-                  <div className="rounded-lg bg-prominent-purple-50 px-3 py-2 text-xs text-prominent-purple-700">
-                    {installmentPreviewLoading ? (
-                      <span className="flex items-center gap-1.5">
-                        <Loader2 size={11} className="animate-spin" /> Calculating…
-                      </span>
-                    ) : installmentPreview ? (
-                      <div className="space-y-0.5">
-                        <div className="flex justify-between">
-                          <span>Monthly Installment</span>
-                          <span className="font-mono font-semibold">
-                            {fmt(installmentPreview.monthlyInstallment)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Total Payable</span>
-                          <span className="font-mono font-semibold">
-                            {fmt(installmentPreview.totalPayable)}
-                          </span>
-                        </div>
-                        {installmentPreview.lines[0] && (
-                          <div className="flex justify-between opacity-80">
-                            <span>First due</span>
-                            <span>
-                              {new Date(installmentPreview.lines[0].dueDate).toLocaleDateString(
-                                'en-PH',
-                                { month: 'short', day: 'numeric', year: 'numeric' }
-                              )}
-                            </span>
-                          </div>
-                        )}
+
+            {saleMode === 'sale' && cart.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  Item Payment Mode
+                </p>
+                {displayGroups.map((group) => {
+                  const line = group[0]
+                  const groupQty = group.length
+                  const groupLineIds = group.map((l) => l.lineId)
+                  const groupMode = line.invoiceType ?? 'cash'
+                  return (
+                    <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <p className="truncate text-xs font-medium text-gray-800">
+                          {line.itemName}
+                          {groupQty > 1 && <span className="text-gray-400"> × {groupQty}</span>}
+                        </p>
+                        <span className="shrink-0 font-mono text-xs text-gray-500">
+                          {fmt(
+                            displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                              groupQty
+                          )}
+                        </span>
                       </div>
-                    ) : (
-                      <span className="opacity-70">Preview unavailable.</span>
-                    )}
-                  </div>
-                )}
+                      <div className="flex gap-1.5">
+                        {(['cash', 'charge', 'installment'] as PosInvoiceType[]).map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => setLineInvoiceType(groupLineIds, mode)}
+                            className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                              groupMode === mode
+                                ? mode === 'charge'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : mode === 'installment'
+                                    ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                                    : 'bg-purple-200 text-purple-700'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                            }`}
+                          >
+                            {mode === 'cash'
+                              ? 'Cash'
+                              : mode === 'charge'
+                                ? 'Charge'
+                                : 'Installment'}
+                          </button>
+                        ))}
+                      </div>
+                      {groupMode === 'installment' && (
+                        <div className="mt-2 space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <div className="relative flex-1">
+                              <select
+                                value={line.financingTermId ?? ''}
+                                onChange={(e) =>
+                                  setLineFinancingTermId(groupLineIds, e.target.value)
+                                }
+                                className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[11px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                              >
+                                <option value="">Select a term…</option>
+                                {financingTerms.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                              />
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder="Down payment"
+                              value={line.downPaymentInput ?? ''}
+                              onChange={(e) =>
+                                setLineDownPaymentInput(groupLineIds, e.target.value)
+                              }
+                              className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                            />
+                          </div>
+                          {line.financingTermId && (
+                            <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
+                              {installmentPreviewLoading[line.lineId] ? (
+                                <span className="flex items-center gap-1.5">
+                                  <Loader2 size={10} className="animate-spin" /> Calculating…
+                                </span>
+                              ) : installmentPreviews[line.lineId] ? (
+                                <div className="flex items-center justify-between">
+                                  <span>
+                                    {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}/mo
+                                  </span>
+                                  <span className="font-semibold">
+                                    {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="opacity-70">Preview unavailable.</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -2891,9 +3043,9 @@ export default function CheckoutPage() {
           <div className="flex-1 p-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-700">
-                {invoiceType === 'reserve' ? 'Deposit (optional)' : 'Payment'}
+                {saleMode === 'reserve' ? 'Deposit (optional)' : 'Payment'}
               </p>
-              {(invoiceType === 'cash' || invoiceType === 'reserve') && (
+              {(saleMode === 'reserve' || (saleMode === 'sale' && tenderTarget > 0)) && (
                 <button
                   onClick={addPaymentRow}
                   className="flex items-center gap-1 rounded-lg bg-purple-200 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-300"
@@ -2903,45 +3055,48 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {invoiceType === 'charge' ? (
-              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-5 text-center">
-                <Receipt size={20} className="mx-auto mb-2 text-blue-400" />
-                <p className="text-xs font-medium text-blue-700">Charge invoice will be created</p>
-                <p className="mt-1 text-[11px] text-blue-500">
-                  An AR invoice will be posted to the customer&apos;s account. Payment is collected
-                  through Accounts Receivable.
-                </p>
-                {selectedCustomer && (
-                  <p className="mt-2 rounded-lg bg-blue-100 px-3 py-1.5 text-[11px] font-medium text-blue-700">
-                    {customerDisplayName(selectedCustomer)} · Due in {chargeDueDays} day
-                    {chargeDueDays !== 1 ? 's' : ''}
-                  </p>
+            {saleMode === 'sale' && hasChargeOrInstallmentLine && (
+              <div className="mb-3 space-y-2">
+                {chargeCartLines.length > 0 && (
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                    <p className="text-xs font-medium text-blue-700">
+                      {chargeCartLines.length} item{chargeCartLines.length !== 1 ? 's' : ''} billed
+                      to account
+                    </p>
+                    <p className="mt-1 text-[11px] text-blue-500">
+                      One AR invoice for{' '}
+                      {fmt(chargeCartLines.reduce((s, l) => s + lineTotal(l), 0))}, due in{' '}
+                      {chargeDueDays} day{chargeDueDays !== 1 ? 's' : ''} — collected through
+                      Accounts Receivable.
+                    </p>
+                  </div>
+                )}
+                {installmentCartLines.length > 0 && (
+                  <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
+                    <p className="text-xs font-medium text-prominent-purple-700">
+                      {installmentCartLines.length} item
+                      {installmentCartLines.length !== 1 ? 's' : ''} on installment
+                    </p>
+                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                      Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
+                      financed into each item&apos;s own AR schedule.
+                    </p>
+                  </div>
                 )}
               </div>
-            ) : invoiceType === 'installment' ? (
-              <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-5 text-center">
-                <Receipt size={20} className="mx-auto mb-2 text-prominent-purple-400" />
-                <p className="text-xs font-medium text-prominent-purple-700">
-                  Installment plan will be created
-                </p>
-                <p className="mt-1 text-[11px] text-prominent-purple-500">
-                  The down payment (if any) is collected once approved; the rest is financed into an
-                  AR schedule of monthly dues.
-                </p>
-                {selectedCustomer && (
-                  <p className="mt-2 rounded-lg bg-prominent-purple-100 px-3 py-1.5 text-[11px] font-medium text-prominent-purple-700">
-                    {customerDisplayName(selectedCustomer)} · Down payment{' '}
-                    {fmt(parseFloat(downPaymentInput) || 0)}
-                  </p>
-                )}
-              </div>
+            )}
+
+            {saleMode === 'sale' && tenderTarget <= 0 ? (
+              <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
+                Nothing to collect at checkout for this cart.
+              </p>
             ) : payments.length === 0 ? (
               <button
                 onClick={addPaymentRow}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-5 text-sm text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
               >
                 <Plus size={14} />{' '}
-                {invoiceType === 'reserve' ? 'Add deposit (optional)' : 'Add payment method'}
+                {saleMode === 'reserve' ? 'Add deposit (optional)' : 'Add payment method'}
               </button>
             ) : (
               <div className="space-y-2">
@@ -3101,10 +3256,10 @@ export default function CheckoutPage() {
             {payments.length > 0 && (
               <div className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm">
                 <div className="flex justify-between text-gray-700">
-                  <span>{invoiceType === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
+                  <span>{saleMode === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
                   <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
                 </div>
-                {invoiceType === 'reserve' ? (
+                {saleMode === 'reserve' ? (
                   reserveBalance > 0.009 && (
                     <div className="flex items-center justify-between rounded-lg bg-gray-200 px-3 py-2 text-gray-700">
                       <span>Remaining at fulfilment</span>
@@ -3146,73 +3301,88 @@ export default function CheckoutPage() {
                 )}
               </div>
             )}
-            <button
-              onClick={handleConfirm}
-              disabled={
+            {(() => {
+              const anySerialMissing = cart.some(
+                (l) =>
+                  (l.isSerialTracked && !l.serialNumberId) ||
+                  (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+              )
+              const anyInstallmentMissingTerm = installmentCartLines.some((l) => !l.financingTermId)
+              const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
+              const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
+              const priceUseInvalid =
+                saleMode === 'sale' &&
+                cart.length > 0 &&
+                (!priceUseTypeId || cart.some((l) => !l.priceResolved))
+
+              const disabled =
                 submitting ||
                 cart.length === 0 ||
                 !sessionId ||
-                cart.some(
-                  (l) =>
-                    (l.isSerialTracked && !l.serialNumberId) ||
-                    (l.requiresSecondarySerial && !l.secondarySerialNumberId)
-                ) ||
-                (invoiceType === 'cash' &&
-                  (balance > 0.009 || loyaltyOverBalance || !selectedCustomer)) ||
-                (invoiceType === 'charge' && !selectedCustomer) ||
-                (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
-                (invoiceType === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
+                anySerialMissing ||
+                (saleMode === 'sale' &&
+                  ((hasChargeOrInstallmentLine && !selectedCustomer) ||
+                    anyInstallmentMissingTerm ||
+                    balance > 0.009 ||
+                    loyaltyOverBalance ||
+                    (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
+                (saleMode === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
                 (needsManagerOverride && !managerOverrideApproved) ||
-                (invoiceType !== 'reserve' &&
-                  cart.length > 0 &&
-                  (!priceUseTypeId || cart.some((l) => !l.priceResolved)))
-              }
-              className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
-                invoiceType === 'charge'
-                  ? 'bg-blue-600 hover:bg-blue-700'
-                  : invoiceType === 'installment'
-                    ? 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
-                    : invoiceType === 'reserve'
-                      ? 'bg-amber-600 hover:bg-amber-700'
-                      : 'bg-purple-700 hover:bg-purple-800'
-              }`}
-            >
-              {submitting
+                priceUseInvalid
+
+              const label = submitting
                 ? 'Processing…'
                 : cart.length === 0
                   ? 'Add items to continue'
-                  : cart.some(
-                        (l) =>
-                          (l.isSerialTracked && !l.serialNumberId) ||
-                          (l.requiresSecondarySerial && !l.secondarySerialNumberId)
-                      )
+                  : anySerialMissing
                     ? 'Select serial numbers to continue'
-                    : invoiceType === 'charge' && !selectedCustomer
-                      ? 'Select a customer to charge'
-                      : invoiceType === 'installment' && !selectedCustomer
-                        ? 'Select a customer for installment'
-                        : invoiceType === 'installment' && !financingTermId
-                          ? 'Select a financing term'
-                          : invoiceType === 'reserve' && !selectedCustomer
-                            ? 'Select a customer to reserve'
-                            : invoiceType === 'reserve' && cart.length !== 1
-                              ? 'Add one item to reserve'
-                              : invoiceType === 'cash' && balance > 0.009
+                    : saleMode === 'reserve' && !selectedCustomer
+                      ? 'Select a customer to reserve'
+                      : saleMode === 'reserve' && cart.length !== 1
+                        ? 'Add one item to reserve'
+                        : saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer
+                          ? 'Select a customer for this cart'
+                          : saleMode === 'sale' && anyInstallmentMissingTerm
+                            ? 'Select a financing term for every installment item'
+                            : saleMode === 'sale' &&
+                                !hasChargeOrInstallmentLine &&
+                                !selectedCustomer
+                              ? 'Select a customer'
+                              : saleMode === 'sale' && balance > 0.009
                                 ? `Underpaid by ${fmt(balance)}`
-                                : invoiceType === 'cash' && loyaltyOverBalance
+                                : saleMode === 'sale' && loyaltyOverBalance
                                   ? 'Insufficient loyalty points'
                                   : needsManagerOverride && !managerOverrideApproved
                                     ? 'Manager override required'
                                     : cart.some((l) => l.isSerialTracked)
                                       ? `Submit for Approval — ${fmt(totalAmount)}`
-                                      : invoiceType === 'charge'
-                                        ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                        : invoiceType === 'installment'
-                                          ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                          : invoiceType === 'reserve'
-                                            ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                            : `Confirm Sale — ${fmt(totalAmount)}`}
-            </button>
+                                      : saleMode === 'reserve'
+                                        ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                        : allCharge
+                                          ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                          : allInstallment
+                                            ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                            : `Confirm Sale — ${fmt(totalAmount)}`
+
+              const colorClass =
+                saleMode === 'reserve'
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : allInstallment
+                    ? 'bg-prominent-purple-700 hover:bg-prominent-purple-800'
+                    : allCharge
+                      ? 'bg-blue-600 hover:bg-blue-700'
+                      : 'bg-purple-700 hover:bg-purple-800'
+
+              return (
+                <button
+                  onClick={handleConfirm}
+                  disabled={disabled}
+                  className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${colorClass}`}
+                >
+                  {label}
+                </button>
+              )
+            })()}
           </div>
         </div>
       </div>
@@ -3430,11 +3600,16 @@ export default function CheckoutPage() {
 
           // "Also available elsewhere" — informational only, never selectable
           // here (only a Request click can act on it). Collapsed to a count
-          // by default so this section never needs its own scroll; expanding
-          // a branch reveals its individual serials, each independently
-          // requestable, for when the specific unit matters. Excludes
-          // anything already shown in visibleSerials above (a serial
-          // physically in this branch appears in both fetches).
+          // per branch by default so a single unit doesn't dominate the
+          // view; expanding a branch reveals its individual serials, each
+          // independently requestable, for when the specific unit matters.
+          // The branch-row list itself still needs its own bounded scroll —
+          // an item in stock at most of the company's branches previously
+          // rendered every single one, unbounded, dwarfing the rest of the
+          // picker (same max-h-56/overflow-y-auto treatment as "In this
+          // branch" above). Excludes anything already shown in
+          // visibleSerials above (a serial physically in this branch
+          // appears in both fetches).
           const ownIds = new Set(serialNumbers.map((sn) => sn.id))
           const elsewhereByBranch = elsewhereSerials
             .filter((sn) => !ownIds.has(sn.id))
@@ -3580,7 +3755,7 @@ export default function CheckoutPage() {
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                         Also available elsewhere
                       </p>
-                      <div className="space-y-1.5">
+                      <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
                         {Object.entries(elsewhereByBranch).map(([branchLabel, serials]) => {
                           const isActive = expandedBranch === branchLabel
                           return (
@@ -3921,8 +4096,12 @@ function SuccessScreen({
     arInvoiceId?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
-    invoiceType?: PosInvoiceType
-    installmentPreview?: InstallmentPreview | null
+    lineOutcomes: {
+      lineId: string
+      itemName: string
+      invoiceType: PosInvoiceType
+      installmentPreview?: InstallmentPreview | null
+    }[]
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -3979,19 +4158,27 @@ function SuccessScreen({
     setReceiptSent(email || phone)
   }
 
+  const chargeOutcomes = success.lineOutcomes.filter((l) => l.invoiceType === 'charge')
+  const installmentOutcomes = success.lineOutcomes.filter((l) => l.invoiceType === 'installment')
+  const hasChargeOrInstallment = chargeOutcomes.length > 0 || installmentOutcomes.length > 0
+  const allCharge =
+    success.lineOutcomes.length > 0 && chargeOutcomes.length === success.lineOutcomes.length
+  const allInstallment =
+    success.lineOutcomes.length > 0 && installmentOutcomes.length === success.lineOutcomes.length
+
   const borderColor = success.offlineBuffered
     ? 'border-amber-200'
-    : success.invoiceType === 'charge'
+    : allCharge
       ? 'border-blue-100'
-      : success.invoiceType === 'installment'
+      : allInstallment
         ? 'border-prominent-purple-100'
         : 'border-green-100'
 
   const iconBg = success.offlineBuffered
     ? 'bg-amber-100'
-    : success.invoiceType === 'charge'
+    : allCharge
       ? 'bg-blue-100'
-      : success.invoiceType === 'installment'
+      : allInstallment
         ? 'bg-prominent-purple-100'
         : 'bg-green-100'
 
@@ -4007,14 +4194,10 @@ function SuccessScreen({
             <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
               {success.offlineBuffered ? (
                 <WifiOff size={28} className="text-amber-600" />
-              ) : success.invoiceType === 'charge' || success.invoiceType === 'installment' ? (
+              ) : hasChargeOrInstallment ? (
                 <Receipt
                   size={28}
-                  className={
-                    success.invoiceType === 'installment'
-                      ? 'text-prominent-purple-600'
-                      : 'text-blue-600'
-                  }
+                  className={allInstallment ? 'text-prominent-purple-600' : 'text-blue-600'}
                 />
               ) : (
                 <CheckCircle2 size={28} className="text-green-600" />
@@ -4024,21 +4207,23 @@ function SuccessScreen({
               <p className="text-xl font-bold text-gray-900">
                 {success.offlineBuffered
                   ? 'Sale Buffered (Offline)'
-                  : success.invoiceType === 'charge'
+                  : allCharge
                     ? 'Charge Invoice Issued'
-                    : success.invoiceType === 'installment'
+                    : allInstallment
                       ? 'Installment Plan Created'
-                      : 'Sale Complete'}
+                      : hasChargeOrInstallment
+                        ? 'Sale Complete — Mixed'
+                        : 'Sale Complete'}
               </p>
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
-              ) : success.invoiceType === 'charge' ? (
+              ) : hasChargeOrInstallment ? (
                 <p className="mt-1 text-sm text-blue-500">
-                  AR invoice posted — payment due from customer.
-                </p>
-              ) : success.invoiceType === 'installment' ? (
-                <p className="mt-1 text-sm text-prominent-purple-500">
-                  Down payment collected; the rest is financed into an AR schedule.
+                  {chargeOutcomes.length > 0 &&
+                    `${chargeOutcomes.length} item${chargeOutcomes.length !== 1 ? 's' : ''} billed to account`}
+                  {chargeOutcomes.length > 0 && installmentOutcomes.length > 0 && ' · '}
+                  {installmentOutcomes.length > 0 &&
+                    `${installmentOutcomes.length} item${installmentOutcomes.length !== 1 ? 's' : ''} on installment`}
                 </p>
               ) : (
                 <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
@@ -4046,20 +4231,34 @@ function SuccessScreen({
             </div>
           </div>
 
-          {success.invoiceType === 'installment' && success.installmentPreview && (
-            <div className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700">
-              <div className="flex justify-between">
-                <span>Monthly Installment</span>
-                <span className="font-mono font-semibold">
-                  {fmt(success.installmentPreview.monthlyInstallment)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Total Payable</span>
-                <span className="font-mono font-semibold">
-                  {fmt(success.installmentPreview.totalPayable)}
-                </span>
-              </div>
+          {installmentOutcomes.length > 0 && (
+            <div className="space-y-2">
+              {installmentOutcomes.map((o) => (
+                <div
+                  key={o.lineId}
+                  className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
+                >
+                  <p className="mb-1 font-semibold">{o.itemName}</p>
+                  {o.installmentPreview ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span>Monthly Installment</span>
+                        <span className="font-mono font-semibold">
+                          {fmt(o.installmentPreview.monthlyInstallment)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Payable</span>
+                        <span className="font-mono font-semibold">
+                          {fmt(o.installmentPreview.totalPayable)}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="opacity-70">Preview unavailable.</span>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 
@@ -4464,6 +4663,9 @@ function CatalogCard({
       </p>
       {item.sku && <p className="mt-0.5 truncate text-[10px] text-gray-400">{item.sku}</p>}
       <div className="mt-auto pt-2">
+        {item.price <= 0 && (
+          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+        )}
         <div className="flex items-center gap-1.5">
           {item.uomCode && (
             <span className="text-[9px] font-medium text-gray-400 uppercase">
@@ -4536,6 +4738,9 @@ function CatalogListRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {item.price <= 0 && (
+          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+        )}
         {item.uomCode && (
           <p className="text-[9px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
         )}

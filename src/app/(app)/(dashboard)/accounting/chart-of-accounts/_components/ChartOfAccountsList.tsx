@@ -66,7 +66,7 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
   const seedPH = async () => {
     if (
       !confirm(
-        'Seed the standard Philippine Chart of Accounts? This adds ~30 accounts and configures account mappings. Existing accounts with the same numbers will be skipped.'
+        "Seed NIG's real chart of accounts? This adds ~155 Revenue/Cost of Sales/Expense accounts (no Balance Sheet accounts yet) and configures the mappings we have real matches for. Existing accounts with the same numbers will be skipped."
       )
     )
       return
@@ -99,7 +99,7 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
             onClick={seedPH}
             className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-lg"
           >
-            <Sparkles className="w-4 h-4" /> Seed PH Defaults
+            <Sparkles className="w-4 h-4" /> Seed NIG Accounts
           </button>
           <button
             onClick={() => setCreating(true)}
