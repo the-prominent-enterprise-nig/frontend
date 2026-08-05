@@ -50,7 +50,9 @@ export const CountLineSubmitSchema = z.object({
   variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
-  expectedQty: z.number(),
+  // Scenario 19 Part 5 — present only for a serial-level line; matches by
+  // serial instead of item/variant/batch/location.
+  serialNumberId: z.string().optional(),
   countedQty: z.number().min(0, 'Counted quantity cannot be negative'),
 })
 export type CountLineSubmit = z.infer<typeof CountLineSubmitSchema>
@@ -59,6 +61,49 @@ export const SubmitCountFormSchema = z.object({
   lines: z.array(CountLineSubmitSchema).min(1, 'At least one line is required'),
 })
 export type SubmitCountFormValues = z.infer<typeof SubmitCountFormSchema>
+
+// The system-of-record snapshot taken when a count starts — systemQty is
+// never caller-supplied, so the UI only ever displays it, never edits it.
+export const CountLineSnapshotSchema = z.object({
+  id: z.string(),
+  itemId: z.string(),
+  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  variantId: z.string().optional().nullable(),
+  variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
+  batchId: z.string().optional().nullable(),
+  batch: z.object({ id: z.string(), batchNumber: z.string() }).optional().nullable(),
+  locationId: z.string().optional().nullable(),
+  location: z
+    .object({ id: z.string(), code: z.string(), name: z.string().optional().nullable() })
+    .optional()
+    .nullable(),
+  // Scenario 19 Part 5 — set only for a serial-tracked item's line;
+  // systemQty is always 1 (expected present) or 0 (a genuine find start()
+  // couldn't have known about).
+  serialNumberId: z.string().optional().nullable(),
+  serialNumber: z
+    .object({ id: z.string(), serialNumber: z.string(), status: z.string() })
+    .optional()
+    .nullable(),
+  systemQty: z.coerce.number(),
+  countedQty: z.coerce.number().optional().nullable(),
+  countedAt: z.string().optional().nullable(),
+})
+export type CountLineSnapshot = z.infer<typeof CountLineSnapshotSchema>
+
+export const CountLinesResponseSchema = z.array(CountLineSnapshotSchema)
+
+// Scenario 19 Part 1 — a live, persisted "add item not covered by the
+// start-time snapshot" endpoint, distinct from (and simpler than) just
+// submitting a countedQty for an unlisted item at submit() time.
+export const AddCountLineFormSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  variantId: z.string().optional(),
+  batchId: z.string().optional(),
+  locationId: z.string().optional(),
+  serialNumberId: z.string().optional(),
+})
+export type AddCountLineFormValues = z.infer<typeof AddCountLineFormSchema>
 
 const CountWarehouseSchema = z.object({
   id: z.string(),
@@ -100,6 +145,7 @@ export const CreateAdjustmentFormSchema = z.object({
         variantId: z.string().optional(),
         batchId: z.string().optional(),
         locationId: z.string().optional(),
+        serialNumberId: z.string().optional(),
         expectedQty: z.number(),
         actualQty: z.number().min(0),
         unitCost: z.number().min(0).optional(),

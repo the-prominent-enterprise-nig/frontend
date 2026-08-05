@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 
 /**
  * Next dev-mode compiles routes on demand, and this app appears to keep a
@@ -140,6 +140,238 @@ export async function ensureItemStock(
       `ensureItemStock: adjustment failed (${adjustRes.status()}): ${await adjustRes.text()}`
     )
   }
+
+  // Scenario 19 Part 2: an adjustment no longer posts to stock on creation —
+  // it sits 'submitted' until it clears confirm -> investigate -> approve.
+  // This helper needs the stock to actually land, so it drives the chain
+  // itself using the same session (Business Owner storageState bypasses
+  // every step's permission check, same as a real approver would need to
+  // pass through, just without the wait).
+  const { id: adjustmentId } = await adjustRes.json()
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await page.request.patch(`/api/inventory/adjustments/${adjustmentId}/${step}`)
+    if (!stepRes.ok()) {
+      throw new Error(
+        `ensureItemStock: ${step} failed (${stepRes.status()}): ${await stepRes.text()}`
+      )
+    }
+  }
+}
+
+/**
+ * Deletes CRM customers by id, ignoring individual failures — one already-
+ * deleted or unreachable id shouldn't stop the rest of a cleanup batch from
+ * running. Use in `test.afterEach` for whatever a test created, so cleanup
+ * runs regardless of where in the test body an assertion failed (the
+ * previous pattern — cleanup as the literal last lines of the test body —
+ * only ran on a clean pass, which is how the shared dev DB accumulated
+ * hundreds of orphaned test customers; see fix/e2e-test-pollution).
+ */
+export async function deleteCustomers(request: APIRequestContext, ids: string[]): Promise<void> {
+  for (const id of ids) {
+    await request.delete(`/api/crm/customers/${id}`).catch(() => {})
+  }
+}
+
+/**
+ * Deletes any CRM customer whose name starts with `namePrefix` — a self-heal
+ * sweep run in `test.beforeAll` so a prior run that never reached its own
+ * cleanup (a hard crash, or an interruption Playwright's own retry/afterEach
+ * couldn't cover) doesn't leave orphans that compound across every run after
+ * it. `DELETE /crm/customers/:id` is a soft delete already excluded from
+ * `findAll` by default, so sweeping on every run is safe/idempotent.
+ */
+export async function sweepE2ECustomers(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get(
+    `/api/crm/customers?search=${encodeURIComponent(namePrefix)}&limit=100`
+  )
+  if (!res.ok()) return
+  const body = await res.json()
+  const matches = ((body.data ?? []) as { id: string; name: string }[]).filter((c) =>
+    c.name?.startsWith(namePrefix)
+  )
+  await deleteCustomers(
+    request,
+    matches.map((c) => c.id)
+  )
+}
+
+/**
+ * Finds the id of a just-created Service Draft by its exact title. Draft
+ * creation goes through a Next.js Server Action ('use server'), which never
+ * shows up as a client-visible network request — so unlike CRM customer
+ * creation (a plain client-side POST `page.waitForResponse` can intercept),
+ * the id has to be looked up after the fact instead.
+ */
+export async function findServiceDraftIdByTitle(
+  request: APIRequestContext,
+  title: string
+): Promise<string> {
+  const res = await request.get('/api/pos/service-drafts?limit=20')
+  const body = await res.json()
+  const match = ((body.data ?? []) as { id: string; title: string }[]).find(
+    (d) => d.title === title
+  )
+  if (!match) throw new Error(`findServiceDraftIdByTitle: no draft found with title "${title}"`)
+  return match.id
+}
+
+const TERMINAL_SERVICE_DRAFT_STATUSES = ['completed', 'cancelled']
+
+/**
+ * Best-effort: cancels a POS Service Draft if it's still in a cancellable
+ * state (draft/sourcing/installing). Deliberately does NOT try to unwind a
+ * draft a test successfully drove to 'completed' — that's a real record
+ * with real stock-deduction side effects, same as any genuinely completed
+ * job, not something to clean up after. Ignores the 400 the backend
+ * returns for an already-completed/cancelled draft.
+ */
+export async function cancelServiceDraft(request: APIRequestContext, id: string): Promise<void> {
+  await request.post(`/api/pos/service-drafts/${id}/cancel`).catch(() => {})
+}
+
+/**
+ * Self-heal sweep: cancels any leftover, still-cancellable Service Draft
+ * whose title starts with `titlePrefix` — same rationale as
+ * sweepE2ECustomers, for a prior run of these specs that got interrupted
+ * before reaching its own cleanup. No `search` filter exists on this
+ * endpoint's DTO, so this fetches a page of drafts and filters client-side.
+ */
+export async function sweepE2EServiceDrafts(
+  request: APIRequestContext,
+  titlePrefix: string
+): Promise<void> {
+  const res = await request.get('/api/pos/service-drafts?limit=100')
+  if (!res.ok()) return
+  const body = await res.json()
+  const matches = ((body.data ?? []) as { id: string; title: string; status: string }[]).filter(
+    (d) => d.title?.startsWith(titlePrefix) && !TERMINAL_SERVICE_DRAFT_STATUSES.includes(d.status)
+  )
+  for (const d of matches) {
+    await cancelServiceDraft(request, d.id)
+  }
+}
+
+/**
+ * Finds the id of a just-created Stock Transfer by its exact reason text.
+ * Creation goes through a Next.js Server Action ('use server') — see
+ * findServiceDraftIdByTitle's docstring for why that rules out intercepting
+ * the creation request itself.
+ */
+export async function findStockTransferIdByReason(
+  request: APIRequestContext,
+  reason: string
+): Promise<string> {
+  const res = await request.get('/api/inventory/transfers?limit=20')
+  const body = await res.json()
+  const match = ((body.data ?? []) as { id: string; reason: string | null }[]).find(
+    (t) => t.reason === reason
+  )
+  if (!match)
+    throw new Error(`findStockTransferIdByReason: no transfer found with reason "${reason}"`)
+  return match.id
+}
+
+const CANCELLABLE_TRANSFER_STATUSES = ['requested', 'pending_hq_approval', 'draft']
+
+/**
+ * Best-effort: cancels a Stock Transfer request if it's still in a
+ * cancellable state (requested/pending_hq_approval/draft). A transfer a
+ * test drove all the way to accepted/in_transit/received, or to rejected,
+ * is either a real completed movement (received moves real destination
+ * stock) or already terminal — neither is something to unwind here, and the
+ * backend has no action that would anyway. Ignores the 400 the backend
+ * returns for a non-cancellable transfer.
+ */
+export async function cancelStockTransfer(request: APIRequestContext, id: string): Promise<void> {
+  await request.patch(`/api/inventory/transfers/${id}/cancel`).catch(() => {})
+}
+
+/**
+ * Self-heal sweep: cancels any leftover, still-cancellable Stock Transfer
+ * whose reason starts with `reasonPrefix` — same rationale as
+ * sweepE2ECustomers. No `search`/reason filter exists on this endpoint's
+ * DTO, so this fetches a page of transfers and filters client-side.
+ */
+export async function sweepE2EStockTransfers(
+  request: APIRequestContext,
+  reasonPrefix: string
+): Promise<void> {
+  const res = await request.get('/api/inventory/transfers?limit=100')
+  if (!res.ok()) return
+  const body = await res.json()
+  const matches = (
+    (body.data ?? []) as { id: string; reason: string | null; status: string }[]
+  ).filter(
+    (t) => t.reason?.startsWith(reasonPrefix) && CANCELLABLE_TRANSFER_STATUSES.includes(t.status)
+  )
+  for (const t of matches) {
+    await cancelStockTransfer(request, t.id)
+  }
+}
+
+/**
+ * Finds the id of a just-created/updated Price List by its exact name.
+ * Creation/update go through a Next.js Server Action ('use server') — see
+ * findServiceDraftIdByTitle's docstring for why that rules out intercepting
+ * the request itself.
+ */
+export async function findPriceListIdByName(
+  request: APIRequestContext,
+  name: string
+): Promise<string> {
+  const res = await request.get(`/api/inventory/price-lists?search=${encodeURIComponent(name)}`)
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const match = list.find((p) => p.name === name)
+  if (!match) throw new Error(`findPriceListIdByName: no price list found with name "${name}"`)
+  return match.id
+}
+
+/**
+ * Self-heal sweep: deactivates any leftover Price List whose name starts
+ * with `namePrefix` — same rationale as sweepE2ECustomers, for a prior run
+ * of these specs that got interrupted before reaching its own cleanup.
+ * There's no hard-delete endpoint for price lists (DELETE only deactivates),
+ * so this is the closest to a real cleanup this entity supports.
+ */
+export async function sweepE2EPriceLists(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get(
+    `/api/inventory/price-lists?search=${encodeURIComponent(namePrefix)}`
+  )
+  if (!res.ok()) return
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const matches = list.filter((p) => p.name?.startsWith(namePrefix))
+  for (const p of matches) {
+    await request.delete(`/api/inventory/price-lists/${p.id}`).catch(() => {})
+  }
+}
+
+/**
+ * Self-heal sweep: hard-deletes any leftover PriceUseType whose name starts
+ * with `namePrefix` — same rationale as sweepE2EPriceLists. Unlike price
+ * lists, DELETE here is a real delete (no soft-deactivate), so this is a
+ * genuine cleanup, not just a status change.
+ */
+export async function sweepE2EPriceUseTypes(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get('/api/inventory/price-use-types')
+  if (!res.ok()) return
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const matches = list.filter((t) => t.name?.startsWith(namePrefix))
+  for (const t of matches) {
+    await request.delete(`/api/inventory/price-use-types/${t.id}`).catch(() => {})
+  }
 }
 
 export async function loginAs(page: Page, email: string, password: string): Promise<void> {
@@ -148,12 +380,23 @@ export async function loginAs(page: Page, email: string, password: string): Prom
   // can silently wipe fields *after* fillAllStable's own verification passes
   // but *before* the click lands (same race fillAllStable's own docstring
   // describes) — retrying fill+click together is the only way to close it.
+  //
+  // The success check must not false-positive on /login?email=...&password=...
+  // — if the login form's React submit handler hasn't (re)attached yet when
+  // the click fires (e.g. right after a mid-test clearCookies() invalidates
+  // the SPA's auth context), the browser falls back to native HTML form
+  // submission (default GET), landing back on /login with the credentials
+  // leaked into the query string. A plain `not.toHaveURL('/login')` treats
+  // that as a successful navigation away from the login page (the string
+  // isn't an exact match), when the login API was never actually called —
+  // every action after this silently runs unauthenticated. Matching against
+  // a regex that also catches the query-string-suffixed form closes that.
   await expect(async () => {
     await fillAllStable([
       { locator: page.locator('#email'), value: email },
       { locator: page.locator('#password'), value: password },
     ])
     await page.click('button[type="submit"]')
-    await expect(page).not.toHaveURL('/login', { timeout: 3_000 })
+    await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 3_000 })
   }).toPass({ timeout: 20_000 })
 }

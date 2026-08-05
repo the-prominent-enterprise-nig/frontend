@@ -1,5 +1,15 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, loginAs, clickStable } from './utils'
+import {
+  cancelServiceDraft,
+  clickStable,
+  fillStable,
+  findServiceDraftIdByTitle,
+  gotoReady,
+  loginAs,
+  sweepE2EServiceDrafts,
+} from './utils'
+
+const TITLE_PREFIX = 'E2E Sourcing — '
 
 // Aircool Closing Gap 3 — POS Service Jobs "Check Stock & Source": preview a
 // draft's material shortfall against on-hand stock (GET .../stock-check),
@@ -36,13 +46,13 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
   // test suites intentionally mutate/deplete across runs. The huge estimated
   // qty below still guarantees a shortfall regardless of which item this is.
   const materialInput = page.getByPlaceholder('Search material by name or SKU…')
-  await fillStable(materialInput, 'Split-Type Aircon')
+  await fillStable(materialInput, 'Universal Remote Control')
   const dropdown = page.locator('div.fixed.z-100')
   // The dropdown fetches on open with whatever query is current at that
   // instant (starts as '' before the 300ms debounce settles), so its first
   // button can briefly be a stale, unfiltered result — match on the option's
   // own text instead of trusting "first button" to already be our search hit.
-  const aircondOption = dropdown.getByText('Split-Type Aircon', { exact: false })
+  const aircondOption = dropdown.getByText('Universal Remote Control', { exact: false }).first()
   await expect(aircondOption).toBeVisible({ timeout: 10_000 })
   await aircondOption.click()
 
@@ -57,15 +67,30 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
 
   const row = page.locator('tr').filter({ hasText: title })
   await expect(row).toBeVisible({ timeout: 10_000 })
-  return row
+  // Creation goes through a Server Action, not a client-visible request —
+  // look the id up after the fact instead of intercepting the create call.
+  const id = await findServiceDraftIdByTitle(page.request, title)
+  return { row, id }
 }
 
 test.describe('POS Service Jobs — Sourcing (Aircool Closing Gap 3)', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2EServiceDrafts(request, TITLE_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    for (const id of createdIds) await cancelServiceDraft(request, id)
+    createdIds = []
+  })
+
   test('Business Owner previews a shortfall, confirms sourcing, and sees the linked Purchase Request', async ({
     page,
   }) => {
     const title = `E2E Sourcing — ${Date.now()}`
-    const row = await createServiceJob(page, title)
+    const { row, id } = await createServiceJob(page, title)
+    createdIds.push(id)
 
     const detailHeading = page.getByRole('heading', { name: title })
     await row.click()
@@ -109,13 +134,25 @@ test.describe('POS Service Jobs — Cashier cannot source (role gate)', () => {
   const CASHIER_EMAIL = process.env.E2E_CASHIER_EMAIL ?? 'technova.b1.cashier@test.com'
   const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
+  // No beforeAll self-heal sweep in this block — this file-level storageState
+  // override means a worker-scoped `request` fixture in beforeAll would be
+  // unauthenticated. The sibling describe block above already sweeps this
+  // title prefix (both patterns share it), so that gap is covered from there.
+  let createdIds: string[] = []
+
+  test.afterEach(async ({ page }) => {
+    for (const id of createdIds) await cancelServiceDraft(page.request, id)
+    createdIds = []
+  })
+
   test('Cashier sees Edit/Cancel on their own draft but never Check Stock & Source', async ({
     page,
   }) => {
     await loginAs(page, CASHIER_EMAIL, PASSWORD)
 
     const title = `E2E Sourcing — Cashier — ${Date.now()}`
-    const row = await createServiceJob(page, title)
+    const { row, id } = await createServiceJob(page, title)
+    createdIds.push(id)
 
     const detailHeading = page.getByRole('heading', { name: title })
     await row.click()

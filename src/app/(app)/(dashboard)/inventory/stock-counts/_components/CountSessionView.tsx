@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, AlertTriangle } from 'lucide-react'
 import type {
   CountSummary,
+  CountLineSnapshot,
   SubmitCountFormValues,
   CreateAdjustmentFormValues,
 } from '@/src/schema/inventory/stock-counts'
@@ -16,6 +17,9 @@ import {
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
+import type { BatchSummary } from '@/src/schema/inventory/batches'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
+import AdjustmentLineRow from './AdjustmentLineRow'
 
 type Props = {
   count: CountSummary | null
@@ -29,7 +33,27 @@ type Props = {
   isCancelling: boolean
   isAdjusting: boolean
   items: ItemSummary[]
+  batches: BatchSummary[]
+  serials: SerialNumberSummary[]
   canAdjust: boolean
+  countLines: CountLineSnapshot[]
+  isCountLinesLoading: boolean
+}
+
+type CountSheetLine = {
+  itemId: string
+  itemLabel: string
+  variantId?: string
+  batchId?: string
+  locationId?: string
+  // Scenario 19 Part 5 — present (even as '') for a serial-level line, so
+  // rendering can tell "aggregate line" apart from "one unit, checkbox
+  // instead of a quantity". '' means a found-serial row whose serial
+  // hasn't been picked from the dropdown yet.
+  serialNumberId?: string
+  serialLabel?: string
+  systemQty: number | null // null = not in the system snapshot (a genuine find)
+  countedQty: number | ''
 }
 
 const reasonCodes = AdjustmentReasonCodeSchema.options
@@ -46,12 +70,45 @@ export default function CountSessionView({
   isCancelling,
   isAdjusting,
   items,
+  batches,
+  serials,
   canAdjust,
+  countLines,
+  isCountLinesLoading,
 }: Props) {
   const [tab, setTab] = useState<'count' | 'adjust'>('count')
-  const [lines, setLines] = useState<
-    { itemId: string; expectedQty: number | ''; countedQty: number | '' }[]
-  >([])
+  const [lines, setLines] = useState<CountSheetLine[]>([])
+  const seededCountId = useRef<string | null>(null)
+
+  // Seed the count sheet from the server-side snapshot taken at start() —
+  // expected quantity is never something the counter types in themselves.
+  // Guarded to run once per count (after its first real snapshot response,
+  // not while `countLines` is still the pre-fetch default `[]`) — without
+  // that guard, a background refetch of the snapshot query re-runs this
+  // effect and silently wipes out any found item/serial the counter had
+  // already added locally in the gap between starting the count and the
+  // snapshot query's first resolution.
+  useEffect(() => {
+    if (count?.status !== 'in_progress') return
+    if (isCountLinesLoading) return
+    if (seededCountId.current === count.id) return
+    seededCountId.current = count.id
+    // Most recently added line first — reverse of snapshot/creation order.
+    setLines(
+      [...countLines].reverse().map((l) => ({
+        itemId: l.itemId,
+        itemLabel: `${l.item.sku} — ${l.item.name}`,
+        variantId: l.variantId ?? undefined,
+        batchId: l.batchId ?? undefined,
+        locationId: l.locationId ?? undefined,
+        serialNumberId: l.serialNumberId ?? undefined,
+        serialLabel: l.serialNumber?.serialNumber,
+        systemQty: Number(l.systemQty),
+        countedQty: l.countedQty ?? '',
+      }))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count?.id, countLines])
 
   const adjustForm = useForm<CreateAdjustmentFormValues>({
     resolver: zodResolver(CreateAdjustmentFormSchema),
@@ -78,12 +135,60 @@ export default function CountSessionView({
   const isCompleted = count.status === 'completed'
   const isCancelled = count.status === 'cancelled'
 
-  function addLine() {
-    setLines((prev) => [...prev, { itemId: '', expectedQty: '', countedQty: '' }])
+  function addFoundLine() {
+    // A genuine find — an item the system snapshot has no balance for.
+    // Prepended so the sheet stays most-recent-first as lines get added.
+    setLines((prev) => [{ itemId: '', itemLabel: '', systemQty: null, countedQty: '' }, ...prev])
   }
 
-  function updateLine(index: number, field: keyof (typeof lines)[0], value: string | number) {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)))
+  function addFoundSerialLine() {
+    // Scenario 19 Part 5 — a serial the snapshot didn't expect present at
+    // this warehouse. serialNumberId starts as '' until picked below; that
+    // empty-but-present key is what tells the row to render a serial
+    // picker instead of an item dropdown.
+    setLines((prev) => [
+      { itemId: '', itemLabel: '', serialNumberId: '', systemQty: null, countedQty: '' },
+      ...prev,
+    ])
+  }
+
+  function updateLineItem(index: number, itemId: string) {
+    const item = items.find((i) => i.id === itemId)
+    setLines((prev) =>
+      prev.map((l, i) =>
+        i === index ? { ...l, itemId, itemLabel: item ? `${item.sku} — ${item.name}` : '' } : l
+      )
+    )
+  }
+
+  function updateLineSerial(index: number, serialId: string) {
+    const serial = serials.find((s) => s.id === serialId)
+    if (!serial?.item) return
+    setLines((prev) =>
+      prev.map((l, i) =>
+        i === index
+          ? {
+              ...l,
+              itemId: serial.item!.id,
+              itemLabel: `${serial.item!.sku} — ${serial.item!.name}`,
+              serialNumberId: serial.id,
+              serialLabel: serial.serialNumber,
+            }
+          : l
+      )
+    )
+  }
+
+  function updateLineCounted(index: number, value: string) {
+    // A counted quantity can't be negative or fractional — reject anything
+    // that isn't plain digits (no '-', '+', '.', 'e' scientific notation,
+    // all of which a native number input otherwise lets through).
+    if (value !== '' && !/^\d+$/.test(value)) return
+    setLines((prev) =>
+      prev.map((l, i) =>
+        i === index ? { ...l, countedQty: value === '' ? '' : Number(value) } : l
+      )
+    )
   }
 
   function removeLine(index: number) {
@@ -96,7 +201,10 @@ export default function CountSessionView({
       .filter((l) => l.itemId && l.countedQty !== '')
       .map((l) => ({
         itemId: l.itemId,
-        expectedQty: Number(l.expectedQty),
+        variantId: l.variantId,
+        batchId: l.batchId,
+        locationId: l.locationId,
+        serialNumberId: l.serialNumberId,
         countedQty: Number(l.countedQty),
       }))
 
@@ -106,16 +214,23 @@ export default function CountSessionView({
   }
 
   const variantLines = lines.filter(
-    (l) => l.countedQty !== '' && l.countedQty !== (l.expectedQty === '' ? 0 : l.expectedQty)
+    (l) => l.countedQty !== '' && l.countedQty !== (l.systemQty ?? 0)
   )
+
+  // Scenario 19 Part 5 — serials already expected or already added as a
+  // found line shouldn't show up again in the "add found serial" picker.
+  const usedSerialIds = new Set(
+    lines.map((l) => l.serialNumberId).filter((v): v is string => Boolean(v))
+  )
+  const availableSerials = serials.filter((s) => !usedSerialIds.has(s.id))
 
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+      <div className="flex w-full max-w-3xl max-h-[90vh] flex-col rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Count Session</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
@@ -156,7 +271,7 @@ export default function CountSessionView({
         </div>
 
         {isInProgress && (
-          <div className="border-b border-zinc-200 px-6">
+          <div className="shrink-0 border-b border-zinc-200 px-6">
             <div className="flex gap-4">
               <button
                 type="button"
@@ -178,7 +293,7 @@ export default function CountSessionView({
           </div>
         )}
 
-        <div className="px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {(isScheduled || isCompleted || isCancelled) && (
             <div className="rounded-lg bg-zinc-50 border border-zinc-200 p-4 text-sm text-zinc-600">
               <p>
@@ -202,6 +317,14 @@ export default function CountSessionView({
 
           {isInProgress && tab === 'count' && (
             <div className="space-y-4">
+              <p className="text-xs text-zinc-500">
+                Expected quantities come from the system&apos;s stock balance at the moment this
+                count started — they can&apos;t be edited. Enter what you actually counted; anything
+                found that isn&apos;t already listed can be added below as a new find.
+                Serial-tracked items show one line per unit — enter 1 for every one you physically
+                find; anything left blank is treated as missing once you submit.
+              </p>
+
               {variantLines.length > 0 && (
                 <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -211,113 +334,122 @@ export default function CountSessionView({
                 </div>
               )}
 
-              <div className="space-y-3">
-                {lines.map((line, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                    <div className="col-span-5">
-                      <select
-                        value={line.itemId}
-                        onChange={(e) => updateLine(i, 'itemId', e.target.value)}
-                        className={`${fieldClass} bg-white`}
-                      >
-                        <option value="">Select item…</option>
-                        {items.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.sku} — {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.expectedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'expectedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Expected"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        type="number"
-                        value={line.countedQty}
-                        onChange={(e) =>
-                          updateLine(
-                            i,
-                            'countedQty',
-                            e.target.value === '' ? '' : Number(e.target.value)
-                          )
-                        }
-                        placeholder="Counted"
-                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                          line.countedQty !== '' && line.countedQty !== line.expectedQty
-                            ? 'border-amber-400 bg-amber-50'
-                            : ''
-                        }`}
-                      />
-                    </div>
-                    <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
-                      {line.countedQty !== '' ? (
-                        <span
-                          className={
-                            Number(line.countedQty) - Number(line.expectedQty) >= 0
-                              ? 'text-green-600'
-                              : 'text-red-600'
-                          }
-                        >
-                          {Number(line.countedQty) - Number(line.expectedQty) >= 0 ? '+' : ''}
-                          {Number(line.countedQty) - Number(line.expectedQty)}
-                        </span>
-                      ) : (
-                        <span className="text-zinc-300">—</span>
-                      )}
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {isCountLinesLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-zinc-400">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading snapshot…
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {lines.map((line, i) => {
+                    const isFound = line.systemQty === null
+                    const isSerial = line.serialNumberId !== undefined
+                    const needsSerialPick = isSerial && !line.serialNumberId
+                    const variance =
+                      line.countedQty !== ''
+                        ? Number(line.countedQty) - (line.systemQty ?? 0)
+                        : null
 
-              {lines.length === 0 && (
-                <p className="text-center text-sm text-zinc-400 py-4">
-                  Add items to begin counting.
-                </p>
+                    return (
+                      <div key={i} className="grid grid-cols-12 gap-2 items-start">
+                        <div className="col-span-5">
+                          {needsSerialPick ? (
+                            <select
+                              value=""
+                              onChange={(e) => updateLineSerial(i, e.target.value)}
+                              className={`${fieldClass} bg-white`}
+                            >
+                              <option value="">Select found serial…</option>
+                              {availableSerials.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.serialNumber} — {s.item?.sku ?? ''} {s.item?.name ?? ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : isFound && !isSerial ? (
+                            <select
+                              value={line.itemId}
+                              onChange={(e) => updateLineItem(i, e.target.value)}
+                              className={`${fieldClass} bg-white`}
+                            >
+                              <option value="">Select found item…</option>
+                              {items.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.sku} — {item.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="flex h-9.5 items-center gap-2 rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-700">
+                              <span className="truncate">{line.itemLabel}</span>
+                              {isSerial && (
+                                <span className="ml-auto shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600">
+                                  {line.serialLabel}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="col-span-2">
+                          <div className="flex h-9.5 items-center justify-end rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-500">
+                            {isFound ? (
+                              <span className="text-xs font-medium text-blue-600">New find</span>
+                            ) : (
+                              line.systemQty
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          {needsSerialPick ? (
+                            <div className="flex h-9.5 items-center justify-center text-sm text-zinc-300">
+                              —
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={line.countedQty}
+                              onChange={(e) => updateLineCounted(i, e.target.value)}
+                              placeholder="Counted"
+                              className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                                variance !== null && variance !== 0
+                                  ? 'border-amber-400 bg-amber-50'
+                                  : ''
+                              }`}
+                            />
+                          )}
+                        </div>
+                        <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
+                          {variance !== null ? (
+                            <span className={variance >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              {variance >= 0 ? '+' : ''}
+                              {variance}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
+                        </div>
+                        <div className="col-span-1 flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => removeLine(i)}
+                            className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
-                >
-                  <Plus className="h-4 w-4" /> Add Line
-                </button>
-
-                {lines.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleSubmitCount}
-                    disabled={isSubmitting}
-                    className="ml-auto flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-                  >
-                    {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {isSubmitting ? 'Submitting…' : 'Submit Count'}
-                  </button>
-                )}
-              </div>
+              {!isCountLinesLoading && lines.length === 0 && (
+                <p className="text-center text-sm text-zinc-400 py-4">
+                  Nothing in the system balance for this warehouse yet — add a found item below to
+                  begin counting.
+                </p>
+              )}
             </div>
           )}
 
@@ -397,68 +529,16 @@ export default function CountSessionView({
                 )}
 
                 {adjustLines.fields.map((line, i) => (
-                  <div key={line.id} className="grid grid-cols-12 items-start gap-2">
-                    <div className="col-span-5">
-                      <Controller
-                        name={`lines.${i}.itemId`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <select {...field} className={`${fieldClass} bg-white`}>
-                            <option value="">Select item…</option>
-                            {items.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.sku} — {item.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Controller
-                        name={`lines.${i}.expectedQty`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <input
-                            {...field}
-                            type="number"
-                            placeholder="Expected"
-                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                            onChange={(e) =>
-                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                            }
-                          />
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Controller
-                        name={`lines.${i}.actualQty`}
-                        control={adjustForm.control}
-                        render={({ field }) => (
-                          <input
-                            {...field}
-                            type="number"
-                            min="0"
-                            placeholder="Actual"
-                            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                            onChange={(e) =>
-                              field.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                            }
-                          />
-                        )}
-                      />
-                    </div>
-                    <div className="col-span-1 flex items-center justify-center pt-2">
-                      <button
-                        type="button"
-                        onClick={() => adjustLines.remove(i)}
-                        className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                  <AdjustmentLineRow
+                    key={line.id}
+                    index={i}
+                    control={adjustForm.control}
+                    items={items}
+                    batches={batches}
+                    serials={serials}
+                    fieldClass={fieldClass}
+                    onRemove={() => adjustLines.remove(i)}
+                  />
                 ))}
 
                 {typeof adjustForm.formState.errors.lines?.message === 'string' && (
@@ -475,12 +555,46 @@ export default function CountSessionView({
                   className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
                 >
                   {isAdjusting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isAdjusting ? 'Posting…' : 'Post Adjustment'}
+                  {isAdjusting ? 'Submitting…' : 'Submit for Review'}
                 </button>
               </div>
             </form>
           )}
         </div>
+
+        {isInProgress && tab === 'count' && (
+          <div className="flex shrink-0 items-center gap-3 border-t border-zinc-200 bg-white px-6 py-4">
+            <button
+              type="button"
+              onClick={addFoundLine}
+              className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
+            >
+              <Plus className="h-4 w-4" /> Add Found Item
+            </button>
+
+            {availableSerials.length > 0 && (
+              <button
+                type="button"
+                onClick={addFoundSerialLine}
+                className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
+              >
+                <Plus className="h-4 w-4" /> Add Found Serial
+              </button>
+            )}
+
+            {lines.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSubmitCount}
+                disabled={isSubmitting}
+                className="ml-auto flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              >
+                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSubmitting ? 'Submitting…' : 'Submit Count'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

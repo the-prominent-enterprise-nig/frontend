@@ -9,6 +9,9 @@ import QualityHoldList from '../../quality-hold/_components/QualityHoldList'
 import BackordersPageView from '../../backorders/_components/BackordersPageView'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
+// Stock Adjustments moved to the Counting hub (/inventory/counting?tab=adjustments)
+// — most adjustments originate from a count variance, so it lives next to
+// the count sessions that create them.
 const TABS = [
   { id: 'transfers', label: 'Transfers' },
   { id: 'receiving', label: 'Receiving' },

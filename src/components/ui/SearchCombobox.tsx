@@ -9,11 +9,19 @@ export type SearchComboboxOption = {
   id: string
   primary: string
   secondary?: string
+  /** Opaque extra data a caller's own `search` mapper can attach to an
+   * option and read back via `onSelect` — e.g. a flag that changes how the
+   * parent form renders once a specific result is picked. Never read by
+   * this component itself. */
+  meta?: unknown
 }
 
 type Props = {
   value: string
   onChange: (id: string) => void
+  /** Fires alongside onChange with the full picked option (including
+   * `meta`), for callers that need more than just the id on selection. */
+  onSelect?: (option: SearchComboboxOption) => void
   queryKey: string
   search: (query: string) => Promise<SearchComboboxOption[]>
   placeholder?: string
@@ -44,6 +52,7 @@ type Props = {
 export function SearchCombobox({
   value,
   onChange,
+  onSelect,
   queryKey,
   search,
   placeholder,
@@ -120,6 +129,7 @@ export function SearchCombobox({
 
   function handleSelect(option: SearchComboboxOption) {
     onChange(option.id)
+    onSelect?.(option)
     setConfirmedLabel(option.secondary ? `${option.primary} (${option.secondary})` : option.primary)
     setSearchQuery('')
     setOpen(false)

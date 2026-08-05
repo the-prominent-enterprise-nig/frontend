@@ -3,9 +3,15 @@
 import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 
+export type MaterialItemMeta = { isSerialTracked: boolean }
+
 type Props = {
   value: string
   onChange: (id: string) => void
+  /** Fires with the picked item's tracking flag — lets the parent line
+   * decide whether to show a serial-number picker and lock qty to 1. Not
+   * fired for a value arriving via `initialLabel` (edit-mode prefill). */
+  onSelectItem?: (meta: MaterialItemMeta) => void
   error?: string
   initialLabel?: string
 }
@@ -14,11 +20,18 @@ type Props = {
 // line must only ever reference a physical/stock item — never another
 // service (there's no server-side isService filter on GET /inventory/items,
 // so this filters the search results client-side).
-export function MaterialItemSearchCombobox({ value, onChange, error, initialLabel }: Props) {
+export function MaterialItemSearchCombobox({
+  value,
+  onChange,
+  onSelectItem,
+  error,
+  initialLabel,
+}: Props) {
   return (
     <SearchCombobox
       value={value}
       onChange={onChange}
+      onSelect={(option) => onSelectItem?.(option.meta as MaterialItemMeta)}
       error={error}
       initialLabel={initialLabel}
       queryKey="service-draft-material-items-search"
@@ -33,6 +46,7 @@ export function MaterialItemSearchCombobox({ value, onChange, error, initialLabe
             id: item.id,
             primary: item.name,
             secondary: item.sku,
+            meta: { isSerialTracked: item.isSerialTracked },
           }))
       }}
     />

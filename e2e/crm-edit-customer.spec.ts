@@ -1,11 +1,28 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillAllStable } from './utils'
+import { deleteCustomers, fillAllStable, gotoReady, sweepE2ECustomers } from './utils'
+
+// The customer's name changes mid-test (EditMe<ts> → Edited<ts>) — sweep
+// both so an interrupted run is caught regardless of which state it died in.
+const NAME_PREFIX_BEFORE = 'E2E EditMe'
+const NAME_PREFIX_AFTER = 'E2E Edited'
 
 // CRM — Edit Customer. Covers the merged CustomerForm's edit-mode branches
 // (customer code, source channel, PATCH submit, dirty-tracking) that don't
 // exist in the create flow, plus a regression guard for the Payment
 // Terms/Status/Bank Details fields that were dropped from both forms.
 test.describe('CRM — Edit Customer', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2ECustomers(request, NAME_PREFIX_BEFORE)
+    await sweepE2ECustomers(request, NAME_PREFIX_AFTER)
+  })
+
+  test.afterEach(async ({ request }) => {
+    await deleteCustomers(request, createdIds)
+    createdIds = []
+  })
+
   test('loads existing values, stays disabled until changed, and saves an update', async ({
     page,
   }) => {
@@ -22,6 +39,7 @@ test.describe('CRM — Edit Customer', () => {
       },
     })
     const seeded = await seedRes.json()
+    createdIds.push(seeded.id)
 
     await gotoReady(page, `/crm/customers/${seeded.id}/edit`)
     await expect(page.getByRole('heading', { name: 'Edit Customer' })).toBeVisible()
@@ -49,7 +67,5 @@ test.describe('CRM — Edit Customer', () => {
     }).toPass({ timeout: 20_000 })
 
     await expect(page.getByRole('heading', { name: `E2E ${updatedLastName}` })).toBeVisible()
-
-    await page.request.delete(`/api/crm/customers/${seeded.id}`)
   })
 })

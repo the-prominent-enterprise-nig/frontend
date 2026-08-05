@@ -1,23 +1,49 @@
 import { z } from 'zod'
 
-export const SerialStatusSchema = z.enum(['in_stock', 'sold', 'returned', 'defective', 'scrapped'])
+// Mirrors the backend's SerialNumberStatus enum exactly (backend/prisma/schema.prisma)
+export const SerialStatusSchema = z.enum([
+  'in_stock',
+  'held',
+  'sold',
+  'returned',
+  'defective',
+  'scrapped',
+  'in_repair',
+  'pulled_out',
+])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
 export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   in_stock: 'In Stock',
+  held: 'Held',
   sold: 'Sold',
   returned: 'Returned',
   defective: 'Defective',
   scrapped: 'Scrapped',
+  in_repair: 'In Repair',
+  pulled_out: 'Pulled Out',
 }
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   in_stock: 'bg-green-100 text-green-700',
+  held: 'bg-amber-100 text-amber-700',
   sold: 'bg-blue-100 text-blue-700',
   returned: 'bg-yellow-100 text-yellow-700',
   defective: 'bg-red-100 text-red-700',
   scrapped: 'bg-zinc-100 text-zinc-600',
+  in_repair: 'bg-orange-100 text-orange-700',
+  pulled_out: 'bg-purple-100 text-purple-700',
 }
+
+// Statuses that mean this specific unit should not be sold as-is — the
+// "non-saleable" concept Scenario 19 Part 5 surfaces in the count/adjustment
+// UI, without a new dedicated status field (reuses this existing enum).
+export const NON_SALEABLE_SERIAL_STATUSES: SerialStatus[] = [
+  'held',
+  'defective',
+  'in_repair',
+  'pulled_out',
+]
 
 export const RegisterSerialsFormSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -53,6 +79,9 @@ const SerialItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   sku: z.string(),
+  modelNumber: z.string().nullable().optional(),
+  brand: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  type: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const SerialBranchSchema = z.object({
@@ -70,6 +99,25 @@ const SerialWarehouseSchema = z.object({
   branch: SerialBranchSchema.optional().nullable(),
 })
 
+// Provenance — which receiving report this unit arrived on, if any. "age" is
+// deliberately not part of this shape; it's computed at render time from
+// goodsReceipt.receivedAt via formatAge() rather than stored/parsed here.
+const SerialReceiptSchema = z
+  .object({
+    unitCost: z.coerce.number().nullable().optional(),
+    goodsReceipt: z
+      .object({
+        code: z.string(),
+        receivedAt: z.string(),
+        stockTransferId: z.string().nullable().optional(),
+        supplier: z.object({ name: z.string() }).nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .nullable()
+  .optional()
+
 export const SerialNumberSummarySchema = z.object({
   id: z.string(),
   serialNumber: z.string(),
@@ -83,16 +131,31 @@ export const SerialNumberSummarySchema = z.object({
   // host branch for an event while ownership stays with currentWarehouse's
   // own branch.
   consignedToBranch: SerialBranchSchema.optional().nullable(),
+  goodsReceiptLine: SerialReceiptSchema,
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
 
-export const SerialNumberListResponseSchema = z.object({
-  data: z.array(SerialNumberSummarySchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level — same shape as
+// ItemListResponseSchema. Parsing the real shape and transforming it back to
+// a flat one keeps every existing consumer (useSerialNumbers' `pagination`)
+// unchanged.
+export const SerialNumberListResponseSchema = z
+  .object({
+    data: z.array(SerialNumberSummarySchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type SerialNumberSummary = z.infer<typeof SerialNumberSummarySchema>
 export type SerialNumberListResponse = z.infer<typeof SerialNumberListResponseSchema>

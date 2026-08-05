@@ -238,8 +238,17 @@ export const TaxRates = {
 export const Reports = {
   trialBalance: (asOf?: string) =>
     api.get<any>('/reports/trial-balance', asOf ? { asOf } : undefined),
-  pnl: (startDate: string, endDate: string) =>
-    api.get<any>('/reports/profit-and-loss', { startDate, endDate }),
+  // SCEN-14 Closing Gap 2: optional branchId scopes the P&L to one branch's
+  // posted journal entries instead of aggregating company-wide.
+  // SCEN-14 Closing Gap 3: view:'internal' excludes adjusting/eliminating
+  // entries (raw management figures); view:'net' (default) includes them.
+  pnl: (startDate: string, endDate: string, branchId?: string, view?: 'internal' | 'net') =>
+    api.get<any>('/reports/profit-and-loss', {
+      startDate,
+      endDate,
+      ...(branchId && { branchId }),
+      ...(view && { view }),
+    }),
   balanceSheet: (asOf?: string) =>
     api.get<any>('/reports/balance-sheet', asOf ? { asOf } : undefined),
   generalLedger: (params: { accountId?: string; startDate?: string; endDate?: string }) =>
@@ -251,6 +260,13 @@ export const Reports = {
   customerStatement: (id: string) => api.get<any>(`/reports/customer-statement/${id}`),
   supplierStatement: (id: string) => api.get<any>(`/reports/supplier-statement/${id}`),
   biSummary: () => api.get<any>('/reports/bi-summary'),
+  // SCEN-14 Closing Gap 4: groups AR invoices / AP bills / expenses / fixed
+  // assets by their (previously write-only) costCenter tag.
+  costCenter: (startDate?: string, endDate?: string) =>
+    api.get<any>('/reports/cost-center', {
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+    }),
 }
 
 // ============ AR Invoices ============
@@ -343,11 +359,40 @@ export const CreditMemos = {
 }
 
 // ============ AP Bills ============
+export interface APBillPayment {
+  id: string
+  amount: number
+  withholdingAmount?: number
+  paymentDate: string
+  method?: string | null
+  reference?: string | null
+  notes?: string | null
+  // Scenario 10 Part 5 — cheque number, present when method is "check".
+  chequeNumber?: string | null
+}
 export interface APBill {
   id: string
   billNumber: string
   vendorId: string
   vendor?: { id: string; name: string }
+  // Scenario 10 Part 1 — set only when this bill originates from a PO/RR
+  // against a real inventory Supplier, distinct from vendorId.
+  supplierId?: string | null
+  supplier?: { id: string; code: string; name: string } | null
+  // Scenario 10 Part 2 — the PO this invoice bills against, and the RRs
+  // matched to it, for the 3-way match.
+  purchaseOrderId?: string | null
+  purchaseOrder?: { id: string; code: string } | null
+  goodsReceipts?: { id: string; code: string }[]
+  // Scenario 10 Part 4 — manual voucher number + two-step approval status.
+  voucherNumber?: string | null
+  voucherApprovalStatus?:
+    | 'pending_online_approval'
+    | 'pending_onsite_approval'
+    | 'approved'
+    | 'rejected'
+    | null
+  voucherRejectedReason?: string | null
   billDate: string
   dueDate: string
   description?: string
@@ -357,10 +402,10 @@ export interface APBill {
   amountPaid: number
   status: string
   costCenter?: string
-  payments?: any[]
+  payments?: APBillPayment[]
 }
 export const APBills = {
-  list: (params?: { search?: string; status?: string; vendorId?: string }) =>
+  list: (params?: { search?: string; status?: string; vendorId?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
@@ -368,6 +413,133 @@ export const APBills = {
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
   recordPayment: (id: string, body: any) => api.post<APBill>(`/ap-bills/${id}/payments`, body),
   remove: (id: string) => api.delete(`/ap-bills/${id}`),
+  // Scenario 10 Part 4 — voucher creation + two-step approval.
+  createVoucher: (id: string, voucherNumber: string) =>
+    api.post<APBill>(`/ap-bills/${id}/voucher`, { voucherNumber }),
+  approveVoucherOnline: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/voucher/approve-online`, {}),
+  approveVoucherOnsite: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/voucher/approve-onsite`, {}),
+  rejectVoucher: (id: string, reason: string) =>
+    api.post<APBill>(`/ap-bills/${id}/voucher/reject`, { reason }),
+}
+
+// ============ File Attachments (shared — used by AP voucher, Scenario 10 Part 4) ============
+export interface FileAttachment {
+  id: string
+  fileId: string
+  entityType: string
+  entityId: string
+  attachedAt: string
+  file: {
+    id: string
+    originalName: string
+    mimeType: string
+    size: number
+  }
+}
+export const FileAttachments = {
+  listForEntity: (entityType: string, entityId: string) =>
+    api.get<FileAttachment[]>('/file-attachments', { entityType, entityId }),
+  attach: (fileId: string, entityType: string, entityId: string) =>
+    api.post<FileAttachment>('/file-attachments', { fileId, entityType, entityId }),
+  detach: (id: string) => api.delete(`/file-attachments/${id}`),
+}
+
+// ============ AP Bill Suppliers (Scenario 10 Part 1) ============
+export interface APBillSupplierOption {
+  id: string
+  code: string
+  name: string
+}
+export const APBillSuppliers = {
+  list: () =>
+    api.get<{ data: APBillSupplierOption[]; total: number }>('/suppliers', {
+      status: 'active',
+      limit: 200,
+    }),
+}
+
+// ============ AP Bill 3-way match — PO/RR picker + match-check (Scenario 10 Part 2) ============
+export interface APBillPurchaseOrderOption {
+  id: string
+  code: string
+  status: string
+  totalAmount: number
+}
+export interface APBillGoodsReceiptOption {
+  id: string
+  code: string
+  receivedAt: string
+}
+export interface APBillMatchCheck {
+  applicable: boolean
+  poTotal: number | null
+  rrTotal: number | null
+  invoiceTotal: number
+  matched: boolean
+  varianceFromPo: number | null
+  varianceFromRr: number | null
+  goodsReceiptCount?: number
+}
+export const APBillMatching = {
+  purchaseOrders: (supplierId: string) =>
+    api.get<{ data: APBillPurchaseOrderOption[]; total: number }>('/procurement/purchase-orders', {
+      supplierId,
+      limit: 100,
+    }),
+  receipts: (poId: string) =>
+    api.get<{ data: APBillGoodsReceiptOption[] }>(`/procurement/purchase-orders/${poId}/receipts`),
+  matchCheck: (billId: string) => api.get<APBillMatchCheck>(`/ap-bills/${billId}/match-check`),
+}
+
+// ============ Supplier Debit Memos — supplier returns (Scenario 10 Part 5) ============
+export interface SupplierDebitMemo {
+  id: string
+  memoNumber: string
+  apBillId: string
+  supplierId: string
+  itemId: string
+  warehouseId: string
+  quantity: number
+  amount: number
+  reason?: string | null
+  memoDate: string
+  status: 'ISSUED' | 'VOID'
+}
+export const SupplierDebitMemos = {
+  list: (params?: { search?: string; status?: string; supplierId?: string; apBillId?: string }) =>
+    api.get<{ items: SupplierDebitMemo[]; total: number }>('/supplier-debit-memos', params as any),
+  get: (id: string) => api.get<SupplierDebitMemo>(`/supplier-debit-memos/${id}`),
+  issue: (body: {
+    apBillId: string
+    itemId: string
+    warehouseId: string
+    quantity: number
+    amount: number
+    reason?: string
+    memoDate?: string
+  }) => api.post<SupplierDebitMemo>('/supplier-debit-memos', body),
+  void: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, {}),
+}
+
+// ============ AP Payment Methods — supplier payment method + GL config (Scenario 10 Part 3) ============
+export interface APPaymentMethodConfig {
+  id: string
+  key?: string | null
+  name: string
+  label: string
+  isEnabled: boolean
+  displayOrder: number
+  glAccountId?: string | null
+}
+export const APPaymentMethods = {
+  list: () => api.get<APPaymentMethodConfig[]>('/ap-payment-methods'),
+  create: (body: { name: string; label: string; glAccountId?: string }) =>
+    api.post<APPaymentMethodConfig>('/ap-payment-methods', body),
+  update: (id: string, body: { name?: string; label?: string; glAccountId?: string }) =>
+    api.patch<APPaymentMethodConfig>(`/ap-payment-methods/${id}`, body),
+  remove: (id: string) => api.delete(`/ap-payment-methods/${id}`),
 }
 
 // ============ Business Expenses ============

@@ -6,6 +6,10 @@ const ReceiveStockLineSchema = z
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
+    // Promotional/free item included in the delivery — server forces
+    // unitCost to 0 for these regardless of what's submitted (Scenario 05
+    // followup, "freebies" gap).
+    isFreebie: z.boolean().optional(),
     batchNumber: z.string().optional(),
     expiryDate: z.string().optional(),
     qualityHold: z.boolean().optional(),
@@ -76,12 +80,26 @@ export const StockBalanceSchema = z.object({
   updatedAt: z.string().optional(),
 })
 
-export const StockBalanceListResponseSchema = z.object({
-  data: z.array(StockBalanceSchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level — same shape as
+// ItemListResponseSchema/SerialNumberListResponseSchema. Parsing the real
+// shape and transforming it back to a flat one keeps every existing
+// consumer (useStockBalance's `pagination`) unchanged.
+export const StockBalanceListResponseSchema = z
+  .object({
+    data: z.array(StockBalanceSchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type StockBalance = z.infer<typeof StockBalanceSchema>
 export type StockBalanceListResponse = z.infer<typeof StockBalanceListResponseSchema>
@@ -146,6 +164,7 @@ const ReceivingReportLineSchema = z.object({
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
   qualityHold: z.boolean(),
+  isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
   discrepancy: DiscrepancySchema.nullable(),
 })

@@ -9,13 +9,12 @@ import { createItem } from '../_actions/create-item'
 import { updateItem, updateItemLifecycle } from '../_actions/update-item'
 import { updateItemAttributes } from '../_actions/update-item-attributes'
 import { deleteItem } from '../_actions/delete-item'
-import {
-  getUnitsOfMeasure,
-  getItemGroups,
-  getItemSubgroups,
-  getItemBrands,
-  getItemTypes,
-} from '../_actions/get-lookup-data'
+import { submitItem } from '../_actions/submit-item'
+import { confirmItemAccounting } from '../_actions/confirm-item-accounting'
+import { rejectItemAccounting } from '../_actions/reject-item-accounting'
+import { approveItem } from '../_actions/approve-item'
+import { rejectItem } from '../_actions/reject-item'
+import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
@@ -30,9 +29,12 @@ import type {
   UpdateItemFormValues,
   UomOption,
   ItemSummary,
-  ItemGroupOption,
-  ItemSubgroupOption,
   ClassificationOption,
+  ItemApprovalStatus,
+  ConfirmAccountingFormValues,
+  RejectAccountingFormValues,
+  ApproveItemFormValues,
+  RejectItemFormValues,
 } from '@/src/schema/inventory/items'
 import type { FlatCategory } from '@/src/schema/inventory/categories'
 import type {
@@ -81,11 +83,12 @@ export function useItemMaster() {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimit] = useState(20)
   const [search, setSearch] = useState('')
   const [lifecycle, setLifecycle] = useState<'active' | 'discontinued' | 'archived' | undefined>(
     undefined
   )
+  const [approvalStatus, setApprovalStatus] = useState<ItemApprovalStatus | undefined>(undefined)
   const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>(undefined)
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
     'createdAt'
@@ -101,11 +104,12 @@ export function useItemMaster() {
       limit,
       search: search || undefined,
       lifecycle,
+      approvalStatus,
       primaryCategoryId,
       sortBy,
       sortOrder,
     }),
-    [page, limit, search, lifecycle, primaryCategoryId, sortBy, sortOrder]
+    [page, limit, search, lifecycle, approvalStatus, primaryCategoryId, sortBy, sortOrder]
   )
 
   const itemsQuery = useQuery({
@@ -124,18 +128,6 @@ export function useItemMaster() {
   const uomQuery = useQuery({
     queryKey: ['inventory-uom'],
     queryFn: () => getUnitsOfMeasure(),
-    staleTime: 10 * 60 * 1000,
-  })
-
-  const itemGroupsQuery = useQuery({
-    queryKey: ['inventory-item-groups'],
-    queryFn: () => getItemGroups(),
-    staleTime: 10 * 60 * 1000,
-  })
-
-  const itemSubgroupsQuery = useQuery({
-    queryKey: ['inventory-item-subgroups'],
-    queryFn: () => getItemSubgroups(),
     staleTime: 10 * 60 * 1000,
   })
 
@@ -193,6 +185,74 @@ export function useItemMaster() {
           description: result.message,
           status: 'error',
         })
+      }
+    },
+  })
+
+  // Scenario 16 — Item Master Governance
+  const submitMutation = useMutation({
+    mutationFn: (id: string) => submitItem(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Item submitted', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
+      } else {
+        showToast({ title: 'Failed to submit item', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const confirmAccountingMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ConfirmAccountingFormValues }) =>
+      confirmItemAccounting(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Accounting confirmed', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
+      } else {
+        showToast({
+          title: 'Failed to confirm accounting',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectAccountingMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectAccountingFormValues }) =>
+      rejectItemAccounting(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Item rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
+      } else {
+        showToast({ title: 'Failed to reject item', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const approveItemMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ApproveItemFormValues }) =>
+      approveItem(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Item approved', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
+      } else {
+        showToast({ title: 'Failed to approve item', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const rejectItemMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectItemFormValues }) => rejectItem(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Item rejected', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
+      } else {
+        showToast({ title: 'Failed to reject item', description: result.message, status: 'error' })
       }
     },
   })
@@ -372,6 +432,7 @@ export function useItemMaster() {
   function resetFilters() {
     setSearch('')
     setLifecycle(undefined)
+    setApprovalStatus(undefined)
     setPrimaryCategoryId(undefined)
     setSortBy('createdAt')
     setSortOrder('desc')
@@ -390,8 +451,6 @@ export function useItemMaster() {
       if (Array.isArray((d as { data?: unknown }).data)) return (d as { data: UomOption[] }).data
       return []
     })(),
-    groupOptions: (itemGroupsQuery.data?.data ?? []) as ItemGroupOption[],
-    subgroupOptions: (itemSubgroupsQuery.data?.data ?? []) as ItemSubgroupOption[],
     brandOptions: (itemBrandsQuery.data?.data ?? []) as ClassificationOption[],
     typeOptions: (itemTypesQuery.data?.data ?? []) as ClassificationOption[],
 
@@ -403,6 +462,7 @@ export function useItemMaster() {
     // Filters
     search,
     lifecycle,
+    approvalStatus,
     primaryCategoryId,
     setSearch: (val: string) => {
       setSearch(val)
@@ -410,6 +470,10 @@ export function useItemMaster() {
     },
     setLifecycle: (val: typeof lifecycle) => {
       setLifecycle(val)
+      setPage(1)
+    },
+    setApprovalStatus: (val: typeof approvalStatus) => {
+      setApprovalStatus(val)
       setPage(1)
     },
     setPrimaryCategoryId: (val: string | undefined) => {
@@ -431,6 +495,11 @@ export function useItemMaster() {
     // Pagination
     page,
     setPage,
+    limit,
+    setLimit: (val: number) => {
+      setLimit(val)
+      setPage(1)
+    },
 
     // Mutations
     createItem: createMutation.mutateAsync,
@@ -449,6 +518,22 @@ export function useItemMaster() {
 
     deleteItem: deleteMutation.mutateAsync,
     isDeleting: deleteMutation.isPending,
+
+    // Scenario 16 — Item Master Governance
+    submitItem: submitMutation.mutateAsync,
+    isSubmitting: submitMutation.isPending,
+    confirmAccounting: (id: string, data: ConfirmAccountingFormValues) =>
+      confirmAccountingMutation.mutateAsync({ id, data }),
+    isConfirmingAccounting: confirmAccountingMutation.isPending,
+    rejectAccounting: (id: string, data: RejectAccountingFormValues) =>
+      rejectAccountingMutation.mutateAsync({ id, data }),
+    isRejectingAccounting: rejectAccountingMutation.isPending,
+    approveItem: (id: string, data: ApproveItemFormValues) =>
+      approveItemMutation.mutateAsync({ id, data }),
+    isApprovingItem: approveItemMutation.isPending,
+    rejectItem: (id: string, data: RejectItemFormValues) =>
+      rejectItemMutation.mutateAsync({ id, data }),
+    isRejectingItem: rejectItemMutation.isPending,
 
     refetch: () => queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
 

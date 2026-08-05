@@ -14,6 +14,13 @@ import { gotoReady, clickStable } from './utils'
 // unambiguously. Matches the item by its exact display name ("Refrigerator")
 // rather than SKU, since "Refrigerator Deodorizer" also matches a substring
 // search and SKU prefixes can drift between seed runs.
+//
+// STALE, 2026-08-05: unrelated seed-data drift. This file still hardcodes
+// the old placeholder branch/warehouse names (Manila HQ / Cebu Office /
+// Davao Branch, terminal TN-B1-01, cashier "Tyrell Buckridge") which no
+// longer exist in current seed data (real NIG branch names replaced them
+// session-wide) — the test fails before even reaching the assertions
+// below. Flagged, not fixed here.
 async function openManilaSession(page: import('@playwright/test').Page) {
   await gotoReady(page, '/pos/sessions')
   await clickStable(
