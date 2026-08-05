@@ -31,6 +31,8 @@ import {
   Building2,
   LayoutGrid,
   List,
+  Printer,
+  FileSignature,
 } from 'lucide-react'
 import {
   computePricingTotals,
@@ -86,6 +88,11 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { getCreditApplications } from '../../credit/applications/_actions/get-applications'
+import { getPromissoryNote } from '../../credit/applications/_actions/get-promissory-note'
+import { signPromissoryNote } from '../../credit/applications/_actions/sign-promissory-note'
+import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
+import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution } from './_hooks/usePriceResolution'
@@ -271,12 +278,16 @@ export default function CheckoutPage() {
   // sale would otherwise need to ask someone else for (Business Owner or
   // Branch Manager) — drives the serial-sale banner below.
   const [canOverride, setCanOverride] = useState(false)
+  // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
+  // signed (Cashier-level, cascades to Branch Manager/Business Owner).
+  const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
   useEffect(() => {
     getSessionOrNull().then((s) => {
       if (!s) return
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
+      setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
   }, [])
 
@@ -391,6 +402,14 @@ export default function CheckoutPage() {
   const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState(false)
   const installmentPreviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Scenario 17 Part 6 — every installment sale requires an approved,
+  // not-yet-used CreditApplication for the selected customer.
+  const [approvedCreditApplications, setApprovedCreditApplications] = useState<
+    { id: string; applicationNumber: string; requestedAmount: number }[]
+  >([])
+  const [creditApplicationId, setCreditApplicationId] = useState('')
+  const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
+
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
@@ -475,6 +494,9 @@ export default function CheckoutPage() {
     releaseFormRequestId: string
     totalAmount: number
     serialLines: { itemName: string; serialNumberLabel?: string }[]
+    /** Scenario 17 Part 7 — set only for installment sales, so
+     * PendingApprovalScreen knows whether to show the Promissory Note card. */
+    creditApplicationId?: string
   } | null>(null)
 
   // Reserve mode success (Scenario 03, Part 3) — separate from `success`
@@ -879,6 +901,34 @@ export default function CheckoutPage() {
       setFinancingTerms(res.data ?? [])
     })
   }, [invoiceType, activeBranchId])
+
+  // Scenario 17 Part 6 — reload this customer's approved, unused credit
+  // applications whenever the customer or invoice type changes; a stale
+  // selection from a previously-selected customer must never carry over.
+  useEffect(() => {
+    setCreditApplicationId('')
+    if (invoiceType !== 'installment' || !selectedCustomer) {
+      setApprovedCreditApplications([])
+      return
+    }
+    setCreditApplicationsLoading(true)
+    getCreditApplications({
+      status: 'approved',
+      applicantCustomerId: selectedCustomer.id,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        setApprovedCreditApplications(
+          (res.data?.data ?? []).map((a) => ({
+            id: a.id,
+            applicationNumber: a.applicationNumber,
+            requestedAmount: a.requestedAmount,
+          }))
+        )
+      })
+      .finally(() => setCreditApplicationsLoading(false))
+  }, [invoiceType, selectedCustomer])
 
   useEffect(() => {
     if (invoiceType !== 'installment' || !financingTermId || totalAmount <= 0) {
@@ -1303,6 +1353,12 @@ export default function CheckoutPage() {
         setError('Select a financing term for this installment sale.')
         return
       }
+      if (!creditApplicationId) {
+        setError(
+          'Select the approved credit application for this customer — every installment sale requires one.'
+        )
+        return
+      }
       const downPayment = parseFloat(downPaymentInput) || 0
       if (downPayment < 0 || downPayment > totalAmount) {
         setError('Down payment must be between 0 and the total sale amount.')
@@ -1403,6 +1459,7 @@ export default function CheckoutPage() {
           priceUseTypeId: priceUseTypeId || undefined,
           chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
           financingTermId: invoiceType === 'installment' ? financingTermId : undefined,
+          creditApplicationId: invoiceType === 'installment' ? creditApplicationId : undefined,
           downPayment:
             invoiceType === 'installment' ? parseFloat(downPaymentInput) || 0 : undefined,
           customerId: selectedCustomer?.id,
@@ -1518,7 +1575,12 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
+          setPendingApproval({
+            releaseFormRequestId,
+            totalAmount,
+            serialLines: displayLines,
+            creditApplicationId: invoiceType === 'installment' ? creditApplicationId : undefined,
+          })
           return
         }
 
@@ -1827,6 +1889,8 @@ export default function CheckoutPage() {
         releaseFormRequestId={pendingApproval.releaseFormRequestId}
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
+        creditApplicationId={pendingApproval.creditApplicationId}
+        canSignPromissoryNote={canSignPromissoryNote}
         onReset={resetSale}
         fmt={fmt}
       />
@@ -2816,6 +2880,47 @@ export default function CheckoutPage() {
                     A customer must be selected for an installment sale.
                   </p>
                 )}
+                {selectedCustomer && (
+                  <div>
+                    <label className="mb-1 block text-[11px] text-gray-700">
+                      Approved Credit Application
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={creditApplicationId}
+                        onChange={(e) => setCreditApplicationId(e.target.value)}
+                        disabled={creditApplicationsLoading}
+                        className="w-full appearance-none rounded-lg border border-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                      >
+                        <option value="">
+                          {creditApplicationsLoading
+                            ? 'Loading…'
+                            : approvedCreditApplications.length === 0
+                              ? 'No approved application on file'
+                              : 'Select an approved application…'}
+                        </option>
+                        {approvedCreditApplications.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.applicationNumber} · ₱
+                            {a.requestedAmount.toLocaleString('en-PH', {
+                              minimumFractionDigits: 2,
+                            })}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={12}
+                        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
+                      />
+                    </div>
+                    {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        Every installment sale requires an approved credit application — open one in
+                        Credit Applications first.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="mb-1 block text-[11px] text-gray-700">Financing Term</label>
                   <div className="relative">
@@ -3164,7 +3269,8 @@ export default function CheckoutPage() {
                 (invoiceType === 'cash' &&
                   (balance > 0.009 || loyaltyOverBalance || !selectedCustomer)) ||
                 (invoiceType === 'charge' && !selectedCustomer) ||
-                (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
+                (invoiceType === 'installment' &&
+                  (!selectedCustomer || !financingTermId || !creditApplicationId)) ||
                 (invoiceType === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
                 (needsManagerOverride && !managerOverrideApproved) ||
                 (invoiceType !== 'reserve' &&
@@ -3195,27 +3301,29 @@ export default function CheckoutPage() {
                       ? 'Select a customer to charge'
                       : invoiceType === 'installment' && !selectedCustomer
                         ? 'Select a customer for installment'
-                        : invoiceType === 'installment' && !financingTermId
-                          ? 'Select a financing term'
-                          : invoiceType === 'reserve' && !selectedCustomer
-                            ? 'Select a customer to reserve'
-                            : invoiceType === 'reserve' && cart.length !== 1
-                              ? 'Add one item to reserve'
-                              : invoiceType === 'cash' && balance > 0.009
-                                ? `Underpaid by ${fmt(balance)}`
-                                : invoiceType === 'cash' && loyaltyOverBalance
-                                  ? 'Insufficient loyalty points'
-                                  : needsManagerOverride && !managerOverrideApproved
-                                    ? 'Manager override required'
-                                    : cart.some((l) => l.isSerialTracked)
-                                      ? `Submit for Approval — ${fmt(totalAmount)}`
-                                      : invoiceType === 'charge'
-                                        ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                        : invoiceType === 'installment'
-                                          ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                          : invoiceType === 'reserve'
-                                            ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                            : `Confirm Sale — ${fmt(totalAmount)}`}
+                        : invoiceType === 'installment' && !creditApplicationId
+                          ? 'Select an approved credit application'
+                          : invoiceType === 'installment' && !financingTermId
+                            ? 'Select a financing term'
+                            : invoiceType === 'reserve' && !selectedCustomer
+                              ? 'Select a customer to reserve'
+                              : invoiceType === 'reserve' && cart.length !== 1
+                                ? 'Add one item to reserve'
+                                : invoiceType === 'cash' && balance > 0.009
+                                  ? `Underpaid by ${fmt(balance)}`
+                                  : invoiceType === 'cash' && loyaltyOverBalance
+                                    ? 'Insufficient loyalty points'
+                                    : needsManagerOverride && !managerOverrideApproved
+                                      ? 'Manager override required'
+                                      : cart.some((l) => l.isSerialTracked)
+                                        ? `Submit for Approval — ${fmt(totalAmount)}`
+                                        : invoiceType === 'charge'
+                                          ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                          : invoiceType === 'installment'
+                                            ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                            : invoiceType === 'reserve'
+                                              ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                              : `Confirm Sale — ${fmt(totalAmount)}`}
             </button>
           </div>
         </div>
@@ -4271,21 +4379,105 @@ function SuccessScreen({
 
 // ─── Pending Approval Screen ───────────────────────────────────────────────────
 
+/** Reuses the same window.open + window.print() pattern as
+ * ReleaseApprovalsList.tsx::handlePrint — no server-side PDF generation,
+ * just a styled, printable HTML document opened in a new tab. */
+function handlePrintPromissoryNote(note: PromissoryNote, fmt: (n: number) => string) {
+  const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
+  const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+
+  const lineRows = note.scheduleLines
+    .map(
+      (l) =>
+        `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${fmt(l.amount)}</td></tr>`
+    )
+    .join('')
+
+  const html = `<!DOCTYPE html><html><head><title>PROMISSORY NOTE — ${note.id}</title>
+<style>
+  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
+  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+  .center{text-align:center;margin:3px 0;color:#555}
+  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
+  td{padding:3px 4px}
+  .row{display:flex;justify-content:space-between;padding:2px 0}
+  .sig{margin-top:24px}
+  .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:10px;color:#666}
+  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="banner">PROMISSORY NOTE</div>
+<p class="center" style="font-weight:bold">${note.id}</p>
+<p class="center">Generated ${generatedDate}</p>
+<hr>
+<div class="row"><span>Financing term</span><span>${note.termMonths} months</span></div>
+<div class="row"><span>Total amount</span><span>${fmt(note.totalAmount)}</span></div>
+<div class="row"><span>Down payment</span><span>${fmt(note.downPayment)}</span></div>
+<div class="row" style="font-weight:bold"><span>Amount financed</span><span>${fmt(note.amountFinanced)}</span></div>
+<div class="row" style="font-weight:bold"><span>Total payable</span><span>${fmt(note.totalPayable)}</span></div>
+<div class="row"><span>Monthly installment</span><span>${fmt(note.monthlyInstallment)}</span></div>
+<hr>
+<table><thead><tr><th>#</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lineRows}</tbody></table>
+<hr>
+<div class="row"><span>Status</span><span>${note.signedAt ? 'Signed' : 'Not yet signed'}</span></div>
+${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span></div>` : ''}
+<div class="sig">
+  <div class="sig-line">Applicant signature</div>
+  <div class="sig-line">Co-maker signature</div>
+</div>
+<p class="footer">PROMISSORY NOTE. This document represents a binding commitment to pay per the schedule above.</p>
+<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
+</body></html>`
+
+  const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+  if (w) {
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 400)
+  }
+}
+
 function PendingApprovalScreen({
   releaseFormRequestId,
   totalAmount,
   serialLines,
+  creditApplicationId,
+  canSignPromissoryNote,
   onReset,
   fmt,
 }: {
   releaseFormRequestId: string
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
+  creditApplicationId?: string
+  canSignPromissoryNote: boolean
   onReset: () => void
   fmt: (n: number) => string
 }) {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
+
+  // Scenario 17 Part 7 — the Promissory Note generated alongside this hold
+  // (installment sales only). Cashier prints it for the customer/co-maker to
+  // sign, then marks it signed here — release stays blocked until they do.
+  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote | null>(null)
+  const [pnLoading, setPnLoading] = useState(!!creditApplicationId)
+  const [signing, setSigning] = useState(false)
+  const [signError, setSignError] = useState('')
+
+  useEffect(() => {
+    // creditApplicationId is fixed for the lifetime of this screen (set once
+    // from the checkout submit response), so the initial pnLoading state
+    // above already covers it — no need to set it true again here.
+    if (!creditApplicationId) return
+    getPromissoryNote(creditApplicationId).then((res) => {
+      setPnLoading(false)
+      if (res.success && res.data) setPromissoryNote(res.data)
+    })
+  }, [creditApplicationId])
 
   async function handleCancelRequest() {
     setCancelling(true)
@@ -4297,6 +4489,19 @@ function PendingApprovalScreen({
       return
     }
     onReset()
+  }
+
+  async function handleSignPromissoryNote() {
+    if (!creditApplicationId) return
+    setSigning(true)
+    setSignError('')
+    const res = await signPromissoryNote(creditApplicationId)
+    setSigning(false)
+    if (!res.success || !res.data) {
+      setSignError(res.error ?? 'Failed to sign promissory note.')
+      return
+    }
+    setPromissoryNote(res.data)
   }
 
   return (
@@ -4326,6 +4531,52 @@ function PendingApprovalScreen({
             <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
           </div>
         </div>
+
+        {creditApplicationId && (
+          <div className="w-full space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 px-5 py-4 text-left">
+            <div className="flex items-center gap-2">
+              <FileSignature size={15} className="text-purple-700" />
+              <p className="text-sm font-semibold text-gray-800">Promissory Note</p>
+            </div>
+            {pnLoading ? (
+              <Skeleton className="h-8 w-full" />
+            ) : !promissoryNote ? (
+              <p className="text-xs text-gray-500">Not available yet.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-600">
+                  {promissoryNote.signedAt ? (
+                    <span className="inline-flex items-center gap-1 font-medium text-green-700">
+                      <CheckCircle2 size={12} /> Signed
+                    </span>
+                  ) : (
+                    'Print for the applicant and co-maker to sign, then mark it signed below — release is blocked until then.'
+                  )}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePrintPromissoryNote(promissoryNote, fmt)}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    <Printer size={13} /> Print
+                  </button>
+                  {!promissoryNote.signedAt && canSignPromissoryNote && (
+                    <button
+                      type="button"
+                      onClick={handleSignPromissoryNote}
+                      disabled={signing}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                    >
+                      {signing ? 'Signing…' : 'Mark as Signed'}
+                    </button>
+                  )}
+                </div>
+                {signError && <p className="text-xs text-red-600">{signError}</p>}
+              </>
+            )}
+          </div>
+        )}
 
         <p className="break-all font-mono text-[10px] text-gray-400">Ref: {releaseFormRequestId}</p>
 

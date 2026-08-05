@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   History,
   ArrowLeft,
+  FileSignature,
 } from 'lucide-react'
 import {
   getPendingReleaseFormRequests,
@@ -107,6 +108,14 @@ function customerLabel(req: PosReleaseFormRequest): string {
     req.cartSnapshot?.customer?.name ??
     (req.cartSnapshot?.customerId ? shortId(req.cartSnapshot.customerId) : 'Walk-in')
   )
+}
+
+/** Scenario 17 Part 7 — mirrors the backend gate in
+ * ReleaseFormRequestsService.approve(): an installment sale cannot be
+ * released until its Promissory Note is signed. Frontend-only UX guard;
+ * the backend is the real enforcement. */
+function promissoryNoteBlocksRelease(req: PosReleaseFormRequest): boolean {
+  return req.cartSnapshot?.invoiceType === 'installment' && !req.promissoryNote?.signedAt
 }
 
 function RequestRowSkeleton() {
@@ -786,6 +795,31 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 </div>
               )}
 
+              {reviewTarget.cartSnapshot?.invoiceType === 'installment' && (
+                <div
+                  className={`flex items-center gap-2 rounded-xl border p-3 text-sm ${
+                    reviewTarget.promissoryNote?.signedAt
+                      ? 'border-green-200 bg-green-50 text-green-800'
+                      : 'border-red-200 bg-red-50 text-red-800'
+                  }`}
+                >
+                  <FileSignature size={15} className="shrink-0" />
+                  <div>
+                    <p className="font-medium">
+                      {reviewTarget.promissoryNote?.signedAt
+                        ? 'Promissory Note signed'
+                        : 'Promissory Note not yet signed'}
+                    </p>
+                    {!reviewTarget.promissoryNote?.signedAt && (
+                      <p className="text-xs opacity-90">
+                        Release is blocked until the cashier prints it for the customer/co-maker and
+                        marks it signed.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Cashier</span>
@@ -873,7 +907,14 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                 </button>
                 <button
                   onClick={handleApprove}
-                  disabled={reviewing || !approvalPin.trim()}
+                  disabled={
+                    reviewing || !approvalPin.trim() || promissoryNoteBlocksRelease(reviewTarget)
+                  }
+                  title={
+                    promissoryNoteBlocksRelease(reviewTarget)
+                      ? 'The Promissory Note must be signed before this sale can be released.'
+                      : undefined
+                  }
                   className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
                 >
                   {reviewing ? (
