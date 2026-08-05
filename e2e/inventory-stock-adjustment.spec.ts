@@ -71,7 +71,7 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
       await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
     }
     await expect(adjustTabButton).toBeVisible({ timeout: 10_000 })
-    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Post Adjustment' }))
+    await clickStable(adjustTabButton, page.getByRole('button', { name: 'Submit for Review' }))
 
     const adjustForm = page.locator('form').last()
     await adjustForm.locator('textarea').fill('E2E: recount variance from automated test.')
@@ -80,10 +80,10 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     // the exact bug INV-64 shipped with (the array was always empty).
     const lineRequiredError = page.getByText('At least one line is required').first()
     await expect(async () => {
-      await page.getByRole('button', { name: 'Post Adjustment' }).click()
+      await page.getByRole('button', { name: 'Submit for Review' }).click()
       await expect(lineRequiredError).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
-    await expect(page.getByText('Adjustment recorded successfully').first()).toHaveCount(0)
+    await expect(page.getByText('Adjustment submitted').first()).toHaveCount(0)
 
     const itemSelect = adjustForm
       .locator('select')
@@ -95,8 +95,8 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     await qtyInputs.nth(1).fill('8')
 
     await expect(async () => {
-      await page.getByRole('button', { name: 'Post Adjustment' }).click()
-      await expect(page.getByText('Adjustment recorded successfully').first()).toBeVisible({
+      await page.getByRole('button', { name: 'Submit for Review' }).click()
+      await expect(page.getByText('Adjustment submitted').first()).toBeVisible({
         timeout: 3_000,
       })
     }).toPass({ timeout: 15_000 })

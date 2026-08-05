@@ -59,6 +59,11 @@ export const INVENTORY_PERMISSIONS = {
   // receive-create permission Stock Controller/Branch Manager also hold.
   RECEIVE_COST_VIEW: 'inventory:receive:cost-view',
 
+  // ── Stock Adjustment approval chain (Scenario 19) ───────────────────────────
+  STOCK_ADJUSTMENT_CONFIRM: 'inventory:stock-adjustment:confirm',
+  STOCK_ADJUSTMENT_INVESTIGATE: 'inventory:stock-adjustment:investigate',
+  STOCK_ADJUSTMENT_APPROVE: 'inventory:stock-adjustment:approve',
+
   // ── Stock Count (Stock Controller) ─────────────────────────────────────────
   STOCK_COUNT_READ: 'inventory:stock-count:read',
   STOCK_COUNT_CREATE: 'inventory:stock-count:create',
@@ -219,6 +224,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock-count:read': 'View stock count sheets',
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',
+  'inventory:stock-adjustment:confirm': 'Confirm a submitted stock adjustment',
+  'inventory:stock-adjustment:investigate': 'Move a confirmed stock adjustment into investigation',
+  'inventory:stock-adjustment:approve':
+    'Approve or reject an investigated stock adjustment — approval posts it to stock/GL',
   'inventory:reorder:read': 'View reorder requests',
   'inventory:reorder:manage': 'Configure reorder points and manage reorder requests',
   'inventory:batch:read': 'View batch / lot records',
