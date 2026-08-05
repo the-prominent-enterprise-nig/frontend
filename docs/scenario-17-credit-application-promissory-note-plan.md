@@ -71,3 +71,27 @@ Ordered by risk/value.
 ## Dead code / unused-feature flags
 
 None found.
+
+## Implementation Log — 2026-08-05
+
+**For this scenario, I have done:**
+
+- Closing gap #1 (scope confirmation): every installment sale requires the full formal credit-application flow — no peso threshold, no new-customer-only carve-out (developer-confirmed).
+- Closing gap #2 (`CreditApplication` entity), split into three parts:
+  - Part 1: `CreditApplication` model/migration/CRUD/permissions, `PosTransaction.creditApplicationId`-style forward link scaffolding.
+  - Part 2: `CreditApplicationDocument` model + upload UI (applicant/co-maker ID, income/expense proof).
+  - Part 3: Cashier intake UI (`/credit/applications`) — applicant + co-maker selection, document upload, submit gate.
+- Closing gap #3 (Credit Investigator role + CI/adjudication record), split into two parts:
+  - Part 4: `Credit Investigator` role + `CreditInvestigation` model (affordability outcome, notes) — distinct from the existing `Collector` role per the 2026-07-31 naming decision.
+  - Part 5: BM/Credit Approver review UI — the existing Branch Manager role with a new `credit:application:approve` permission, not a new role (developer-confirmed).
+- Bridging step (not its own gap item, but required to connect gap #2 to the scenario's actual sale): Part 6 — POS checkout now requires an approved, unconsumed `CreditApplication` for every installment sale; `CreditApplication.posTransactionId` is set once consumed.
+- Closing gap #4 (Promissory Note generation + signature gate): Part 7 — `PromissoryNote` model generated when an installment sale is submitted for release (mirrors the RFD printable-HTML pattern, no new PDF library); `signedAt`/`signedById` gate release in `ReleaseFormRequestsService.approve()` alongside the existing manager-approval gate. Signing is Cashier-level (developer-confirmed 2026-08-05, over Branch-Manager-only), cascading to Branch Manager/Business Owner.
+- Closing gap #5 (sequencing): confirmed Scenario 02's co-maker entity existed before starting gap #2/#4 work.
+
+**Worth flagging:**
+
+- `CreditApplication` has no `financingTermId`/requested-term field — the Promissory Note's term/schedule is captured from the checkout DTO at RFD-submit time, not from the application itself. If a future scenario needs the applicant to request specific terms up front, that'd be a new field on `CreditApplication`.
+- The Promissory Note signature gate only applies within the hold+approve (RFD) flow — an actor who already holds `pos:transaction:override` self-approves and bypasses it, same carve-out the existing manager-approval gate already has. Consistent, not a new loophole.
+- `docs/seed-data-reference.md` was out of date on role/account counts (16 accounts documented vs 22 actually seeded) — corrected this run alongside the Credit Investigator additions.
+- Discovered and fixed unrelated pre-existing gaps during manual testing: zero `FinancingTerm` rows existed anywhere in the seed (any installment sale would have hit this, not just this scenario's); a three-layer sidebar-visibility bug hid the Credit module from non-owner roles (backend `PERMISSION_MODULE_TO_NAV` map, tenant `enabledModules`, two super-admin module-toggle checklists).
+- Flagged but did not fix (out of scope): `pos-checkout-multi-serial-cart.spec.ts` and `pos-release-form-request.e2e-spec.ts` have pre-existing failures unrelated to this scenario (a stale-session serial-picker issue and a July 28 commit requiring a customer on every sale, respectively).
