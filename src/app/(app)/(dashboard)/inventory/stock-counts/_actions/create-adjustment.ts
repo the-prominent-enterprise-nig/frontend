@@ -47,6 +47,6 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
   return {
     success: true,
     data: result.data,
-    message: 'Adjustment submitted — pending Branch Manager confirmation',
+    message: 'Adjustment submitted — pending Branch Manager confirmation before it takes effect',
   }
 }

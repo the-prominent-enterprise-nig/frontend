@@ -2097,8 +2097,6 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    activeTaxRate={activeTaxRate}
-                    inclusivePricing={inclusivePricing}
                     stockKnown={catalogStockKnown}
                   />
                 ))}
@@ -2112,8 +2110,6 @@ export default function CheckoutPage() {
                     qty={cartQtyMap[item.id] ?? 0}
                     onAdd={!!cancellationReqId ? () => {} : addToCart}
                     onAddMeasured={!!cancellationReqId ? () => {} : setMeasuredItem}
-                    activeTaxRate={activeTaxRate}
-                    inclusivePricing={inclusivePricing}
                     stockKnown={catalogStockKnown}
                   />
                 ))}
@@ -4423,28 +4419,18 @@ function CatalogCard({
   qty,
   onAdd,
   onAddMeasured,
-  activeTaxRate,
-  inclusivePricing,
   stockKnown,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  activeTaxRate: { rate: number; name: string } | null
-  inclusivePricing: boolean
   /** False while stock hasn't been resolved to a specific branch yet (e.g.
    * multiple open sessions, none picked) — every item's stockQty defaults to
    * 0 in that window, so it must never be read as "genuinely out of stock"
    * until this is true. */
   stockKnown: boolean
 }) {
-  const displayPrice = displayUnitPriceWithTax(
-    { unitPrice: item.price, taxRate: item.taxRate, pricingMode: item.pricingMode },
-    activeTaxRate,
-    inclusivePricing
-  )
-
   // Only serial-tracked items are hard-blocked at zero — a serial-tracked
   // sale is impossible with nothing to pick, unlike a bulk/quantity item
   // where allowNegativeStock or a backorder might still apply.
@@ -4478,11 +4464,6 @@ function CatalogCard({
       </p>
       {item.sku && <p className="mt-0.5 truncate text-[10px] text-gray-400">{item.sku}</p>}
       <div className="mt-auto pt-2">
-        <p className="text-sm font-bold text-purple-700">
-          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
-            displayPrice
-          )}
-        </p>
         <div className="flex items-center gap-1.5">
           {item.uomCode && (
             <span className="text-[9px] font-medium text-gray-400 uppercase">
@@ -4511,23 +4492,14 @@ function CatalogListRow({
   qty,
   onAdd,
   onAddMeasured,
-  activeTaxRate,
-  inclusivePricing,
   stockKnown,
 }: {
   item: LookupItem
   qty: number
   onAdd: (item: LookupItem) => void
   onAddMeasured?: (item: LookupItem) => void
-  activeTaxRate: { rate: number; name: string } | null
-  inclusivePricing: boolean
   stockKnown: boolean
 }) {
-  const displayPrice = displayUnitPriceWithTax(
-    { unitPrice: item.price, taxRate: item.taxRate, pricingMode: item.pricingMode },
-    activeTaxRate,
-    inclusivePricing
-  )
   const isOutOfStock = stockKnown && item.isSerialTracked && (item.stockQty ?? 0) === 0
   const isLowStock =
     stockKnown && item.stockQty !== undefined && item.stockQty > 0 && item.stockQty <= 5
@@ -4564,16 +4536,9 @@ function CatalogListRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <div className="text-right">
-          <p className="text-sm font-bold text-purple-700">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
-              displayPrice
-            )}
-          </p>
-          {item.uomCode && (
-            <p className="text-[9px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
-          )}
-        </div>
+        {item.uomCode && (
+          <p className="text-[9px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
+        )}
         {qty > 0 && (
           <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
             {Number.isInteger(qty) ? qty : qty.toFixed(1)}

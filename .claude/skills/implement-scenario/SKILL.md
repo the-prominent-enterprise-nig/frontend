@@ -27,6 +27,17 @@ Applies to every permission/role gate you add or touch, in every part. Hierarchy
 
 Apply this whenever Phase 3a adds a new permission string, RBAC guard, or role-gated UI element — and raise it explicitly in Phase 2 if a closing-gap item's target persona/scope isn't already clear from the doc.
 
+## Branch data scoping
+
+A different axis from the role hierarchy above — this is about _which records_ a branch-tied role can see and act on, not _which actions_ their role permits. Caught by the user twice on real features (a removed write-off approve/reject feature, and Scenario 19's Stock Count/Adjustment Approvals surface) — both times because list/detail/action endpoints were built with zero branch filtering and the gap only surfaced when a branch-scoped user saw another branch's records live. Apply this **proactively, unprompted**, on every new or touched list/detail/action endpoint whose records are tied to a branch (directly, or via a `warehouseId` → `Warehouse.branchId` relation, which is how most inventory resources carry it) — don't wait to be asked.
+
+- **Scope list, detail, AND every action endpoint** — not just the one that felt sensitive. Restricting only the write/action side while leaving `findAll`/`findOne` unscoped still lets a branch-scoped user see (and open full detail on) every other branch's records; they just can't click the button. That's still a real visibility leak, and how both real incidents were actually caught.
+- **Mirror the current live reference implementation**: `backend/src/inventory/services/transfers.service.ts` (see the doc comment above its `findOne`, and every action method). The convention: the controller passes `user.branchId` (from `RequestUser`, resolved server-side from `Employee.branchId` — already `null` for Business Owner / no branch assignment, so the check is naturally a no-op for them) into every service method as an optional `actorBranchId` param. `findAll` adds `...(actorBranchId && { warehouse: { branchId: actorBranchId } })` to the `where` clause. `findOne` (and anything that routes through it — start/submit/cancel/confirm/approve/etc., action methods should fetch via `findOne`/an equivalent branch-checked helper first) throws `NotFoundException` when `actorBranchId && record.warehouse.branchId !== actorBranchId`.
+- **404, not 403**, for an out-of-branch detail lookup or action — don't confirm the record exists outside the user's visibility. (`sku-reservations.service.ts`/`customer-advances.service.ts` use 403 for this and deviate from the convention — don't copy those two.)
+- Business Owner (`actorBranchId === null`) always sees/acts on everything — never scope for them.
+- Add an e2e test proving it: cross-branch `findAll` excludes the record, cross-branch `findOne`/action 404s, same-branch still works, Business Owner unrestricted. See `backend/test/inventory-branch-scoping.e2e-spec.ts` for a worked example.
+- Creation endpoints (does a caller-specified `warehouseId` need to belong to the actor's own branch too?) are a related but separate question — raise it with the developer if it comes up, don't assume either way.
+
 ---
 
 ## Procedure
@@ -182,6 +193,7 @@ Do this at the same time as Phase 6 — presenting the PR text is what triggers 
 - [ ] Never implement a flagged product/business decision without asking first (Phase 2)
 - [ ] Never write a permission/role gate that excludes Business Owner from a capability a lower role has (Role access hierarchy)
 - [ ] Never assume a Branch-Manager-scoped capability should extend to Employee-level roles without confirming in Phase 2 — that direction doesn't cascade automatically
+- [ ] Never build or touch a branch-tied list/detail/action endpoint without applying branch data scoping to all of it (list + detail + actions) — unprompted, per the Branch data scoping section above. Caught live by the user twice already.
 - [ ] Never batch multiple parts' implementation together — one part's 3a-3d complete before the next part's 3a starts
 - [ ] Never start the next part without the developer's explicit confirmation that the current part's manual test passed (Phase 3d) — assume "keep going without testing each part" is never the default, only something the developer opts into explicitly
 - [ ] Never commit without explicit go-ahead, even after scope is approved

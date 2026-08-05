@@ -5,9 +5,12 @@ import { gotoReady, loginAs } from './utils'
 // workflow itself is covered by
 // backend/test/inventory-stock-adjustment-approval-chain.e2e-spec.ts; this
 // spec exercises the actual UI: the status badge, and the
-// Confirm/Investigate/Approve/Reject actions across the three approval
-// personas (Branch Manager, Inventory, Accountant — seeded technova.b1.*
-// accounts, prisma/seed.ts).
+// Confirm/Investigate/Approve/Reject actions across the approval personas.
+//
+// This repo's Scenario 19 role decision is Business Owner exclusively does
+// investigate + approve/reject; Branch Manager only confirms — there's no
+// separate "HO Inventory" or "Accountant" role in the chain, unlike the
+// PDF's generic description.
 //
 // The adjustment itself is created directly via the API (not through the
 // Stock Counts "Create Adjustment" tab — already covered by
@@ -17,8 +20,7 @@ import { gotoReady, loginAs } from './utils'
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const STOCK_EMAIL = 'technova.b1.stock@test.com'
 const MANAGER_EMAIL = 'technova.b1.manager@test.com'
-const INVENTORY_EMAIL = 'technova.b1.inventory@test.com'
-const ACCOUNTING_EMAIL = 'technova.b1.accounting@test.com'
+const OWNER_EMAIL = 'technova.owner@test.com'
 
 // loginAs assumes a fresh, unauthenticated session (visiting /login while
 // already signed in just redirects away) — clear cookies first so each
@@ -26,6 +28,19 @@ const ACCOUNTING_EMAIL = 'technova.b1.accounting@test.com'
 async function switchTo(page: Page, email: string): Promise<void> {
   await page.context().clearCookies()
   await loginAs(page, email, DEV_PASSWORD)
+}
+
+// A hard navigation fired immediately after switchTo() occasionally races
+// the session cookie being fully committed, landing back on /login instead
+// of the target page — a known, only-partially-mitigated race in this
+// repo's multi-role specs. Retry the whole switch+navigate+assert until it
+// actually lands.
+async function switchToAndOpen(page: Page, email: string, locator: ReturnType<Page['locator']>) {
+  await expect(async () => {
+    await switchTo(page, email)
+    await gotoReady(page, '/inventory/counting?tab=adjustments')
+    await expect(locator).toBeVisible({ timeout: 5_000 })
+  }).toPass({ timeout: 60_000 })
 }
 
 async function createAdjustment(page: Page): Promise<{ id: string; adjustmentNumber: string }> {
@@ -56,37 +71,33 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
   test('walks a submitted adjustment through confirm → investigate → approve across roles', async ({
     page,
   }) => {
+    // Spans item-governance-free adjustment creation plus 2 role logins,
+    // each with its own retry budget for the session-settle race — well
+    // past the suite's default 60s per-test timeout.
+    test.setTimeout(180_000)
+
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { id, adjustmentNumber } = await createAdjustment(page)
 
     // Branch Manager confirms
-    await switchTo(page, MANAGER_EMAIL)
-    await gotoReady(page, '/inventory/operations?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
-    await expect(ownRow).toBeVisible({ timeout: 10_000 })
+    await switchToAndOpen(page, MANAGER_EMAIL, ownRow)
     await expect(ownRow.getByText('Submitted', { exact: true })).toBeVisible()
 
     const detailHeading = page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })
-    await ownRow.getByRole('button', { name: 'Open' }).click()
+    await ownRow.click()
     await expect(detailHeading).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByText('Adjustment confirmed').first()).toBeVisible({ timeout: 5_000 })
 
-    // Inventory role moves it into investigation
-    await switchTo(page, INVENTORY_EMAIL)
-    await gotoReady(page, '/inventory/operations?tab=adjustments')
-    await expect(ownRow).toBeVisible({ timeout: 10_000 })
-    await ownRow.getByRole('button', { name: 'Open' }).click()
+    // Business Owner moves it into investigation, then approves — this
+    // repo's role decision keeps both steps with the same actor.
+    await switchToAndOpen(page, OWNER_EMAIL, ownRow)
+    await ownRow.click()
     await expect(detailHeading).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: 'Move to Investigating' }).click()
     await expect(page.getByText('Moved to investigating').first()).toBeVisible({ timeout: 5_000 })
 
-    // Accountant approves — posts to stock/GL
-    await switchTo(page, ACCOUNTING_EMAIL)
-    await gotoReady(page, '/inventory/operations?tab=adjustments')
-    await expect(ownRow).toBeVisible({ timeout: 10_000 })
-    await ownRow.getByRole('button', { name: 'Open' }).click()
-    await expect(detailHeading).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: 'Approve' }).click()
     await expect(page.getByText('Adjustment approved').first()).toBeVisible({ timeout: 5_000 })
 
@@ -96,22 +107,23 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
     expect(detailBody.journalEntryId).toBeTruthy()
   })
 
-  test('Accountant can reject an investigated adjustment, visible with its reason', async ({
+  test('Business Owner can reject an investigated adjustment, visible with its reason', async ({
     page,
   }) => {
+    test.setTimeout(120_000)
+
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { id, adjustmentNumber } = await createAdjustment(page)
 
     await switchTo(page, MANAGER_EMAIL)
     await page.request.patch(`/api/inventory/adjustments/${id}/confirm`)
-    await switchTo(page, INVENTORY_EMAIL)
-    await page.request.patch(`/api/inventory/adjustments/${id}/investigate`)
 
-    await switchTo(page, ACCOUNTING_EMAIL)
-    await gotoReady(page, '/inventory/operations?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
+    await switchToAndOpen(page, OWNER_EMAIL, ownRow)
+    await page.request.patch(`/api/inventory/adjustments/${id}/investigate`)
+    await page.reload()
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
-    await ownRow.getByRole('button', { name: 'Open' }).click()
+    await ownRow.click()
     await expect(page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })).toBeVisible(
       { timeout: 10_000 }
     )
@@ -134,10 +146,10 @@ test.describe('Inventory — Stock Adjustment Approval Chain UI (Scenario 19, Pa
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { adjustmentNumber } = await createAdjustment(page)
 
-    await gotoReady(page, '/inventory/operations?tab=adjustments')
+    await gotoReady(page, '/inventory/counting?tab=adjustments')
     const ownRow = page.locator('tr').filter({ hasText: adjustmentNumber })
     await expect(ownRow).toBeVisible({ timeout: 10_000 })
-    await ownRow.getByRole('button', { name: 'Open' }).click()
+    await ownRow.click()
     await expect(page.getByRole('heading', { name: `Adjustment ${adjustmentNumber}` })).toBeVisible(
       { timeout: 10_000 }
     )

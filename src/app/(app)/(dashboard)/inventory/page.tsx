@@ -34,7 +34,7 @@ import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import { getProjection } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-projection'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
-import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/expiry/_actions/get-expiry-data'
+import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
 import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
 import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
 import { getReservations } from '@/src/app/(app)/(dashboard)/inventory/reservations/_actions/get-reservations'
@@ -624,7 +624,7 @@ export default function InventoryPage() {
             sub="Batches within 30 days"
             icon={Calendar}
             iconBg="bg-orange-500"
-            href="/inventory/expiry"
+            href="/inventory/batches"
             loading={loading}
             urgent={s.expiringSoonCount > 0}
           />
@@ -1056,7 +1056,7 @@ export default function InventoryPage() {
                   Expiring Soon
                 </h3>
                 <Link
-                  href="/inventory/expiry"
+                  href="/inventory/batches"
                   className="text-xs text-orange-600 hover:underline tabular-nums"
                 >
                   {loading ? '…' : s.expiringSoonCount} total
@@ -1330,7 +1330,7 @@ export default function InventoryPage() {
                 { label: 'Stock Counts', href: '/inventory/stock-counts', icon: Layers },
                 {
                   label: 'Stock Adjustments',
-                  href: '/inventory/operations?tab=adjustments',
+                  href: '/inventory/counting?tab=adjustments',
                   icon: ClipboardCheck,
                 },
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },

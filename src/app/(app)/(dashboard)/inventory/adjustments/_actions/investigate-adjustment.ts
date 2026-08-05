@@ -32,7 +32,7 @@ export async function investigateAdjustment(id: string): Promise<ApiResponse<unk
     }
   }
 
-  revalidatePath('/inventory/operations')
+  revalidatePath('/inventory/counting')
 
   return { success: true, data: result.data, message: 'Adjustment moved to investigating' }
 }
