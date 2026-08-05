@@ -58,6 +58,14 @@ export const MODULES: AppModule[] = [
     requiredPermission: 'crm:*',
     icon: 'users-round',
   },
+  {
+    key: 'credit',
+    routeSegment: 'credit',
+    label: 'Credit Applications',
+    href: '/credit/applications',
+    requiredPermission: 'credit:*',
+    icon: 'credit-card',
+  },
   // {
   //   key: 'sales',
   //   routeSegment: 'sales',

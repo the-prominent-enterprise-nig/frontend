@@ -96,6 +96,7 @@ const MODULE_ICON_MAP: Partial<Record<string, LucideIcon>> = {
   package: Package,
   'shopping-cart': ShoppingCart,
   'users-round': UsersRound,
+  'credit-card': CreditCard,
 }
 
 const navItemsBySegment: Record<string, NavConfig> = {
