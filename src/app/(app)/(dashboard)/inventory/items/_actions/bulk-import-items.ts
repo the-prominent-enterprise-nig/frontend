@@ -67,10 +67,14 @@ export async function bulkImportItems(
 
     if (parsed.data.created.length > 0) revalidatePath('/inventory/items')
 
+    const skippedNote = parsed.data.skippedBlankRows
+      ? `, ${parsed.data.skippedBlankRows} blank row(s) skipped`
+      : ''
+
     return {
       success: true,
       data: parsed.data,
-      message: `${parsed.data.created.length} item(s) created, ${parsed.data.errors.length} row(s) failed`,
+      message: `${parsed.data.created.length} item(s) created, ${parsed.data.errors.length} row(s) failed${skippedNote}`,
     }
   } catch (error) {
     return {

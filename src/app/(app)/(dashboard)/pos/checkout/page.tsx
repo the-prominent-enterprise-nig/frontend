@@ -24,7 +24,6 @@ import {
   KeyRound,
   WifiOff,
   UtensilsCrossed,
-  Users,
   Mail,
   Phone,
   Send,
@@ -63,7 +62,7 @@ import {
   getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
-  validateManagerOverride,
+  validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
   sendReceipt,
@@ -82,8 +81,14 @@ import {
   previewInstallment,
   createSkuReservation,
   createCustomerAdvance,
+  getPosPriceUseTypes,
+  searchSerialsAcrossItems,
   type SerialNumberRecord,
+  type PosPriceUseType,
 } from '../_actions/pos-actions'
+import PriceUseSelector from './_components/PriceUseSelector'
+import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import { usePriceResolution } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
@@ -94,7 +99,6 @@ import type {
   LoyaltyProgram,
   PosTransaction,
   SyncTransactionItem,
-  ScPwdDiscountInput,
   FinancingTerm,
   InstallmentPreview,
 } from '@/src/schema/pos'
@@ -122,6 +126,9 @@ interface LookupItem {
   pricingMode?: 'inclusive' | 'exclusive' | null
   isSerialTracked?: boolean
   requiresSecondarySerial?: boolean
+  /** Raw shape from GET /pos/catalog — flattened into brandName below. */
+  brand?: { id: string; name: string } | null
+  brandName?: string | null
 }
 
 interface CartLine {
@@ -144,6 +151,18 @@ interface CartLine {
   requiresSecondarySerial?: boolean
   secondarySerialNumberId?: string
   secondarySerialNumberLabel?: string
+  /** PriceListItem this line's unitPrice resolved to under the sale's
+   * selected Price Use — null until resolved, stays null if manually
+   * overridden instead. */
+  priceListItemId?: string | null
+  /** True once unitPrice reflects either a real Price Use resolution or a
+   * manual override — false means still pending / no match, and checkout
+   * submission should be blocked on this line. */
+  priceResolved?: boolean
+  /** Set once a manager PIN-approves a manual price on this line. A
+   * Price Use change must not silently clobber this. */
+  priceOverrideBy?: string | null
+  priceOverrideApproverName?: string
 }
 
 interface PaymentRow {
@@ -275,6 +294,10 @@ export default function CheckoutPage() {
   // Item search
   const [searchQuery, setSearchQuery] = useState('')
   const [catalogViewMode, setCatalogViewMode] = useState<'grid' | 'list'>('grid')
+  // Serial-number search from the same box — the item catalog is preloaded
+  // client-side, but serials aren't (there can be thousands), so this is a
+  // separate debounced backend call merged into displayItems.
+  const [serialSearchResults, setSerialSearchResults] = useState<SerialNumberRecord[]>([])
 
   // Selling agent — CRM-owned agent list, not system User accounts
   const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
@@ -386,17 +409,6 @@ export default function CheckoutPage() {
   const [allowNegativeStock, setAllowNegativeStock] = useState(false)
   const [inclusivePricing, setInclusivePricing] = useState(false)
 
-  // SC/PWD discount
-  const [scPwdData, setScPwdData] = useState<ScPwdDiscountInput | null>(null)
-  const [showScPwdModal, setShowScPwdModal] = useState(false)
-  const [scPwdForm, setScPwdForm] = useState<{
-    type: 'SC' | 'PWD'
-    idNumber: string
-    name: string
-    signatureCapture: string
-  }>({ type: 'SC', idNumber: '', name: '', signatureCapture: '' })
-  const [scPwdFormError, setScPwdFormError] = useState('')
-
   // Manager override
   const [managerOverrideApproved, setManagerOverrideApproved] = useState(false)
   const [overrideManagerName, setOverrideManagerName] = useState('')
@@ -405,6 +417,42 @@ export default function CheckoutPage() {
   const [overridePin, setOverridePin] = useState('')
   const [overrideError, setOverrideError] = useState('')
   const [overridePending, setOverridePending] = useState(false)
+
+  // Price Use (Price List integration) — selected once for the whole sale
+  const [priceUseTypeId, setPriceUseTypeId] = useState('')
+  const [priceUseTypes, setPriceUseTypes] = useState<PosPriceUseType[]>([])
+  const [priceOverrideTargetLineId, setPriceOverrideTargetLineId] = useState<string | null>(null)
+  const cartItemIds = useMemo(() => cart.map((l) => l.itemId), [cart])
+  const { prices: resolvedPrices, isResolving: isResolvingPrices } = usePriceResolution(
+    priceUseTypeId,
+    cartItemIds,
+    activeBranchId ?? undefined
+  )
+
+  // Back-fills each cart line's unitPrice from the bulk resolution — skips
+  // any line that already has a manual priceOverrideBy (a PIN-approved
+  // value a Price Use change must not silently clobber).
+  useEffect(() => {
+    if (!priceUseTypeId) return
+    setCart((prev) =>
+      prev.map((line) => {
+        if (line.priceOverrideBy) return line
+        const resolved = resolvedPrices[line.itemId]
+        if (!resolved) {
+          return line.priceResolved
+            ? { ...line, priceResolved: false, priceListItemId: null }
+            : line
+        }
+        if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
+        return {
+          ...line,
+          unitPrice: resolved.price,
+          priceListItemId: resolved.priceListItemId,
+          priceResolved: true,
+        }
+      })
+    )
+  }, [resolvedPrices, priceUseTypeId])
 
   // Submit
   const [submitting, setSubmitting] = useState(false)
@@ -505,14 +553,16 @@ export default function CheckoutPage() {
         const uomMap = Object.fromEntries((uomRes.data?.data ?? []).map((u) => [u.id, u]))
 
         const enriched = raw.map((item) => {
-          if (item.uomCode || item.allowDecimal) return item
-          const uom = item.baseUnitId ? uomMap[item.baseUnitId] : undefined
-          if (!uom) return item
+          const withBrand =
+            item.brandName === undefined ? { ...item, brandName: item.brand?.name ?? null } : item
+          if (withBrand.uomCode || withBrand.allowDecimal) return withBrand
+          const uom = withBrand.baseUnitId ? uomMap[withBrand.baseUnitId] : undefined
+          if (!uom) return withBrand
           const uomCode = uom.code
           const allowDecimal =
             uom.allowDecimal === true ||
             (uom.allowDecimal !== false && DECIMAL_CODES.has(uomCode.toLowerCase()))
-          return { ...item, uomCode, allowDecimal }
+          return { ...withBrand, uomCode, allowDecimal }
         })
 
         setCatalogItems(enriched)
@@ -552,6 +602,14 @@ export default function CheckoutPage() {
   useEffect(() => {
     getSellingAgents().then((res) => {
       if (res.success && Array.isArray(res.data)) setSellingAgents(res.data)
+    })
+  }, [])
+
+  // Load Price Use types for the sale-level selector — data-driven, not a
+  // hardcoded list, since these are user-managed (Inventory > Price Use Types)
+  useEffect(() => {
+    getPosPriceUseTypes().then((res) => {
+      if (res.success && Array.isArray(res.data)) setPriceUseTypes(res.data)
     })
   }, [])
 
@@ -710,6 +768,28 @@ export default function CheckoutPage() {
     return groups
   }, [cart])
 
+  // Debounced (300ms, 3+ chars) — the instant client-side name/sku/barcode/
+  // brand filter above keeps running regardless; this only adds serial hits
+  // on top, since someone scanning/typing a serial has no reason to also
+  // know the item's name.
+  useEffect(() => {
+    const q = searchQuery.trim()
+    if (q.length < 3) {
+      setSerialSearchResults([])
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      searchSerialsAcrossItems(q, activeBranchId ?? undefined).then((res) => {
+        if (!cancelled && res.success && Array.isArray(res.data)) setSerialSearchResults(res.data)
+      })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [searchQuery, activeBranchId])
+
   const displayItems = useMemo(() => {
     // A plain (non-serialized) bundle has no single sellable unit and stays
     // excluded; a serial-tracked bundle (e.g. a "Furniture Set") is sold and
@@ -718,13 +798,18 @@ export default function CheckoutPage() {
     const source = catalogItems.filter((item) => !item.isBundle || item.isSerialTracked)
     const q = searchQuery.trim().toLowerCase()
     if (!q) return source
+    const serialMatchedItemIds = new Set(
+      serialSearchResults.map((s) => s.item?.id).filter((id): id is string => !!id)
+    )
     return source.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.sku?.toLowerCase().includes(q) ||
-        item.barcode?.toLowerCase().includes(q)
+        item.barcode?.toLowerCase().includes(q) ||
+        item.brandName?.toLowerCase().includes(q) ||
+        serialMatchedItemIds.has(item.id)
     )
-  }, [catalogItems, searchQuery])
+  }, [catalogItems, searchQuery, serialSearchResults])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
 
@@ -747,8 +832,7 @@ export default function CheckoutPage() {
   const hasMixedTaxRates = distinctLineTaxRates.length > 1
   const uniformLineTaxRate = distinctLineTaxRates.length === 1 ? distinctLineTaxRates[0] : null
 
-  // promoDiscount is cleared when SC/PWD is active (cannot stack)
-  const promoDiscount = promoResult?.valid && !scPwdData ? (promoResult.discountAmount ?? 0) : 0
+  const promoDiscount = promoResult?.valid ? (promoResult.discountAmount ?? 0) : 0
 
   // additiveTax is 0 for lines whose tax is already baked into unitPrice
   // (inclusive), and the real per-line tax for lines that still need it added
@@ -756,15 +840,7 @@ export default function CheckoutPage() {
   // uniformly match the tenant's global pricing-mode default.
   const subtotal = rawSubtotal + additiveTax
 
-  // SC/PWD: 20% on VAT-exclusive base per BIR rules (exact reconciliation done server-side)
-  const scPwdEstimatedDiscount = scPwdData
-    ? Math.round(vatExclSubtotalForBackend * 0.2 * 100) / 100
-    : 0
-
-  const totalAmount = Math.max(
-    0,
-    Math.round((subtotal - promoDiscount - scPwdEstimatedDiscount) * 100) / 100
-  )
+  const totalAmount = Math.max(0, Math.round((subtotal - promoDiscount) * 100) / 100)
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((totalAmount - totalPaid) * 100) / 100)
   const change = totalPaid > totalAmount ? Math.round((totalPaid - totalAmount) * 100) / 100 : 0
@@ -905,7 +981,12 @@ export default function CheckoutPage() {
             itemId: item.id,
             itemName: item.name,
             sku: item.sku,
-            unitPrice: item.price,
+            // This branch only runs when !isReserveMode (see the outer if) —
+            // a real sale line, so pricing defers to Price Use, not the
+            // catalog's reference price (never show a price before it's
+            // actually resolved — that's exactly what the item price cell
+            // and the Order Summary total must agree on).
+            unitPrice: 0,
             quantity: 1,
             taxRate: item.taxRate ?? null,
             uomCode: item.uomCode,
@@ -913,6 +994,8 @@ export default function CheckoutPage() {
             pricingMode: item.pricingMode ?? null,
             isSerialTracked: true,
             requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+            priceResolved: false,
+            priceListItemId: null,
           }
           return [...prev, siblingLine]
         }
@@ -925,7 +1008,13 @@ export default function CheckoutPage() {
         itemId: item.id,
         itemName: item.name,
         sku: item.sku,
-        unitPrice: item.price,
+        // Reserve mode never submits as a real sale, so Price Use resolution
+        // doesn't apply there — it keeps the catalog reference price. A real
+        // sale line starts at 0, not item.price: showing any price before
+        // Price Use resolves it would leak the un-resolved reference price
+        // into the Order Summary total, same thing the per-line "Select
+        // Price Use" placeholder exists to prevent.
+        unitPrice: isReserveMode ? item.price : 0,
         quantity: isReserveMode ? qty : item.isSerialTracked ? 1 : qty,
         taxRate: item.taxRate ?? null,
         uomCode: item.uomCode,
@@ -933,6 +1022,10 @@ export default function CheckoutPage() {
         pricingMode: item.pricingMode ?? null,
         isSerialTracked: isReserveMode ? false : (item.isSerialTracked ?? false),
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+        // Reserve mode never submits as a real sale, so Price Use resolution
+        // doesn't apply — treat it as already "resolved" so it never blocks.
+        priceResolved: isReserveMode,
+        priceListItemId: null,
       }
       return isReserveMode ? [newLine] : [...prev, newLine]
     })
@@ -1043,27 +1136,52 @@ export default function CheckoutPage() {
 
   async function handleManagerOverride() {
     setOverrideError('')
-    if (!overrideManagerId.trim()) {
-      setOverrideError("Enter the manager's User ID.")
-      return
-    }
     if (!overridePin.trim()) {
       setOverrideError("Enter the manager's PIN.")
       return
     }
     setOverridePending(true)
-    const res = await validateManagerOverride(overrideManagerId.trim(), overridePin.trim())
+    const res = await validateManagerByPin(overridePin.trim())
     setOverridePending(false)
     if (!res.success || !res.data) {
       setOverrideError(res.error ?? 'Override failed')
       return
     }
     setManagerOverrideApproved(true)
+    setOverrideManagerId(res.data.managerId)
     setOverrideManagerName(res.data.managerName ?? 'Manager')
     setShowOverrideDialog(false)
-    setOverrideManagerId('')
     setOverridePin('')
     setOverrideError('')
+  }
+
+  // A price override reuses the same shared managerOverride/managerUserId
+  // slot the submission payload sends for discount overrides — the backend
+  // treats "PIN-approved on this sale" as one sale-level fact regardless of
+  // which line it applies to (same limitation the existing discount-override
+  // system already has for multi-line, multi-approver sales).
+  function handlePriceOverrideApprove(
+    lineId: string,
+    result: { managerId: string; managerName: string; newPrice: number }
+  ) {
+    setCart((prev) =>
+      prev.map((l) =>
+        l.lineId === lineId
+          ? {
+              ...l,
+              unitPrice: result.newPrice,
+              priceOverrideBy: result.managerId,
+              priceOverrideApproverName: result.managerName,
+              priceResolved: true,
+              priceListItemId: null,
+            }
+          : l
+      )
+    )
+    setManagerOverrideApproved(true)
+    setOverrideManagerId(result.managerId)
+    setOverrideManagerName(result.managerName)
+    setPriceOverrideTargetLineId(null)
   }
 
   // ─── Payment actions ───────────────────────────────────────────────────────
@@ -1240,10 +1358,9 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
         totalAmount,
-        isTaxExempt: isTaxExempt || !!scPwdData,
+        isTaxExempt,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
-        scPwdDiscount: scPwdData ?? undefined,
         lines: cart.map((l) => ({
           itemId: l.itemId,
           itemName: l.itemName,
@@ -1283,6 +1400,7 @@ export default function CheckoutPage() {
           sessionId,
           transactionType: 'sale',
           invoiceType,
+          priceUseTypeId: priceUseTypeId || undefined,
           chargeDueDays: invoiceType === 'charge' ? chargeDueDays : undefined,
           financingTermId: invoiceType === 'installment' ? financingTermId : undefined,
           downPayment:
@@ -1293,12 +1411,11 @@ export default function CheckoutPage() {
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
           totalAmount,
-          isTaxExempt: isTaxExempt || !!scPwdData,
+          isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           managerOverride: managerOverrideApproved || undefined,
           managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
-          scPwdDiscount: scPwdData ?? undefined,
           sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
@@ -1311,6 +1428,8 @@ export default function CheckoutPage() {
             pricingMode: l.pricingMode ?? undefined,
             serialNumberId: l.serialNumberId,
             secondarySerialNumberId: l.secondarySerialNumberId,
+            priceListItemId: l.priceListItemId ?? undefined,
+            priceOverride: l.priceOverrideBy ? true : undefined,
           })),
         })
 
@@ -1536,7 +1655,8 @@ export default function CheckoutPage() {
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
-    setScPwdData(null)
+    setPriceUseTypeId('')
+    setPriceOverrideTargetLineId(null)
     setFromTab(null)
     setInvoiceType('cash')
     setChargeDueDays(30)
@@ -2140,9 +2260,33 @@ export default function CheckoutPage() {
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                          {fmt(
-                            displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                              groupQty
+                          {line.priceResolved ? (
+                            <div className="flex flex-col items-end gap-0.5">
+                              {fmt(
+                                displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                  groupQty
+                              )}
+                              {line.priceOverrideBy && (
+                                <button
+                                  onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                                  className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
+                                  title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
+                                >
+                                  Overridden
+                                </button>
+                              )}
+                            </div>
+                          ) : !priceUseTypeId ? (
+                            <span className="text-[10px] font-medium text-gray-400">
+                              — Select Price Use
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                              className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                            >
+                              No price — Override
+                            </button>
                           )}
                         </td>
                         <td className="px-3 py-2 text-right">
@@ -2427,15 +2571,8 @@ export default function CheckoutPage() {
                   <span>−{fmt(promoDiscount)}</span>
                 </div>
               )}
-              {scPwdEstimatedDiscount > 0 && (
-                <div className="flex justify-between text-blue-600 text-xs">
-                  <span>{scPwdData?.type === 'PWD' ? 'PWD' : 'SC'} Discount (20%)*</span>
-                  <span>−{fmt(scPwdEstimatedDiscount)}</span>
-                </div>
-              )}
               {cart.length > 0 &&
                 !isTaxExempt &&
-                !scPwdData &&
                 (hasMixedTaxRates || uniformLineTaxRate != null) && (
                   <div className="flex justify-between text-gray-700 text-xs">
                     <span>
@@ -2490,6 +2627,21 @@ export default function CheckoutPage() {
               />
             )}
           </div>
+
+          {/* Price Use — sale-level selector, drives every line's price */}
+          {invoiceType !== 'reserve' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Price Use
+              </p>
+              <PriceUseSelector
+                priceUseTypes={priceUseTypes}
+                value={priceUseTypeId}
+                onChange={setPriceUseTypeId}
+                isLoading={isResolvingPrices}
+              />
+            </div>
+          )}
 
           {/* Promo code */}
           <div className="border-b border-purple-200 p-5">
@@ -2561,40 +2713,6 @@ export default function CheckoutPage() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* Senior Citizen Discount (PWD disabled per request) */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Senior Citizen Discount
-            </p>
-            {scPwdData ? (
-              <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
-                <div className="flex items-center gap-2 text-sm text-blue-700">
-                  <Users size={12} />
-                  <span className="font-semibold">{scPwdData.type}</span>
-                  <span className="text-blue-600">{scPwdData.name}</span>
-                  <span className="ml-1 text-xs text-blue-400">−{fmt(scPwdEstimatedDiscount)}</span>
-                </div>
-                <button
-                  onClick={() => setScPwdData(null)}
-                  className="text-blue-300 hover:text-blue-600"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <button
-                disabled={cart.length === 0}
-                onClick={() => {
-                  setScPwdFormError('')
-                  setShowScPwdModal(true)
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-3 text-sm text-gray-700 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Users size={14} /> Add Senior Citizen Beneficiary
-              </button>
             )}
           </div>
 
@@ -3048,7 +3166,10 @@ export default function CheckoutPage() {
                 (invoiceType === 'charge' && !selectedCustomer) ||
                 (invoiceType === 'installment' && (!selectedCustomer || !financingTermId)) ||
                 (invoiceType === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
-                (needsManagerOverride && !managerOverrideApproved)
+                (needsManagerOverride && !managerOverrideApproved) ||
+                (invoiceType !== 'reserve' &&
+                  cart.length > 0 &&
+                  (!priceUseTypeId || cart.some((l) => !l.priceResolved)))
               }
               className={`w-full rounded-xl py-4 text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 active:scale-[0.99] ${
                 invoiceType === 'charge'
@@ -3223,21 +3344,9 @@ export default function CheckoutPage() {
           </div>
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Manager User ID
-              </label>
-              <input
-                autoFocus
-                className="input font-mono text-sm"
-                placeholder="Paste manager's User ID (UUID)"
-                value={overrideManagerId}
-                onChange={(e) => setOverrideManagerId(e.target.value)}
-              />
-              <p className="mt-1 text-[10px] text-gray-400">Found in HR Settings → My Profile</p>
-            </div>
-            <div>
               <label className="mb-1 block text-xs font-semibold text-gray-600">Manager PIN</label>
               <input
+                autoFocus
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
@@ -3266,7 +3375,7 @@ export default function CheckoutPage() {
             </button>
             <button
               onClick={handleManagerOverride}
-              disabled={overridePending || !overrideManagerId.trim() || !overridePin.trim()}
+              disabled={overridePending || !overridePin.trim()}
               className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
               <ShieldCheck size={14} />
@@ -3276,116 +3385,19 @@ export default function CheckoutPage() {
         </Overlay>
       )}
 
-      {/* SC/PWD Discount Dialog */}
-      {showScPwdModal && (
-        <Overlay onClose={() => setShowScPwdModal(false)}>
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-              <Users size={18} className="text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Senior Citizen Discount</h2>
-              <p className="text-xs text-gray-500">20% on VAT-exclusive base per BIR rules</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Beneficiary Type
-              </label>
-              <div className="flex gap-2">
-                {/* PWD disabled per request — re-enable by adding 'PWD' back to this tuple */}
-                {(['SC'] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setScPwdForm((f) => ({ ...f, type: t }))}
-                    className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition-colors ${scPwdForm.type === t ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
-                  >
-                    Senior Citizen
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">ID Number</label>
-              <input
-                autoFocus
-                className="input"
-                placeholder="OSCA ID number"
-                value={scPwdForm.idNumber}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, idNumber: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Beneficiary Name
-              </label>
-              <input
-                className="input"
-                placeholder="Full name as shown on ID"
-                value={scPwdForm.name}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">
-                Signature / Acknowledgement
-              </label>
-              <input
-                className="input"
-                placeholder="Type name to acknowledge"
-                value={scPwdForm.signatureCapture}
-                onChange={(e) => setScPwdForm((f) => ({ ...f, signatureCapture: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.form?.requestSubmit?.()
-                }}
-              />
-              <p className="mt-1 text-[10px] text-gray-400">
-                Required for BIR record — beneficiary types their name
-              </p>
-            </div>
-          </div>
-          {scPwdFormError && (
-            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-              {scPwdFormError}
-            </p>
-          )}
-          <div className="mt-5 flex justify-end gap-3">
-            <button
-              onClick={() => setShowScPwdModal(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                if (!scPwdForm.idNumber.trim()) {
-                  setScPwdFormError('ID number is required.')
-                  return
-                }
-                if (!scPwdForm.name.trim()) {
-                  setScPwdFormError('Beneficiary name is required.')
-                  return
-                }
-                if (!scPwdForm.signatureCapture.trim()) {
-                  setScPwdFormError('Signature acknowledgement is required.')
-                  return
-                }
-                setScPwdData({
-                  type: scPwdForm.type,
-                  idNumber: scPwdForm.idNumber.trim(),
-                  name: scPwdForm.name.trim(),
-                  signatureCapture: scPwdForm.signatureCapture.trim(),
-                })
-                setShowScPwdModal(false)
-              }}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <ShieldCheck size={14} /> Apply Discount
-            </button>
-          </div>
-        </Overlay>
-      )}
+      {priceOverrideTargetLineId &&
+        (() => {
+          const targetLine = cart.find((l) => l.lineId === priceOverrideTargetLineId)
+          if (!targetLine) return null
+          return (
+            <PriceOverrideDialog
+              itemName={targetLine.itemName}
+              currentPrice={targetLine.priceResolved ? targetLine.unitPrice : null}
+              onClose={() => setPriceOverrideTargetLineId(null)}
+              onApprove={(result) => handlePriceOverrideApprove(targetLine.lineId, result)}
+            />
+          )
+        })()}
 
       {/* Serial Number Picker */}
       {serialPickerTarget &&

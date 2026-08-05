@@ -6,6 +6,9 @@ export const INVENTORY_PERMISSIONS = {
   ITEMS_DELETE: 'inventory:items:delete',
   ITEMS_MANAGE_LIFECYCLE: 'inventory:items:manage_lifecycle',
   ITEMS_MANAGE_CLASSIFICATION: 'inventory:items:manage_classification',
+  // Scenario 16 — Item Master Governance
+  ITEMS_CONFIRM_TAX_MAPPING: 'inventory:items:confirm_tax_mapping',
+  ITEMS_APPROVE: 'inventory:items:approve',
 
   // ── Categories ─────────────────────────────────────────────────────────────
   CATEGORIES_READ: 'inventory:categories:read',
@@ -51,6 +54,10 @@ export const INVENTORY_PERMISSIONS = {
   // ── Receive (Stock Controller) ─────────────────────────────────────────────
   RECEIVE_READ: 'inventory:receive:read',
   RECEIVE_CREATE: 'inventory:receive:create',
+  // Unit cost is sensitive pricing data — restricted to Business
+  // Owner/Accountant (Scenario 05 followup), separate from the base
+  // receive-create permission Stock Controller/Branch Manager also hold.
+  RECEIVE_COST_VIEW: 'inventory:receive:cost-view',
 
   // ── Stock Count (Stock Controller) ─────────────────────────────────────────
   STOCK_COUNT_READ: 'inventory:stock-count:read',
@@ -109,6 +116,8 @@ export const INVENTORY_PERMISSIONS = {
   PRICE_LISTS_CREATE: 'inventory:price-lists:create',
   PRICE_LISTS_UPDATE: 'inventory:price-lists:update',
   PRICE_LISTS_DELETE: 'inventory:price-lists:delete',
+  PRICE_LISTS_APPROVE: 'inventory:price-lists:approve',
+  PRICE_LISTS_MANAGE_PRICE_USE_TYPES: 'inventory:price-lists:manage_price_use_types',
 
   // ── Stock Level Boundaries (INV-33) ────────────────────────────────────────
   STOCK_LEVELS_READ: 'inventory:stock-levels:read',
@@ -170,6 +179,9 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Change item lifecycle status (Active / Discontinued / Archived)',
   'inventory:items:manage_classification':
     'Manage item classification (groups, subgroups, brands, types)',
+  'inventory:items:confirm_tax_mapping':
+    'Confirm tax and GL account mapping on a draft item pending review',
+  'inventory:items:approve': 'Approve a draft item for publish, or reject it back to the submitter',
   'inventory:categories:read': 'View item categories',
   'inventory:categories:create': 'Create item categories',
   'inventory:categories:update': 'Edit item categories',
@@ -203,6 +215,7 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:reports:turnover': 'View stock turnover and aging reports',
   'inventory:receive:read': 'View goods receiving records',
   'inventory:receive:create': 'Record goods received against a PO',
+  'inventory:receive:cost-view': 'View and enter unit cost on goods receipts',
   'inventory:stock-count:read': 'View stock count sheets',
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',
@@ -235,6 +248,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:price-lists:create': 'Create price lists',
   'inventory:price-lists:update': 'Edit price lists',
   'inventory:price-lists:delete': 'Delete price lists',
+  'inventory:price-lists:approve':
+    'Approve or reject a pending price list (Sales/Finance Approver)',
+  'inventory:price-lists:manage_price_use_types':
+    'Create, rename, or delete price-use types (e.g. WIP, CR-BR, SSC)',
   'inventory:stock-levels:read': 'View min / max stock level boundaries',
   'inventory:stock-levels:manage': 'Configure min / max stock level boundaries',
   'inventory:reservations:read': 'View stock reservations',

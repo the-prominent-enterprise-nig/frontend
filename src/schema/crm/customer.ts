@@ -40,7 +40,6 @@ export const ID_TYPE_OPTIONS = [
   'TIN ID',
   'National ID (PhilSys)',
   'Company ID',
-  'Senior Citizen ID',
   'PWD ID',
 ] as const
 

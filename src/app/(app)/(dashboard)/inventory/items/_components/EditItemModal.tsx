@@ -11,8 +11,6 @@ import {
   UpdateItemFormValues,
   UomOption,
   ItemSummary,
-  ItemGroupOption,
-  ItemSubgroupOption,
   ClassificationOption,
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
@@ -30,6 +28,7 @@ import {
   NumericInput,
   FormSection,
 } from './item-form-shared'
+import { formatClassificationLabel } from '@/src/libs/format/text'
 
 // Tracking checkboxes that don't apply to service items and get disabled + cleared
 // when "Service Item" is checked.
@@ -51,8 +50,6 @@ type Props = {
   onAttributeSubmit: (attributes: Record<string, string>) => Promise<ApiResponse<unknown>>
   isAttributeSubmitting: boolean
   canReadAttributes?: boolean
-  groupOptions: ItemGroupOption[]
-  subgroupOptions: ItemSubgroupOption[]
   brandOptions: ClassificationOption[]
   typeOptions: ClassificationOption[]
 }
@@ -68,8 +65,6 @@ export default function EditItemModal({
   onAttributeSubmit,
   isAttributeSubmitting,
   canReadAttributes = true,
-  groupOptions,
-  subgroupOptions,
   brandOptions,
   typeOptions,
 }: Props) {
@@ -90,7 +85,6 @@ export default function EditItemModal({
     reset,
     setError,
     setValue,
-    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<UpdateItemFormValues>({
@@ -102,7 +96,6 @@ export default function EditItemModal({
       primaryCategoryId: '',
       baseUnitId: '',
       costPrice: undefined,
-      sellingPrice: undefined,
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: false,
@@ -117,10 +110,9 @@ export default function EditItemModal({
       heightCm: undefined,
       weightKg: undefined,
       warrantyPeriodDays: undefined,
-      groupId: undefined,
-      subgroupId: undefined,
       brandId: undefined,
       typeId: undefined,
+      modelNumber: '',
     },
   })
 
@@ -133,7 +125,6 @@ export default function EditItemModal({
         primaryCategoryId: item.primaryCategory?.id ?? undefined,
         baseUnitId: item.baseUnit?.id ?? undefined,
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
-        sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
         costingMethod: 'weighted_average',
         isBatchTracked: item.isBatchTracked ?? false,
         isSerialTracked: item.isSerialTracked ?? false,
@@ -149,10 +140,9 @@ export default function EditItemModal({
         weightKg: item.weightKg != null ? Number(item.weightKg) : undefined,
         warrantyPeriodDays:
           item.warrantyPeriodDays != null ? Number(item.warrantyPeriodDays) : undefined,
-        groupId: item.group?.id ?? undefined,
-        subgroupId: item.subgroup?.id ?? undefined,
         brandId: item.brand?.id ?? undefined,
         typeId: item.type?.id ?? undefined,
+        modelNumber: item.modelNumber ?? '',
       })
     } else if (!isOpen) {
       reset()
@@ -163,17 +153,6 @@ export default function EditItemModal({
   }, [item?.id, isOpen, reset])
 
   const selectedCategoryId = useWatch({ control, name: 'primaryCategoryId' })
-  const selectedGroupId = useWatch({ control, name: 'groupId' })
-  const filteredSubgroups = subgroupOptions.filter(
-    (s) => !selectedGroupId || s.groupId === selectedGroupId
-  )
-
-  useEffect(() => {
-    const currentSub = getValues('subgroupId')
-    if (!currentSub) return
-    const valid = filteredSubgroups.some((s) => s.id === currentSub)
-    if (!valid) setValue('subgroupId', undefined)
-  }, [selectedGroupId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Service items never carry stock/serial tracking — force-clear + disable those
   // checkboxes whenever "Service Item" is checked.
@@ -284,12 +263,12 @@ export default function EditItemModal({
     errors.primaryCategoryId,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
           <div className="flex items-center justify-between px-6 py-4">
@@ -446,6 +425,71 @@ export default function EditItemModal({
               />
             </div>
 
+            {/* Brand */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
+              <Controller
+                name="brandId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {brandOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Item Type */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
+              <Controller
+                name="typeId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => field.onChange(e.target.value || undefined)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">— None —</option>
+                    {typeOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {formatClassificationLabel(t.name)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+            </div>
+
+            {/* Model Number */}
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Model Number</label>
+              <Controller
+                name="modelNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    type="text"
+                    placeholder="e.g. KFM36E0W"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+            </div>
+
             {/* Has Variants */}
             <div className="sm:col-span-2">
               <Controller
@@ -508,27 +552,6 @@ export default function EditItemModal({
               {errors.costPrice && (
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
-            </div>
-
-            {/* Selling Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Selling Price (₱)
-              </label>
-              <Controller
-                name="sellingPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
             </div>
 
             {/* Tax Rate */}
@@ -680,108 +703,6 @@ export default function EditItemModal({
                   </label>
                 ))}
               </div>
-            </div>
-          </FormSection>
-
-          {/* Classification */}
-          <FormSection title="Classification" defaultOpen={false}>
-            {/* Group */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Group</label>
-              <Controller
-                name="groupId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {groupOptions.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-            </div>
-
-            {/* Subgroup */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Subgroup</label>
-              <Controller
-                name="subgroupId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    disabled={!selectedGroupId}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-50 disabled:text-zinc-400"
-                  >
-                    <option value="">
-                      {selectedGroupId ? '— None —' : '— Select group first —'}
-                    </option>
-                    {filteredSubgroups.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-            </div>
-
-            {/* Brand */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
-              <Controller
-                name="brandId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {brandOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-            </div>
-
-            {/* Item Type */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
-              <Controller
-                name="typeId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {typeOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
             </div>
           </FormSection>
 

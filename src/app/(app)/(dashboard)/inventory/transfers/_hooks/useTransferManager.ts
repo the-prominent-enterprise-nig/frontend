@@ -35,6 +35,7 @@ export function useTransferManager() {
   const [statusFilter, setStatusFilter] = useState<TransferStatus | undefined>(undefined)
   const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string | undefined>(undefined)
   const [toWarehouseFilter, setToWarehouseFilter] = useState<string | undefined>(undefined)
+  const [search, setSearch] = useState('')
   const [selectedTransfer, setSelectedTransfer] = useState<TransferSummary | null>(null)
 
   const queryParams = useMemo(
@@ -44,8 +45,9 @@ export function useTransferManager() {
       status: statusFilter,
       fromWarehouseId: fromWarehouseFilter,
       toWarehouseId: toWarehouseFilter,
+      search: search || undefined,
     }),
-    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter]
+    [page, limit, statusFilter, fromWarehouseFilter, toWarehouseFilter, search]
   )
 
   const transfersQuery = useQuery({
@@ -302,10 +304,16 @@ export function useTransferManager() {
       setToWarehouseFilter(v)
       setPage(1)
     },
+    search,
+    setSearch: (v: string) => {
+      setSearch(v)
+      setPage(1)
+    },
     resetFilters: () => {
       setStatusFilter(undefined)
       setFromWarehouseFilter(undefined)
       setToWarehouseFilter(undefined)
+      setSearch('')
       setPage(1)
     },
 

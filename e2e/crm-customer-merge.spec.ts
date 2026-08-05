@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, loginAs } from './utils'
+import { deleteCustomers, gotoReady, loginAs } from './utils'
 
 // Scenario 02 (2026-07-31 update, item #3) — BM/AR Reviewer duplicate-resolution
 // merge workflow. Branch Manager + Business Owner only, deliberately not
@@ -13,6 +13,20 @@ const MARKETING_EMAIL = process.env.E2E_MARKETING_EMAIL ?? 'technova.b1.crm@test
 const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
 test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
+  // No beforeAll self-heal sweep here (unlike the other customer-creating
+  // specs) — this file's file-level storageState override above means a
+  // worker-scoped `request` fixture in beforeAll would be unauthenticated,
+  // since login only happens per-test via loginAs(page, ...) below.
+  // afterEach still closes the main gap (cleanup no longer only runs on a
+  // clean pass) using page.request, which shares whatever session loginAs
+  // already put the page into.
+  let createdIds: string[] = []
+
+  test.afterEach(async ({ page }) => {
+    await deleteCustomers(page.request, createdIds)
+    createdIds = []
+  })
+
   test('reviews a flagged pair, overrides a conflicting field, and merges', async ({ page }) => {
     await loginAs(page, MANAGER_EMAIL, PASSWORD)
 
@@ -29,10 +43,16 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
       data: { name: nameA, sourceChannel: 'sales', email, phone: phoneA },
     })
     const customerA = await resA.json()
+    createdIds.push(customerA.id)
     const resB = await page.request.post('/api/crm/customers', {
       data: { name: nameB, sourceChannel: 'sales', email, phone: phoneB },
     })
     const customerB = await resB.json()
+    // Merging soft-deletes customerB as a side effect (see below), but
+    // tracking it here too means afterEach still cleans it up if the merge
+    // step itself never runs — re-deleting an already-soft-deleted record
+    // via deleteCustomers is a harmless no-op.
+    createdIds.push(customerB.id)
 
     await gotoReady(page, '/crm/customers')
     await expect(page.getByRole('link', { name: 'Review Duplicates' })).toBeVisible()
@@ -76,8 +96,6 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
     await expect(page.getByRole('heading', { name: nameA })).toBeVisible()
     await expect(page.getByText(/was merged into this record/)).toBeVisible()
     await expect(page.getByText(nameB, { exact: false })).toBeVisible()
-
-    await page.request.delete(`/api/crm/customers/${customerA.id}`)
   })
 
   test('dismissing a pair removes it from the queue', async ({ page }) => {
@@ -97,6 +115,7 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
       },
     })
     const customerA = await resA.json()
+    createdIds.push(customerA.id)
     const resB = await page.request.post('/api/crm/customers', {
       data: {
         name: nameB,
@@ -106,6 +125,7 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
       },
     })
     const customerB = await resB.json()
+    createdIds.push(customerB.id)
 
     await gotoReady(page, '/crm/customers/duplicates')
     const pairRow = page.getByTestId(
@@ -118,9 +138,6 @@ test.describe('CRM — Duplicate Customer Merge (Branch Manager)', () => {
     // Stays dismissed on reload.
     await gotoReady(page, '/crm/customers/duplicates')
     await expect(page.getByText(nameB)).not.toBeVisible()
-
-    await page.request.delete(`/api/crm/customers/${customerA.id}`)
-    await page.request.delete(`/api/crm/customers/${customerB.id}`)
   })
 })
 

@@ -223,17 +223,20 @@ export interface CreateTransactionLineInput {
   notes?: string
   serialNumberId?: string
   secondarySerialNumberId?: string
-}
-
-export interface ScPwdDiscountInput {
-  type: 'SC' | 'PWD'
-  idNumber: string
-  name: string
-  signatureCapture: string
+  /** PriceListItem this line resolved to under the sale's selected Price
+   * Use — omit if unitPrice was set via a manual price override instead. */
+  priceListItemId?: string
+  /** True when unitPrice was manually set by a PIN-approved manager
+   * override rather than resolved from priceListItemId. */
+  priceOverride?: boolean
 }
 
 export interface CreateTransactionInput {
   sessionId: string
+  /** Price Use category selected once for this whole sale (WIP/CR-BR/SSC/
+   * PROMO/etc.) — every line resolves its price against this unless
+   * individually overridden. */
+  priceUseTypeId?: string
   transactionType?: PosTransactionType
   invoiceType?: PosInvoiceType
   chargeDueDays?: number
@@ -261,7 +264,6 @@ export interface CreateTransactionInput {
   /** Mandatory when transactionType is 'refund' — the backend rejects a
    * refund submission with no reason. */
   reason?: string
-  scPwdDiscount?: ScPwdDiscountInput
   sellingAgentId?: string
   lines: CreateTransactionLineInput[]
 }

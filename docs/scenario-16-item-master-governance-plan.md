@@ -54,3 +54,19 @@ Ordered by risk/value.
 ## Dead code / unused-feature flags
 
 None found.
+
+## Implementation Log — 2026-08-04
+
+**For this scenario, I have done:**
+
+- Item #2 (workflow state machine) — Part 1, backend: new `ItemApprovalStatus` state machine on `Item` (`draft → pending_accounting_confirmation → pending_approval → approved`, or `rejected`), five new endpoints (`submit`/`confirm-accounting`/`reject-accounting`/`approve`/`reject`), a new **Master Data Approver** role, two new permissions (`inventory:items:confirm_tax_mapping`, `inventory:items:approve`), and an approved-only visibility gate on `GET /inventory/items` for callers without an item-governance permission (POS/PO/receiving pickers). Migration backfills every pre-existing item to `approved` so nothing already live dropped out of POS/PO/reports.
+- Item #2 (workflow state machine) — Part 2, frontend: status badges, Submit/Confirm/Reject/Approve row actions + modals (`ItemApprovalActionModal`, `ItemRejectModal`), permission-gated visibility, a draft-start notice on the Add Item modal, an Item Master table actions-column cleanup (overflow menu for secondary actions, since the row was crowded after adding governance buttons), and a Status-column fix so lifecycle (e.g. "active") and approval status (e.g. "Pending Approval") never render simultaneously (was confusing/contradictory). Also removed the Selling Price field from the Add/Edit Item forms per an ad hoc request mid-implementation (unrelated to governance, landed in this same pass) — POS still falls back to `Item.sellingPrice` at checkout today, so new items need a `BranchPricing` entry (or similar) set separately or they'll show ₱0.
+- Item #3 (near-duplicate warning) — Part 3: `pg_trgm` trigram similarity index on `items.name`, `GET /inventory/items/check-duplicates` (up to 5 candidates, non-blocking), and a debounced warning banner on the Add Item modal.
+
+**Worth flagging:**
+
+- Decision (Phase 2): the full 4-actor governance chain was confirmed wanted — not the lighter-weight "existing hard-constraint is sufficient" alternative gap #1 raised.
+- Decision: governance gates **new-item creation only** — edits to already-approved items stay instant/unrestricted, unchanged from prior behavior.
+- Decision: Branch Manager also holds `confirm_tax_mapping` and `approve` (alongside Accountant/Master Data Approver respectively), for branches without dedicated staff — Business Owner has both automatically via the seed's full-permission grant.
+- The backend's `confirm-accounting` endpoint accepts optional tax/GL corrections inline, but the frontend modal only exposes a remarks field, not inline correction — today, fixing a wrong mapping goes through reject-with-reason → HO Inventory edits → resubmits, not inline editing in the confirm step. Worth a follow-up if Accounting finds that friction annoying in practice.
+- Hit unrelated pre-existing DB drift twice while implementing: (1) the shared local dev DB had Scenario 15's price-list migrations applied without being merged to `development` — resolved by the developer resetting/reseeding that DB; (2) the shared DB's owner is `karmslajo`, not `postgres`, which blocked `CREATE EXTENSION pg_trgm` via `migrate deploy` — resolved by applying the SQL as the DB owner and marking the migration resolved in Prisma's tracking table. Worth fixing DB ownership at some point so this doesn't recur on the next extension-requiring migration.

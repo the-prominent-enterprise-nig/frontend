@@ -2,12 +2,24 @@ import { z } from 'zod'
 
 // ─── Create PO (direct, no PR) ────────────────────────────────────────────────
 
+export const POLineDiscountTypeSchema = z.enum(['percentage', 'amount'])
+
 export const CreatePoLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
   unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
   description: z.string().max(500).optional(),
   notes: z.string().max(500).optional(),
+  // Scenario 10 Part 6 — supplier SRP + discount off it (percentage or flat).
+  // The form normalizes an empty number input / unselected <select> to
+  // undefined via `setValueAs` before this ever validates (see
+  // CreatePoModal.tsx) — react-hook-form's `valueAsNumber` alone would leave
+  // an empty field as NaN, which z.number().optional() still rejects.
+  srp: z.number().min(0).optional(),
+  discountType: POLineDiscountTypeSchema.optional(),
+  discountValue: z.number().min(0).optional(),
+  // Scenario 10 Part 8 — a supplier-given free unit; price is forced to 0.
+  isFreebie: z.boolean().optional(),
 })
 
 export const CreatePoFormSchema = z.object({
@@ -25,6 +37,8 @@ export const CreatePoFormSchema = z.object({
 const CreatePoLineServerSchema = CreatePoLineSchema.extend({
   quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+  srp: z.coerce.number().min(0).optional(),
+  discountValue: z.coerce.number().min(0).optional(),
 })
 
 export const CreatePoServerSchema = CreatePoFormSchema.extend({
@@ -106,6 +120,15 @@ const PoLineSchema = z.object({
   receivedQuantity: z.coerce.number().optional().nullable(),
   lineTotal: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Scenario 10 Part 6 — supplier SRP + discount off it, and the computed
+  // discounted cost / whether unitPrice was manually overridden from it.
+  srp: z.coerce.number().optional().nullable(),
+  discountType: POLineDiscountTypeSchema.optional().nullable(),
+  discountValue: z.coerce.number().optional().nullable(),
+  discountedCost: z.coerce.number().optional().nullable(),
+  lastPriceOverridden: z.boolean().optional().nullable(),
+  // Scenario 10 Part 8 — a supplier-given free unit.
+  isFreebie: z.boolean().optional().nullable(),
 })
 
 export const PurchaseOrderSummarySchema = z.object({

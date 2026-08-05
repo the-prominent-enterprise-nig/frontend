@@ -64,6 +64,6 @@ export async function createItem(input: unknown): Promise<ApiResponse<{ id: stri
   return {
     success: true,
     data: result.data,
-    message: 'Item created successfully',
+    message: 'Item created as draft. Submit it for review when ready.',
   }
 }

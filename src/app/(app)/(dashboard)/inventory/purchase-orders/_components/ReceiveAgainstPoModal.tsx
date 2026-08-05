@@ -15,6 +15,10 @@ type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
   onSuccess: () => void
+  /** Unit cost is sensitive pricing data — hidden from Branch Manager/Stock
+   * Controller, restricted to Business Owner/Accountant (Scenario 05
+   * followup). Server-side enforcement in receiveStock() is the real guard. */
+  canViewCost: boolean
 }
 
 // ─── Form schema ──────────────────────────────────────────────────────────────
@@ -50,7 +54,7 @@ const cellInputClass =
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
+export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: Props) {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
@@ -322,9 +326,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
                           Qty to Receive <span className="text-red-400">*</span>
                         </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
-                          Unit Cost
-                        </th>
+                        {canViewCost && (
+                          <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
+                            Unit Cost
+                          </th>
+                        )}
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[110px]">
                           Batch No.
                         </th>
@@ -423,25 +429,27 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess }: Props) {
                             </td>
 
                             {/* Unit cost */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.unitCost`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                    onChange={(e) =>
-                                      f.onChange(e.target.valueAsNumber || undefined)
-                                    }
-                                    onBlur={f.onBlur}
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className={`${cellInputClass} text-right`}
-                                  />
-                                )}
-                              />
-                            </td>
+                            {canViewCost && (
+                              <td className="px-3 py-3">
+                                <Controller
+                                  name={`lines.${idx}.unitCost`}
+                                  control={control}
+                                  render={({ field: f }) => (
+                                    <input
+                                      value={f.value == null || isNaN(f.value) ? '' : f.value}
+                                      onChange={(e) =>
+                                        f.onChange(e.target.valueAsNumber || undefined)
+                                      }
+                                      onBlur={f.onBlur}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      className={`${cellInputClass} text-right`}
+                                    />
+                                  )}
+                                />
+                              </td>
+                            )}
 
                             {/* Batch */}
                             <td className="px-3 py-3">

@@ -5,16 +5,19 @@ import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
+import SerialsTab from './tabs/SerialsTab'
 import MovementsTab from './tabs/MovementsTab'
 import SubstitutesTab from './tabs/SubstitutesTab'
 import HistoryTab from './tabs/HistoryTab'
 import type { ItemSubstitute, ItemChangeLog } from '@/src/schema/inventory/items'
+import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { createPortal } from 'react-dom'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'stock', label: 'Stock' },
+  { id: 'serials', label: 'Serials' },
   { id: 'movements', label: 'Movements' },
   { id: 'substitutes', label: 'Substitutes' },
   { id: 'history', label: 'History' },
@@ -44,7 +47,7 @@ function DrawerSkeleton() {
 
 function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const { item, stock, substitutes, history } = useItem360(itemId, activeTab)
+  const { item, stock, substitutes, history, serials } = useItem360(itemId, activeTab)
 
   type BalanceList = { data: import('@/src/schema/inventory/goods-receiving').StockBalance[] }
   const itemData = item.data?.success ? item.data.data : null
@@ -58,6 +61,9 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
     ? ((history.data.data as unknown as { data: ItemChangeLog[] })?.data ??
       (history.data.data as unknown as ItemChangeLog[]) ??
       [])
+    : []
+  const serialsData: SerialNumberSummary[] = serials.data?.success
+    ? (serials.data.data?.data ?? [])
     : []
 
   const lifecycle = (itemData as { lifecycle?: string } | null)?.lifecycle ?? 'active'
@@ -153,9 +159,11 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         ) : !itemData ? (
           <div className="p-5 text-sm text-zinc-400">Failed to load item details.</div>
         ) : activeTab === 'overview' ? (
-          <OverviewTab item={itemData} />
+          <OverviewTab item={itemData} serials={serialsData} />
         ) : activeTab === 'stock' ? (
           <StockTab balances={stockData?.data ?? []} isLoading={stock.isLoading} />
+        ) : activeTab === 'serials' ? (
+          <SerialsTab serials={serialsData} isLoading={serials.isLoading} />
         ) : activeTab === 'movements' ? (
           <MovementsTab itemId={itemId} />
         ) : activeTab === 'substitutes' ? (

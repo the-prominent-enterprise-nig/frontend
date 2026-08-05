@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import {
+  cancelStockTransfer,
+  clickStable,
+  findStockTransferIdByReason,
+  gotoReady,
+  sweepE2EStockTransfers,
+} from './utils'
+
+const REASON_PREFIX = 'E2E-TRF-HQ-'
 
 // Scenario 06, Part 2 — request/approval states + the HQ-approval toggle
 // (My Workspace > Business Policies). Mutates the tenant's real "Require HQ
@@ -58,6 +66,9 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
       timeout: 3_000,
     })
   }).toPass({ timeout: 15_000 })
+  // Creation goes through a Server Action, not a client-visible request —
+  // look the id up after the fact instead of intercepting the create call.
+  return findStockTransferIdByReason(page.request, uniqueReason)
 }
 
 async function openMine(page: import('@playwright/test').Page, uniqueReason: string) {
@@ -81,28 +92,36 @@ async function openMine(page: import('@playwright/test').Page, uniqueReason: str
 }
 
 test.describe('Inventory — Stock Transfer request/approval states & HQ-approval toggle', () => {
+  let createdIds: string[] = []
+
+  test.beforeAll(async ({ request }) => {
+    await sweepE2EStockTransfers(request, REASON_PREFIX)
+  })
+
+  test.afterEach(async ({ request }) => {
+    // No-op for the reject test below — Rejected isn't a cancellable state,
+    // same as it was never cleaned up before this change either.
+    for (const id of createdIds) await cancelStockTransfer(request, id)
+    createdIds = []
+  })
+
   test('toggle off: a new request starts as "Requested" directly', async ({ page }) => {
     await setHqApprovalToggle(page, false)
 
     const uniqueReason = `E2E-TRF-HQ-OFF-${Date.now()}`
-    await createBulkRequest(page, uniqueReason)
+    createdIds.push(await createBulkRequest(page, uniqueReason))
     await openMine(page, uniqueReason)
 
     // Multiple "Requested" matches exist (list rows, filter option) — the
     // modal's own status badge renders last in DOM order, after the list.
     await expect(page.getByText('Requested', { exact: true }).last()).toBeVisible()
-
-    // Cleanup: withdraw the request.
-    await page.getByRole('button', { name: 'Cancel Transfer' }).click()
-    await page.getByRole('button', { name: 'Yes, Cancel Transfer' }).click()
-    await expect(page.getByText('Cancel this transfer?')).toHaveCount(0, { timeout: 10_000 })
   })
 
   test('toggle on: Business Owner can approve a request pending HQ review', async ({ page }) => {
     await setHqApprovalToggle(page, true)
 
     const uniqueReason = `E2E-TRF-HQ-APPROVE-${Date.now()}`
-    await createBulkRequest(page, uniqueReason)
+    createdIds.push(await createBulkRequest(page, uniqueReason))
     await openMine(page, uniqueReason)
 
     await expect(page.getByText('Pending HQ Approval', { exact: true }).last()).toBeVisible()
@@ -110,11 +129,6 @@ test.describe('Inventory — Stock Transfer request/approval states & HQ-approva
     await expect(page.getByText('Requested', { exact: true }).last()).toBeVisible({
       timeout: 10_000,
     })
-
-    // Cleanup: withdraw the now-requested transfer.
-    await page.getByRole('button', { name: 'Cancel Transfer' }).click()
-    await page.getByRole('button', { name: 'Yes, Cancel Transfer' }).click()
-    await expect(page.getByText('Cancel this transfer?')).toHaveCount(0, { timeout: 10_000 })
 
     await setHqApprovalToggle(page, false)
   })
@@ -125,7 +139,7 @@ test.describe('Inventory — Stock Transfer request/approval states & HQ-approva
     await setHqApprovalToggle(page, true)
 
     const uniqueReason = `E2E-TRF-HQ-REJECT-${Date.now()}`
-    await createBulkRequest(page, uniqueReason)
+    createdIds.push(await createBulkRequest(page, uniqueReason))
     await openMine(page, uniqueReason)
 
     await expect(page.getByText('Pending HQ Approval', { exact: true }).last()).toBeVisible()

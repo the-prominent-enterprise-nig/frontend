@@ -5,8 +5,21 @@ import { useState } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getPriceLists } from '../_actions/get-price-lists'
 import { createPriceList } from '../_actions/create-price-list'
+import { updatePriceList } from '../_actions/update-price-list'
+import { approvePriceList } from '../_actions/approve-price-list'
+import { rejectPriceList } from '../_actions/reject-price-list'
+import { resubmitPriceList } from '../_actions/resubmit-price-list'
 import { getCurrencies } from '../_actions/get-currencies'
-import type { PriceListFormValues } from '@/src/schema/inventory/price-lists'
+import { getBranches } from '../_actions/get-branches'
+import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
+import { createPriceUseType } from '../../price-use-types/_actions/create-price-use-type'
+import { humanizePriceListError } from '../_lib/humanize-error'
+import type {
+  ApprovePriceListFormValues,
+  PriceListFormValues,
+  RejectPriceListFormValues,
+} from '@/src/schema/inventory/price-lists'
+import type { PriceUseTypeFormValues } from '@/src/schema/inventory/price-use-types'
 
 export function usePriceLists() {
   const queryClient = useQueryClient()
@@ -30,6 +43,18 @@ export function usePriceLists() {
     staleTime: 10 * 60 * 1000,
   })
 
+  const branchesQuery = useQuery({
+    queryKey: ['branches'],
+    queryFn: getBranches,
+    staleTime: 10 * 60 * 1000,
+  })
+
+  const priceUseTypesQuery = useQuery({
+    queryKey: ['inventory-price-use-types'],
+    queryFn: getPriceUseTypes,
+    staleTime: 30 * 1000,
+  })
+
   const createMutation = useMutation({
     mutationFn: (data: PriceListFormValues) => createPriceList(data),
     onSuccess: (result) => {
@@ -37,7 +62,98 @@ export function usePriceLists() {
         showToast({ title: 'Price list created', description: result.message, status: 'success' })
         queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
       } else {
-        showToast({ title: 'Failed', description: result.message, status: 'error' })
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: PriceListFormValues }) =>
+      updatePriceList(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price list updated', description: result.message, status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ApprovePriceListFormValues }) =>
+      approvePriceList(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price list approved', description: result.message, status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: RejectPriceListFormValues }) =>
+      rejectPriceList(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price list rejected', description: result.message, status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const createPriceUseTypeMutation = useMutation({
+    mutationFn: (data: PriceUseTypeFormValues) => createPriceUseType(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price use type created', status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-use-types'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const resubmitMutation = useMutation({
+    mutationFn: (id: string) => resubmitPriceList(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Resubmitted for approval',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
       }
     },
   })
@@ -59,8 +175,20 @@ export function usePriceLists() {
     page,
     setPage,
     currencies: currenciesQuery.data ?? [],
+    branches: branchesQuery.data ?? [],
+    priceUseTypes: priceUseTypesQuery.data ?? [],
+    createPriceUseType: createPriceUseTypeMutation.mutateAsync,
+    isCreatingPriceUseType: createPriceUseTypeMutation.isPending,
     createPriceList: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+    updatePriceList: updateMutation.mutateAsync,
+    isUpdating: updateMutation.isPending,
+    approvePriceList: approveMutation.mutateAsync,
+    isApproving: approveMutation.isPending,
+    rejectPriceList: rejectMutation.mutateAsync,
+    isRejecting: rejectMutation.isPending,
+    resubmitPriceList: resubmitMutation.mutateAsync,
+    isResubmitting: resubmitMutation.isPending,
     refetch: () => queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] }),
   }
 }

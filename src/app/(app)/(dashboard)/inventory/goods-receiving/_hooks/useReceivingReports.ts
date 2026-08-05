@@ -83,5 +83,13 @@ export function useReceivingReports() {
     setSelectedId,
     selectedReport: detailQuery.data?.data ?? null,
     isLoadingDetail: detailQuery.isLoading,
+    // getReceivingReport() resolves (doesn't throw) even on a backend
+    // error — it returns { success: false, message }. Surface that so the
+    // UI can show *something* instead of silently rendering nothing when
+    // a receipt fails to load.
+    detailError:
+      detailQuery.data && detailQuery.data.success === false
+        ? (detailQuery.data.message ?? detailQuery.data.error ?? 'Failed to load this receipt.')
+        : null,
   }
 }
