@@ -112,7 +112,8 @@ export function can(user: SessionUser, permission: Permission): boolean {
 }
 
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  cashier: ['pos'],
+  // Scenario 17: Cashier opens/submits credit applications alongside POS work
+  cashier: ['pos', 'credit'],
   'pos-manager': ['pos'],
   pos: ['pos'],
 }

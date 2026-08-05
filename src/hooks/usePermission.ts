@@ -9,7 +9,8 @@ interface SessionUser {
 // Roles that have a fixed module allowlist. Keep in sync with ROLE_MODULE_ACCESS in
 // src/libs/guards/permission.ts — both must agree on which modules each role can reach.
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  cashier: ['pos'],
+  // Scenario 17: Cashier opens/submits credit applications alongside POS work
+  cashier: ['pos', 'credit'],
   'pos-manager': ['pos'],
   pos: ['pos'],
 }
