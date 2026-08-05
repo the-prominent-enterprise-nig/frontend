@@ -46,13 +46,13 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
   // test suites intentionally mutate/deplete across runs. The huge estimated
   // qty below still guarantees a shortfall regardless of which item this is.
   const materialInput = page.getByPlaceholder('Search material by name or SKU…')
-  await fillStable(materialInput, 'Split-Type Aircon')
+  await fillStable(materialInput, 'Universal Remote Control')
   const dropdown = page.locator('div.fixed.z-100')
   // The dropdown fetches on open with whatever query is current at that
   // instant (starts as '' before the 300ms debounce settles), so its first
   // button can briefly be a stale, unfiltered result — match on the option's
   // own text instead of trusting "first button" to already be our search hit.
-  const aircondOption = dropdown.getByText('Split-Type Aircon', { exact: false })
+  const aircondOption = dropdown.getByText('Universal Remote Control', { exact: false }).first()
   await expect(aircondOption).toBeVisible({ timeout: 10_000 })
   await aircondOption.click()
 

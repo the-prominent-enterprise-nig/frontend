@@ -42,7 +42,7 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
     }
   }
 
-  revalidatePath('/inventory/stock-counts')
+  revalidatePath('/inventory/counting')
 
   return {
     success: true,
