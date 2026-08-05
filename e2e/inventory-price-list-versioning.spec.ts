@@ -23,10 +23,10 @@ async function createPendingPriceList(page: Page, name: string) {
     page.getByRole('heading', { name: 'New Price List' })
   )
   await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-  // 'custom', not the default 'retail' — the seeded/ambient data already has
-  // real active 'retail' lists pricing common items like TV Stand, which
+  // 'ZI', not the seeded 'WIP'/'CR-BR' — the seeded/ambient data already has
+  // real active WIP/CR-BR lists pricing common items like TV Stand, which
   // Part 4's date-overlap check would (correctly) reject a second one of.
-  await page.locator('select[name="listType"]').selectOption({ value: 'custom' })
+  await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'ZI' })
   await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
   await page.getByRole('button', { name: 'Create Price List' }).click()
   await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({

@@ -338,6 +338,26 @@ export async function sweepE2EPriceLists(
   }
 }
 
+/**
+ * Self-heal sweep: hard-deletes any leftover PriceUseType whose name starts
+ * with `namePrefix` — same rationale as sweepE2EPriceLists. Unlike price
+ * lists, DELETE here is a real delete (no soft-deactivate), so this is a
+ * genuine cleanup, not just a status change.
+ */
+export async function sweepE2EPriceUseTypes(
+  request: APIRequestContext,
+  namePrefix: string
+): Promise<void> {
+  const res = await request.get('/api/inventory/price-use-types')
+  if (!res.ok()) return
+  const body = await res.json()
+  const list = (Array.isArray(body) ? body : []) as { id: string; name: string }[]
+  const matches = list.filter((t) => t.name?.startsWith(namePrefix))
+  for (const t of matches) {
+    await request.delete(`/api/inventory/price-use-types/${t.id}`).catch(() => {})
+  }
+}
+
 export async function loginAs(page: Page, email: string, password: string): Promise<void> {
   await gotoReady(page, '/login')
   // Re-fills on every retry, not just once up front: a hydration reconciliation
