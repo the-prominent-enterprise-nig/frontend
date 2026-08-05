@@ -25,6 +25,7 @@ import {
   rejectReleaseFormRequest,
   validateManagerByPin,
 } from '../../_actions/pos-actions'
+import { signPromissoryNote } from '../../../credit/applications/_actions/sign-promissory-note'
 import type { PosReleaseFormRequest, PosReleaseFormCartLine } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -141,6 +142,13 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
   const [approvalPin, setApprovalPin] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [reviewError, setReviewError] = useState('')
+  // Scenario 17 Part 7 — signing from the detail modal, the only surface a
+  // cashier can return to if they didn't sign the Promissory Note on the
+  // checkout Pending Approval screen itself (that screen's state is lost on
+  // navigation/refresh, so without this the sale would be stuck unsigned
+  // forever).
+  const [signingPromissoryNote, setSigningPromissoryNote] = useState(false)
+  const [signPromissoryNoteError, setSignPromissoryNoteError] = useState('')
 
   // History view
   const [showHistory, setShowHistory] = useState(false)
@@ -276,6 +284,86 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
       w.focus()
       setTimeout(() => w.print(), 400)
     }
+  }
+
+  /** Scenario 17 Part 7 — same window.open + window.print() pattern as
+   * handlePrint above, for the request's Promissory Note specifically. */
+  function handlePrintPromissoryNote(req: PosReleaseFormRequest) {
+    const note = req.promissoryNote
+    if (!note) return
+
+    const lineRows = note.scheduleLines
+      .map(
+        (l) =>
+          `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${formatCurrency(l.amount)}</td></tr>`
+      )
+      .join('')
+    const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
+    const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+
+    const html = `<!DOCTYPE html><html><head><title>PROMISSORY NOTE — ${note.id}</title>
+<style>
+  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
+  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+  .center{text-align:center;margin:3px 0;color:#555}
+  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
+  td{padding:3px 4px}
+  .row{display:flex;justify-content:space-between;padding:2px 0}
+  .sig{margin-top:24px}
+  .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:10px;color:#666}
+  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="banner">PROMISSORY NOTE</div>
+<p class="center" style="font-weight:bold">${note.id}</p>
+<p class="center">Generated ${generatedDate}</p>
+<hr>
+<div class="row"><span>Financing term</span><span>${note.termMonths} months</span></div>
+<div class="row"><span>Total amount</span><span>${formatCurrency(note.totalAmount)}</span></div>
+<div class="row"><span>Down payment</span><span>${formatCurrency(note.downPayment)}</span></div>
+<div class="row" style="font-weight:bold"><span>Amount financed</span><span>${formatCurrency(note.amountFinanced)}</span></div>
+<div class="row" style="font-weight:bold"><span>Total payable</span><span>${formatCurrency(note.totalPayable)}</span></div>
+<div class="row"><span>Monthly installment</span><span>${formatCurrency(note.monthlyInstallment)}</span></div>
+<hr>
+<table><thead><tr><th>#</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lineRows}</tbody></table>
+<hr>
+<div class="row"><span>Status</span><span>${note.signedAt ? 'Signed' : 'Not yet signed'}</span></div>
+${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span></div>` : ''}
+<div class="sig">
+  <div class="sig-line">Applicant signature</div>
+  <div class="sig-line">Co-maker signature</div>
+</div>
+<p class="footer">PROMISSORY NOTE. This document represents a binding commitment to pay per the schedule above.</p>
+<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+      w.focus()
+      setTimeout(() => w.print(), 400)
+    }
+  }
+
+  async function handleSignPromissoryNote(req: PosReleaseFormRequest) {
+    if (!req.promissoryNote) return
+    setSigningPromissoryNote(true)
+    setSignPromissoryNoteError('')
+    const res = await signPromissoryNote(req.promissoryNote.creditApplicationId)
+    setSigningPromissoryNote(false)
+    if (!res.success) {
+      setSignPromissoryNoteError(res.error ?? 'Failed to sign promissory note.')
+      return
+    }
+    // Reflect the signed state immediately in the open modal, and refresh
+    // the underlying list so the queue/history rows pick it up too.
+    setDetailTarget((prev) =>
+      prev && prev.id === req.id ? { ...prev, promissoryNote: res.data } : prev
+    )
+    load()
   }
 
   async function handleApprove() {
@@ -678,6 +766,45 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
                   </div>
                 </div>
               )}
+
+              {detailTarget.cartSnapshot?.invoiceType === 'installment' &&
+                detailTarget.promissoryNote && (
+                  <div className="space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 p-3">
+                    <div className="flex items-center gap-2">
+                      <FileSignature size={14} className="text-purple-700" />
+                      <p className="text-sm font-semibold text-gray-800">Promissory Note</p>
+                      {detailTarget.promissoryNote.signedAt ? (
+                        <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-700">
+                          <CheckCircle2 size={11} /> Signed
+                        </span>
+                      ) : (
+                        <span className="ml-auto text-xs font-medium text-red-600">
+                          Not yet signed
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handlePrintPromissoryNote(detailTarget)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        <Printer size={12} /> Print
+                      </button>
+                      {!detailTarget.promissoryNote.signedAt && (
+                        <button
+                          onClick={() => handleSignPromissoryNote(detailTarget)}
+                          disabled={signingPromissoryNote}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                        >
+                          {signingPromissoryNote ? 'Signing…' : 'Mark as Signed'}
+                        </button>
+                      )}
+                    </div>
+                    {signPromissoryNoteError && (
+                      <p className="text-xs text-red-600">{signPromissoryNoteError}</p>
+                    )}
+                  </div>
+                )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
                 <div className="flex justify-between">

@@ -101,6 +101,55 @@ async function ensureOpenSession(page: Page, branchId: string): Promise<void> {
   })
 }
 
+/** Drives checkout through to the Pending Approval screen for a fresh
+ * installment sale against the given approved application. Shared by both
+ * tests below — the only difference is where signing happens afterward. */
+async function submitInstallmentSale(
+  page: Page,
+  applicationNumber: string,
+  applicantName: string
+): Promise<void> {
+  await gotoReady(page, '/pos/checkout')
+  await clickStable(
+    page.getByRole('button', { name: /^Installment/ }),
+    page.getByText('Financing Term', { exact: true })
+  )
+
+  // Add a WIP-priced item to cart (see pos-checkout-price-use.spec.ts —
+  // seeded with a real price-list entry) and resolve its price.
+  const searchInput = page.getByPlaceholder('Search by name or serial')
+  await expect(searchInput).toBeVisible({ timeout: 15_000 })
+  await searchInput.fill('Universal Remote Control')
+  const remoteCard = page
+    .getByRole('button')
+    .filter({ has: page.getByText('Universal Remote Control', { exact: true }) })
+  await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
+  await remoteCard.first().click()
+  await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+
+  // Select the applicant.
+  const customerInput = page.getByPlaceholder('Search by name or phone…')
+  await customerInput.click()
+  await fillStable(customerInput, applicantName)
+  await page.getByRole('button', { name: new RegExp(applicantName) }).click()
+
+  // Select the approved application and a financing term.
+  const applicationSelect = page.locator('select').filter({ hasText: applicationNumber })
+  await expect(applicationSelect).toBeVisible({ timeout: 10_000 })
+  const applicationOptionValue = await applicationSelect
+    .locator('option', { hasText: applicationNumber })
+    .getAttribute('value')
+  await applicationSelect.selectOption(applicationOptionValue!)
+  const termSelect = page.locator('select').filter({ hasText: 'Tenant-wide' })
+  await expect(termSelect).toBeVisible({ timeout: 10_000 })
+  await termSelect.selectOption({ index: 1 })
+
+  await clickStable(
+    page.getByRole('button', { name: /Create Installment Plan/ }),
+    page.getByText('Pending Approval', { exact: true })
+  )
+}
+
 test.describe('POS Checkout — Promissory Note', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -112,46 +161,7 @@ test.describe('POS Checkout — Promissory Note', () => {
 
     await switchTo(page, CASHIER_EMAIL)
     await ensureOpenSession(page, branchId)
-
-    await gotoReady(page, '/pos/checkout')
-    await clickStable(
-      page.getByRole('button', { name: /^Installment/ }),
-      page.getByText('Financing Term', { exact: true })
-    )
-
-    // Add a WIP-priced item to cart (see pos-checkout-price-use.spec.ts —
-    // seeded with a real price-list entry) and resolve its price.
-    const searchInput = page.getByPlaceholder('Search by name or serial')
-    await expect(searchInput).toBeVisible({ timeout: 15_000 })
-    await searchInput.fill('Universal Remote Control')
-    const remoteCard = page
-      .getByRole('button')
-      .filter({ has: page.getByText('Universal Remote Control', { exact: true }) })
-    await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
-    await remoteCard.first().click()
-    await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
-
-    // Select the applicant.
-    const customerInput = page.getByPlaceholder('Search by name or phone…')
-    await customerInput.click()
-    await fillStable(customerInput, applicantName)
-    await page.getByRole('button', { name: new RegExp(applicantName) }).click()
-
-    // Select the approved application and a financing term.
-    const applicationSelect = page.locator('select').filter({ hasText: applicationNumber })
-    await expect(applicationSelect).toBeVisible({ timeout: 10_000 })
-    const applicationOptionValue = await applicationSelect
-      .locator('option', { hasText: applicationNumber })
-      .getAttribute('value')
-    await applicationSelect.selectOption(applicationOptionValue!)
-    const termSelect = page.locator('select').filter({ hasText: 'Tenant-wide' })
-    await expect(termSelect).toBeVisible({ timeout: 10_000 })
-    await termSelect.selectOption({ index: 1 })
-
-    await clickStable(
-      page.getByRole('button', { name: /Create Installment Plan/ }),
-      page.getByText('Pending Approval', { exact: true })
-    )
+    await submitInstallmentSale(page, applicationNumber, applicantName)
 
     // Promissory Note card — unsigned state.
     await expect(page.getByText('Promissory Note', { exact: true })).toBeVisible()
@@ -178,6 +188,43 @@ test.describe('POS Checkout — Promissory Note', () => {
     await expect(page.getByText('Signed', { exact: false }).first()).toBeVisible({
       timeout: 10_000,
     })
+    await expect(page.getByRole('button', { name: 'Mark as Signed' })).toHaveCount(0)
+  })
+
+  test('a Cashier who navigates away before signing can still print/sign it from Release Approvals', async ({
+    page,
+  }) => {
+    await loginAs(page, MANAGER_EMAIL, DEV_PASSWORD)
+    const { applicationNumber, branchId, applicantName } = await createApprovedApplication(page)
+
+    await switchTo(page, CASHIER_EMAIL)
+    await ensureOpenSession(page, branchId)
+    await submitInstallmentSale(page, applicationNumber, applicantName)
+    await expect(page.getByRole('button', { name: 'Mark as Signed' })).toBeVisible()
+
+    // Navigate away without signing — the Pending Approval screen's local
+    // state is now gone, mimicking a refresh/tab-close.
+    await gotoReady(page, '/pos/release-approvals')
+    await page.getByText(applicantName).first().click()
+
+    await expect(page.getByText('Promissory Note', { exact: true })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByText('Not yet signed', { exact: true })).toBeVisible()
+
+    // The Promissory Note card's own Print button renders before the
+    // RFD's — this modal has both once an installment sale has one.
+    const [popup] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.getByRole('button', { name: 'Print' }).first().click(),
+    ])
+    await expect(popup.getByText('PROMISSORY NOTE', { exact: true })).toBeVisible({
+      timeout: 10_000,
+    })
+    await popup.close()
+
+    await page.getByRole('button', { name: 'Mark as Signed' }).click()
+    await expect(page.getByText('Signed', { exact: true })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole('button', { name: 'Mark as Signed' })).toHaveCount(0)
   })
 })
