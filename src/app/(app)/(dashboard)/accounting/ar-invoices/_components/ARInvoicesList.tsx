@@ -7,10 +7,11 @@ import {
   Pencil,
   Trash2,
   Send,
-  DollarSign,
+  PhilippinePeso,
   ReceiptText,
   History,
   AlertTriangle,
+  KeyRound,
   X,
 } from 'lucide-react'
 import {
@@ -24,6 +25,7 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
+import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 
 export default function ARInvoicesList({
   initialCustomerId,
@@ -38,6 +40,7 @@ export default function ARInvoicesList({
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
+  const [deletingFor, setDeletingFor] = useState<ARInvoice | null>(null)
   const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
 
   const load = useCallback(async () => {
@@ -51,12 +54,6 @@ export default function ARInvoicesList({
     getCustomers().then((r) => setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[]))
   }, [load])
 
-  const del = async (id: string) => {
-    if (!confirm('Delete invoice?')) return
-    const res = await ARInvoices.remove(id)
-    if (!res.success) alert(res.message || res.error || 'Delete failed')
-    load()
-  }
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
     if (!res.success)
@@ -143,55 +140,62 @@ export default function ARInvoicesList({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1">
-                      {i.status === 'DRAFT' && (
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1">
+                        {i.status === 'DRAFT' ? (
+                          <button
+                            onClick={() => send(i.id)}
+                            title="Send"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                            <button
+                              onClick={() => setPayingFor(i)}
+                              title="Record payment"
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                            >
+                              <PhilippinePeso className="w-4 h-4" />
+                            </button>
+                          )
+                        )}
+                        {(i.payments?.length ?? 0) > 0 && (
+                          <button
+                            onClick={() => setHistoryFor(i)}
+                            title="Payment history"
+                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                        )}
+                        {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
+                          <button
+                            onClick={() => setCreditingFor(i)}
+                            title="Issue credit memo"
+                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                          >
+                            <ReceiptText className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
                         <button
-                          onClick={() => send(i.id)}
-                          title="Send"
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          onClick={() => setEditing(i)}
+                          title="Edit"
+                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
                         >
-                          <Send className="w-4 h-4" />
+                          <Pencil className="w-4 h-4" />
                         </button>
-                      )}
-                      {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
                         <button
-                          onClick={() => setPayingFor(i)}
-                          title="Record payment"
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          onClick={() => setDeletingFor(i)}
+                          title="Delete"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
                         >
-                          <DollarSign className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
-                      {(i.payments?.length ?? 0) > 0 && (
-                        <button
-                          onClick={() => setHistoryFor(i)}
-                          title="Payment history"
-                          className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-                        >
-                          <History className="w-4 h-4" />
-                        </button>
-                      )}
-                      {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
-                        <button
-                          onClick={() => setCreditingFor(i)}
-                          title="Issue credit memo"
-                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                        >
-                          <ReceiptText className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setEditing(i)}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => del(i.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -243,6 +247,114 @@ export default function ARInvoicesList({
           onChanged={load}
         />
       )}
+      {deletingFor && (
+        <DeleteInvoiceDialog
+          invoice={deletingFor}
+          onClose={() => setDeletingFor(null)}
+          onDeleted={() => {
+            setDeletingFor(null)
+            load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function DeleteInvoiceDialog({
+  invoice,
+  onClose,
+  onDeleted,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onDeleted: () => void
+}) {
+  const [pin, setPin] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pin.trim()) {
+      setError('Manager/Owner PIN is required to delete this invoice.')
+      return
+    }
+    setDeleting(true)
+    setError(null)
+    const pinRes = await validateManagerByPin(pin.trim())
+    if (!pinRes.success || !pinRes.data?.valid) {
+      setError(pinRes.error ?? 'Invalid PIN. Please try again.')
+      setDeleting(false)
+      return
+    }
+    const res = await ARInvoices.remove(invoice.id)
+    setDeleting(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Delete failed')
+      return
+    }
+    onDeleted()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-lg font-semibold">Delete Invoice</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          <div className="text-sm text-gray-600 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <span>
+              Delete invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This cannot
+              be undone.
+            </span>
+          </div>
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <KeyRound size={13} className="text-purple-600" />
+              <p className="text-xs font-semibold text-purple-700">Manager / Owner PIN required</p>
+            </div>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono tracking-widest text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              placeholder="••••"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => e.key === 'Enter' && submit(e as unknown as React.FormEvent)}
+              disabled={deleting}
+            />
+          </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={deleting || !pin.trim()}
+              className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete Invoice'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -737,22 +849,7 @@ function PaymentHistoryModal({
   onChanged: () => void
 }) {
   const [payments, setPayments] = useState<ARPayment[]>(invoice.payments ?? [])
-  const [cancelling, setCancelling] = useState<string | null>(null)
-
-  const cancel = async (payment: ARPayment) => {
-    const reason = prompt('Reason for cancelling this overpayment (optional):') ?? undefined
-    setCancelling(payment.id)
-    const res = await ARInvoices.cancelPayment(invoice.id, payment.id, reason)
-    setCancelling(null)
-    if (!res.success) {
-      alert(res.message || res.error || 'Cancel failed')
-      return
-    }
-    setPayments((prev) =>
-      prev.map((p) => (p.id === payment.id ? { ...p, cancelledAt: new Date().toISOString() } : p))
-    )
-    onChanged()
-  }
+  const [cancelTarget, setCancelTarget] = useState<ARPayment | null>(null)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -799,11 +896,10 @@ function PaymentHistoryModal({
                     </div>
                     {p.isOverpayment && !p.cancelledAt && (
                       <button
-                        onClick={() => cancel(p)}
-                        disabled={cancelling === p.id}
-                        className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        onClick={() => setCancelTarget(p)}
+                        className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
                       >
-                        {cancelling === p.id ? 'Cancelling…' : 'Cancel'}
+                        Cancel
                       </button>
                     )}
                   </div>
@@ -812,6 +908,127 @@ function PaymentHistoryModal({
             </ul>
           )}
         </div>
+      </div>
+      {cancelTarget && (
+        <CancelPaymentDialog
+          invoiceId={invoice.id}
+          payment={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onCancelled={() => {
+            setPayments((prev) =>
+              prev.map((p) =>
+                p.id === cancelTarget.id ? { ...p, cancelledAt: new Date().toISOString() } : p
+              )
+            )
+            setCancelTarget(null)
+            onChanged()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CancelPaymentDialog({
+  invoiceId,
+  payment,
+  onClose,
+  onCancelled,
+}: {
+  invoiceId: string
+  payment: ARPayment
+  onClose: () => void
+  onCancelled: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [pin, setPin] = useState('')
+  const [cancelling, setCancelling] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pin.trim()) {
+      setError('Manager/Owner PIN is required to cancel this payment.')
+      return
+    }
+    setCancelling(true)
+    setError(null)
+    const pinRes = await validateManagerByPin(pin.trim())
+    if (!pinRes.success || !pinRes.data?.valid) {
+      setError(pinRes.error ?? 'Invalid PIN. Please try again.')
+      setCancelling(false)
+      return
+    }
+    const res = await ARInvoices.cancelPayment(invoiceId, payment.id, reason.trim() || undefined)
+    setCancelling(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Cancel failed')
+      return
+    }
+    onCancelled()
+  }
+
+  return (
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-lg font-semibold">Cancel Overpayment</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Cancel {fmtMoney(payment.amount + payment.withholdingAmount)} recorded on{' '}
+            {fmtDate(payment.paymentDate)}?
+          </div>
+          <Field label="Reason (optional)">
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <KeyRound size={13} className="text-purple-600" />
+              <p className="text-xs font-semibold text-purple-700">Manager / Owner PIN required</p>
+            </div>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono tracking-widest text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              placeholder="••••"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              disabled={cancelling}
+            />
+          </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Back
+            </button>
+            <button
+              type="submit"
+              disabled={cancelling || !pin.trim()}
+              className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
+            >
+              {cancelling ? 'Cancelling...' : 'Cancel Payment'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )

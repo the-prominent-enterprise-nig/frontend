@@ -1,7 +1,10 @@
 import { z } from 'zod'
 
-export const PriceListTypeEnum = z.enum(['retail', 'wholesale', 'member', 'promotional', 'custom'])
-export type PriceListType = z.infer<typeof PriceListTypeEnum>
+export const PriceUseTypeRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+export type PriceUseTypeRef = z.infer<typeof PriceUseTypeRefSchema>
 
 export const PriceListStatusEnum = z.enum([
   'pending_approval',
@@ -14,7 +17,7 @@ export type PriceListStatus = z.infer<typeof PriceListStatusEnum>
 
 export const PriceListFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  listType: PriceListTypeEnum,
+  priceUseTypeId: z.string().min(1, 'Price use type is required'),
   description: z.string().optional(),
   currency: z.string().min(1, 'Currency is required'),
   effectiveFrom: z.string().optional(),
@@ -28,7 +31,8 @@ export type PriceListFormValues = z.infer<typeof PriceListFormSchema>
 export const PriceListSchema = z.object({
   id: z.string(),
   name: z.string(),
-  listType: PriceListTypeEnum,
+  priceUseTypeId: z.string(),
+  priceUseType: PriceUseTypeRefSchema.optional().nullable(),
   description: z.string().optional().nullable(),
   currency: z.string(),
   effectiveFrom: z.string().optional().nullable(),

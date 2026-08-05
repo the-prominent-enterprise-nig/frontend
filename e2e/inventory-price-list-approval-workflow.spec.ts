@@ -21,6 +21,7 @@ test.describe('Inventory — Price List Approval Workflow', () => {
       page.getByRole('heading', { name: 'New Price List' })
     )
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
+    await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'PROMO' })
     await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
     await page.getByRole('button', { name: 'Create Price List' }).click()
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({

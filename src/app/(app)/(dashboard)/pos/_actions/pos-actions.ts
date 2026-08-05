@@ -1719,6 +1719,73 @@ export async function validateManagerByPin(
   }
 }
 
+export async function validatePriceOverrideByPin(
+  pin: string
+): Promise<ApiResponse<{ valid: boolean; managerId: string; managerName: string }>> {
+  try {
+    const result = await api.post<{ valid: boolean; managerId: string; managerName: string }>(
+      '/pos/cashier/price-override/validate-pin-only',
+      { pin }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Invalid PIN' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to validate PIN' }
+  }
+}
+
+// ─── Price Use (Price List integration) ────────────────────────────────────────
+
+export interface PosPriceUseType {
+  id: string
+  name: string
+}
+
+export async function getPosPriceUseTypes(): Promise<ApiResponse<PosPriceUseType[]>> {
+  try {
+    const result = await api.get<PosPriceUseType[]>('/pos/catalog/price-use-types')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to load price use types' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to load price use types' }
+  }
+}
+
+export interface ResolvedPosPrice {
+  priceListId: string
+  priceListItemId: string
+  priceListName: string
+  price: number
+  floorPrice: number | null
+  minQty: number | null
+}
+
+/** Bulk-resolves every itemId's price under one Price Use in a single call —
+ * the map has an entry (possibly null) for every id passed in. */
+export async function resolvePosPrices(
+  priceUseTypeId: string,
+  itemIds: string[],
+  branchId?: string
+): Promise<ApiResponse<Record<string, ResolvedPosPrice | null>>> {
+  try {
+    const result = await api.post<Record<string, ResolvedPosPrice | null>>(
+      '/pos/catalog/resolve-prices',
+      { priceUseTypeId, itemIds },
+      { params: branchId ? { branchId } : undefined }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to resolve prices' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to resolve prices' }
+  }
+}
+
 // ─── Cashier Terminal Access ──────────────────────────────────────────────────
 
 export async function getTerminalCashiers(
@@ -2153,6 +2220,9 @@ export interface SerialNumberRecord {
   serialNumber: string
   currentWarehouseId?: string | null
   currentWarehouse?: { id: string; code: string; name: string } | null
+  /** Only populated by searchSerialsAcrossItems — the item this serial
+   * belongs to, since that search doesn't scope to one itemId up front. */
+  item?: { id: string; sku: string; name: string } | null
 }
 
 export async function getAvailableSerialNumbers(
@@ -2173,6 +2243,34 @@ export async function getAvailableSerialNumbers(
     return { success: true, data: rows }
   } catch {
     return { success: false, error: 'Failed to fetch serial numbers' }
+  }
+}
+
+/**
+ * Serial-number search across the whole catalog, no itemId filter — lets the
+ * main checkout search box find an item by scanning/typing its serial
+ * directly, not just by name/SKU/brand. Branch-scoped like
+ * getAvailableSerialNumbers (only sellable-from-here units), unlike the
+ * cross-branch informational lookup below.
+ */
+export async function searchSerialsAcrossItems(
+  query: string,
+  branchId?: string
+): Promise<ApiResponse<SerialNumberRecord[]>> {
+  try {
+    type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
+    const result = await api.get<Envelope>(
+      `/inventory/serial-numbers?search=${encodeURIComponent(query)}&status=in_stock&limit=10${branchId ? `&branchId=${branchId}` : ''}`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to search serial numbers' }
+    }
+    const rows = Array.isArray(result.data)
+      ? result.data
+      : ((result.data as { data: SerialNumberRecord[] }).data ?? [])
+    return { success: true, data: rows }
+  } catch {
+    return { success: false, error: 'Failed to search serial numbers' }
   }
 }
 
