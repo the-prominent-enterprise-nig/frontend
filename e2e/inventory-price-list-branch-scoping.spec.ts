@@ -24,6 +24,7 @@ test.describe('Inventory — Price List Branch Scoping', () => {
     )
 
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
+    await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'SSC' })
     await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
     await page.getByLabel('Manila HQ').check()
     await page.getByRole('button', { name: 'Create Price List' }).click()

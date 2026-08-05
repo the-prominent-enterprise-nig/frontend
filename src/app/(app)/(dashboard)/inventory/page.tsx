@@ -24,6 +24,7 @@ import {
   Warehouse,
   Tag,
   ClipboardCheck,
+  Tags,
 } from 'lucide-react'
 
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
@@ -1335,6 +1336,7 @@ export default function InventoryPage() {
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
+                { label: 'Price Use Types', href: '/inventory/price-use-types', icon: Tags },
               ] as const
             ).map(({ label, href, icon: Icon }, i) => (
               <Link

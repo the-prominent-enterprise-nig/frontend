@@ -238,8 +238,17 @@ export const TaxRates = {
 export const Reports = {
   trialBalance: (asOf?: string) =>
     api.get<any>('/reports/trial-balance', asOf ? { asOf } : undefined),
-  pnl: (startDate: string, endDate: string) =>
-    api.get<any>('/reports/profit-and-loss', { startDate, endDate }),
+  // SCEN-14 Closing Gap 2: optional branchId scopes the P&L to one branch's
+  // posted journal entries instead of aggregating company-wide.
+  // SCEN-14 Closing Gap 3: view:'internal' excludes adjusting/eliminating
+  // entries (raw management figures); view:'net' (default) includes them.
+  pnl: (startDate: string, endDate: string, branchId?: string, view?: 'internal' | 'net') =>
+    api.get<any>('/reports/profit-and-loss', {
+      startDate,
+      endDate,
+      ...(branchId && { branchId }),
+      ...(view && { view }),
+    }),
   balanceSheet: (asOf?: string) =>
     api.get<any>('/reports/balance-sheet', asOf ? { asOf } : undefined),
   generalLedger: (params: { accountId?: string; startDate?: string; endDate?: string }) =>
@@ -251,6 +260,13 @@ export const Reports = {
   customerStatement: (id: string) => api.get<any>(`/reports/customer-statement/${id}`),
   supplierStatement: (id: string) => api.get<any>(`/reports/supplier-statement/${id}`),
   biSummary: () => api.get<any>('/reports/bi-summary'),
+  // SCEN-14 Closing Gap 4: groups AR invoices / AP bills / expenses / fixed
+  // assets by their (previously write-only) costCenter tag.
+  costCenter: (startDate?: string, endDate?: string) =>
+    api.get<any>('/reports/cost-center', {
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate }),
+    }),
 }
 
 // ============ AR Invoices ============

@@ -15,6 +15,7 @@ import type { CategoryNode } from '@/src/schema/inventory/categories'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { uploadCategoryFile } from '../_actions/category-cover'
 import { showToast } from '@/src/components/ui/toast'
+import { formatClassificationLabel } from '@/src/libs/format/text'
 
 type CreateProps = {
   mode: 'create'
@@ -140,9 +141,9 @@ export default function CategoryFormModal(props: Props) {
   const parentOptions = flatCategories.filter((c) => c.id !== selfId)
 
   const title = isEdit
-    ? `Edit "${props.node.name}"`
+    ? `Edit "${formatClassificationLabel(props.node.name)}"`
     : props.mode === 'create' && props.parentPreset
-      ? `Add sub-category under "${props.parentPreset.name}"`
+      ? `Add sub-category under "${formatClassificationLabel(props.parentPreset.name)}"`
       : 'Add Category'
 
   const fieldClass =
@@ -221,7 +222,7 @@ export default function CategoryFormModal(props: Props) {
                     <option value="">— None (top-level) —</option>
                     {parentOptions.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {formatClassificationLabel(c.name)}
                       </option>
                     ))}
                   </select>

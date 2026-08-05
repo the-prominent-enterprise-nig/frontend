@@ -79,6 +79,9 @@ const SerialItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   sku: z.string(),
+  modelNumber: z.string().nullable().optional(),
+  brand: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  type: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const SerialBranchSchema = z.object({
@@ -96,6 +99,25 @@ const SerialWarehouseSchema = z.object({
   branch: SerialBranchSchema.optional().nullable(),
 })
 
+// Provenance — which receiving report this unit arrived on, if any. "age" is
+// deliberately not part of this shape; it's computed at render time from
+// goodsReceipt.receivedAt via formatAge() rather than stored/parsed here.
+const SerialReceiptSchema = z
+  .object({
+    unitCost: z.coerce.number().nullable().optional(),
+    goodsReceipt: z
+      .object({
+        code: z.string(),
+        receivedAt: z.string(),
+        stockTransferId: z.string().nullable().optional(),
+        supplier: z.object({ name: z.string() }).nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+  })
+  .nullable()
+  .optional()
+
 export const SerialNumberSummarySchema = z.object({
   id: z.string(),
   serialNumber: z.string(),
@@ -109,16 +131,31 @@ export const SerialNumberSummarySchema = z.object({
   // host branch for an event while ownership stays with currentWarehouse's
   // own branch.
   consignedToBranch: SerialBranchSchema.optional().nullable(),
+  goodsReceiptLine: SerialReceiptSchema,
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
 
-export const SerialNumberListResponseSchema = z.object({
-  data: z.array(SerialNumberSummarySchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level — same shape as
+// ItemListResponseSchema. Parsing the real shape and transforming it back to
+// a flat one keeps every existing consumer (useSerialNumbers' `pagination`)
+// unchanged.
+export const SerialNumberListResponseSchema = z
+  .object({
+    data: z.array(SerialNumberSummarySchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type SerialNumberSummary = z.infer<typeof SerialNumberSummarySchema>
 export type SerialNumberListResponse = z.infer<typeof SerialNumberListResponseSchema>
