@@ -20,6 +20,11 @@ const ALL_MODULES = [
     description: 'Sales transactions, receipts, and cashiering.',
   },
   { code: 'crm', label: 'CRM', description: 'Customer profiles, leads, and follow-ups.' },
+  {
+    code: 'credit',
+    label: 'Credit Applications',
+    description: 'In-house financing applications, investigation, and approval.',
+  },
 ]
 
 interface Props {
