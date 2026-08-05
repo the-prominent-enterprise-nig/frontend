@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   BellRing,
   Check,
@@ -13,6 +14,9 @@ import {
   CalendarDays,
   RefreshCw,
   CheckCircle2,
+  Wallet,
+  User,
+  UserSquare2,
 } from 'lucide-react'
 import { remindersApi } from '@/src/libs/api/crm'
 import type { Reminder, ReminderType } from '@/src/schema/crm/types'
@@ -89,6 +93,46 @@ function CardSkeleton() {
   )
 }
 
+// ── Related-to badge (Scenario 20: collections tasks were indistinguishable
+// from generic customer/lead reminders on this shared list) ────────────────
+
+function RelatedToBadge({ reminder }: { reminder: Reminder }) {
+  if (reminder.installmentAccount) {
+    return (
+      <Link
+        href={`/crm/installment-accounts/${reminder.installmentAccountId}`}
+        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
+      >
+        <Wallet className="h-3 w-3" />
+        {reminder.installmentAccount.accountNumber}
+      </Link>
+    )
+  }
+  if (reminder.customer) {
+    return (
+      <Link
+        href={`/crm/customers/${reminder.customerId}`}
+        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-100"
+      >
+        <User className="h-3 w-3" />
+        {reminder.customer.name}
+      </Link>
+    )
+  }
+  if (reminder.lead) {
+    return (
+      <Link
+        href={`/crm/leads/${reminder.leadId}`}
+        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-600 hover:bg-gray-100"
+      >
+        <UserSquare2 className="h-3 w-3" />
+        {reminder.lead.firstName} {reminder.lead.lastName ?? ''}
+      </Link>
+    )
+  }
+  return null
+}
+
 // ── Reminder card ──────────────────────────────────────────────────────────────
 
 function ReminderCard({
@@ -149,6 +193,10 @@ function ReminderCard({
           >
             {reminder.note ?? capitalize(reminder.reminderType)}
           </p>
+
+          <div className="mt-1.5">
+            <RelatedToBadge reminder={reminder} />
+          </div>
 
           <div className="mt-1.5 flex items-center gap-3 text-[11px] text-gray-400">
             <span className="flex items-center gap-1">

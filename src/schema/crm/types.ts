@@ -33,6 +33,15 @@ export type InstallmentAccountCategory = z.infer<typeof InstallmentAccountCatego
 export const InstallmentAccountClassificationEnum = z.enum(['official', 'arrears', 'not_moving'])
 export type InstallmentAccountClassification = z.infer<typeof InstallmentAccountClassificationEnum>
 
+export const LegalEscalationStatusEnum = z.enum([
+  'none',
+  'soa_prepared',
+  'demand_letter_sent',
+  'small_claims_pack_ready',
+  'filed',
+])
+export type LegalEscalationStatus = z.infer<typeof LegalEscalationStatusEnum>
+
 export const InstallmentAccountStatusEnum = z.enum([
   'active',
   'closed',
@@ -204,9 +213,15 @@ export interface Interaction {
   tenantId: string
   customerId?: string | null
   leadId?: string | null
+  installmentAccountId?: string | null
+  collectorId?: string | null
+  contactPhone?: string | null
   interactionType: InteractionType
   summary: string
   outcome?: string | null
+  isPromiseToPay?: boolean
+  ptpAmount?: number | string | null
+  ptpDate?: string | null
   loggedBy: string
   occurredAt: string
   createdAt: string
@@ -217,6 +232,8 @@ export interface Reminder {
   tenantId: string
   customerId?: string | null
   leadId?: string | null
+  installmentAccountId?: string | null
+  collectorId?: string | null
   assignedTo: string
   reminderType: ReminderType
   dueAt: string
@@ -225,6 +242,9 @@ export interface Reminder {
   completedAt?: string | null
   isOverdue?: boolean
   createdAt: string
+  customer?: { name: string } | null
+  lead?: { firstName: string; lastName?: string | null } | null
+  installmentAccount?: { accountNumber: string } | null
 }
 
 export interface CustomerSegment {
@@ -312,6 +332,11 @@ export interface InstallmentAccount {
   currentBalance: number | string
   category?: InstallmentAccountCategory | null
   classification?: InstallmentAccountClassification | null
+  inDam: boolean
+  damEnteredAt?: string | null
+  legalEscalationStatus?: LegalEscalationStatus
+  legalEscalationNotes?: string | null
+  legalEscalationUpdatedAt?: string | null
   agingBucket?: string | null
   status: InstallmentAccountStatus
   createdAt: string
@@ -372,6 +397,23 @@ export interface CategoryGraduationRequest {
   decidedById?: string | null
   decidedAt?: string | null
   notes?: string | null
+  createdAt: string
+  installmentAccount?: { id: string; accountNumber: string } | null
+  requestedBy?: { id: string; name: string } | null
+  decidedBy?: { id: string; name: string } | null
+}
+
+export const DamEscalationStatusEnum = z.enum(['pending', 'approved', 'rejected'])
+export type DamEscalationStatus = z.infer<typeof DamEscalationStatusEnum>
+
+export interface DamEscalationRequest {
+  id: string
+  installmentAccountId: string
+  status: DamEscalationStatus
+  requestedById?: string | null
+  decidedById?: string | null
+  decidedAt?: string | null
+  reason?: string | null
   createdAt: string
   installmentAccount?: { id: string; accountNumber: string } | null
   requestedBy?: { id: string; name: string } | null

@@ -6,15 +6,25 @@ export const createInteractionSchema = z
     tenantId: z.string().min(1),
     customerId: z.string().uuid().optional(),
     leadId: z.string().uuid().optional(),
+    installmentAccountId: z.string().uuid().optional(),
+    collectorId: z.string().uuid().optional(),
+    contactPhone: z.string().max(20).optional().or(z.literal('')),
     interactionType: InteractionTypeEnum,
     summary: z.string().min(1, 'Summary is required').max(1000),
     outcome: z.string().max(1000).optional().or(z.literal('')),
+    isPromiseToPay: z.boolean().optional(),
+    ptpAmount: z.number().min(0).optional(),
+    ptpDate: z.string().optional().or(z.literal('')),
     loggedBy: z.string().min(1),
     occurredAt: z.string().min(1),
   })
-  .refine((d) => Boolean(d.customerId || d.leadId), {
-    message: 'Either customerId or leadId is required',
+  .refine((d) => Boolean(d.customerId || d.leadId || d.installmentAccountId), {
+    message: 'Either customerId, leadId, or installmentAccountId is required',
     path: ['customerId'],
+  })
+  .refine((d) => !d.isPromiseToPay || Boolean(d.ptpDate), {
+    message: 'A committed date is required for a Promise to Pay',
+    path: ['ptpDate'],
   })
 
 export type CreateInteractionInput = z.infer<typeof createInteractionSchema>
