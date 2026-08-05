@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
+import {
+  getBranches,
+  type BranchDetail,
+} from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 
 type Tab =
   | 'trial-balance'
@@ -14,6 +18,7 @@ type Tab =
   | 'ar-aging'
   | 'ap-aging'
   | 'customer-statement'
+  | 'cost-center'
   | 'bi'
 
 const VALID_TABS: Tab[] = [
@@ -25,6 +30,7 @@ const VALID_TABS: Tab[] = [
   'ar-aging',
   'ap-aging',
   'customer-statement',
+  'cost-center',
   'bi',
 ]
 
@@ -45,13 +51,21 @@ export default function ReportsHub() {
   // Customer statement: deep-linkable via ?tab=customer-statement&customerId=...
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState(searchParams.get('customerId') ?? '')
+  // P&L branch scoping (SCEN-14 Closing Gap 2) — empty means all branches
+  const [branches, setBranches] = useState<BranchDetail[]>([])
+  const [branchId, setBranchId] = useState(searchParams.get('branchId') ?? '')
+  // P&L internal-vs-net view (SCEN-14 Closing Gap 3)
+  const [pnlView, setPnlView] = useState<'internal' | 'net'>(
+    searchParams.get('view') === 'internal' ? 'internal' : 'net'
+  )
 
   const load = async () => {
     setLoading(true)
     setData(null)
     let res: any
     if (tab === 'trial-balance') res = await Reports.trialBalance(asOf)
-    else if (tab === 'pnl') res = await Reports.pnl(startDate, endDate)
+    else if (tab === 'pnl')
+      res = await Reports.pnl(startDate, endDate, branchId || undefined, pnlView)
     else if (tab === 'balance-sheet') res = await Reports.balanceSheet(asOf)
     else if (tab === 'general-ledger') res = await Reports.generalLedger({ startDate, endDate })
     else if (tab === 'cash-flow') res = await Reports.cashFlow(startDate, endDate)
@@ -63,7 +77,8 @@ export default function ReportsHub() {
         return
       }
       res = await Reports.customerStatement(customerId)
-    } else if (tab === 'bi') res = await Reports.biSummary()
+    } else if (tab === 'cost-center') res = await Reports.costCenter(startDate, endDate)
+    else if (tab === 'bi') res = await Reports.biSummary()
     setData(res?.data ?? null)
     setLoading(false)
   }
@@ -79,9 +94,16 @@ export default function ReportsHub() {
     )
   }, [tab, customers.length])
 
-  const needsDateRange = ['pnl', 'general-ledger', 'cash-flow'].includes(tab)
+  // Branch list is only needed for the P&L branch scope picker
+  useEffect(() => {
+    if (tab !== 'pnl' || branches.length) return
+    getBranches().then((r) => setBranches(r.success && r.data ? r.data : []))
+  }, [tab, branches.length])
+
+  const needsDateRange = ['pnl', 'general-ledger', 'cash-flow', 'cost-center'].includes(tab)
   const needsAsOf = ['trial-balance', 'balance-sheet', 'ar-aging', 'ap-aging'].includes(tab)
   const needsCustomer = tab === 'customer-statement'
+  const needsBranch = tab === 'pnl'
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -101,6 +123,7 @@ export default function ReportsHub() {
             ['ar-aging', 'AR Aging'],
             ['ap-aging', 'AP Aging'],
             ['customer-statement', 'Customer Statement'],
+            ['cost-center', 'Cost Center'],
             ['bi', 'BI Summary'],
           ] as [Tab, string][]
         ).map(([k, l]) => (
@@ -148,6 +171,38 @@ export default function ReportsHub() {
             </div>
           </>
         )}
+        {needsBranch && (
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Branch</label>
+            <select
+              aria-label="Branch"
+              value={branchId}
+              onChange={(e) => setBranchId(e.target.value)}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-48"
+            >
+              <option value="">All Branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {needsBranch && (
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">View</label>
+            <select
+              aria-label="View"
+              value={pnlView}
+              onChange={(e) => setPnlView(e.target.value as 'internal' | 'net')}
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-48"
+            >
+              <option value="net">Net (Adjusted — external reporting)</option>
+              <option value="internal">Internal (Unadjusted — management)</option>
+            </select>
+          </div>
+        )}
         {needsCustomer && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">Customer</label>
@@ -187,7 +242,7 @@ export default function ReportsHub() {
         ) : tab === 'trial-balance' ? (
           <TrialBalanceView data={data} />
         ) : tab === 'pnl' ? (
-          <PnLView data={data} />
+          <PnLView data={data} branchName={branches.find((b) => b.id === data.branchId)?.name} />
         ) : tab === 'balance-sheet' ? (
           <BalanceSheetView data={data} />
         ) : tab === 'general-ledger' ? (
@@ -198,6 +253,8 @@ export default function ReportsHub() {
           <AgingView data={data} type="ar" />
         ) : tab === 'ap-aging' ? (
           <AgingView data={data} type="ap" />
+        ) : tab === 'cost-center' ? (
+          <CostCenterView data={data} />
         ) : tab === 'bi' ? (
           <BIView data={data} />
         ) : null}
@@ -403,11 +460,21 @@ function Section({ title, items, total }: { title: string; items?: any[]; total?
   )
 }
 
-function PnLView({ data }: { data: any }) {
+function PnLView({ data, branchName }: { data: any; branchName?: string }) {
   return (
     <>
       <div className="text-xs text-gray-500 mb-3">
         {fmtDate(data.startDate)} — {fmtDate(data.endDate)}
+        {data.branchId && (
+          <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium">
+            {branchName ?? 'Branch-scoped'}
+          </span>
+        )}
+        {data.view === 'internal' && (
+          <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">
+            Internal (Unadjusted)
+          </span>
+        )}
       </div>
       <Section title="Revenue" items={data.revenue} total={data.totalRevenue} />
       <Section title="Cost of Goods Sold" items={data.cogs} total={data.totalCogs} />
@@ -517,6 +584,60 @@ function AgingView({ data, type }: { data: any; type: 'ar' | 'ap' }) {
           </td>
         </tr>
       ))}
+    </Table>
+  )
+}
+
+// SCEN-14 Closing Gap 4: costCenter was captured on AR invoices/AP bills/
+// expenses/fixed assets but never surfaced in any report — this reads it.
+function CostCenterView({ data }: { data: any }) {
+  const rows: any[] = Array.isArray(data?.rows) ? data.rows : []
+  if (rows.length === 0) {
+    return (
+      <div className="text-center text-gray-400 py-8">
+        No cost-center-tagged records in this range.
+      </div>
+    )
+  }
+  const totals = rows.reduce(
+    (acc, r) => ({
+      arInvoiceTotal: acc.arInvoiceTotal + r.arInvoiceTotal,
+      apBillTotal: acc.apBillTotal + r.apBillTotal,
+      expenseTotal: acc.expenseTotal + r.expenseTotal,
+      fixedAssetTotal: acc.fixedAssetTotal + r.fixedAssetTotal,
+      total: acc.total + r.total,
+    }),
+    { arInvoiceTotal: 0, apBillTotal: 0, expenseTotal: 0, fixedAssetTotal: 0, total: 0 }
+  )
+  return (
+    <Table
+      headers={[
+        'Cost Center',
+        'AR Invoiced (Revenue)',
+        'AP Bills',
+        'Expenses',
+        'Fixed Assets',
+        'Total Cost',
+      ]}
+    >
+      {rows.map((r) => (
+        <tr key={r.costCenter} className={r.costCenter === 'Unassigned' ? 'text-gray-400' : ''}>
+          <td className="px-3 py-2 font-medium">{r.costCenter}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.arInvoiceTotal)}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.apBillTotal)}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.expenseTotal)}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.fixedAssetTotal)}</td>
+          <td className="px-3 py-2 text-right font-semibold">{fmtMoney(r.total)}</td>
+        </tr>
+      ))}
+      <tr className="font-semibold bg-gray-50">
+        <td className="px-3 py-2">Total</td>
+        <td className="px-3 py-2 text-right">{fmtMoney(totals.arInvoiceTotal)}</td>
+        <td className="px-3 py-2 text-right">{fmtMoney(totals.apBillTotal)}</td>
+        <td className="px-3 py-2 text-right">{fmtMoney(totals.expenseTotal)}</td>
+        <td className="px-3 py-2 text-right">{fmtMoney(totals.fixedAssetTotal)}</td>
+        <td className="px-3 py-2 text-right">{fmtMoney(totals.total)}</td>
+      </tr>
     </Table>
   )
 }
