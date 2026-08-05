@@ -44,13 +44,13 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
   // why an unfiltered pick is flaky (it can land on another spec's own
   // stock-depleting E2E fixture item).
   const materialInput = page.getByPlaceholder('Search material by name or SKU…')
-  await fillStable(materialInput, 'Split-Type Aircon')
+  await fillStable(materialInput, 'Universal Remote Control')
   const dropdown = page.locator('div.fixed.z-100')
   // The dropdown fetches on open with whatever query is current at that
   // instant (starts as '' before the 300ms debounce settles), so its first
   // button can briefly be a stale, unfiltered result — match on the option's
   // own text instead of trusting "first button" to already be our search hit.
-  const aircondOption = dropdown.getByText('Split-Type Aircon', { exact: false })
+  const aircondOption = dropdown.getByText('Universal Remote Control', { exact: false }).first()
   await expect(aircondOption).toBeVisible({ timeout: 10_000 })
   await aircondOption.click()
 
@@ -113,7 +113,7 @@ test.describe('POS Service Jobs — Install (Aircool Closing Gap 4)', () => {
     // there's no shortfall left to source, so this exercises the plainer
     // "materials already on hand" path rather than the PR/PO one.
     const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
-    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+    await ensureItemStock(page, { branchName, itemQuery: 'Universal Remote Control', quantity: 50 })
 
     await confirmSourcing(page)
     await expect(detailHeading).toBeVisible()
@@ -122,12 +122,10 @@ test.describe('POS Service Jobs — Install (Aircool Closing Gap 4)', () => {
     const startInstallHeading = page.getByRole('heading', { name: 'Start Install' })
     await clickStable(startInstallButton, startInstallHeading)
 
-    const technicianInput = page.getByPlaceholder('Search staff by name or email…')
-    await technicianInput.click()
-    const techDropdown = page.locator('div.fixed.z-100')
-    await expect(techDropdown.locator('button').first()).toBeVisible({ timeout: 10_000 })
-    const technicianLabel = await techDropdown.locator('button').first().innerText()
-    await techDropdown.locator('button').first().click()
+    // Technician is a plain free-text field (not tied to a User record) —
+    // just type a name in.
+    const technicianName = `E2E Technician ${Date.now()}`
+    await fillStable(page.getByPlaceholder("Technician's name"), technicianName)
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Confirm & Start Install' }).click()
@@ -139,9 +137,6 @@ test.describe('POS Service Jobs — Install (Aircool Closing Gap 4)', () => {
     // this can resolve to more than one match — .first() is enough proof.
     await expect(detailHeading).toBeVisible()
     await expect(page.getByText('installing', { exact: true }).first()).toBeVisible()
-    // technicianLabel is "Name\nemail@..." (SearchCombobox's two-line option) —
-    // just confirm the technician's first line (name) shows up in the detail.
-    const technicianName = technicianLabel.split('\n')[0]
     await expect(page.getByText(technicianName).first()).toBeVisible()
 
     // Record actuals: the estimated qty was 1, so record 1 as the actual too.

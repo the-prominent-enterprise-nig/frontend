@@ -12,7 +12,12 @@ import { gotoReady, loginAs, clickStable } from './utils'
 test.use({ storageState: { cookies: [], origins: [] } })
 
 const STOCK_CONTROLLER_EMAIL = process.env.E2E_STOCK_EMAIL ?? 'technova.b1.stock@test.com'
-const CASHIER_EMAIL = process.env.E2E_CASHIER_EMAIL ?? 'technova.b1.cashier@test.com'
+// Marketing Manager, not Cashier — Cashier legitimately holds
+// inventory:serial:read (for looking up a unit at checkout), which is one
+// of the Counting hub's own canAny() access-gate permissions, so a Cashier
+// can now reach /inventory/counting. Marketing Manager holds none of the
+// hub's permissions, so it's the one that actually still gets denied.
+const NO_ACCESS_EMAIL = process.env.E2E_MARKETING_EMAIL ?? 'technova.b1.crm@test.com'
 const OWNER_EMAIL = process.env.E2E_OWNER_EMAIL ?? 'technova.owner@test.com'
 const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
@@ -78,7 +83,7 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     createdItemIds.push(testItem.id)
 
     await switchTo(page, STOCK_CONTROLLER_EMAIL)
-    await gotoReady(page, '/inventory/stock-counts')
+    await gotoReady(page, '/inventory/counting')
 
     // A branch-scoped Stock Controller now only sees their own branch's
     // warehouse, which the modal auto-fills (no <select> at all) — only
@@ -193,9 +198,9 @@ test.describe('Inventory — Stock Adjustments (INV-64)', () => {
     }
   })
 
-  test('user without inventory:stock:adjust cannot reach Stock Counts', async ({ page }) => {
-    await loginAs(page, CASHIER_EMAIL, PASSWORD)
-    await gotoReady(page, '/inventory/stock-counts')
+  test('user without inventory:stock:adjust cannot reach Counting', async ({ page }) => {
+    await loginAs(page, NO_ACCESS_EMAIL, PASSWORD)
+    await gotoReady(page, '/inventory/counting')
     await expect(page.getByText('Access Forbidden')).toBeVisible({ timeout: 10_000 })
   })
 })
