@@ -71,6 +71,7 @@ import {
   updateFinancingTerm,
   previewInstallment,
   getCustomerInstallmentSchedules,
+  listCollectionsCustomers,
 } from '../_actions/pos-actions'
 import type {
   CreateTerminalInput,
@@ -503,6 +504,14 @@ export function useCustomerInstallmentSchedules(customerId?: string) {
     queryFn: () => getCustomerInstallmentSchedules(customerId as string),
     enabled: !!customerId,
     staleTime: 60 * 1000,
+  })
+}
+
+export function useCollectionsCustomers(branchId?: string, search?: string) {
+  return useQuery({
+    queryKey: ['pos-collections-customers', branchId, search],
+    queryFn: () => listCollectionsCustomers({ branchId, search }),
+    staleTime: 30 * 1000,
   })
 }
 

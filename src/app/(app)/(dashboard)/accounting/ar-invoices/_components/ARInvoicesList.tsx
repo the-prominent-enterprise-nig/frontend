@@ -21,6 +21,8 @@ import {
   type ARInvoice,
   type ARPayment,
   type TaxRate,
+  type PaymentMethod,
+  PAYMENT_METHOD_OPTIONS,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
@@ -671,10 +673,13 @@ function PaymentDialog({
   const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
   const isClosedAccount = invoice.status === 'PAID'
   const [form, setForm] = useState({
-    amount: String(outstanding || ''),
+    // outstanding is always a valid non-negative number (Math.max(...) above),
+    // so this never needs a `|| ''` fallback — that idiom would blank the
+    // field out for a legitimately-zero outstanding balance (0 is falsy).
+    amount: String(outstanding),
     withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
-    method: '',
+    method: 'CASH' as PaymentMethod,
     reference: '',
     notes: '',
   })
@@ -798,12 +803,17 @@ function PaymentDialog({
             />
           </Field>
           <Field label="Method">
-            <input
+            <select
               value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value })}
-              placeholder="Cash, Bank Transfer..."
+              onChange={(e) => setForm({ ...form, method: e.target.value as PaymentMethod })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
+            >
+              {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Reference">
             <input
@@ -885,7 +895,9 @@ function PaymentHistoryModal({
                       </div>
                       <div className="text-xs text-gray-500">
                         {fmtDate(p.paymentDate)}
-                        {p.method ? ` · ${p.method}` : ''}
+                        {p.method
+                          ? ` · ${PAYMENT_METHOD_OPTIONS.find((o) => o.value === p.method)?.label ?? p.method}`
+                          : ''}
                         {p.reference ? ` · ${p.reference}` : ''}
                       </div>
                       {p.cancelReason && (
