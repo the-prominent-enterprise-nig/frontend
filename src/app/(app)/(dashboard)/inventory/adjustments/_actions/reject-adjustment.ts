@@ -39,7 +39,7 @@ export async function rejectAdjustment(id: string, input: unknown): Promise<ApiR
     }
   }
 
-  revalidatePath('/inventory/operations')
+  revalidatePath('/inventory/counting')
 
   return { success: true, data: result.data, message: 'Adjustment rejected' }
 }

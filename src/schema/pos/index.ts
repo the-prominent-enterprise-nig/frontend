@@ -229,6 +229,15 @@ export interface CreateTransactionLineInput {
   /** True when unitPrice was manually set by a PIN-approved manager
    * override rather than resolved from priceListItemId. */
   priceOverride?: boolean
+  /** Per-line payment mode — lets one cart mix cash/charge/installment
+   * lines. Falls back to the transaction-level invoiceType when omitted. */
+  invoiceType?: PosInvoiceType
+  /** This line's own financing term (installment lines only). */
+  financingTermId?: string
+  /** This line's own down payment (installment lines only) — each
+   * installment line carries its own down payment rather than one pooled
+   * across the cart. */
+  downPayment?: number
 }
 
 export interface CreateTransactionInput {

@@ -5,6 +5,7 @@ import { useState, useCallback } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getMobileCountSessions } from '../_actions/get-mobile-count-data'
 import { submitCount } from '../../stock-counts/_actions/submit-count'
+import { addCountLine } from '../../stock-counts/_actions/add-count-line'
 import { getItems } from '../../items/_actions/get-items'
 import type { CountSummary } from '@/src/schema/inventory/stock-counts'
 
@@ -14,7 +15,7 @@ export type ScanEntry = {
   itemName: string
   sku: string
   countedQty: number
-  expectedQty: number
+  systemQty: number
   synced: boolean
   timestamp: number
 }
@@ -43,7 +44,7 @@ export function useMobileCount() {
       data,
     }: {
       id: string
-      data: { lines: { itemId: string; expectedQty: number; countedQty: number }[] }
+      data: { lines: { itemId: string; countedQty: number }[] }
     }) => submitCount(id, data),
     onSuccess: (result) => {
       if (result.success) {
@@ -60,9 +61,10 @@ export function useMobileCount() {
   const items = itemsQuery.data?.data?.data ?? []
 
   const handleScan = useCallback(
-    (barcode: string) => {
+    async (barcode: string) => {
       const trimmed = barcode.trim()
       if (!trimmed) return
+      setBarcodeInput('')
 
       const matchedItem = items.find((item) => item.sku === trimmed || item.id === trimmed)
       if (!matchedItem) {
@@ -71,38 +73,48 @@ export function useMobileCount() {
           description: `No item matched "${trimmed}"`,
           status: 'error',
         })
-        setBarcodeInput('')
         return
       }
 
-      setScanEntries((prev) => {
-        const existing = prev.findIndex((e) => e.itemId === matchedItem.id)
-        if (existing >= 0) {
-          const updated = [...prev]
-          updated[existing] = {
-            ...updated[existing],
-            countedQty: updated[existing].countedQty + 1,
-            synced: false,
-          }
-          return updated
-        }
-        return [
-          ...prev,
-          {
-            barcode: trimmed,
-            itemId: matchedItem.id,
-            itemName: matchedItem.name,
-            sku: matchedItem.sku,
-            countedQty: 1,
-            expectedQty: 0,
-            synced: false,
-            timestamp: Date.now(),
-          },
-        ]
-      })
-      setBarcodeInput('')
+      const existing = scanEntries.find((e) => e.itemId === matchedItem.id)
+      if (existing) {
+        setScanEntries((prev) =>
+          prev.map((e) =>
+            e.itemId === matchedItem.id ? { ...e, countedQty: e.countedQty + 1, synced: false } : e
+          )
+        )
+        return
+      }
+
+      if (!selectedSession) return
+
+      // Server resolves systemQty — never trust a client-side value for the
+      // "expected" side of a count.
+      const res = await addCountLine(selectedSession.id, { itemId: matchedItem.id })
+      if (!res.success || !res.data) {
+        showToast({
+          title: 'Failed to add item',
+          description: res.message,
+          status: 'error',
+        })
+        return
+      }
+
+      setScanEntries((prev) => [
+        ...prev,
+        {
+          barcode: trimmed,
+          itemId: matchedItem.id,
+          itemName: matchedItem.name,
+          sku: matchedItem.sku,
+          countedQty: 1,
+          systemQty: Number(res.data!.systemQty),
+          synced: false,
+          timestamp: Date.now(),
+        },
+      ])
     },
-    [items]
+    [items, scanEntries, selectedSession]
   )
 
   function updateQuantity(itemId: string, qty: number) {
@@ -122,7 +134,6 @@ export function useMobileCount() {
 
     const lines = scanEntries.map((e) => ({
       itemId: e.itemId,
-      expectedQty: e.expectedQty,
       countedQty: e.countedQty,
     }))
 

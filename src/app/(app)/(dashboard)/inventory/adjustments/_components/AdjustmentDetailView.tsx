@@ -31,13 +31,16 @@ type Props = {
     id: string
     data: RejectAdjustmentFormValues
   }) => Promise<ApiResponse<unknown>>
+  onWithdraw: (id: string) => Promise<ApiResponse<unknown>>
   isConfirming: boolean
   isInvestigating: boolean
   isApproving: boolean
   isRejecting: boolean
+  isWithdrawing: boolean
   canConfirm: boolean
   canInvestigate: boolean
   canApprove: boolean
+  canWithdraw: boolean
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -55,13 +58,16 @@ export default function AdjustmentDetailView({
   onInvestigate,
   onApprove,
   onReject,
+  onWithdraw,
   isConfirming,
   isInvestigating,
   isApproving,
   isRejecting,
+  isWithdrawing,
   canConfirm,
   canInvestigate,
   canApprove,
+  canWithdraw,
 }: Props) {
   const [showRejectForm, setShowRejectForm] = useState(false)
 
@@ -87,8 +93,8 @@ export default function AdjustmentDetailView({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center px-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+      <div className="flex w-full max-w-2xl max-h-[90vh] flex-col rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">
               Adjustment {adjustment.adjustmentNumber}
@@ -114,7 +120,7 @@ export default function AdjustmentDetailView({
           </div>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="flex-1 overflow-y-auto space-y-5 px-6 py-5">
           <div className="grid gap-4 sm:grid-cols-2 text-sm">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Reason</p>
@@ -243,111 +249,128 @@ export default function AdjustmentDetailView({
               </p>
               <ol className="space-y-1.5 text-sm text-zinc-600">
                 <li className={isSubmitted ? 'font-semibold text-zinc-900' : ''}>
-                  1. Branch Manager confirms {adjustment.confirmedById && '✓'}
+                  1. Branch Manager confirms
+                  {adjustment.confirmedByName ? ` — ${adjustment.confirmedByName} ✓` : ''}
                 </li>
                 <li className={isConfirmed ? 'font-semibold text-zinc-900' : ''}>
-                  2. HO Inventory investigates {adjustment.investigatingById && '✓'}
+                  2. Business Owner investigates
+                  {adjustment.investigatingByName ? ` — ${adjustment.investigatingByName} ✓` : ''}
                 </li>
                 <li className={isInvestigatingStatus ? 'font-semibold text-zinc-900' : ''}>
-                  3. Accountant approves or rejects
+                  3. Business Owner approves or rejects
                 </li>
               </ol>
-
-              {showRejectForm ? (
-                <form onSubmit={rejectForm.handleSubmit(handleReject)} className="space-y-3">
-                  <Controller
-                    name="reason"
-                    control={rejectForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={2}
-                        placeholder="Reason for rejecting…"
-                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-                      />
-                    )}
-                  />
-                  {rejectForm.formState.errors.reason && (
-                    <p className="text-xs text-red-600">
-                      {rejectForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowRejectForm(false)}
-                      className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isRejecting}
-                      className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                    >
-                      {isRejecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                      Confirm Rejection
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="flex justify-end gap-2">
-                  {isSubmitted && canConfirm && (
-                    <button
-                      type="button"
-                      onClick={() => onConfirm(adjustment.id)}
-                      disabled={isConfirming}
-                      className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-                    >
-                      {isConfirming && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Confirm
-                    </button>
-                  )}
-                  {isConfirmed && canInvestigate && (
-                    <button
-                      type="button"
-                      onClick={() => onInvestigate(adjustment.id)}
-                      disabled={isInvestigating}
-                      className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-                    >
-                      {isInvestigating && <Loader2 className="h-4 w-4 animate-spin" />}
-                      Move to Investigating
-                    </button>
-                  )}
-                  {isInvestigatingStatus && canApprove && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowRejectForm(true)}
-                        className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onApprove(adjustment.id)}
-                        disabled={isApproving}
-                        className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
-                      >
-                        {isApproving && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Approve
-                      </button>
-                    </>
-                  )}
-                  {!(
-                    (isSubmitted && canConfirm) ||
-                    (isConfirmed && canInvestigate) ||
-                    (isInvestigatingStatus && canApprove)
-                  ) && (
-                    <p className="text-xs text-zinc-400">
-                      Waiting on the next step — you don&apos;t hold the permission for it.
-                    </p>
-                  )}
-                </div>
-              )}
             </div>
           )}
         </div>
+
+        {!isTerminal && (
+          <div className="shrink-0 border-t border-zinc-200 bg-white px-6 py-4">
+            {showRejectForm ? (
+              <form onSubmit={rejectForm.handleSubmit(handleReject)} className="space-y-3">
+                <Controller
+                  name="reason"
+                  control={rejectForm.control}
+                  render={({ field }) => (
+                    <textarea
+                      {...field}
+                      rows={2}
+                      placeholder="Reason for rejecting…"
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+                    />
+                  )}
+                />
+                {rejectForm.formState.errors.reason && (
+                  <p className="text-xs text-red-600">
+                    {rejectForm.formState.errors.reason.message}
+                  </p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRejectForm(false)}
+                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isRejecting}
+                    className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {isRejecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Confirm Rejection
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex justify-end gap-2">
+                {isSubmitted && canWithdraw && (
+                  <button
+                    type="button"
+                    onClick={() => onWithdraw(adjustment.id)}
+                    disabled={isWithdrawing}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+                  >
+                    {isWithdrawing && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}
+                    Withdraw
+                  </button>
+                )}
+                {isSubmitted && canConfirm && (
+                  <button
+                    type="button"
+                    onClick={() => onConfirm(adjustment.id)}
+                    disabled={isConfirming}
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {isConfirming && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Confirm
+                  </button>
+                )}
+                {isConfirmed && canInvestigate && (
+                  <button
+                    type="button"
+                    onClick={() => onInvestigate(adjustment.id)}
+                    disabled={isInvestigating}
+                    className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                  >
+                    {isInvestigating && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Move to Investigating
+                  </button>
+                )}
+                {isInvestigatingStatus && canApprove && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowRejectForm(true)}
+                      className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onApprove(adjustment.id)}
+                      disabled={isApproving}
+                      className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                    >
+                      {isApproving && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Approve
+                    </button>
+                  </>
+                )}
+                {!(
+                  (isSubmitted && canConfirm) ||
+                  (isConfirmed && canInvestigate) ||
+                  (isInvestigatingStatus && canApprove)
+                ) && (
+                  <p className="text-xs text-zinc-400">
+                    Waiting on the next step — you don&apos;t hold the permission for it.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -7,8 +7,7 @@ import { CountingHub } from './_components/CountingHub'
 
 export const metadata = {
   title: 'Counting | Prominent Enterprise',
-  description:
-    'Stock counts, cycle schedules, mobile counting, batches, serial numbers, and expiry tracking',
+  description: 'Stock counts, stock adjustments, mobile counting, batches, and serial numbers',
 }
 
 export default async function CountingPage() {
@@ -18,11 +17,13 @@ export default async function CountingPage() {
 
   const hasAccess = canAny(session, [
     INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
-    INVENTORY_PERMISSIONS.CYCLE_COUNT_READ,
     INVENTORY_PERMISSIONS.MOBILE_COUNT_USE,
     INVENTORY_PERMISSIONS.BATCH_READ,
     INVENTORY_PERMISSIONS.SERIAL_READ,
-    INVENTORY_PERMISSIONS.EXPIRY_READ,
+    INVENTORY_PERMISSIONS.STOCK_ADJUST,
+    INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_CONFIRM,
+    INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE,
+    INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_APPROVE,
   ])
 
   if (!hasAccess) redirect('/403')

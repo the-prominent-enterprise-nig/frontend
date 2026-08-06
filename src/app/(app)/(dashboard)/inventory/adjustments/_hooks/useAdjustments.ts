@@ -9,6 +9,7 @@ import { confirmAdjustment } from '../_actions/confirm-adjustment'
 import { investigateAdjustment } from '../_actions/investigate-adjustment'
 import { approveAdjustment } from '../_actions/approve-adjustment'
 import { rejectAdjustment } from '../_actions/reject-adjustment'
+import { withdrawAdjustment } from '../_actions/withdraw-adjustment'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import type {
   AdjustmentDetail,
@@ -76,6 +77,21 @@ export function useAdjustments() {
     onSuccess: (result) => onTransitionSuccess(result, 'Adjustment rejected'),
   })
 
+  const withdrawMutation = useMutation({
+    mutationFn: (id: string) => withdrawAdjustment(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Withdrawn', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-stock-adjustments'] })
+        // Withdraw hard-deletes the row — unlike the other transitions,
+        // there's nothing left to merge back into the open detail view.
+        setSelectedAdjustment(null)
+      } else {
+        showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
+
   const adjustments = adjustmentsQuery.data?.data?.data ?? []
   const pagination = {
     total: adjustmentsQuery.data?.data?.total ?? 0,
@@ -126,6 +142,9 @@ export function useAdjustments() {
 
     reject: rejectMutation.mutateAsync,
     isRejecting: rejectMutation.isPending,
+
+    withdraw: withdrawMutation.mutateAsync,
+    isWithdrawing: withdrawMutation.isPending,
 
     refetch: () => queryClient.invalidateQueries({ queryKey: ['inventory-stock-adjustments'] }),
   }

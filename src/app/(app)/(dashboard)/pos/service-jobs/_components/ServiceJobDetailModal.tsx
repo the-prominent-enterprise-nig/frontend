@@ -11,15 +11,6 @@ const LINE_SOURCE_LABELS: Record<string, string> = {
   purchase_order: 'Purchase Order',
 }
 
-function technicianDisplayName(
-  technician: NonNullable<ServiceDraft['technician']> | null | undefined
-): string {
-  if (!technician) return '—'
-  return (
-    `${technician.firstName ?? ''} ${technician.lastName ?? ''}`.trim() || technician.email || '—'
-  )
-}
-
 type Props = {
   open: boolean
   onClose: () => void
@@ -162,14 +153,12 @@ export function ServiceJobDetailModal({
                   <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Lines</p>
                   <p className="mt-0.5 text-zinc-800">{draft.lines.length}</p>
                 </div>
-                {draft.technician && (
+                {draft.technicianName && (
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                       Technician
                     </p>
-                    <p className="mt-0.5 text-zinc-800">
-                      {technicianDisplayName(draft.technician)}
-                    </p>
+                    <p className="mt-0.5 text-zinc-800">{draft.technicianName}</p>
                   </div>
                 )}
               </div>
@@ -219,6 +208,11 @@ export function ServiceJobDetailModal({
                             <span className="ml-1.5 font-mono text-xs text-zinc-400">
                               {line.item.sku}
                             </span>
+                            {line.serialNumber && (
+                              <p className="mt-0.5 font-mono text-xs text-zinc-500">
+                                SN: {line.serialNumber.serialNumber}
+                              </p>
+                            )}
                             {line.notes && (
                               <p className="mt-0.5 text-xs text-zinc-400">{line.notes}</p>
                             )}

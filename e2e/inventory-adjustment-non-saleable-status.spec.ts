@@ -24,11 +24,19 @@ test.describe('Inventory — Adjustment Non-Saleable Status (Scenario 19, Part 4
     const warehouse = warehouses.find((w) => w.branchId === branch.id)
     if (!warehouse) throw new Error('No warehouse found for the first branch')
 
+    // Also filter on isSerialTracked, not just a name match — the catalog
+    // now has non-tracked service items ("Relocation of Split Type
+    // Aircon", cleaning services, etc.) that can outrank the actual
+    // physical item in the fuzzy search and push it past a small limit.
     const itemsRes = await page.request.get(
-      `/api/inventory/items?search=${encodeURIComponent('Split-Type Aircon')}&limit=5`
+      `/api/inventory/items?search=${encodeURIComponent('Split-Type Aircon')}&limit=20`
     )
-    const items = ((await itemsRes.json()).data ?? []) as { id: string; name: string }[]
-    const item = items.find((i) => i.name.includes('Split-Type Aircon'))
+    const items = ((await itemsRes.json()).data ?? []) as {
+      id: string
+      name: string
+      isSerialTracked: boolean
+    }[]
+    const item = items.find((i) => i.name.includes('Split-Type Aircon') && i.isSerialTracked)
     if (!item) throw new Error('Split-Type Aircon fixture item not found')
 
     const serialNumber = `E2E-NONSALE-${Date.now()}`
@@ -52,7 +60,7 @@ test.describe('Inventory — Adjustment Non-Saleable Status (Scenario 19, Part 4
     }
 
     // Now drive the actual UI: open a count session's Create Adjustment tab.
-    await gotoReady(page, '/inventory/stock-counts')
+    await gotoReady(page, '/inventory/counting')
 
     const warehouseSelect = page
       .locator('select')
@@ -72,7 +80,7 @@ test.describe('Inventory — Adjustment Non-Saleable Status (Scenario 19, Part 4
     const ownRow = page.locator('tr').filter({ hasText: sessionId })
 
     const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+    await clickStable(ownRow, sessionHeading)
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Start Count' }).click()

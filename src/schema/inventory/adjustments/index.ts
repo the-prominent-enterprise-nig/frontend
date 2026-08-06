@@ -3,6 +3,9 @@ import { AdjustmentReasonCodeSchema } from '@/src/schema/inventory/stock-counts'
 import { BatchStatusSchema } from '@/src/schema/inventory/batches'
 import { SerialStatusSchema } from '@/src/schema/inventory/serial-numbers'
 
+// Scenario 19 Part 2 — approval chain status. submitted/confirmed/investigating
+// carry zero stock/GL side effects; those only happen on the transition to
+// approved.
 export const AdjustmentStatusSchema = z.enum([
   'submitted',
   'confirmed',
@@ -57,6 +60,12 @@ export const AdjustmentLineSchema = z.object({
   expectedQty: z.coerce.number(),
   actualQty: z.coerce.number(),
   unitCost: z.coerce.number().optional().nullable(),
+  // Scenario 19 Part 3 — the actual system on-hand snapshot at posting time,
+  // only present once the adjustment is approved (approve() is the only
+  // place that writes StockLedger beforeQty/afterQty). Distinct from
+  // expectedQty/actualQty, which are the submission-time inputs.
+  beforeQty: z.coerce.number().optional().nullable(),
+  afterQty: z.coerce.number().optional().nullable(),
 })
 export type AdjustmentLine = z.infer<typeof AdjustmentLineSchema>
 
@@ -71,14 +80,19 @@ export const AdjustmentDetailSchema = z.object({
   totalImpactValue: z.coerce.number().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),
   submittedById: z.string().optional().nullable(),
+  submittedByName: z.string().optional().nullable(),
   confirmedAt: z.string().optional().nullable(),
   confirmedById: z.string().optional().nullable(),
+  confirmedByName: z.string().optional().nullable(),
   investigatingAt: z.string().optional().nullable(),
   investigatingById: z.string().optional().nullable(),
+  investigatingByName: z.string().optional().nullable(),
   approvedAt: z.string().optional().nullable(),
   approvedById: z.string().optional().nullable(),
+  approvedByName: z.string().optional().nullable(),
   rejectedAt: z.string().optional().nullable(),
   rejectedById: z.string().optional().nullable(),
+  rejectedByName: z.string().optional().nullable(),
   rejectedReason: z.string().optional().nullable(),
   createdAt: z.string().optional(),
   lines: z.array(AdjustmentLineSchema),

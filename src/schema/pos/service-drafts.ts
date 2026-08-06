@@ -14,6 +14,11 @@ export const CreateServiceDraftLineSchema = z.object({
   // zod v4 (input type collapses to `unknown`, output type stays `number`).
   estimatedQty: z.number().positive('Estimated quantity must be greater than 0'),
   notes: z.string().max(500).optional(),
+  // Required (checked at submit time in ServiceJobFormModal, not here — this
+  // schema has no way to know whether itemId is serial-tracked) when the
+  // picked material is serial-tracked; estimatedQty is locked to 1 in that
+  // case. The backend re-validates both regardless.
+  serialNumberId: z.string().optional(),
 })
 
 export const CreateServiceDraftFormSchema = z.object({
@@ -47,6 +52,12 @@ const ServiceDraftLineItemSchema = z.object({
   id: z.string(),
   name: z.string(),
   sku: z.string(),
+  isSerialTracked: z.boolean().optional(),
+})
+
+const ServiceDraftLineSerialSchema = z.object({
+  id: z.string(),
+  serialNumber: z.string(),
 })
 
 export const ServiceDraftLineSourceSchema = z.enum(['warehouse', 'purchase_order'])
@@ -59,6 +70,8 @@ export const ServiceDraftLineSchema = z.object({
   actualQty: z.coerce.number().nullable().optional(),
   source: ServiceDraftLineSourceSchema.nullable().optional(),
   notes: z.string().nullable().optional(),
+  serialNumberId: z.string().nullable().optional(),
+  serialNumber: ServiceDraftLineSerialSchema.nullable().optional(),
 })
 
 // ─── Sourcing (Closing Gap 3) — stock-check preview + linked PRs ───────────
@@ -85,16 +98,12 @@ export const StockCheckResponseSchema = z.object({
 })
 
 // ─── Install (Closing Gap 4) — assign technician + record actuals ─────────
-
-export const ServiceDraftTechnicianSchema = z.object({
-  id: z.string(),
-  firstName: z.string().nullable().optional(),
-  lastName: z.string().nullable().optional(),
-  email: z.string().nullable().optional(),
-})
+// technicianName is plain free text, not tied to a User record — a
+// developer-confirmed follow-up ask that reversed the original design
+// (a staff search combobox resolving to a real user).
 
 export const StartInstallFormSchema = z.object({
-  technicianId: z.string().min(1, 'Technician is required'),
+  technicianName: z.string().min(1, 'Technician is required'),
 })
 
 export const RecordActualLineSchema = z.object({
@@ -151,8 +160,7 @@ export const ServiceDraftSchema = z.object({
   branch: ServiceDraftBranchSchema.nullable().optional(),
   lines: z.array(ServiceDraftLineSchema),
   sourcingPurchaseRequests: z.array(ServiceDraftSourcingPrSchema).optional(),
-  technicianId: z.string().nullable().optional(),
-  technician: ServiceDraftTechnicianSchema.nullable().optional(),
+  technicianName: z.string().nullable().optional(),
   invoice: ServiceDraftInvoiceSchema.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().optional(),
@@ -175,7 +183,6 @@ export type ServiceDraft = z.infer<typeof ServiceDraftSchema>
 export type ServiceDraftListResponse = z.infer<typeof ServiceDraftListResponseSchema>
 export type StockCheckLine = z.infer<typeof StockCheckLineSchema>
 export type StockCheckResponse = z.infer<typeof StockCheckResponseSchema>
-export type ServiceDraftTechnician = z.infer<typeof ServiceDraftTechnicianSchema>
 export type ServiceDraftInvoiceLine = z.infer<typeof ServiceDraftInvoiceLineSchema>
 export type ServiceDraftInvoice = z.infer<typeof ServiceDraftInvoiceSchema>
 export type StartInstallFormValues = z.infer<typeof StartInstallFormSchema>

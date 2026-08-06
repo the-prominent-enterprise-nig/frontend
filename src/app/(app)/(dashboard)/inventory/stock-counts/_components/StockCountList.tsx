@@ -103,18 +103,25 @@ export default function StockCountList({ session }: { session: SessionUser }) {
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
-          <select
-            value={warehouseFilter ?? ''}
-            onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Warehouses</option>
-            {warehouseOptions.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
-              </option>
-            ))}
-          </select>
+          {/* A branch-scoped user's warehouse list is already backend-filtered
+              down to their own branch — with only one possible warehouse,
+              "All Warehouses" vs. picking it are the same result, so the
+              filter adds nothing. HQ/Business Owner sees every branch and
+              keeps it. */}
+          {warehouseOptions.length > 1 && (
+            <select
+              value={warehouseFilter ?? ''}
+              onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Warehouses</option>
+              {warehouseOptions.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.code} — {wh.name}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={countTypeFilter ?? ''}
             onChange={(e) => setCountTypeFilter(e.target.value || undefined)}
@@ -208,14 +215,15 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Created By
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {counts.map((count: CountSummary) => (
-                    <tr key={count.id} className="hover:bg-zinc-50">
+                    <tr
+                      key={count.id}
+                      onClick={() => setSelectedCount(count)}
+                      className="cursor-pointer hover:bg-zinc-50"
+                    >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-500">
                         #{count.id.slice(0, 8).toUpperCase()}
                       </td>
@@ -245,15 +253,6 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
                         {count.createdBy?.name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCount(count)}
-                          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                        >
-                          Open
-                        </button>
                       </td>
                     </tr>
                   ))}

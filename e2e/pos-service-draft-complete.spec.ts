@@ -41,13 +41,13 @@ async function createServiceJob(page: import('@playwright/test').Page, title: st
   // why an unfiltered pick is flaky (it can land on another spec's own
   // stock-depleting E2E fixture item).
   const materialInput = page.getByPlaceholder('Search material by name or SKU…')
-  await fillStable(materialInput, 'Split-Type Aircon')
+  await fillStable(materialInput, 'Universal Remote Control')
   const dropdown = page.locator('div.fixed.z-100')
   // The dropdown fetches on open with whatever query is current at that
   // instant (starts as '' before the 300ms debounce settles), so its first
   // button can briefly be a stale, unfiltered result — match on the option's
   // own text instead of trusting "first button" to already be our search hit.
-  const aircondOption = dropdown.getByText('Split-Type Aircon', { exact: false })
+  const aircondOption = dropdown.getByText('Universal Remote Control', { exact: false }).first()
   await expect(aircondOption).toBeVisible({ timeout: 10_000 })
   await aircondOption.click()
 
@@ -83,11 +83,7 @@ async function startInstall(page: import('@playwright/test').Page) {
   const startInstallHeading = page.getByRole('heading', { name: 'Start Install' })
   await clickStable(startInstallButton, startInstallHeading)
 
-  const technicianInput = page.getByPlaceholder('Search staff by name or email…')
-  await technicianInput.click()
-  const techDropdown = page.locator('div.fixed.z-100')
-  await expect(techDropdown.locator('button').first()).toBeVisible({ timeout: 10_000 })
-  await techDropdown.locator('button').first().click()
+  await fillStable(page.getByPlaceholder("Technician's name"), `E2E Technician ${Date.now()}`)
 
   await expect(async () => {
     await page.getByRole('button', { name: 'Confirm & Start Install' }).click()
@@ -127,7 +123,7 @@ test.describe('POS Service Jobs — Complete (Aircool Closing Gap 5)', () => {
     // material first, so this test's success doesn't depend on this shared
     // dev database's ambient, ever-drifting on-hand level.
     const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
-    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+    await ensureItemStock(page, { branchName, itemQuery: 'Universal Remote Control', quantity: 50 })
 
     await confirmSourcing(page)
     await expect(detailHeading).toBeVisible()
@@ -178,7 +174,7 @@ test.describe('POS Service Jobs — Complete (Aircool Closing Gap 5)', () => {
     await expect(detailHeading).toBeVisible()
 
     const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
-    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+    await ensureItemStock(page, { branchName, itemQuery: 'Universal Remote Control', quantity: 50 })
 
     await confirmSourcing(page)
     await startInstall(page)
@@ -241,7 +237,7 @@ test.describe('POS Service Jobs — Cashier cannot complete (role gate)', () => 
     await expect(page.getByRole('heading', { name: title })).toBeVisible()
 
     const branchName = await page.locator('p:text-is("Branch") + p').first().innerText()
-    await ensureItemStock(page, { branchName, itemQuery: 'Split-Type Aircon', quantity: 50 })
+    await ensureItemStock(page, { branchName, itemQuery: 'Universal Remote Control', quantity: 50 })
 
     await confirmSourcing(page)
     await startInstall(page)

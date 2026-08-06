@@ -89,14 +89,6 @@ export const INVENTORY_PERMISSIONS = {
   UDS_READ: 'inventory:uds:read',
   UDS_MANAGE: 'inventory:uds:manage',
 
-  // ── Expiry (Stock Controller) ──────────────────────────────────────────────
-  EXPIRY_READ: 'inventory:expiry:read',
-  EXPIRY_MANAGE: 'inventory:expiry:manage',
-
-  // ── Cycle Count (Stock Controller) ─────────────────────────────────────────
-  CYCLE_COUNT_READ: 'inventory:cycle-count:read',
-  CYCLE_COUNT_MANAGE: 'inventory:cycle-count:manage',
-
   // ── Mobile Count (Stock Controller) ────────────────────────────────────────
   MOBILE_COUNT_USE: 'inventory:mobile-count:use',
 
@@ -200,6 +192,10 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock:read': 'View real-time stock balances',
   'inventory:stock:create': 'Post stock entries',
   'inventory:stock:adjust': 'Create stock adjustments with reason codes',
+  'inventory:stock-adjustment:confirm':
+    'Confirm a submitted stock adjustment before HQ review (Branch Manager)',
+  'inventory:stock-adjustment:approve':
+    'Investigate and approve/reject a confirmed stock adjustment (Business Owner)',
   'inventory:transfers:read': 'View stock transfers',
   'inventory:transfers:create': 'Create stock transfer requests',
   'inventory:transfers:accept':
@@ -224,10 +220,7 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock-count:read': 'View stock count sheets',
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',
-  'inventory:stock-adjustment:confirm': 'Confirm a submitted stock adjustment',
   'inventory:stock-adjustment:investigate': 'Move a confirmed stock adjustment into investigation',
-  'inventory:stock-adjustment:approve':
-    'Approve or reject an investigated stock adjustment — approval posts it to stock/GL',
   'inventory:reorder:read': 'View reorder requests',
   'inventory:reorder:manage': 'Configure reorder points and manage reorder requests',
   'inventory:batch:read': 'View batch / lot records',
@@ -240,10 +233,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Consign stock to a host branch for a caravan event, and return/reassign it at close',
   'inventory:uds:read': 'View Unit Document Sheets (repair, pull-out, loan)',
   'inventory:uds:manage': 'Issue and update Unit Document Sheets',
-  'inventory:expiry:read': 'View expiry-tracked stock',
-  'inventory:expiry:manage': 'Manage expiry dates and FEFO picking',
-  'inventory:cycle-count:read': 'View cycle count schedules',
-  'inventory:cycle-count:manage': 'Create and manage cycle count schedules',
   'inventory:mobile-count:use': 'Perform mobile barcode stock counts',
   'inventory:quality-hold:read': 'View quality-hold records',
   'inventory:quality-hold:manage': 'Place, release, or reject quality holds on received stock',

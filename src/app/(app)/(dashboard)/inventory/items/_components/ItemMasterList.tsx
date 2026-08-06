@@ -184,86 +184,101 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
+        <div className="flex flex-col gap-3">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <input
-              type="search"
+              type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name or SKU…"
-              className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
-          <select
-            value={lifecycle ?? ''}
-            onChange={(e) => setLifecycle((e.target.value || undefined) as typeof lifecycle)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="discontinued">Discontinued</option>
-            <option value="archived">Archived</option>
-          </select>
-          {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <select
-              value={approvalStatus ?? ''}
-              onChange={(e) =>
-                setApprovalStatus((e.target.value || undefined) as typeof approvalStatus)
-              }
+              value={lifecycle ?? ''}
+              onChange={(e) => setLifecycle((e.target.value || undefined) as typeof lifecycle)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Approval Statuses</option>
-              <option value="draft">Draft</option>
-              <option value="pending_accounting_confirmation">Pending Accounting</option>
-              <option value="pending_approval">Pending Approval</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="discontinued">Discontinued</option>
+              <option value="archived">Archived</option>
             </select>
-          )}
-          {categories.length > 0 && (
-            <CategorySelect
-              value={primaryCategoryId}
-              onChange={setPrimaryCategoryId}
-              options={categories}
-              placeholder="All Categories"
-              className="min-w-[180px]"
-            />
-          )}
-          <select
-            value={`${sortBy}:${sortOrder}`}
-            onChange={(e) => {
-              const [field, order] = e.target.value.split(':') as [typeof sortBy, typeof sortOrder]
-              setSortBy(field)
-              setSortOrder(order)
-            }}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="createdAt:desc">Newest first</option>
-            <option value="createdAt:asc">Oldest first</option>
-            <option value="name:asc">Name A→Z</option>
-            <option value="name:desc">Name Z→A</option>
-            <option value="sku:asc">SKU A→Z</option>
-            <option value="costPrice:asc">Cost ↑</option>
-            <option value="costPrice:desc">Cost ↓</option>
-            <option value="sellingPrice:asc">Price ↑</option>
-            <option value="sellingPrice:desc">Price ↓</option>
-          </select>
-          {(search ||
-            lifecycle ||
-            approvalStatus ||
-            primaryCategoryId ||
-            sortBy !== 'createdAt' ||
-            sortOrder !== 'desc') && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
+            {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
+              <select
+                value={approvalStatus ?? ''}
+                onChange={(e) =>
+                  setApprovalStatus((e.target.value || undefined) as typeof approvalStatus)
+                }
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+              >
+                <option value="">All Approval Statuses</option>
+                <option value="draft">Draft</option>
+                <option value="pending_accounting_confirmation">Pending Accounting</option>
+                <option value="pending_approval">Pending Approval</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            )}
+            {categories.length > 0 && (
+              <CategorySelect
+                value={primaryCategoryId}
+                onChange={setPrimaryCategoryId}
+                options={categories}
+                placeholder="All Categories"
+                className="min-w-[180px]"
+              />
+            )}
+            <select
+              value={`${sortBy}:${sortOrder}`}
+              onChange={(e) => {
+                const [field, order] = e.target.value.split(':') as [
+                  typeof sortBy,
+                  typeof sortOrder,
+                ]
+                setSortBy(field)
+                setSortOrder(order)
+              }}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <X className="h-4 w-4" />
-              Clear
-            </button>
-          )}
+              <option value="createdAt:desc">Newest first</option>
+              <option value="createdAt:asc">Oldest first</option>
+              <option value="name:asc">Name A→Z</option>
+              <option value="name:desc">Name Z→A</option>
+              <option value="sku:asc">SKU A→Z</option>
+              <option value="costPrice:asc">Cost ↑</option>
+              <option value="costPrice:desc">Cost ↓</option>
+              <option value="sellingPrice:asc">Price ↑</option>
+              <option value="sellingPrice:desc">Price ↓</option>
+            </select>
+            {(search ||
+              lifecycle ||
+              approvalStatus ||
+              primaryCategoryId ||
+              sortBy !== 'createdAt' ||
+              sortOrder !== 'desc') && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
+              >
+                <X className="h-4 w-4" />
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Error */}

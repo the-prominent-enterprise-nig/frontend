@@ -42,11 +42,11 @@ export async function createAdjustment(input: unknown): Promise<ApiResponse<{ id
     }
   }
 
-  revalidatePath('/inventory/stock-counts')
+  revalidatePath('/inventory/counting')
 
   return {
     success: true,
     data: result.data,
-    message: 'Adjustment submitted — pending Branch Manager confirmation',
+    message: 'Adjustment submitted — pending Branch Manager confirmation before it takes effect',
   }
 }

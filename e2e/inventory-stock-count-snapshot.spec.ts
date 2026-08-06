@@ -6,17 +6,34 @@ import { gotoReady, clickStable } from './utils'
 // whatever the counter types in. This exercises the "found item" path (no
 // prior system balance) since it doesn't depend on the shared dev database
 // already having stock seeded for whichever warehouse gets picked.
+//
+// The warehouse must be a fresh, dedicated one rather than whichever shared
+// WH-0x lands at dropdown index 1 — Scenario 19 Part 5 made start()/submit()
+// snapshot and reconcile every serial-tracked unit physically in the target
+// warehouse, and the shared dev warehouses carry ~1000 real serials each.
+// Submitting this count against one of them would sweep all of that
+// inventory into a single giant pending adjustment (see the backend's
+// inventory-stock-count-snapshot.e2e-spec.ts for the same fix).
 test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => {
   test('expected quantity is a read-only system snapshot, never a typed-in field', async ({
     page,
   }) => {
-    await gotoReady(page, '/inventory/stock-counts')
+    const warehouseCode = `E2E-CNT19P1-${Date.now()}`
+    const createWarehouseRes = await page.request.post('/api/inventory/warehouses', {
+      data: { code: warehouseCode, name: 'E2E Isolated Count Warehouse' },
+    })
+    if (!createWarehouseRes.ok()) {
+      throw new Error(`Failed to create isolated warehouse: ${await createWarehouseRes.text()}`)
+    }
+    const warehouse = (await createWarehouseRes.json()) as { id: string }
+
+    await gotoReady(page, '/inventory/counting')
 
     const warehouseSelect = page
       .locator('select')
       .filter({ has: page.locator('option', { hasText: 'Select warehouse' }) })
     await clickStable(page.getByRole('button', { name: 'New Count' }), warehouseSelect)
-    await warehouseSelect.selectOption({ index: 1 })
+    await warehouseSelect.selectOption({ value: warehouse.id })
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Create Session' }).click()
@@ -32,7 +49,7 @@ test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => 
     const ownRow = page.locator('tr').filter({ hasText: sessionId })
 
     const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow.getByRole('button', { name: 'Open' }), sessionHeading)
+    await clickStable(ownRow, sessionHeading)
 
     const countSheetTab = page.getByRole('button', { name: 'Count Sheet' })
     await expect(async () => {
@@ -49,14 +66,22 @@ test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => 
     // it's always a read-only display sourced from the snapshot.
     await expect(page.getByPlaceholder('Expected')).toHaveCount(0)
 
+    // Starting the count enables the count-lines snapshot query, which
+    // resolves asynchronously. The seeding effect that maps that response
+    // into local sheet state re-runs on every resolution, so clicking "Add
+    // Found Item" before the first resolution lands can have a found row
+    // appended locally only to be wiped out moments later when the
+    // snapshot query finally settles. Wait for the loading state to clear
+    // first so the seed has already happened once.
+    await expect(page.getByText('Loading snapshot…')).toHaveCount(0, { timeout: 10_000 })
+
     const addFoundButton = page.getByRole('button', { name: 'Add Found Item' })
     await addFoundButton.click()
 
-    // Scope everything to this one appended row — the warehouse may already
-    // carry snapshot rows from its real balance (read-only divs, not
-    // <select>s), and this newly-appended found row is always the last
-    // ".grid-cols-12" row on the count sheet.
-    const foundRow = page.locator('.grid-cols-12').last()
+    // Scope everything to this one prepended row — the sheet shows
+    // most-recently-added first, so a freshly added found row is always
+    // the first ".grid-cols-12" row on the count sheet, not the last.
+    const foundRow = page.locator('.grid-cols-12').first()
     const itemSelect = foundRow
       .locator('select')
       .filter({ has: page.locator('option', { hasText: 'Select found item' }) })
