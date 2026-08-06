@@ -935,6 +935,12 @@ export interface PosReleaseFormCartLine {
   serialNumberId?: string
   serialNumberLabel?: string
   serialNumber?: string
+  /** Per-line payment mode (2026-08-06) — falls back to the cart snapshot's
+   * own invoiceType when a line omits it, same as the backend's
+   * lineInvoiceType resolution. */
+  invoiceType?: PosInvoiceType
+  financingTermId?: string
+  downPayment?: number
 }
 
 export interface PosReleaseFormCartSnapshot {
@@ -984,12 +990,14 @@ export interface PosReleaseFormRequest {
   /** Live-computed credit/terms concerns for a charge sale (COD terms, over
    * Net-N days, over credit limit) — advisory only, empty for cash sales. */
   creditWarnings?: string[]
-  /** Scenario 17 Part 7 — generated for installment sales only; null for
-   * plain RFD/charge requests. Release is blocked in approve() until
-   * promissoryNote.signedAt is set. */
-  promissoryNote?: {
+  /** Scenario 17 Part 7 — generated for installment sales only; empty for
+   * plain RFD/charge requests. Per-line financing (2026-08-06) means one
+   * note per installment line, not one per request. Release is blocked in
+   * approve() until every note's signedAt is set. */
+  promissoryNotes?: {
     id: string
     creditApplicationId: string
+    lineIndex: number
     termMonths: number
     factorRate: number
     totalAmount: number
@@ -1001,7 +1009,7 @@ export interface PosReleaseFormRequest {
     generatedAt: string
     signedAt?: string | null
     signedById?: string | null
-  } | null
+  }[]
 }
 
 export interface ReleaseFormStatusResult {

@@ -196,6 +196,9 @@ export interface PromissoryNote {
   id: string
   creditApplicationId: string
   releaseFormRequestId: string
+  /** Per-line installment financing (2026-08-06) — one note per cart line,
+   * matching the line's own index in the originating sale's `lines[]`. */
+  lineIndex: number
   financingTermId: string
   termMonths: number
   factorRate: number

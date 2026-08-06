@@ -7,9 +7,12 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 
+/** Signs every unsigned note for this application's current hold at once
+ * (one customer signature covers the whole sale, even across multiple
+ * installment lines) — always returns the full updated array. */
 export async function signPromissoryNote(
   applicationId: string
-): Promise<ApiResponse<PromissoryNote>> {
+): Promise<ApiResponse<PromissoryNote[]>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -22,7 +25,7 @@ export async function signPromissoryNote(
     }
   }
 
-  const result = await api.post<PromissoryNote>(
+  const result = await api.post<PromissoryNote[]>(
     `/credit/applications/${applicationId}/promissory-note/sign`,
     {}
   )

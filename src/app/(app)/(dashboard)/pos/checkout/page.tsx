@@ -978,17 +978,8 @@ export default function CheckoutPage() {
   // Scenario 17 Part 6 — reload this customer's approved, unused credit
   // applications whenever the customer or cart's installment-line count
   // changes; a stale selection from a previously-selected customer must
-  // never carry over.
-  //
-  // TODO(development merge, 2026-08-06): invoiceType was a whole-cart
-  // concept; development replaced it with per-line invoiceType (see
-  // installmentCartLines below, cart.filter(l => l.invoiceType ===
-  // 'installment')). This effect's trigger condition was mechanically
-  // updated to keep the file compiling after the merge — the actual
-  // credit-application gate (this effect, the picker UI that consumed it,
-  // the submit-disabled/label checks, and the createTransaction payload)
-  // still needs to be re-wired into the new per-line model; developer is
-  // handling that directly.
+  // never carry over. One credit application covers every installment line
+  // in the cart (the backend gate runs once per transaction, not per line).
   useEffect(() => {
     setCreditApplicationId('')
     if (installmentCartLines.length === 0 || !selectedCustomer) {
@@ -1493,6 +1484,12 @@ export default function CheckoutPage() {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
+    if (installmentCartLines.length > 0 && !creditApplicationId) {
+      setError(
+        'Select the approved credit application for this customer — every installment sale requires one.'
+      )
+      return
+    }
     for (const l of installmentCartLines) {
       const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
@@ -1592,6 +1589,7 @@ export default function CheckoutPage() {
           // never needs to apply here.
           priceUseTypeId: priceUseTypeId || undefined,
           chargeDueDays: chargeCartLines.length > 0 ? chargeDueDays : undefined,
+          creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1715,8 +1713,6 @@ export default function CheckoutPage() {
             releaseFormRequestId,
             totalAmount,
             serialLines: displayLines,
-            // TODO(development merge, 2026-08-06): see the credit-application
-            // useEffect above — mechanically updated to compile, not re-wired.
             creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
           })
           return
@@ -3151,6 +3147,47 @@ export default function CheckoutPage() {
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
+                    {selectedCustomer && (
+                      <div className="mt-2.5">
+                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                          Approved Credit Application
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={creditApplicationId}
+                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            disabled={creditApplicationsLoading}
+                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                          >
+                            <option value="">
+                              {creditApplicationsLoading
+                                ? 'Loading…'
+                                : approvedCreditApplications.length === 0
+                                  ? 'No approved application on file'
+                                  : 'Select an approved application…'}
+                            </option>
+                            {approvedCreditApplications.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.applicationNumber} · ₱
+                                {a.requestedAmount.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                          />
+                        </div>
+                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
+                          <p className="mt-1 text-[11px] text-amber-700">
+                            Every installment sale requires an approved credit application — open
+                            one in Credit Applications first.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3378,6 +3415,8 @@ export default function CheckoutPage() {
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
               const anyInstallmentMissingTerm = installmentCartLines.some((l) => !l.financingTermId)
+              const installmentMissingCreditApplication =
+                installmentCartLines.length > 0 && !creditApplicationId
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
               const priceUseInvalid =
@@ -3393,6 +3432,7 @@ export default function CheckoutPage() {
                 (saleMode === 'sale' &&
                   ((hasChargeOrInstallmentLine && !selectedCustomer) ||
                     anyInstallmentMissingTerm ||
+                    installmentMissingCreditApplication ||
                     balance > 0.009 ||
                     loyaltyOverBalance ||
                     (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
@@ -3414,25 +3454,27 @@ export default function CheckoutPage() {
                           ? 'Select a customer for this cart'
                           : saleMode === 'sale' && anyInstallmentMissingTerm
                             ? 'Select a financing term for every installment item'
-                            : saleMode === 'sale' &&
-                                !hasChargeOrInstallmentLine &&
-                                !selectedCustomer
-                              ? 'Select a customer'
-                              : saleMode === 'sale' && balance > 0.009
-                                ? `Underpaid by ${fmt(balance)}`
-                                : saleMode === 'sale' && loyaltyOverBalance
-                                  ? 'Insufficient loyalty points'
-                                  : needsManagerOverride && !managerOverrideApproved
-                                    ? 'Manager override required'
-                                    : cart.some((l) => l.isSerialTracked)
-                                      ? `Submit for Approval — ${fmt(totalAmount)}`
-                                      : saleMode === 'reserve'
-                                        ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                        : allCharge
-                                          ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                          : allInstallment
-                                            ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                            : `Confirm Sale — ${fmt(totalAmount)}`
+                            : saleMode === 'sale' && installmentMissingCreditApplication
+                              ? 'Select an approved credit application'
+                              : saleMode === 'sale' &&
+                                  !hasChargeOrInstallmentLine &&
+                                  !selectedCustomer
+                                ? 'Select a customer'
+                                : saleMode === 'sale' && balance > 0.009
+                                  ? `Underpaid by ${fmt(balance)}`
+                                  : saleMode === 'sale' && loyaltyOverBalance
+                                    ? 'Insufficient loyalty points'
+                                    : needsManagerOverride && !managerOverrideApproved
+                                      ? 'Manager override required'
+                                      : cart.some((l) => l.isSerialTracked)
+                                        ? `Submit for Approval — ${fmt(totalAmount)}`
+                                        : saleMode === 'reserve'
+                                          ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                          : allCharge
+                                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                            : allInstallment
+                                              ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                              : `Confirm Sale — ${fmt(totalAmount)}`
 
               const colorClass =
                 saleMode === 'reserve'
@@ -4617,10 +4659,12 @@ function PendingApprovalScreen({
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
 
-  // Scenario 17 Part 7 — the Promissory Note generated alongside this hold
-  // (installment sales only). Cashier prints it for the customer/co-maker to
-  // sign, then marks it signed here — release stays blocked until they do.
-  const [promissoryNote, setPromissoryNote] = useState<PromissoryNote | null>(null)
+  // Scenario 17 Part 7 — the Promissory Note(s) generated alongside this
+  // hold (installment sales only) — one per installment line, so a cart
+  // that mixed several financing terms gets several notes here. Cashier
+  // prints each for the applicant/co-maker to sign, then marks the whole
+  // set signed at once — release stays blocked until every note is signed.
+  const [promissoryNotes, setPromissoryNotes] = useState<PromissoryNote[]>([])
   const [pnLoading, setPnLoading] = useState(!!creditApplicationId)
   const [signing, setSigning] = useState(false)
   const [signError, setSignError] = useState('')
@@ -4632,7 +4676,7 @@ function PendingApprovalScreen({
     if (!creditApplicationId) return
     getPromissoryNote(creditApplicationId).then((res) => {
       setPnLoading(false)
-      if (res.success && res.data) setPromissoryNote(res.data)
+      if (res.success && res.data) setPromissoryNotes(res.data)
     })
   }, [creditApplicationId])
 
@@ -4658,7 +4702,7 @@ function PendingApprovalScreen({
       setSignError(res.error ?? 'Failed to sign promissory note.')
       return
     }
-    setPromissoryNote(res.data)
+    setPromissoryNotes(res.data)
   }
 
   return (
@@ -4693,37 +4737,56 @@ function PendingApprovalScreen({
           <div className="w-full space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 px-5 py-4 text-left">
             <div className="flex items-center gap-2">
               <FileSignature size={15} className="text-purple-700" />
-              <p className="text-sm font-semibold text-gray-800">Promissory Note</p>
+              <p className="text-sm font-semibold text-gray-800">
+                Promissory Note{promissoryNotes.length > 1 ? 's' : ''}
+              </p>
             </div>
             {pnLoading ? (
               <Skeleton className="h-8 w-full" />
-            ) : !promissoryNote ? (
+            ) : promissoryNotes.length === 0 ? (
               <p className="text-xs text-gray-500">Not available yet.</p>
             ) : (
               <>
-                <p className="text-xs text-gray-600">
-                  {promissoryNote.signedAt ? (
-                    <span className="inline-flex items-center gap-1 font-medium text-green-700">
-                      <CheckCircle2 size={12} /> Signed
-                    </span>
-                  ) : (
-                    'Print for the applicant and co-maker to sign, then mark it signed below — release is blocked until then.'
-                  )}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handlePrintPromissoryNote(promissoryNote, fmt)}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                  >
-                    <Printer size={13} /> Print
-                  </button>
-                  {!promissoryNote.signedAt && canSignPromissoryNote && (
+                {(() => {
+                  const unsigned = promissoryNotes.filter((n) => !n.signedAt)
+                  return (
+                    <p className="text-xs text-gray-600">
+                      {unsigned.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 font-medium text-green-700">
+                          <CheckCircle2 size={12} /> Signed
+                        </span>
+                      ) : (
+                        'Print for the applicant and co-maker to sign, then mark it signed below — release is blocked until then.'
+                      )}
+                    </p>
+                  )
+                })()}
+                <div className="space-y-1.5">
+                  {promissoryNotes.map((note, i) => (
+                    <div key={note.id} className="flex items-center justify-between gap-2">
+                      {promissoryNotes.length > 1 && (
+                        <span className="shrink-0 text-[11px] text-gray-500">
+                          Line {i + 1}
+                          {note.signedAt && (
+                            <CheckCircle2 size={11} className="ml-1 inline text-green-700" />
+                          )}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handlePrintPromissoryNote(note, fmt)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        <Printer size={13} /> Print
+                      </button>
+                    </div>
+                  ))}
+                  {promissoryNotes.some((n) => !n.signedAt) && canSignPromissoryNote && (
                     <button
                       type="button"
                       onClick={handleSignPromissoryNote}
                       disabled={signing}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
                     >
                       {signing ? 'Signing…' : 'Mark as Signed'}
                     </button>

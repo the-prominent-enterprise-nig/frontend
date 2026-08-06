@@ -44,7 +44,7 @@ async function createApprovedApplication(page: Page): Promise<{
 
   const branchesRes = await page.request.get('/api/branches?limit=200')
   const branches = ((await branchesRes.json()).data ?? []) as { id: string; name: string }[]
-  const branchId = branches.find((b) => b.name === 'Manila HQ')!.id
+  const branchId = branches.find((b) => b.name === 'Bago')!.id
 
   const appRes = await page.request.post('/api/credit/applications', {
     data: {
@@ -110,13 +110,11 @@ async function submitInstallmentSale(
   applicantName: string
 ): Promise<void> {
   await gotoReady(page, '/pos/checkout')
-  await clickStable(
-    page.getByRole('button', { name: /^Installment/ }),
-    page.getByText('Financing Term', { exact: true })
-  )
 
   // Add a WIP-priced item to cart (see pos-checkout-price-use.spec.ts —
-  // seeded with a real price-list entry) and resolve its price.
+  // seeded with a real price-list entry) and resolve its price. An item
+  // must be in the cart before its line can be switched to Installment
+  // (per-line payment mode, 2026-08-06 development merge).
   const searchInput = page.getByPlaceholder('Search by name or serial')
   await expect(searchInput).toBeVisible({ timeout: 15_000 })
   await searchInput.fill('Universal Remote Control')
@@ -126,6 +124,11 @@ async function submitInstallmentSale(
   await expect(remoteCard.first()).toBeVisible({ timeout: 10_000 })
   await remoteCard.first().click()
   await page.getByLabel('Price Use').selectOption({ label: 'WIP' })
+
+  await clickStable(
+    page.getByRole('button', { name: 'Installment', exact: true }),
+    page.getByPlaceholder('Down payment')
+  )
 
   // Select the applicant.
   const customerInput = page.getByPlaceholder('Search by name or phone…')
@@ -140,7 +143,7 @@ async function submitInstallmentSale(
     .locator('option', { hasText: applicationNumber })
     .getAttribute('value')
   await applicationSelect.selectOption(applicationOptionValue!)
-  const termSelect = page.locator('select').filter({ hasText: 'Tenant-wide' })
+  const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
   await expect(termSelect).toBeVisible({ timeout: 10_000 })
   await termSelect.selectOption({ index: 1 })
 

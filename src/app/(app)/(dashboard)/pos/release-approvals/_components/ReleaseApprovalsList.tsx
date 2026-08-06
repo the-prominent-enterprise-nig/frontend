@@ -113,10 +113,13 @@ function customerLabel(req: PosReleaseFormRequest): string {
 
 /** Scenario 17 Part 7 — mirrors the backend gate in
  * ReleaseFormRequestsService.approve(): an installment sale cannot be
- * released until its Promissory Note is signed. Frontend-only UX guard;
- * the backend is the real enforcement. */
+ * released until every one of its Promissory Notes is signed. Frontend-only
+ * UX guard; the backend is the real enforcement. Checked off the notes
+ * themselves (not cartSnapshot.invoiceType, which per-line payment mode
+ * usually leaves unset) — no notes means no installment line at all. */
 function promissoryNoteBlocksRelease(req: PosReleaseFormRequest): boolean {
-  return req.cartSnapshot?.invoiceType === 'installment' && !req.promissoryNote?.signedAt
+  const notes = req.promissoryNotes ?? []
+  return notes.length > 0 && notes.some((n) => !n.signedAt)
 }
 
 function RequestRowSkeleton() {
@@ -287,11 +290,11 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
   }
 
   /** Scenario 17 Part 7 — same window.open + window.print() pattern as
-   * handlePrint above, for the request's Promissory Note specifically. */
-  function handlePrintPromissoryNote(req: PosReleaseFormRequest) {
-    const note = req.promissoryNote
-    if (!note) return
-
+   * handlePrint above, for one Promissory Note (per-line financing means a
+   * request can have several — this prints one at a time). */
+  function handlePrintPromissoryNote(
+    note: NonNullable<PosReleaseFormRequest['promissoryNotes']>[number]
+  ) {
     const lineRows = note.scheduleLines
       .map(
         (l) =>
@@ -349,10 +352,11 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
   }
 
   async function handleSignPromissoryNote(req: PosReleaseFormRequest) {
-    if (!req.promissoryNote) return
+    const firstNote = req.promissoryNotes?.[0]
+    if (!firstNote) return
     setSigningPromissoryNote(true)
     setSignPromissoryNoteError('')
-    const res = await signPromissoryNote(req.promissoryNote.creditApplicationId)
+    const res = await signPromissoryNote(firstNote.creditApplicationId)
     setSigningPromissoryNote(false)
     if (!res.success) {
       setSignPromissoryNoteError(res.error ?? 'Failed to sign promissory note.')
@@ -361,7 +365,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
     // Reflect the signed state immediately in the open modal, and refresh
     // the underlying list so the queue/history rows pick it up too.
     setDetailTarget((prev) =>
-      prev && prev.id === req.id ? { ...prev, promissoryNote: res.data } : prev
+      prev && prev.id === req.id ? { ...prev, promissoryNotes: res.data } : prev
     )
     load()
   }
@@ -767,44 +771,57 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                 </div>
               )}
 
-              {detailTarget.cartSnapshot?.invoiceType === 'installment' &&
-                detailTarget.promissoryNote && (
-                  <div className="space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 p-3">
-                    <div className="flex items-center gap-2">
-                      <FileSignature size={14} className="text-purple-700" />
-                      <p className="text-sm font-semibold text-gray-800">Promissory Note</p>
-                      {detailTarget.promissoryNote.signedAt ? (
-                        <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-700">
-                          <CheckCircle2 size={11} /> Signed
-                        </span>
-                      ) : (
-                        <span className="ml-auto text-xs font-medium text-red-600">
-                          Not yet signed
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handlePrintPromissoryNote(detailTarget)}
-                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
-                        <Printer size={12} /> Print
-                      </button>
-                      {!detailTarget.promissoryNote.signedAt && (
-                        <button
-                          onClick={() => handleSignPromissoryNote(detailTarget)}
-                          disabled={signingPromissoryNote}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
-                        >
-                          {signingPromissoryNote ? 'Signing…' : 'Mark as Signed'}
-                        </button>
-                      )}
-                    </div>
-                    {signPromissoryNoteError && (
-                      <p className="text-xs text-red-600">{signPromissoryNoteError}</p>
+              {(detailTarget.promissoryNotes?.length ?? 0) > 0 && (
+                <div className="space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 p-3">
+                  <div className="flex items-center gap-2">
+                    <FileSignature size={14} className="text-purple-700" />
+                    <p className="text-sm font-semibold text-gray-800">
+                      Promissory Note{(detailTarget.promissoryNotes?.length ?? 0) > 1 ? 's' : ''}
+                    </p>
+                    {detailTarget.promissoryNotes?.every((n) => n.signedAt) ? (
+                      <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-700">
+                        <CheckCircle2 size={11} /> Signed
+                      </span>
+                    ) : (
+                      <span className="ml-auto text-xs font-medium text-red-600">
+                        Not yet signed
+                      </span>
                     )}
                   </div>
-                )}
+                  <div className="space-y-1.5">
+                    {detailTarget.promissoryNotes?.map((note, i) => (
+                      <div key={note.id} className="flex items-center gap-2">
+                        {(detailTarget.promissoryNotes?.length ?? 0) > 1 && (
+                          <span className="shrink-0 text-[11px] text-gray-500">
+                            Line {i + 1}
+                            {note.signedAt && (
+                              <CheckCircle2 size={11} className="ml-1 inline text-green-700" />
+                            )}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handlePrintPromissoryNote(note)}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        >
+                          <Printer size={12} /> Print
+                        </button>
+                      </div>
+                    ))}
+                    {detailTarget.promissoryNotes?.some((n) => !n.signedAt) && (
+                      <button
+                        onClick={() => handleSignPromissoryNote(detailTarget)}
+                        disabled={signingPromissoryNote}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                      >
+                        {signingPromissoryNote ? 'Signing…' : 'Mark as Signed'}
+                      </button>
+                    )}
+                  </div>
+                  {signPromissoryNoteError && (
+                    <p className="text-xs text-red-600">{signPromissoryNoteError}</p>
+                  )}
+                </div>
+              )}
 
               <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -922,10 +939,10 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                 </div>
               )}
 
-              {reviewTarget.cartSnapshot?.invoiceType === 'installment' && (
+              {(reviewTarget.promissoryNotes?.length ?? 0) > 0 && (
                 <div
                   className={`flex items-center gap-2 rounded-xl border p-3 text-sm ${
-                    reviewTarget.promissoryNote?.signedAt
+                    reviewTarget.promissoryNotes?.every((n) => n.signedAt)
                       ? 'border-green-200 bg-green-50 text-green-800'
                       : 'border-red-200 bg-red-50 text-red-800'
                   }`}
@@ -933,11 +950,11 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                   <FileSignature size={15} className="shrink-0" />
                   <div>
                     <p className="font-medium">
-                      {reviewTarget.promissoryNote?.signedAt
-                        ? 'Promissory Note signed'
-                        : 'Promissory Note not yet signed'}
+                      {reviewTarget.promissoryNotes?.every((n) => n.signedAt)
+                        ? `Promissory Note${(reviewTarget.promissoryNotes?.length ?? 0) > 1 ? 's' : ''} signed`
+                        : `Promissory Note${(reviewTarget.promissoryNotes?.length ?? 0) > 1 ? 's' : ''} not yet signed`}
                     </p>
-                    {!reviewTarget.promissoryNote?.signedAt && (
+                    {!reviewTarget.promissoryNotes?.every((n) => n.signedAt) && (
                       <p className="text-xs opacity-90">
                         Release is blocked until the cashier prints it for the customer/co-maker and
                         marks it signed.
