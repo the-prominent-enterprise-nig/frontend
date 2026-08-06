@@ -84,7 +84,7 @@ test.describe('Credit Applications — Investigation', () => {
     const applicationId = await createSubmittedApplication(page)
 
     await switchTo(page, INVESTIGATOR_EMAIL)
-    await gotoReady(page, `/credit/applications/${applicationId}`)
+    await gotoReady(page, `/pos/credit-applications/${applicationId}`)
     await expect(page.getByText('Submitted', { exact: true }).first()).toBeVisible({
       timeout: 10_000,
     })

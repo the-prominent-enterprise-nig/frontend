@@ -43,7 +43,7 @@ test.describe('Credit Applications — Cashier intake', () => {
     })
     expect(createCustomerRes.ok()).toBeTruthy()
 
-    await gotoReady(page, '/credit/applications')
+    await gotoReady(page, '/pos/credit-applications')
     await clickStable(
       page.getByRole('button', { name: 'New Application' }),
       page.getByRole('heading', { name: 'New Credit Application' })

@@ -25,7 +25,7 @@ import {
   rejectReleaseFormRequest,
   validateManagerByPin,
 } from '../../_actions/pos-actions'
-import { signPromissoryNote } from '../../../credit/applications/_actions/sign-promissory-note'
+import { signPromissoryNote } from '../../credit-applications/_actions/sign-promissory-note'
 import type { PosReleaseFormRequest, PosReleaseFormCartLine } from '@/src/schema/pos'
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'

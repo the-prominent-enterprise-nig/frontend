@@ -83,7 +83,7 @@ test.describe('Credit Applications — BM/Credit Approver review', () => {
 
     await switchTo(page, MANAGER_EMAIL)
     await investigateAsManager(page, applicationId)
-    await gotoReady(page, `/credit/applications/${applicationId}`)
+    await gotoReady(page, `/pos/credit-applications/${applicationId}`)
     await expect(page.getByText('Pending Approval', { exact: true }).first()).toBeVisible({
       timeout: 10_000,
     })
@@ -100,7 +100,7 @@ test.describe('Credit Applications — BM/Credit Approver review', () => {
 
     await switchTo(page, MANAGER_EMAIL)
     await investigateAsManager(page, applicationId)
-    await gotoReady(page, `/credit/applications/${applicationId}`)
+    await gotoReady(page, `/pos/credit-applications/${applicationId}`)
     await expect(page.getByText('Pending Approval', { exact: true }).first()).toBeVisible({
       timeout: 10_000,
     })

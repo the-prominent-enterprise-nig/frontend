@@ -3,7 +3,9 @@ export interface AppModule {
   routeSegment: string // first URL segment used for navigation
   label: string
   href: string
-  requiredPermission: string // minimum to see it in sidebar
+  // Minimum to see it in sidebar. An array means "any of" — the user needs
+  // just one of the listed permissions, not all.
+  requiredPermission: string | string[]
   icon: string // icon name for sidebar
 }
 
@@ -47,7 +49,12 @@ export const MODULES: AppModule[] = [
     routeSegment: 'pos',
     label: 'Point of Sale',
     href: '/pos',
-    requiredPermission: 'pos:sessions:open',
+    // Array = "any of" — Credit Applications now lives inside POS's own nav
+    // (see PosNav.tsx), so a Credit Investigator (credit:* permissions,
+    // zero pos:* permissions) still needs to see this top-level link to
+    // reach it. See TopBar.tsx/SideBar.tsx/(dashboard)/page.tsx for the
+    // "any of" consumer logic.
+    requiredPermission: ['pos:sessions:open', 'credit:*'],
     icon: 'shopping-cart',
   },
   {
@@ -57,14 +64,6 @@ export const MODULES: AppModule[] = [
     href: '/crm',
     requiredPermission: 'crm:*',
     icon: 'users-round',
-  },
-  {
-    key: 'credit',
-    routeSegment: 'credit',
-    label: 'Credit Applications',
-    href: '/credit/applications',
-    requiredPermission: 'credit:*',
-    icon: 'credit-card',
   },
   // {
   //   key: 'sales',

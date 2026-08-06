@@ -88,9 +88,9 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
-import { getCreditApplications } from '../../credit/applications/_actions/get-applications'
-import { getPromissoryNote } from '../../credit/applications/_actions/get-promissory-note'
-import { signPromissoryNote } from '../../credit/applications/_actions/sign-promissory-note'
+import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
+import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
