@@ -15,6 +15,7 @@ import {
   Ban,
   UserCheck,
   Search,
+  AlertTriangle,
 } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -43,7 +44,39 @@ const STATUS_CONFIG: Record<
   draft: { label: 'Accepted', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
   in_transit: { label: 'In Transit', color: 'bg-blue-100 text-blue-700', icon: Truck },
   received: { label: 'Received', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+  partially_received: {
+    label: 'Partially Received',
+    color: 'bg-amber-100 text-amber-700',
+    icon: AlertTriangle,
+  },
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-500', icon: XCircle },
+}
+
+function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
+  if (!lines || !lines.length) return <span className="text-zinc-300">—</span>
+  const totalQty = lines.reduce((sum, l) => sum + Number(l.quantity), 0)
+  const receivedQty = lines.reduce((sum, l) => sum + Number(l.receivedQuantity ?? 0), 0)
+  const pct = totalQty > 0 ? Math.min((receivedQty / totalQty) * 100, 100) : 0
+  const barColor = pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-400' : 'bg-zinc-200'
+  const textColor = pct >= 100 ? 'text-green-600' : pct > 0 ? 'text-amber-600' : 'text-zinc-400'
+  return (
+    <div className="w-28 space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-zinc-400">
+          {receivedQty.toFixed(0)}
+          <span className="mx-0.5 text-zinc-300">/</span>
+          {totalQty.toFixed(0)}
+        </span>
+        <span className={`font-semibold ${textColor}`}>{pct.toFixed(0)}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  )
 }
 
 export default function TransferList({ session }: { session: SessionUser }) {
@@ -180,6 +213,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
             <option value="draft">Accepted</option>
             <option value="in_transit">In Transit</option>
             <option value="received">Received</option>
+            <option value="partially_received">Partially Received</option>
             <option value="cancelled">Cancelled</option>
           </select>
 
@@ -275,6 +309,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Status
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                      Received
+                    </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Actions
                     </th>
@@ -322,6 +359,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             <Icon className="h-3 w-3" />
                             {cfg.label}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <TransferProgress lines={tr.lines} />
                         </td>
                         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
@@ -377,6 +417,17 @@ export default function TransferList({ session }: { session: SessionUser }) {
                                   className="rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
                                 >
                                   Receive
+                                </button>
+                              )}
+                            {tr.status === 'partially_received' &&
+                              canReceive &&
+                              inScope(tr.toWarehouse?.branchId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetail(tr)}
+                                  className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                                >
+                                  Receive More
                                 </button>
                               )}
                           </div>
