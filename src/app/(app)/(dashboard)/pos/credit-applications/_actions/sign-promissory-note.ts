@@ -32,7 +32,7 @@ export async function signPromissoryNote(
     return { success: false, error: msg, message: msg }
   }
 
-  revalidatePath(`/credit/applications/${applicationId}`)
+  revalidatePath(`/pos/credit-applications/${applicationId}`)
   revalidatePath('/pos/release-approvals')
   revalidatePath('/pos/checkout')
 

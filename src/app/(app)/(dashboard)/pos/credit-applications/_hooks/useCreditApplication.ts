@@ -179,6 +179,6 @@ export function useCreditApplication(id: string) {
     decline: declineMutation.mutateAsync,
     isDeclining: declineMutation.isPending,
 
-    goToList: () => router.push('/credit/applications'),
+    goToList: () => router.push('/pos/credit-applications'),
   }
 }

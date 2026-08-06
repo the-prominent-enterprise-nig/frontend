@@ -7,32 +7,30 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 
-export async function submitCreditApplication(id: string): Promise<ApiResponse<CreditApplication>> {
+export async function approveCreditApplication(
+  id: string
+): Promise<ApiResponse<CreditApplication>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
-  if (!can(session, CREDIT_PERMISSIONS.APPLICATION_UPDATE)) {
+  if (!can(session, CREDIT_PERMISSIONS.APPLICATION_APPROVE)) {
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to submit this credit application',
+      message: 'You do not have permission to approve this credit application',
     }
   }
 
-  const result = await api.patch<CreditApplication>(`/credit/applications/${id}/submit`, {})
+  const result = await api.patch<CreditApplication>(`/credit/applications/${id}/approve`, {})
   if (!result.success) {
     const msg =
-      typeof result.message === 'string' ? result.message : 'Failed to submit credit application'
+      typeof result.message === 'string' ? result.message : 'Failed to approve credit application'
     return { success: false, error: msg, message: msg }
   }
 
-  revalidatePath('/credit/applications')
-  revalidatePath(`/credit/applications/${id}`)
+  revalidatePath('/pos/credit-applications')
+  revalidatePath(`/pos/credit-applications/${id}`)
 
-  return {
-    success: true,
-    data: result.data,
-    message: 'Credit application submitted for investigation',
-  }
+  return { success: true, data: result.data, message: 'Credit application approved' }
 }

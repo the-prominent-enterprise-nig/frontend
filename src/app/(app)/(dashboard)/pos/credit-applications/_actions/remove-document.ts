@@ -28,7 +28,7 @@ export async function removeCreditApplicationDocument(
     return { success: false, error: msg, message: msg }
   }
 
-  revalidatePath(`/credit/applications/${applicationId}`)
+  revalidatePath(`/pos/credit-applications/${applicationId}`)
 
   return { success: true, data: null, message: 'Document removed' }
 }

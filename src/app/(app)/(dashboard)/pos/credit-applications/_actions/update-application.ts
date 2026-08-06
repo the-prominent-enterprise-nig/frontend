@@ -42,8 +42,8 @@ export async function updateCreditApplication(
     return { success: false, error: msg, message: msg }
   }
 
-  revalidatePath('/credit/applications')
-  revalidatePath(`/credit/applications/${id}`)
+  revalidatePath('/pos/credit-applications')
+  revalidatePath(`/pos/credit-applications/${id}`)
 
   return { success: true, data: result.data, message: 'Credit application updated' }
 }

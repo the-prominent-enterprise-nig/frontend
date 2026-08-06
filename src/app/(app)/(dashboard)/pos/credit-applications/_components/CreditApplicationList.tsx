@@ -14,7 +14,7 @@ import {
   CreditApplicationStatusSchema,
   type CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
-import { getBranches } from '../../../pos/_actions/pos-actions'
+import { getBranches } from '../../_actions/pos-actions'
 import CreateCreditApplicationModal from './CreateCreditApplicationModal'
 
 export default function CreditApplicationList({ session }: { session: SessionUser }) {
@@ -182,7 +182,7 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Link
-                          href={`/credit/applications/${app.id}`}
+                          href={`/pos/credit-applications/${app.id}`}
                           className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
                         >
                           Open

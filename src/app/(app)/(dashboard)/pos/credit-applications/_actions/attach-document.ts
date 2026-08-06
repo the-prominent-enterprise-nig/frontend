@@ -42,7 +42,7 @@ export async function attachCreditApplicationDocument(
     return { success: false, error: msg, message: msg }
   }
 
-  revalidatePath(`/credit/applications/${applicationId}`)
+  revalidatePath(`/pos/credit-applications/${applicationId}`)
 
   return { success: true, data: result.data, message: 'Document attached' }
 }

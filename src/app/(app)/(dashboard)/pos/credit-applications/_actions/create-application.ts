@@ -44,7 +44,7 @@ export async function createCreditApplication(
     }
   }
 
-  revalidatePath('/credit/applications')
+  revalidatePath('/pos/credit-applications')
 
   return { success: true, data: result.data, message: 'Credit application opened as draft' }
 }
