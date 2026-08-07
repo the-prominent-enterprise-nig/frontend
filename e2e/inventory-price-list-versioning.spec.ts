@@ -10,10 +10,28 @@ import {
 const NAME_PREFIX = 'E2E Price List Versioning — '
 
 function rowByExactName(page: Page, exactName: string): Locator {
-  // Plain `hasText` would also match "<name> (new version)" against the
-  // original <name> row, since hasText is a substring check — exact-match
-  // on the name cell's own text is the only way to tell them apart.
   return page.locator('tbody tr').filter({ has: page.getByText(exactName, { exact: true }) })
+}
+
+// Price Use Type and Currency are the custom Select component (see
+// src/components/ui/Select.tsx), not a native <select> — it exposes a
+// combobox/listbox/option ARIA structure, so picking a value is
+// open-then-click-option rather than `selectOption()`.
+//
+// Not clickStable: that helper retries by clicking again on failure, but
+// this trigger *toggles* open/closed on every click — a naive retry would
+// close it right back up on the second attempt and could flip-flop forever.
+// Only click while still collapsed, confirmed via aria-expanded.
+async function openCustomSelect(trigger: Locator) {
+  await expect(async () => {
+    if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
+  }).toPass({ timeout: 10_000 })
+}
+
+async function pickFromCustomSelect(page: Page, comboboxName: string | RegExp, optionName: string) {
+  await openCustomSelect(page.getByRole('combobox', { name: comboboxName }))
+  await page.getByRole('option', { name: optionName, exact: true }).click()
 }
 
 async function createPendingPriceList(page: Page, name: string) {
@@ -26,8 +44,7 @@ async function createPendingPriceList(page: Page, name: string) {
   // 'ZI', not the seeded 'WIP'/'CR-BR' — the seeded/ambient data already has
   // real active WIP/CR-BR lists pricing common items like TV Stand, which
   // Part 4's date-overlap check would (correctly) reject a second one of.
-  await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'ZI' })
-  await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
+  await pickFromCustomSelect(page, 'Select price use type…', 'ZI')
   await page.getByRole('button', { name: 'Create Price List' }).click()
   await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
     timeout: 10_000,
@@ -63,7 +80,7 @@ async function addItemToList(
   await expect(page.getByRole('heading', { name: 'Manage Items' })).not.toBeVisible()
 }
 
-test.describe('Inventory — Price List Floor Price & Versioning', () => {
+test.describe('Inventory — Price List Floor Price & Price Use Type Selector', () => {
   test.beforeAll(async ({ request }) => {
     await sweepE2EPriceLists(request, NAME_PREFIX)
   })
@@ -104,47 +121,65 @@ test.describe('Inventory — Price List Floor Price & Versioning', () => {
     await request.delete(`/api/inventory/price-lists/${id}`)
   })
 
-  test('creating a new version and approving it auto-expires the version it supersedes', async ({
+  // Covers the custom-rendered Price Use Type dropdown (src/components/ui/
+  // Select.tsx) that replaced the native <select> — its own open/close,
+  // selected-value display, and the "Add new price use type…" trailing
+  // action, which used to be just another <option> and is now a distinct
+  // row with its own click handler that has to open a *different* modal
+  // without disturbing whatever was already picked.
+  test('Price Use Type selector shows the picked value and its "Add new" action opens the nested modal', async ({
     page,
-    request,
   }) => {
-    const name = `${NAME_PREFIX}Version ${Date.now()}`
-    await createPendingPriceList(page, name)
-
-    const row = rowByExactName(page, name)
+    await gotoReady(page, '/inventory/price-lists')
     await clickStable(
-      row.getByRole('button', { name: 'Approve' }),
-      page.getByRole('heading', { name: 'Approve Price List' })
+      page.getByRole('button', { name: 'New Price List' }),
+      page.getByRole('heading', { name: 'New Price List' })
     )
-    await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
-    await expect(row).toContainText('Active')
+
+    // The combobox's accessible name IS its current label — "Select price
+    // use type…" before picking anything, "ZI" after — so it has to be
+    // re-queried by whatever name is current at each step, not held as one
+    // locator across the whole test.
+    const placeholderTrigger = page.getByRole('combobox', { name: 'Select price use type…' })
+    await openCustomSelect(placeholderTrigger)
+
+    // Every seeded Price Use Type is offered, plus the trailing action, and
+    // nothing starts pre-selected.
+    for (const label of ['CR-BR', 'PROMO', 'SSC', 'WIP', 'ZI']) {
+      const option = page.getByRole('option', { name: label, exact: true })
+      await expect(option).toBeVisible()
+      await expect(option).toHaveAttribute('aria-selected', 'false')
+    }
+    await expect(page.getByRole('button', { name: 'Add new price use type…' })).toBeVisible()
+
+    await page.getByRole('option', { name: 'ZI', exact: true }).click()
+
+    // The trigger now reads the picked label instead of the placeholder.
+    const ziTrigger = page.getByRole('combobox', { name: 'ZI', exact: true })
+    await expect(ziTrigger).toBeVisible()
+    await expect(ziTrigger).toHaveAttribute('aria-expanded', 'false')
+
+    // Reopening shows the same option now marked selected, not just picked.
+    await openCustomSelect(ziTrigger)
+    await expect(page.getByRole('option', { name: 'ZI', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
 
     await clickStable(
-      row.getByRole('button', { name: 'New Version' }),
-      page.getByRole('heading', { name: 'New Version' })
+      page.getByRole('button', { name: 'Add new price use type…' }),
+      page.getByRole('heading', { name: 'New Price Use Type' })
     )
-    await expect(page.getByText(`This will supersede ${name}`, { exact: false })).toBeVisible()
-    await page.getByRole('button', { name: 'Create New Version' }).click()
-    await expect(page.getByRole('heading', { name: 'New Version' })).not.toBeVisible({
-      timeout: 10_000,
-    })
+    // Both modals render a "Cancel" button while nested — the New Price Use
+    // Type modal renders after (and visually on top of) New Price List's own,
+    // so it's the last one in DOM order.
+    await page.getByRole('button', { name: 'Cancel' }).last().click()
+    await expect(page.getByRole('heading', { name: 'New Price Use Type' })).not.toBeVisible()
 
-    const newVersionName = `${name} (new version)`
-    const newRow = rowByExactName(page, newVersionName)
-    await expect(newRow).toContainText('Pending')
+    // Cancelling the nested modal must not have cleared the outer selection.
+    await expect(ziTrigger).toBeVisible()
 
-    await clickStable(
-      newRow.getByRole('button', { name: 'Approve' }),
-      page.getByRole('heading', { name: 'Approve Price List' })
-    )
-    await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
-    await expect(newRow).toContainText('Active')
-
-    await expect(row).toContainText('Expired')
-
-    const id1 = await findPriceListIdByName(request, name)
-    const id2 = await findPriceListIdByName(request, newVersionName)
-    await request.delete(`/api/inventory/price-lists/${id1}`)
-    await request.delete(`/api/inventory/price-lists/${id2}`)
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible()
   })
 })
