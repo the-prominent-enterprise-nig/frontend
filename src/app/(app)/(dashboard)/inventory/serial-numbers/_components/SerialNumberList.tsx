@@ -14,10 +14,12 @@ import {
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
+import ConsignToBranchModal from './ConsignToBranchModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { formatShortDate, formatAge } from '@/src/libs/format/date'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
+import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 
 const statusOptions = SerialStatusSchema.options
 
@@ -26,6 +28,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isConsignOpen, setIsConsignOpen] = useState(false)
   const [moveTargetBranchId, setMoveTargetBranchId] = useState('')
 
   const {
@@ -63,10 +66,15 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     toggleSelectAll,
     closeConsignment,
     isClosingConsignment,
+    consignToBranch,
+    isConsigning,
   } = useSerialNumbers(!!session.branchId)
 
   const hasFilters = statusFilter || itemFilter || warehouseFilter || search
-  const showSelection = caravanView && canManageCaravan
+  // Selection is available in both tabs for a caravan manager — the Caravan
+  // tab uses it for Return/Move (event close), the All Serials tab uses it
+  // to pick units to consign out.
+  const showSelection = canManageCaravan
 
   const handleReturnToOrigin = async () => {
     await closeConsignment(undefined)
@@ -77,6 +85,8 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     await closeConsignment(moveTargetBranchId)
     setMoveTargetBranchId('')
   }
+
+  const handleConsignSubmit = async (data: ConsignToBranchFormValues) => consignToBranch(data)
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
@@ -150,20 +160,20 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <input
             type="text"
             value={search ?? ''}
             onChange={(e) => setSearch(e.target.value || undefined)}
             placeholder="Search serial numbers…"
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 min-w-[200px]"
+            className="w-56 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           />
           <select
             value={statusFilter ?? ''}
             onChange={(e) =>
               setStatusFilter((e.target.value || undefined) as SerialStatus | undefined)
             }
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            className="w-40 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
             <option value="">All Statuses</option>
             {statusOptions.map((s) => (
@@ -172,22 +182,27 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               </option>
             ))}
           </select>
-          <select
+          {/* A native <select> sizes its closed state to its widest <option> —
+              with ~90 items, some carrying long service-line labels, that
+              stretched this control across nearly the full row. SearchableSelect
+              (already used for the pickers below) renders at a fixed width
+              regardless of option length, and its type-ahead is a better fit
+              for a list this long besides. */}
+          <SearchableSelect
+            className="w-56"
             value={itemFilter ?? ''}
-            onChange={(e) => setItemFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Items</option>
-            {itemOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.sku} — {item.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setItemFilter(v || undefined)}
+            placeholder="All Items"
+            clearable
+            options={itemOptions.map((item) => ({
+              value: item.id,
+              label: `${item.sku} — ${item.name}`,
+            }))}
+          />
           {caravanView ? (
             !session.branchId && (
               <SearchableSelect
-                className="min-w-50"
+                className="w-56"
                 value={caravanBranchId ?? ''}
                 onChange={(v) => setCaravanBranchId(v || undefined)}
                 placeholder="Select a branch…"
@@ -198,7 +213,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
             <select
               value={warehouseFilter ?? ''}
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+              className="w-56 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
               <option value="">All Warehouses</option>
               {warehouseOptions.map((wh) => (
@@ -227,8 +242,25 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </div>
         )}
 
+        {/* Scenario 08 (Caravan) — "Consign to Branch" action bar (All Serials tab) */}
+        {showSelection && !caravanView && selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 p-3">
+            <span className="text-sm font-medium text-prominent-purple-800">
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsConsignOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-prominent-purple-800"
+            >
+              <Truck className="h-4 w-4" />
+              Consign to Branch
+            </button>
+          </div>
+        )}
+
         {/* Scenario 08 (Caravan) Part 4 — event close action bar */}
-        {showSelection && selectedIds.size > 0 && (
+        {showSelection && caravanView && selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 p-3">
             <span className="text-sm font-medium text-prominent-purple-800">
               {selectedIds.size} selected
@@ -269,226 +301,257 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </div>
         )}
 
-        {/* Table */}
-        <div
-          className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
-        >
-          {isLoading ? (
-            <div>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-4 border-b border-zinc-100 px-6 py-4 last:border-0"
-                >
-                  <div className="h-4 w-28 animate-pulse rounded bg-zinc-200" />
-                  <div className="h-4 w-40 animate-pulse rounded bg-zinc-200" />
-                  <div className="ml-auto h-4 w-16 animate-pulse rounded bg-zinc-200" />
+        {/* Table — gated on caravanReady: an unrestricted caller who hasn't
+            picked a branch yet has the query disabled (see useSerialNumbers),
+            so `serials` still holds whatever the LAST enabled query returned
+            (e.g. the All Serials tab's own list, via keepPreviousData) —
+            without this gate, that stale, unrelated data rendered right
+            alongside the "Select a branch above…" prompt, and no filter
+            could ever change it since the query itself was never running. */}
+        {(!caravanView || caravanReady) && (
+          <>
+            <div
+              className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
+            >
+              {isLoading ? (
+                <div>
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-4 border-b border-zinc-100 px-6 py-4 last:border-0"
+                    >
+                      <div className="h-4 w-28 animate-pulse rounded bg-zinc-200" />
+                      <div className="h-4 w-40 animate-pulse rounded bg-zinc-200" />
+                      <div className="ml-auto h-4 w-16 animate-pulse rounded bg-zinc-200" />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : serials.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              {caravanView ? (
-                <>
-                  <Truck className="mb-3 h-10 w-10 text-zinc-300" />
-                  <p className="text-sm font-medium text-zinc-500">
-                    Nothing currently consigned to this branch
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Hash className="mb-3 h-10 w-10 text-zinc-300" />
-                  <p className="text-sm font-medium text-zinc-500">No serial numbers found</p>
-                  {canManage && (
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Register serials to enable unit-level traceability.
-                    </p>
+              ) : serials.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  {caravanView ? (
+                    <>
+                      <Truck className="mb-3 h-10 w-10 text-zinc-300" />
+                      <p className="text-sm font-medium text-zinc-500">
+                        Nothing currently consigned to this branch
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Hash className="mb-3 h-10 w-10 text-zinc-300" />
+                      <p className="text-sm font-medium text-zinc-500">No serial numbers found</p>
+                      {canManage && (
+                        <p className="mt-1 text-xs text-zinc-400">
+                          Register serials to enable unit-level traceability.
+                        </p>
+                      )}
+                    </>
                   )}
-                </>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200 bg-zinc-50">
+                        {showSelection && (
+                          <th className="w-10 px-4 py-3">
+                            <input
+                              type="checkbox"
+                              aria-label="Select all"
+                              checked={selectedIds.size > 0 && selectedIds.size === serials.length}
+                              onChange={toggleSelectAll}
+                              className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
+                            />
+                          </th>
+                        )}
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Serial #
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                          Warehouse
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Brand / Type / Model
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          RR #
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Origin
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Date In
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Age
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Unit Cost
+                        </th>
+                        {caravanView && (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Home Branch
+                          </th>
+                        )}
+                        {caravanView && (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Event
+                          </th>
+                        )}
+                        <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                          Registered
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {serials.map((serial) => (
+                        <tr
+                          key={serial.id}
+                          className={`hover:bg-zinc-50 ${selectedIds.has(serial.id) ? 'bg-prominent-purple-50/60' : ''}`}
+                        >
+                          {showSelection && (
+                            <td className="px-4 py-3">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${serial.serialNumber}`}
+                                checked={selectedIds.has(serial.id)}
+                                onChange={() => toggleSelected(serial.id)}
+                                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
+                              />
+                            </td>
+                          )}
+                          <td className="px-4 py-3 font-mono text-sm font-semibold text-zinc-700">
+                            {serial.serialNumber}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
+                            {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
+                            <div>{displayClassificationLabel(serial.item?.brand?.name) ?? '—'}</div>
+                            <div className="text-xs text-zinc-400">
+                              {displayClassificationLabel(serial.item?.type?.name)}
+                              {displayClassificationLabel(serial.item?.type?.name) &&
+                                serial.item?.modelNumber &&
+                                ' · '}
+                              <span className="font-mono">{serial.item?.modelNumber}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-zinc-600 hidden lg:table-cell">
+                            {serial.goodsReceiptLine?.goodsReceipt?.code ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
+                            {originLabel(serial)}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
+                            {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                              ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
+                            {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                              ? formatAge(serial.goodsReceiptLine.goodsReceipt.receivedAt)
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right text-zinc-700 hidden lg:table-cell">
+                            {serial.goodsReceiptLine?.unitCost != null
+                              ? `₱${Number(serial.goodsReceiptLine.unitCost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+                              : '—'}
+                          </td>
+                          {caravanView && (
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                                {serial.currentWarehouse?.branch?.name ?? '—'}
+                              </span>
+                            </td>
+                          )}
+                          {caravanView && (
+                            <td className="px-4 py-3 text-zinc-600">
+                              <div>{serial.caravanEventName ?? '—'}</div>
+                              {(serial.caravanEventStartDate || serial.caravanEventEndDate) && (
+                                <div className="text-xs text-zinc-400">
+                                  {serial.caravanEventStartDate
+                                    ? formatShortDate(serial.caravanEventStartDate)
+                                    : '—'}
+                                  {' – '}
+                                  {serial.caravanEventEndDate
+                                    ? formatShortDate(serial.caravanEventEndDate)
+                                    : '—'}
+                                </div>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${SERIAL_STATUS_COLORS[serial.status]}`}
+                            >
+                              {SERIAL_STATUS_LABELS[serial.status]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
+                            {serial.createdAt
+                              ? new Date(serial.createdAt).toLocaleDateString('en-PH', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })
+                              : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    {showSelection && (
-                      <th className="w-10 px-4 py-3">
-                        <input
-                          type="checkbox"
-                          aria-label="Select all"
-                          checked={selectedIds.size > 0 && selectedIds.size === serials.length}
-                          onChange={toggleSelectAll}
-                          className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
-                        />
-                      </th>
-                    )}
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Serial #
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                      Warehouse
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Brand / Type / Model
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      RR #
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Origin
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Date In
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Age
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Unit Cost
-                    </th>
-                    {caravanView && (
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                        Home Branch
-                      </th>
-                    )}
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Status
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                      Registered
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {serials.map((serial) => (
-                    <tr
-                      key={serial.id}
-                      className={`hover:bg-zinc-50 ${selectedIds.has(serial.id) ? 'bg-prominent-purple-50/60' : ''}`}
-                    >
-                      {showSelection && (
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${serial.serialNumber}`}
-                            checked={selectedIds.has(serial.id)}
-                            onChange={() => toggleSelected(serial.id)}
-                            className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
-                          />
-                        </td>
-                      )}
-                      <td className="px-4 py-3 font-mono text-sm font-semibold text-zinc-700">
-                        {serial.serialNumber}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                        {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
-                        <div>{displayClassificationLabel(serial.item?.brand?.name) ?? '—'}</div>
-                        <div className="text-xs text-zinc-400">
-                          {displayClassificationLabel(serial.item?.type?.name)}
-                          {displayClassificationLabel(serial.item?.type?.name) &&
-                            serial.item?.modelNumber &&
-                            ' · '}
-                          <span className="font-mono">{serial.item?.modelNumber}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-600 hidden lg:table-cell">
-                        {serial.goodsReceiptLine?.goodsReceipt?.code ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
-                        {originLabel(serial)}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
-                        {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                          ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
-                        {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                          ? formatAge(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-zinc-700 hidden lg:table-cell">
-                        {serial.goodsReceiptLine?.unitCost != null
-                          ? `₱${Number(serial.goodsReceiptLine.unitCost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
-                          : '—'}
-                      </td>
-                      {caravanView && (
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                            {serial.currentWarehouse?.branch?.name ?? '—'}
-                          </span>
-                        </td>
-                      )}
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${SERIAL_STATUS_COLORS[serial.status]}`}
-                        >
-                          {SERIAL_STATUS_LABELS[serial.status]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
-                        {serial.createdAt
-                          ? new Date(serial.createdAt).toLocaleDateString('en-PH', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
 
-        {pagination.total > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
-            <div className="flex items-center gap-3">
-              <span>
-                Showing {(page - 1) * pagination.limit + 1}–
-                {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
-              </span>
-              <label className="flex items-center gap-1.5">
-                <span className="text-zinc-400">Per page</span>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
-                >
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </label>
-            </div>
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <span className="px-3 py-1.5 font-medium text-zinc-700">
-                  {page} / {pagination.totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
+            {pagination.total > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
+                <div className="flex items-center gap-3">
+                  <span>
+                    Showing {(page - 1) * pagination.limit + 1}–
+                    {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
+                  </span>
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-zinc-400">Per page</span>
+                    <select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                      className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
+                    >
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
+                </div>
+                {pagination.totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.max(1, page - 1))}
+                      disabled={page <= 1}
+                      className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-3 py-1.5 font-medium text-zinc-700">
+                      {page} / {pagination.totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
+                      disabled={page >= pagination.totalPages}
+                      className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
@@ -505,6 +568,15 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         warehouses={warehouseOptions}
+      />
+
+      <ConsignToBranchModal
+        isOpen={isConsignOpen}
+        onClose={() => setIsConsignOpen(false)}
+        onSubmit={handleConsignSubmit}
+        isSubmitting={isConsigning}
+        selectedCount={selectedIds.size}
+        branches={branchOptions}
       />
     </div>
   )

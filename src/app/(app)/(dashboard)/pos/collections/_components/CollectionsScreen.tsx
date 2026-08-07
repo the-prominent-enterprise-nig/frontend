@@ -1,11 +1,24 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, User, AlertTriangle, Banknote } from 'lucide-react'
-import { searchCustomers } from '../../_actions/pos-actions'
-import { useCustomerInstallmentSchedules } from '../../_hooks/usePos'
-import { ARInvoices, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
-import type { PosCustomer, InstallmentScheduleLineWithInvoice } from '@/src/schema/pos'
+import { useEffect, useState } from 'react'
+import { Search, AlertTriangle, Banknote, CheckCircle2, Loader2, Users, X } from 'lucide-react'
+import { useCustomerInstallmentSchedules, useCollectionsCustomers } from '../../_hooks/usePos'
+import { getBranches } from '../../_actions/pos-actions'
+import { collectorsApi } from '@/src/libs/api/crm'
+import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
+import { BranchSearchCombobox } from './BranchSearchCombobox'
+import {
+  ARInvoices,
+  fmtMoney,
+  fmtDate,
+  PAYMENT_METHOD_OPTIONS,
+  type PaymentMethod,
+} from '@/src/libs/data/AccountingV2Data'
+import type {
+  PosCustomer,
+  CollectionsCustomer,
+  InstallmentScheduleLineWithInvoice,
+} from '@/src/schema/pos'
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
@@ -20,181 +33,328 @@ const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-emerald-100 text-emerald-700',
   PARTIAL: 'bg-amber-100 text-amber-700',
   OVERDUE: 'bg-red-100 text-red-700',
-  SENT: 'bg-gray-100 text-gray-600',
-  DRAFT: 'bg-gray-100 text-gray-500',
-  CANCELLED: 'bg-gray-100 text-gray-400',
+  SENT: 'bg-zinc-100 text-zinc-600',
+  DRAFT: 'bg-zinc-100 text-zinc-500',
+  CANCELLED: 'bg-zinc-100 text-zinc-400',
 }
+
+const fieldClass =
+  'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-600'}`}
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[status] ?? 'bg-zinc-100 text-zinc-600'}`}
     >
       {STATUS_LABELS[status] ?? status}
     </span>
   )
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function isToday(dateIso: string): boolean {
+  return dateIso.slice(0, 10) === todayIso()
+}
+
+function paidToday(line: InstallmentScheduleLineWithInvoice): boolean {
+  return line.arInvoice.payments.some((p) => isToday(p.paymentDate))
+}
+
+// The backend's same-day guard (ar-invoices.service.ts's recordPayment())
+// keys off whatever paymentDate is actually submitted, not literally "today"
+// — a backdated/postdated entry is only blocked against a payment already
+// recorded on THAT SAME chosen date. This mirrors that so the modal's own
+// pre-submit warning never disagrees with the guard it's warning about.
+function hasPaymentOnDate(line: InstallmentScheduleLineWithInvoice, dateIso: string): boolean {
+  return line.arInvoice.payments.some((p) => p.paymentDate.slice(0, 10) === dateIso.slice(0, 10))
+}
+
+// Debounces the raw input so the collections list doesn't refetch on every keystroke.
+function useDebounced(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(t)
+  }, [value, delayMs])
+  return debounced
+}
+
+function CollectionsCustomerRow({
+  customer,
+  onSelect,
+}: {
+  customer: CollectionsCustomer
+  onSelect: () => void
+}) {
+  const overdue = customer.outstandingCount > 0 && new Date(customer.nextDueDate) < new Date()
+  return (
+    <li>
+      <button
+        onClick={onSelect}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-50"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50 text-[13px] font-semibold text-prominent-purple-700">
+            {customer.name.charAt(0).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-zinc-900">
+              {customer.name}
+            </span>
+            {customer.phone && (
+              <span className="block text-[12px] text-zinc-500">{customer.phone}</span>
+            )}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-[13px] font-semibold text-zinc-900">
+            {fmtMoney(customer.outstandingAmount)}
+          </span>
+          <span
+            className={`block text-[12px] ${overdue ? 'font-medium text-red-600' : 'text-zinc-500'}`}
+          >
+            {customer.outstandingCount} due · next {fmtDate(customer.nextDueDate)}
+          </span>
+        </span>
+      </button>
+    </li>
+  )
+}
+
+function CustomerListSkeleton() {
+  return (
+    <div>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 border-b border-zinc-100 px-5 py-3.5 last:border-0"
+        >
+          <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-zinc-200" />
+          <div className="h-3.5 w-32 animate-pulse rounded bg-zinc-200" />
+          <div className="ml-auto h-3.5 w-20 animate-pulse rounded bg-zinc-200" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function CollectionsScreen() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<PosCustomer[]>([])
-  const [searching, setSearching] = useState(false)
+  const [branchId, setBranchId] = useState('')
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
   const [collectingLine, setCollectingLine] = useState<InstallmentScheduleLineWithInvoice | null>(
     null
   )
 
+  const debouncedQuery = useDebounced(query, 300)
+  const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
   const schedulesQuery = useCustomerInstallmentSchedules(customer?.id)
 
-  async function handleSearch(q: string) {
-    setQuery(q)
-    if (q.trim().length < 2) {
-      setResults([])
-      return
-    }
-    setSearching(true)
-    const res = await searchCustomers(q.trim())
-    setSearching(false)
-    if (res.success && res.data) setResults(res.data)
-  }
+  const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-      <header>
-        <h1 className="text-2xl font-semibold text-gray-900">Collections</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Look up a customer and collect payment against an existing installment due — payments that
-          exceed what&apos;s owed are recorded, not rejected, and flagged as an overpayment.
-        </p>
-      </header>
-
-      {!customer ? (
-        <div className="mt-6 max-w-md">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              value={query}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="Search customer by name or phone…"
-              className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm"
-            />
-          </div>
-          {searching && <p className="mt-2 text-[13px] text-gray-400">Searching…</p>}
-          {!searching && results.length > 0 && (
-            <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-              {results.map((c) => (
-                <li key={c.id}>
-                  <button
-                    onClick={() => setCustomer(c)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50"
-                  >
-                    <User className="h-4 w-4 text-gray-400" />
-                    <span>
-                      <span className="block text-[13px] font-medium text-gray-900">
-                        {c.name || [c.firstName, c.lastName].filter(Boolean).join(' ')}
-                      </span>
-                      {c.phone && (
-                        <span className="block text-[12px] text-gray-500">{c.phone}</span>
-                      )}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+    <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Collections</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Customers with an outstanding installment due — pick one to collect payment. Payments
+            that exceed what&apos;s owed are recorded, not rejected, and flagged as an overpayment.
+          </p>
         </div>
-      ) : (
-        <div className="mt-6">
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <div>
-              <div className="text-[13px] font-semibold text-gray-900">
-                {customer.name || [customer.firstName, customer.lastName].filter(Boolean).join(' ')}
+
+        {!customer ? (
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter by name or phone…"
+                  className={`${fieldClass} pl-9`}
+                />
               </div>
-              {customer.phone && <div className="text-[12px] text-gray-500">{customer.phone}</div>}
+              <div className="sm:w-64">
+                <BranchSearchCombobox
+                  value={branchId}
+                  onChange={setBranchId}
+                  placeholder="All branches"
+                />
+              </div>
             </div>
-            <button
-              onClick={() => {
-                setCustomer(null)
-                setResults([])
-                setQuery('')
-              }}
-              className="text-[13px] font-medium text-prominent-orange-700 hover:underline"
-            >
-              Change customer
-            </button>
-          </div>
 
-          {schedulesQuery.isLoading && (
-            <p className="py-8 text-center text-[13px] text-gray-400">Loading installment plans…</p>
-          )}
-          {!schedulesQuery.isLoading &&
-            (!schedulesQuery.data?.success || (schedulesQuery.data.data ?? []).length === 0) && (
-              <p className="py-8 text-center text-[13px] text-gray-400">
-                No installment plans for this customer.
-              </p>
-            )}
-
-          <div className="space-y-4">
-            {schedulesQuery.data?.success &&
-              (schedulesQuery.data.data ?? []).map((s) => (
-                <div key={s.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[13px] text-gray-500">
-                    <span className="font-mono">{s.posTransaction?.transactionNumber ?? s.id}</span>
-                    <span>
-                      {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
-                    </span>
-                  </div>
-                  <ul className="divide-y divide-gray-100">
-                    {s.lines.map((line) => {
-                      const outstanding = Math.max(
-                        line.arInvoice.totalAmount - line.arInvoice.amountPaid,
-                        0
-                      )
-                      const collectable = !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status)
-                      return (
-                        <li
-                          key={line.lineNumber}
-                          className="flex items-center justify-between gap-3 py-2.5"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-[13px] text-gray-800">
-                              Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                              {fmtDate(line.arInvoice.dueDate)}
-                            </div>
-                            <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                              <StatusBadge status={line.arInvoice.status} />
-                              <span>
-                                {fmtMoney(line.arInvoice.amountPaid)} of{' '}
-                                {fmtMoney(line.arInvoice.totalAmount)} paid
-                              </span>
-                            </div>
-                          </div>
-                          {collectable && (
-                            <button
-                              onClick={() => setCollectingLine(line)}
-                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                            >
-                              <Banknote className="h-3.5 w-3.5" />
-                              Collect
-                            </button>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+              {customersQuery.isLoading ? (
+                <CustomerListSkeleton />
+              ) : customers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <Users className="mb-3 h-10 w-10 text-zinc-300" />
+                  <p className="text-sm font-medium text-zinc-500">
+                    No customers with an outstanding due
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {query || branchId
+                      ? 'Try clearing the filter.'
+                      : 'Everyone is paid up — nothing to collect right now.'}
+                  </p>
                 </div>
-              ))}
+              ) : (
+                <ul className="divide-y divide-zinc-100">
+                  {customers.map((c) => (
+                    <CollectionsCustomerRow
+                      key={c.id}
+                      customer={c}
+                      onSelect={() =>
+                        setCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
+                      }
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50 text-[13px] font-semibold text-prominent-purple-700">
+                  {(customer.name || customer.firstName || '?').charAt(0).toUpperCase()}
+                </span>
+                <div>
+                  <div className="text-[13px] font-semibold text-zinc-900">
+                    {customer.name ||
+                      [customer.firstName, customer.lastName].filter(Boolean).join(' ')}
+                  </div>
+                  {customer.phone && (
+                    <div className="text-[12px] text-zinc-500">{customer.phone}</div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setCustomer(null)}
+                className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
+              >
+                Change customer
+              </button>
+            </div>
+
+            {schedulesQuery.isLoading && (
+              <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-zinc-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading installment plans…
+              </div>
+            )}
+            {!schedulesQuery.isLoading &&
+              (!schedulesQuery.data?.success || (schedulesQuery.data.data ?? []).length === 0) && (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white py-16 shadow-sm">
+                  <Banknote className="mb-3 h-10 w-10 text-zinc-300" />
+                  <p className="text-sm font-medium text-zinc-500">
+                    No installment plans for this customer
+                  </p>
+                </div>
+              )}
+
+            <div className="space-y-4">
+              {schedulesQuery.data?.success &&
+                (schedulesQuery.data.data ?? []).map((s) => (
+                  <div
+                    key={s.id}
+                    className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
+                      <span className="font-mono">
+                        {s.posTransaction?.transactionNumber ?? s.id}
+                      </span>
+                      <span>
+                        {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
+                      </span>
+                    </div>
+                    <ul className="divide-y divide-zinc-100">
+                      {s.lines.map((line) => {
+                        // Fully paid dues can no longer be collected against
+                        // at all through this screen — no more overpayment
+                        // entry via a stray click here. A genuine correction
+                        // (e.g. reversing a bad payment) goes through
+                        // Accounting → AR Invoices instead.
+                        const isFullyPaid = line.arInvoice.status === 'PAID'
+                        const collectable =
+                          !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) && !isFullyPaid
+                        const collectedToday = paidToday(line)
+                        return (
+                          <li
+                            key={line.lineNumber}
+                            className="flex items-center justify-between gap-3 px-5 py-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-[13px] text-zinc-800">
+                                Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                                {fmtDate(line.arInvoice.dueDate)}
+                              </div>
+                              <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                                <StatusBadge status={line.arInvoice.status} />
+                                <span>
+                                  {fmtMoney(line.arInvoice.amountPaid)} of{' '}
+                                  {fmtMoney(line.arInvoice.totalAmount)} paid
+                                </span>
+                              </div>
+                            </div>
+                            {isFullyPaid && (
+                              <span
+                                title="This due is already fully paid — any additional amount would be an overpayment, and this screen no longer allows recording one. If a correction is needed (e.g. reversing a mistaken payment), use Accounting → AR Invoices."
+                                className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Paid
+                              </span>
+                            )}
+                            {collectable && collectedToday && (
+                              <span
+                                title="A payment was already collected for this due today — try again tomorrow, or cancel it from Accounting → AR Invoices if it was a mistake."
+                                className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Collected today
+                              </span>
+                            )}
+                            {collectable && !collectedToday && (
+                              <button
+                                onClick={() => setCollectingLine(line)}
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
+                              >
+                                <Banknote className="h-3.5 w-3.5" />
+                                Collect
+                              </button>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {collectingLine && (
         <CollectPaymentModal
           line={collectingLine}
+          customerName={customer?.name}
+          defaultBranchId={branchId || undefined}
           onClose={() => setCollectingLine(null)}
-          onCollected={() => {
+          onCollected={async () => {
+            // Wait for both refetches before closing — otherwise the list
+            // (and this due's own data, if reopened right away) can briefly
+            // still reflect the pre-payment state. The modal's own submit
+            // button stays in its spinner/disabled state for this whole
+            // span (see CollectPaymentModal's onSubmit), so there's no
+            // interactive-but-stale window for a fast click-through to hit.
+            await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
             setCollectingLine(null)
-            schedulesQuery.refetch()
           }}
         />
       )}
@@ -204,24 +364,50 @@ export default function CollectionsScreen() {
 
 function CollectPaymentModal({
   line,
+  customerName,
+  defaultBranchId,
   onClose,
   onCollected,
 }: {
   line: InstallmentScheduleLineWithInvoice
+  customerName?: string
+  /** Falls back to the Collections list's own branch filter, if the cashier
+   * had one set — used only until the session's own branch resolves below. */
+  defaultBranchId?: string
   onClose: () => void
-  onCollected: () => void
+  /** Async: resolves only once the parent's post-payment refetch has
+   * actually landed, so the caller can keep the submit button's
+   * spinner/disabled state up until the modal is genuinely safe to close. */
+  onCollected: () => Promise<void>
 }) {
   const invoice = line.arInvoice
   const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
-  const isClosedAccount = invoice.status === 'PAID'
+  // Defense-in-depth: the list view already hides "Collect" entirely for a
+  // fully-paid due (see isFullyPaid there), so this should be unreachable in
+  // the normal flow — but if it is reached (stale list, race with another
+  // cashier), hard-block submit here too instead of only allowing it through
+  // as an overpayment.
+  const isFullyPaid = invoice.status === 'PAID'
   const [form, setForm] = useState({
-    amount: String(outstanding || ''),
+    // outstanding is always a valid non-negative number (Math.max(...) above),
+    // so this never needs a `|| ''` fallback — that idiom would blank the
+    // field out for a legitimately-zero outstanding balance (0 is falsy).
+    amount: String(outstanding),
     withholdingAmount: '0',
-    paymentDate: new Date().toISOString().slice(0, 10),
-    method: 'Cash',
+    paymentDate: todayIso(),
+    method: 'CASH' as PaymentMethod,
     reference: '',
     notes: '',
+    branchId: '',
+    collectorId: '',
   })
+  // Resolved together (id + name) before ever touching form.branchId, so the
+  // combobox's one-shot initialLabel is never stale — see BranchSearchCombobox's
+  // key usage below for why this is a separate piece of state from form.branchId.
+  const [branchDefault, setBranchDefault] = useState<{ id: string; name: string } | null>(null)
+  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
+    []
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overpaymentResult, setOverpaymentResult] = useState<{
@@ -229,8 +415,44 @@ function CollectPaymentModal({
     wasClosedAccount: boolean
   } | null>(null)
 
+  // A logged-in Cashier/Branch Manager is almost always collecting at their
+  // own assigned branch — takes priority over the Collections list's own
+  // branch filter (defaultBranchId), which only applies when the session
+  // itself isn't tied to one branch (e.g. Business Owner).
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
+      if (cancelled) return
+      const targetId = session?.branchId || defaultBranchId
+      const match = (branchesRes.data ?? []).find((b) => b.id === targetId)
+      if (!match) return
+      setBranchDefault({ id: match.id, name: match.name })
+      setForm((f) => (f.branchId ? f : { ...f, branchId: match.id }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [defaultBranchId])
+
+  // Collector options narrow to the chosen branch — refetch whenever it changes.
+  useEffect(() => {
+    collectorsApi
+      .list({ limit: 200, ...(form.branchId ? { branchId: form.branchId } : {}) })
+      .then((res) => {
+        if (res.success && res.data) setCollectors(res.data.data)
+      })
+  }, [form.branchId])
+
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01
+  const isBackdatedOrPostdated = !isToday(form.paymentDate)
+  // Defense-in-depth against the exact-same scenario the list view already
+  // hides "Collect" for (see paidToday() there) — but keyed off whichever
+  // date is actually chosen here, not hardcoded to today, since the backend
+  // guard itself is per-chosen-date, not per-literal-today. Without this,
+  // switching the date field to a day that's already blocked would only
+  // surface as a submit-time server error.
+  const blockedForChosenDate = hasPaymentOnDate(line, form.paymentDate)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -240,17 +462,23 @@ function CollectPaymentModal({
       ...form,
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
+      branchId: form.branchId || undefined,
+      collectorId: form.collectorId || undefined,
     })
-    setSubmitting(false)
     if (!res.success) {
+      setSubmitting(false)
       setError(res.message || res.error || 'Failed to collect payment')
       return
     }
     if (res.data?.overpayment) {
+      setSubmitting(false)
       setOverpaymentResult(res.data.overpayment)
       return
     }
-    onCollected()
+    // Stays "submitting" (spinner, buttons disabled) until the parent's
+    // refetch actually lands — this component unmounts right after, so
+    // there's nothing to reset setSubmitting(false) for on the success path.
+    await onCollected()
   }
 
   if (overpaymentResult) {
@@ -258,13 +486,15 @@ function CollectPaymentModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
           <div className="flex flex-col items-center gap-3 text-center">
-            <AlertTriangle className="h-10 w-10 text-amber-500" />
-            <h3 className="text-lg font-semibold text-gray-900">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-6 w-6 text-amber-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-zinc-900">
               {overpaymentResult.wasClosedAccount
                 ? 'Overpayment on a closed account'
                 : 'Payment recorded as an overpayment'}
             </h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-zinc-600">
               This payment was <span className="font-semibold">not rejected</span> — it exceeds what
               was owed by{' '}
               <span className="font-semibold">{fmtMoney(overpaymentResult.overpaidAmount)}</span>.
@@ -274,7 +504,7 @@ function CollectPaymentModal({
             </p>
             <button
               onClick={onCollected}
-              className="mt-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              className="mt-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
             >
               Got it
             </button>
@@ -286,70 +516,167 @@ function CollectPaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Collect payment</h2>
-        <form onSubmit={onSubmit} className="space-y-4">
-          {isClosedAccount && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              This due is already fully paid. Anything collected here will be flagged as a
-              closed-account overpayment.
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
+              <Banknote className="h-5 w-5 text-prominent-purple-700" />
             </div>
-          )}
-          <div className="text-[13px] text-gray-600">
-            Outstanding:{' '}
-            <span className="font-semibold text-gray-900">{fmtMoney(outstanding)}</span>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Amount received *</label>
-            <input
-              required
-              type="number"
-              step="0.01"
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
-          {wouldOverpay && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              This exceeds the outstanding balance by {fmtMoney(totalApplied - outstanding)}. It
-              will still be recorded and flagged as an overpayment.
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900">Collect Payment</h2>
+              <p className="text-sm text-zinc-500">
+                {customerName ?? 'Customer'} · due {fmtDate(invoice.dueDate)}
+              </p>
             </div>
-          )}
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Method</label>
-            <input
-              value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value })}
-              placeholder="Cash, Card, Bank Transfer…"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
           </div>
-          <div>
-            <label className="block text-[13px] font-medium text-gray-700">Reference</label>
-            <input
-              value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              placeholder="OR number"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} noValidate>
+          <div className="space-y-4 px-6 py-5">
+            {isFullyPaid && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                This due is already fully paid — any additional amount would be an overpayment, and
+                this screen no longer allows recording one. If a correction is needed (e.g.
+                reversing a mistaken payment), use Accounting → AR Invoices.
+              </div>
+            )}
+            {!isFullyPaid && blockedForChosenDate && (
+              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />A payment was already collected
+                for this due on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}. A
+                second payment dated the same day can&apos;t be recorded — cancel the existing one
+                from Accounting → AR Invoices first if it was a mistake, or pick a different date.
+              </div>
+            )}
+            {!isFullyPaid && !blockedForChosenDate && isBackdatedOrPostdated && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
+                that&apos;s intentional (e.g. entering a collection from a prior day).
+              </div>
+            )}
+
+            <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
+              <span className="text-[13px] text-zinc-500">Outstanding</span>
+              <span className="text-base font-semibold text-zinc-900">{fmtMoney(outstanding)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Amount received <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={form.amount}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Payment date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  required
+                  type="date"
+                  max={todayIso()}
+                  value={form.paymentDate}
+                  onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+            {!isFullyPaid && wouldOverpay && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                This exceeds the outstanding balance by {fmtMoney(totalApplied - outstanding)}. It
+                will still be recorded and flagged as an overpayment.
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
+              <select
+                value={form.method}
+                onChange={(e) => setForm({ ...form, method: e.target.value as PaymentMethod })}
+                className={fieldClass}
+              >
+                {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <BranchSearchCombobox
+                key={branchDefault?.id ?? 'no-default'}
+                value={form.branchId}
+                onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
+                initialLabel={branchDefault?.name}
+                placeholder="Search branch…"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
+              <select
+                value={form.collectorId}
+                onChange={(e) => setForm({ ...form, collectorId: e.target.value })}
+                className={fieldClass}
+              >
+                <option value="">Walk-in / none</option>
+                {collectors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.stubNumber} — {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Reference</label>
+              <input
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+                placeholder="OR number"
+                className={fieldClass}
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            )}
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          <div className="flex items-center justify-end gap-3 pt-2">
+
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100"
+              disabled={submitting}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={submitting}
-              className="rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
+              disabled={submitting || isFullyPaid || blockedForChosenDate}
+              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {submitting ? 'Collecting…' : 'Collect payment'}
             </button>
           </div>

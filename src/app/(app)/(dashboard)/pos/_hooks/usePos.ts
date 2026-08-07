@@ -69,8 +69,10 @@ import {
   getActiveFinancingTerms,
   createFinancingTerm,
   updateFinancingTerm,
+  deleteFinancingTerm,
   previewInstallment,
   getCustomerInstallmentSchedules,
+  listCollectionsCustomers,
 } from '../_actions/pos-actions'
 import type {
   CreateTerminalInput,
@@ -491,6 +493,14 @@ export function useUpdateFinancingTerm() {
   })
 }
 
+export function useDeleteFinancingTerm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteFinancingTerm(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
+  })
+}
+
 export function useInstallmentPreview() {
   return useMutation({
     mutationFn: (input: ComputeInstallmentPreviewInput) => previewInstallment(input),
@@ -503,6 +513,14 @@ export function useCustomerInstallmentSchedules(customerId?: string) {
     queryFn: () => getCustomerInstallmentSchedules(customerId as string),
     enabled: !!customerId,
     staleTime: 60 * 1000,
+  })
+}
+
+export function useCollectionsCustomers(branchId?: string, search?: string) {
+  return useQuery({
+    queryKey: ['pos-collections-customers', branchId, search],
+    queryFn: () => listCollectionsCustomers({ branchId, search }),
+    staleTime: 30 * 1000,
   })
 }
 
