@@ -5,33 +5,14 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
+  openCustomSelect,
+  pickFromCustomSelect,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List Versioning — '
 
 function rowByExactName(page: Page, exactName: string): Locator {
   return page.locator('tbody tr').filter({ has: page.getByText(exactName, { exact: true }) })
-}
-
-// Price Use Type and Currency are the custom Select component (see
-// src/components/ui/Select.tsx), not a native <select> — it exposes a
-// combobox/listbox/option ARIA structure, so picking a value is
-// open-then-click-option rather than `selectOption()`.
-//
-// Not clickStable: that helper retries by clicking again on failure, but
-// this trigger *toggles* open/closed on every click — a naive retry would
-// close it right back up on the second attempt and could flip-flop forever.
-// Only click while still collapsed, confirmed via aria-expanded.
-async function openCustomSelect(trigger: Locator) {
-  await expect(async () => {
-    if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click()
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
-  }).toPass({ timeout: 10_000 })
-}
-
-async function pickFromCustomSelect(page: Page, comboboxName: string | RegExp, optionName: string) {
-  await openCustomSelect(page.getByRole('combobox', { name: comboboxName }))
-  await page.getByRole('option', { name: optionName, exact: true }).click()
 }
 
 async function createPendingPriceList(page: Page, name: string) {

@@ -64,6 +64,34 @@ export async function clickStable(
 }
 
 /**
+ * Opens the custom Select component (src/components/ui/Select.tsx) —
+ * combobox/listbox/option ARIA roles, not a native <select>. Not
+ * clickStable: that helper retries by clicking again on failure, but this
+ * trigger *toggles* open/closed on every click, so a naive retry would close
+ * it right back up on the second attempt. Only clicks while still collapsed,
+ * confirmed via aria-expanded.
+ */
+export async function openCustomSelect(trigger: Locator): Promise<void> {
+  await expect(async () => {
+    if ((await trigger.getAttribute('aria-expanded')) !== 'true') await trigger.click()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 1_000 })
+  }).toPass({ timeout: 10_000 })
+}
+
+/**
+ * Opens a custom Select by its current accessible name (its placeholder, or
+ * whatever it's currently showing) and picks the named option.
+ */
+export async function pickFromCustomSelect(
+  page: Page,
+  comboboxName: string | RegExp,
+  optionName: string
+): Promise<void> {
+  await openCustomSelect(page.getByRole('combobox', { name: comboboxName }))
+  await page.getByRole('option', { name: optionName, exact: true }).click()
+}
+
+/**
  * react-phone-number-input reformats whatever's typed into a spaced display
  * string (e.g. "9171234567" becomes "+63 917 123 4567"), so fillStable's
  * exact-value check can never pass against it. Verifies by digits only —

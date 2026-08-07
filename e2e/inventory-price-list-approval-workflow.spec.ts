@@ -5,6 +5,7 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
+  pickFromCustomSelect,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List Approval — '
@@ -21,8 +22,7 @@ test.describe('Inventory — Price List Approval Workflow', () => {
       page.getByRole('heading', { name: 'New Price List' })
     )
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'PROMO' })
-    await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
+    await pickFromCustomSelect(page, 'Select price use type…', 'PROMO')
     await page.getByRole('button', { name: 'Create Price List' }).click()
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
@@ -74,7 +74,11 @@ test.describe('Inventory — Price List Approval Workflow', () => {
 
     await expect(row).toContainText('Rejected')
 
-    await clickStable(row.getByRole('button', { name: 'Resubmit' }), row.getByText('Pending'))
+    // Resubmit lives in the row's overflow menu now, not as a direct button.
+    // Not clickStable: the trigger toggles open/closed on every click, so a
+    // naive retry-on-failure would close it right back up.
+    await row.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('button', { name: 'Resubmit' }).click()
     await expect(row).toContainText('Pending')
 
     const id = await findPriceListIdByName(request, name)
