@@ -5,7 +5,6 @@ import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
 import StockCountList from '../../stock-counts/_components/StockCountList'
 import MobileCountInterface from '../../mobile-count/_components/MobileCountInterface'
 import BatchList from '../../batches/_components/BatchList'
-import SerialNumberList from '../../serial-numbers/_components/SerialNumberList'
 import AdjustmentList from '../../adjustments/_components/AdjustmentList'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
@@ -23,7 +22,6 @@ const TABS = [
   { id: 'adjustments', label: 'Stock Adjustments' },
   { id: 'mobile', label: 'Mobile Count' },
   { id: 'batches', label: 'Batches' },
-  { id: 'serials', label: 'Serial Numbers' },
 ]
 
 export function CountingHub({ session }: { session: SessionUser }) {
@@ -39,8 +37,6 @@ export function CountingHub({ session }: { session: SessionUser }) {
         <MobileCountInterface session={session} />
       ) : tab === 'batches' ? (
         <BatchList session={session} />
-      ) : tab === 'serials' ? (
-        <SerialNumberList session={session} />
       ) : (
         <StockCountList session={session} />
       )}

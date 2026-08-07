@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Check } from 'lucide-react'
+import { ChevronDown, Check, X } from 'lucide-react'
 
 export type SearchableSelectOption = { value: string; label: string }
 
@@ -14,6 +14,12 @@ type Props = {
   loading?: boolean
   disabled?: boolean
   className?: string
+  /** Shows a small "×" to reset back to no selection once a value is picked
+   * — there's otherwise no way back to the placeholder state from inside
+   * the control itself (picking a different option is the only other way
+   * `value` ever changes). Off by default since not every consumer wants a
+   * "no selection" state to be reachable (e.g. a required field). */
+  clearable?: boolean
 }
 
 /** Type-ahead select — typing filters the option list (like Shopee/Lazada's
@@ -28,6 +34,7 @@ export default function SearchableSelect({
   loading = false,
   disabled = false,
   className = '',
+  clearable = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -67,13 +74,38 @@ export default function SearchableSelect({
           value={displayValue}
           disabled={disabled}
           placeholder={loading ? loadingLabel : placeholder}
-          onFocus={() => setOpen(true)}
+          onFocus={(e) => {
+            // Reopening after a value is already picked used to blank the
+            // visible text back to an empty search box — the selection was
+            // still held in `value` underneath, but it LOOKED cleared. Seed
+            // the query with the current label so it stays visible; typing
+            // still overwrites/filters as normal, and selecting all text
+            // lets a single keystroke replace it like a typical combobox.
+            setQuery(selected?.label ?? '')
+            setOpen(true)
+            e.target.select()
+          }}
           onChange={(e) => {
             setQuery(e.target.value)
             setOpen(true)
           }}
           className="w-full rounded-lg bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:text-gray-400"
         />
+        {clearable && value && !disabled && (
+          <button
+            type="button"
+            aria-label="Clear selection"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              onChange('')
+              setQuery('')
+              setOpen(false)
+            }}
+            className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
         />

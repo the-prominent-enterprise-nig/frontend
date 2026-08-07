@@ -1,7 +1,6 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Hash } from 'lucide-react'
 import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
 import ItemMasterList from '../../items/_components/ItemMasterList'
 import CategoryManager from '../../categories/_components/CategoryManager'
@@ -13,11 +12,11 @@ import { BrandsPageView } from '../../brands/_components'
 import { TypesPageView } from '../../types/_components'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
-// Serial Numbers also lives under Stock (StockHub) — it's genuinely
-// operational data (physical units, not product definitions), but it kept
-// getting missed from here, so it's surfaced as a tab in both places rather
-// than only being reachable from a page that doesn't obviously connect to
-// "importing/managing my catalog".
+// Serial Numbers is genuinely operational data (physical units, not product
+// definitions), but it kept getting missed when it only lived under Stock/
+// Counting — this is now its single canonical home (removed from both of
+// those, same cleanup StockHub already did) rather than being cross-listed
+// with no one obvious place to look.
 const TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
@@ -26,7 +25,7 @@ const TABS = [
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
   { id: 'barcodes', label: 'Barcodes' },
-  { id: 'serials', label: 'Serial Numbers', icon: Hash },
+  { id: 'serials', label: 'Serial Numbers' },
 ]
 
 export function CatalogHub({ session }: { session: SessionUser }) {

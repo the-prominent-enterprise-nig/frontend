@@ -5,6 +5,7 @@ import { revalidateTag } from 'next/cache'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
+  CollectionsCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
   CashierTerminalAccess,
@@ -1069,6 +1070,19 @@ export async function updateFinancingTerm(
   }
 }
 
+export async function deleteFinancingTerm(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/financing-terms/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete financing term' }
+  }
+}
+
 export async function previewInstallment(
   input: ComputeInstallmentPreviewInput
 ): Promise<ApiResponse<InstallmentPreview>> {
@@ -1080,6 +1094,23 @@ export async function previewInstallment(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function listCollectionsCustomers(
+  opts: { branchId?: string; search?: string } = {}
+): Promise<ApiResponse<CollectionsCustomer[]>> {
+  try {
+    const result = await api.get<CollectionsCustomer[]>('/pos/customers/collections', {
+      ...(opts.branchId ? { branchId: opts.branchId } : {}),
+      ...(opts.search ? { search: opts.search } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch collections customers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch collections customers' }
   }
 }
 

@@ -270,13 +270,24 @@ export const Reports = {
 }
 
 // ============ AR Invoices ============
+
+// Mirrors the backend's PaymentMethod enum (also used by JournalEntry).
+export type PaymentMethod = 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
+
+export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'CARD', label: 'Card' },
+  { value: 'CHECK', label: 'Check' },
+  { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+]
+
 export interface ARPayment {
   id: string
   arInvoiceId: string
   amount: number
   withholdingAmount: number
   paymentDate: string
-  method?: string | null
+  method?: PaymentMethod | null
   reference?: string | null
   notes?: string | null
   isOverpayment: boolean
@@ -285,7 +296,21 @@ export interface ARPayment {
   cancelledAt?: string | null
   cancelledById?: string | null
   cancelReason?: string | null
+  branchId?: string | null
+  collectorId?: string | null
   createdAt: string
+}
+
+export interface RecordArPaymentInput {
+  amount: number
+  paymentDate: string
+  method?: PaymentMethod
+  reference?: string
+  notes?: string
+  withholdingAmount?: number
+  bankAccountId?: string
+  branchId?: string
+  collectorId?: string
 }
 
 export interface ARInvoice {
@@ -317,7 +342,7 @@ export const ARInvoices = {
   create: (body: any) => api.post<ARInvoice>('/ar-invoices', body),
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
-  recordPayment: (id: string, body: any) =>
+  recordPayment: (id: string, body: RecordArPaymentInput) =>
     api.post<RecordPaymentResult>(`/ar-invoices/${id}/payments`, body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),

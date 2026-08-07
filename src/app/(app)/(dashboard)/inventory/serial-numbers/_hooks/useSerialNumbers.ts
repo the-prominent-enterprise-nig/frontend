@@ -7,6 +7,7 @@ import { getSerialNumbers } from '../_actions/get-serial-numbers'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { updateSerialStatus } from '../_actions/update-serial-status'
 import { closeConsignment } from '../_actions/close-consignment'
+import { consignToBranch } from '../_actions/consign-to-branch'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import { getBranches } from '../../purchase-requests/_actions/get-branches'
@@ -14,6 +15,7 @@ import type {
   RegisterSerialsFormInput,
   UpdateSerialStatusFormValues,
   SerialStatus,
+  ConsignToBranchFormValues,
 } from '@/src/schema/inventory/serial-numbers'
 
 export function useSerialNumbers(isBranchRestricted: boolean) {
@@ -86,11 +88,13 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Needed for both the Caravan tab's branch picker and the All Serials
+  // tab's "Consign to Branch" host-branch picker — no longer gated to
+  // caravanView alone.
   const branchesQuery = useQuery({
     queryKey: ['branches-lookup'],
     queryFn: () => getBranches(),
     staleTime: 5 * 60 * 1000,
-    enabled: caravanView,
   })
 
   const registerMutation = useMutation({
@@ -111,6 +115,20 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Status updated', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+      } else {
+        showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const consignMutation = useMutation({
+    mutationFn: ({ ids, data }: { ids: string[]; data: ConsignToBranchFormValues }) =>
+      consignToBranch(ids, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Consigned', description: result.message, status: 'success' })
+        setSelectedIds(new Set())
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
@@ -220,6 +238,10 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     closeConsignment: (targetBranchId?: string) =>
       closeConsignmentMutation.mutateAsync({ ids: [...selectedIds], targetBranchId }),
     isClosingConsignment: closeConsignmentMutation.isPending,
+
+    consignToBranch: (data: ConsignToBranchFormValues) =>
+      consignMutation.mutateAsync({ ids: [...selectedIds], data }),
+    isConsigning: consignMutation.isPending,
 
     registerSerials: registerMutation.mutateAsync,
     isRegistering: registerMutation.isPending,
