@@ -1069,6 +1069,19 @@ export async function updateFinancingTerm(
   }
 }
 
+export async function deleteFinancingTerm(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/financing-terms/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete financing term' }
+  }
+}
+
 export async function previewInstallment(
   input: ComputeInstallmentPreviewInput
 ): Promise<ApiResponse<InstallmentPreview>> {

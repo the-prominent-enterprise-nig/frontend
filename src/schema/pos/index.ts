@@ -397,6 +397,12 @@ export interface CreateWalkInCustomerInput {
   paymentTerms?: string
   status?: import('@/src/schema/crm/types').CustomerStatus
   note?: string
+  coMakers?: import('@/src/schema/crm/customer').CoMakerFormValues[]
+  idType?: string
+  idNumber?: string
+  idDocumentFileId?: string
+  consentGiven?: boolean
+  consentGivenAt?: Date
 }
 
 export interface AddPaymentInput {
@@ -775,6 +781,7 @@ export interface CreateFinancingTermInput {
 }
 
 export interface UpdateFinancingTermInput {
+  termMonths?: number
   factorRate?: number
   isActive?: boolean
   notes?: string

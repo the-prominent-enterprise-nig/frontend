@@ -69,6 +69,7 @@ import {
   getActiveFinancingTerms,
   createFinancingTerm,
   updateFinancingTerm,
+  deleteFinancingTerm,
   previewInstallment,
   getCustomerInstallmentSchedules,
 } from '../_actions/pos-actions'
@@ -487,6 +488,14 @@ export function useUpdateFinancingTerm() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateFinancingTermInput }) =>
       updateFinancingTerm(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
+  })
+}
+
+export function useDeleteFinancingTerm() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteFinancingTerm(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
   })
 }
