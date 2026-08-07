@@ -31,7 +31,11 @@ import {
   Building2,
   LayoutGrid,
   List,
+  Trash2,
+  Paperclip,
 } from 'lucide-react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
@@ -47,6 +51,10 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import CustomerExtraFields, {
   type CustomerExtraFieldsValues,
 } from '@/src/components/crm/CustomerExtraFields'
+import { ID_TYPE_OPTIONS, type CoMakerFormValues } from '@/src/schema/crm/customer'
+import type { DuplicateCheckResult } from '@/src/schema/crm/types'
+import { customersApi } from '@/src/libs/api/crm'
+import { uploadIdDocument } from '@/src/app/(app)/(dashboard)/crm/customers/_actions/upload-id-document'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -4779,9 +4787,66 @@ function NewCustomerModal({
     taxExemptionRef: '',
     shippingAddress: '',
     notes: '',
+    coMakers: [] as CoMakerFormValues[],
+    idType: '',
+    idNumber: '',
+    idDocumentFileId: '',
+    consentGiven: false,
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Same non-blocking, debounced check CRM's "Add Customer" form uses — never
+  // prevents submission, just warns so the cashier can double-check before
+  // creating a second profile for the same person.
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateCheckResult | null>(null)
+  const [duplicateDismissed, setDuplicateDismissed] = useState(false)
+  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [uploadingId, setUploadingId] = useState(false)
+  const [idDocumentName, setIdDocumentName] = useState<string | null>(null)
+
+  useEffect(() => {
+    const email = form.email.trim()
+    const phone = form.phone.trim()
+    if (!email && !phone) {
+      setDuplicateWarning(null)
+      return
+    }
+    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
+    duplicateTimer.current = setTimeout(async () => {
+      const res = await customersApi.checkDuplicate({
+        email: email || undefined,
+        phone: phone || undefined,
+      })
+      if (res.success && res.data) {
+        setDuplicateWarning(res.data.duplicate ? res.data : null)
+        setDuplicateDismissed(false)
+      }
+    }, 300)
+    return () => {
+      if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
+    }
+  }, [form.email, form.phone])
+
+  async function handleIdFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingId(true)
+    const formData = new FormData()
+    formData.set('file', file)
+    const result = await uploadIdDocument(formData)
+    setUploadingId(false)
+
+    if (result.success && result.data) {
+      setForm((p) => ({ ...p, idDocumentFileId: result.data!.id }))
+      setIdDocumentName(result.data.originalName)
+    } else {
+      setError(result.message ?? 'ID document upload failed')
+      e.target.value = ''
+    }
+  }
 
   async function handleSubmit() {
     if (!form.firstName.trim()) {
@@ -4817,6 +4882,12 @@ function NewCustomerModal({
       // Fixed, not user-selectable — a walk-in customer always starts active.
       status: 'active',
       note: form.notes.trim() || undefined,
+      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
+      idType: form.idType || undefined,
+      idNumber: form.idNumber || undefined,
+      idDocumentFileId: form.idDocumentFileId || undefined,
+      consentGiven: form.consentGiven,
+      consentGivenAt: form.consentGiven ? new Date() : undefined,
     })
     setSubmitting(false)
     if (!res.success || !res.data) {
@@ -4831,49 +4902,237 @@ function NewCustomerModal({
     <Overlay onClose={onClose} width="2xl">
       <h2 className="mb-4 text-lg font-bold text-gray-900">New Customer</h2>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
-          <input
-            autoFocus
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.firstName}
-            onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
+      <div className="max-h-[78vh] space-y-3 overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
+            <input
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.firstName}
+              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.lastName}
+              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
+            <PhoneInput
+              value={form.phone}
+              defaultCountry="PH"
+              international
+              countryCallingCodeEditable={false}
+              onChange={(v) => setForm((p) => ({ ...p, phone: v ?? '' }))}
+              numberInputProps={{ className: 'phone-input-field' }}
+              className="ph-phone-input"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
+            <input
+              type="email"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.email}
+              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+            />
+          </div>
         </div>
+
+        {duplicateWarning?.duplicate && !duplicateDismissed && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              A customer named{' '}
+              <span className="font-medium">{duplicateWarning.customer?.name}</span> already has
+              this {duplicateWarning.matchedField}. You can still create this profile if it&apos;s a
+              different person.
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateDismissed(true)}
+              className="shrink-0 text-amber-600 hover:text-amber-800"
+              aria-label="Dismiss duplicate warning"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        <CustomerExtraFields
+          values={form}
+          onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
+        />
+
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
-          <input
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.lastName}
-            onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-          />
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-semibold text-gray-600">
+              Co-maker (guarantor)
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                setForm((p) => ({
+                  ...p,
+                  coMakers: [
+                    ...p.coMakers,
+                    { name: '', relationship: '', contactNumber: '', email: '' },
+                  ],
+                }))
+              }
+              className="flex items-center gap-1 text-[12px] font-medium text-purple-700 hover:text-purple-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add co-maker
+            </button>
+          </div>
+          <div className="mt-2 space-y-3">
+            {form.coMakers.map((cm, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
+              >
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
+                  <input
+                    value={cm.name}
+                    maxLength={255}
+                    placeholder="e.g. Juan Dela Cruz"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], name: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Relationship
+                  </label>
+                  <input
+                    value={cm.relationship}
+                    maxLength={100}
+                    placeholder="e.g. Spouse"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], relationship: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Contact number
+                  </label>
+                  <input
+                    value={cm.contactNumber}
+                    maxLength={50}
+                    placeholder="e.g. 0917 000 1111"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], contactNumber: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
+                  <input
+                    value={cm.email ?? ''}
+                    maxLength={255}
+                    type="email"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], email: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((p) => ({
+                      ...p,
+                      coMakers: p.coMakers.filter((_, i) => i !== idx),
+                    }))
+                  }
+                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Remove co-maker"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
+
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
-          <input
-            type="tel"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            placeholder="09XX XXX XXXX"
-            value={form.phone}
-            onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
-          <input
-            type="email"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.email}
-            onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-          />
-        </div>
-        <div className="col-span-2">
-          <CustomerExtraFields
-            values={form}
-            onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
-          />
+          <label className="block text-xs font-semibold text-gray-600">
+            ID & Consent <span className="font-normal text-gray-400">(optional)</span>
+          </label>
+          <div className="mt-2 grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
+              <select
+                value={form.idType}
+                onChange={(e) => setForm((p) => ({ ...p, idType: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+              >
+                <option value="">Select ID type</option>
+                {ID_TYPE_OPTIONS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
+              <input
+                value={form.idNumber}
+                maxLength={100}
+                onChange={(e) => setForm((p) => ({ ...p, idNumber: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="block text-[12px] font-medium text-gray-600">ID Document</label>
+            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-500">
+              <Paperclip className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {uploadingId ? 'Uploading…' : (idDocumentName ?? 'Attach a scanned ID')}
+              </span>
+              <input
+                type="file"
+                className="hidden"
+                disabled={uploadingId}
+                onChange={handleIdFileChange}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex items-start gap-2">
+            <input
+              id="pos-new-customer-consent"
+              type="checkbox"
+              checked={form.consentGiven}
+              onChange={(e) => setForm((p) => ({ ...p, consentGiven: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300"
+            />
+            <label htmlFor="pos-new-customer-consent" className="text-[13px] text-gray-700">
+              Customer has given consent to store their ID information on file.
+            </label>
+          </div>
         </div>
       </div>
       <div className="mt-5 flex justify-end gap-3">
