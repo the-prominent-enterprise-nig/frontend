@@ -321,6 +321,20 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos', '/pos/checkout', '/pos/transactions'],
       },
       {
+        label: 'Credit Applications',
+        href: '/pos/credit-applications',
+        icon: CreditCard,
+        // credit:application:view, not a pos: permission — a Credit
+        // Investigator holds this with zero pos:* permissions, and still
+        // needs their own way into this page (see filterItem below, which
+        // checks each item's own requiredPermission independently).
+        requiredPermission: 'credit:application:view',
+        // Has a real [id] detail route (unlike its sibling items here,
+        // which are all single-page-with-modals) — without this, viewing
+        // an application's detail page wouldn't highlight this as active.
+        usePrefix: true,
+      },
+      {
         label: 'Management',
         href: '/pos/sessions',
         icon: Monitor,

@@ -19,26 +19,35 @@ Cashier PIN (for cashier-PIN-gated actions like manager overrides/approvals): **
 
 ## Accounts (users)
 
-One Business Owner (no branch, sees everything) + 5 roles per branch × 3 branches = 16 accounts total.
+One Business Owner (no branch, sees everything) + 7 roles per branch × 3 branches = 22 accounts total. (This table previously only listed 5 of the 7 per-branch roles — Inventory and Master Data Approver were already seeded but undocumented; added below alongside Scenario 17's new Credit Investigator row.)
 
-| Email                             | Name             | Role               | Branch             |
-| --------------------------------- | ---------------- | ------------------ | ------------------ |
-| `technova.owner@test.com`         | Darrin Kassulke  | **Business Owner** | — (all branches)   |
-| `technova.b1.manager@test.com`    | Jasper Rempel    | Branch Manager     | Manila HQ (MNL)    |
-| `technova.b1.accounting@test.com` | Fred Murray      | Accountant         | Manila HQ (MNL)    |
-| `technova.b1.stock@test.com`      | Jenna Hahn       | Stock Controller   | Manila HQ (MNL)    |
-| `technova.b1.cashier@test.com`    | Tyrell Buckridge | Cashier            | Manila HQ (MNL)    |
-| `technova.b1.crm@test.com`        | Shelia Yost      | Marketing Manager  | Manila HQ (MNL)    |
-| `technova.b2.manager@test.com`    | Irma Daniel      | Branch Manager     | Cebu Office (CBU)  |
-| `technova.b2.accounting@test.com` | Bette Little     | Accountant         | Cebu Office (CBU)  |
-| `technova.b2.stock@test.com`      | Janis Langosh    | Stock Controller   | Cebu Office (CBU)  |
-| `technova.b2.cashier@test.com`    | Lexus Boehm      | Cashier            | Cebu Office (CBU)  |
-| `technova.b2.crm@test.com`        | Corey Torp       | Marketing Manager  | Cebu Office (CBU)  |
-| `technova.b3.manager@test.com`    | Malcolm Moore    | Branch Manager     | Davao Branch (DVO) |
-| `technova.b3.accounting@test.com` | Adriana Cronin   | Accountant         | Davao Branch (DVO) |
-| `technova.b3.stock@test.com`      | Emmalee Howell   | Stock Controller   | Davao Branch (DVO) |
-| `technova.b3.cashier@test.com`    | Flo Jacobi       | Cashier            | Davao Branch (DVO) |
-| `technova.b3.crm@test.com`        | Flavio Pouros    | Marketing Manager  | Davao Branch (DVO) |
+| Email                               | Name                    | Role                 | Branch             |
+| ----------------------------------- | ----------------------- | -------------------- | ------------------ |
+| `technova.owner@test.com`           | Darrin Kassulke         | **Business Owner**   | — (all branches)   |
+| `technova.b1.manager@test.com`      | Jasper Rempel           | Branch Manager       | Manila HQ (MNL)    |
+| `technova.b1.accounting@test.com`   | Fred Murray             | Accountant           | Manila HQ (MNL)    |
+| `technova.b1.stock@test.com`        | Jenna Hahn              | Stock Controller     | Manila HQ (MNL)    |
+| `technova.b1.inventory@test.com`    | Tyrell Buckridge        | Inventory            | Manila HQ (MNL)    |
+| `technova.b1.approver@test.com`     | Shelia Yost             | Master Data Approver | Manila HQ (MNL)    |
+| `technova.b1.investigator@test.com` | Alessandra Buenaventura | Credit Investigator  | Manila HQ (MNL)    |
+| `technova.b1.cashier@test.com`      | Tyrell Buckridge        | Cashier              | Manila HQ (MNL)    |
+| `technova.b1.crm@test.com`          | Shelia Yost             | Marketing Manager    | Manila HQ (MNL)    |
+| `technova.b2.manager@test.com`      | Irma Daniel             | Branch Manager       | Cebu Office (CBU)  |
+| `technova.b2.accounting@test.com`   | Bette Little            | Accountant           | Cebu Office (CBU)  |
+| `technova.b2.stock@test.com`        | Janis Langosh           | Stock Controller     | Cebu Office (CBU)  |
+| `technova.b2.inventory@test.com`    | Adriana Cronin          | Inventory            | Cebu Office (CBU)  |
+| `technova.b2.approver@test.com`     | Emmalee Howell          | Master Data Approver | Cebu Office (CBU)  |
+| `technova.b2.investigator@test.com` | Marcus Villaruel        | Credit Investigator  | Cebu Office (CBU)  |
+| `technova.b2.cashier@test.com`      | Lexus Boehm             | Cashier              | Cebu Office (CBU)  |
+| `technova.b2.crm@test.com`          | Corey Torp              | Marketing Manager    | Cebu Office (CBU)  |
+| `technova.b3.manager@test.com`      | Malcolm Moore           | Branch Manager       | Davao Branch (DVO) |
+| `technova.b3.accounting@test.com`   | Adriana Cronin          | Accountant           | Davao Branch (DVO) |
+| `technova.b3.stock@test.com`        | Emmalee Howell          | Stock Controller     | Davao Branch (DVO) |
+| `technova.b3.inventory@test.com`    | Emanuel Simonis         | Inventory            | Davao Branch (DVO) |
+| `technova.b3.approver@test.com`     | Lois Yundt              | Master Data Approver | Davao Branch (DVO) |
+| `technova.b3.investigator@test.com` | Priya Ocampo            | Credit Investigator  | Davao Branch (DVO) |
+| `technova.b3.cashier@test.com`      | Flo Jacobi              | Cashier              | Davao Branch (DVO) |
+| `technova.b3.crm@test.com`          | Flavio Pouros           | Marketing Manager    | Davao Branch (DVO) |
 
 **Business Owner bypasses every permission check** (`hasPrivilegedRole` short-circuit) — use it for anything without worrying about role gates.
 
