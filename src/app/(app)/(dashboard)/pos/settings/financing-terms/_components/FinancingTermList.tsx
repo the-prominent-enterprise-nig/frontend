@@ -1,15 +1,26 @@
 'use client'
 
 import { useState } from 'react'
-import { HandCoins, Plus, X, ChevronDown } from 'lucide-react'
+import { HandCoins, Plus, X, ChevronDown, Pencil, Trash2 } from 'lucide-react'
 import {
   useFinancingTerms,
   useCreateFinancingTerm,
   useUpdateFinancingTerm,
+  useDeleteFinancingTerm,
   useBranches,
 } from '../../../_hooks/usePos'
-import type { CreateFinancingTermInput, FinancingTerm } from '@/src/schema/pos'
+import type {
+  CreateFinancingTermInput,
+  UpdateFinancingTermInput,
+  FinancingTerm,
+} from '@/src/schema/pos'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+
+type ModalState =
+  | { type: 'none' }
+  | { type: 'create' }
+  | { type: 'edit'; term: FinancingTerm }
+  | { type: 'delete'; term: FinancingTerm }
 
 export function FinancingTermList({
   canManage,
@@ -21,8 +32,9 @@ export function FinancingTermList({
   const { data, isLoading } = useFinancingTerms()
   const createMutation = useCreateFinancingTerm()
   const updateMutation = useUpdateFinancingTerm()
+  const deleteMutation = useDeleteFinancingTerm()
 
-  const [showCreate, setShowCreate] = useState(false)
+  const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [error, setError] = useState('')
 
   const terms: FinancingTerm[] = data?.data ?? []
@@ -34,7 +46,27 @@ export function FinancingTermList({
       setError(res.error ?? 'Failed to create financing term')
       return
     }
-    setShowCreate(false)
+    setModal({ type: 'none' })
+  }
+
+  async function handleUpdate(id: string, input: UpdateFinancingTermInput) {
+    setError('')
+    const res = await updateMutation.mutateAsync({ id, input })
+    if (!res.success) {
+      setError(res.error ?? 'Failed to update financing term')
+      return
+    }
+    setModal({ type: 'none' })
+  }
+
+  async function handleDelete(id: string) {
+    setError('')
+    const res = await deleteMutation.mutateAsync(id)
+    if (!res.success) {
+      setError(res.error ?? 'Failed to delete financing term')
+      return
+    }
+    setModal({ type: 'none' })
   }
 
   async function toggleActive(term: FinancingTerm) {
@@ -62,7 +94,7 @@ export function FinancingTermList({
             <button
               onClick={() => {
                 setError('')
-                setShowCreate(true)
+                setModal({ type: 'create' })
               }}
               className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800"
             >
@@ -92,7 +124,7 @@ export function FinancingTermList({
               <p className="text-sm">No financing terms configured yet.</p>
               {canManage && (
                 <button
-                  onClick={() => setShowCreate(true)}
+                  onClick={() => setModal({ type: 'create' })}
                   className="text-sm text-purple-600 hover:underline"
                 >
                   Create the first term
@@ -149,13 +181,35 @@ export function FinancingTermList({
                     <td className="px-5 py-3 text-gray-500">{t.notes ?? '—'}</td>
                     {canManage && (
                       <td className="px-5 py-3 text-right">
-                        <button
-                          disabled={updateMutation.isPending}
-                          onClick={() => toggleActive(t)}
-                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          {t.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            disabled={updateMutation.isPending}
+                            onClick={() => toggleActive(t)}
+                            className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            {t.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setError('')
+                              setModal({ type: 'edit', term: t })
+                            }}
+                            className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                            title="Edit term"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setError('')
+                              setModal({ type: 'delete', term: t })
+                            }}
+                            className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                            title="Delete term"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -166,39 +220,68 @@ export function FinancingTermList({
         </div>
       </div>
 
-      {showCreate && (
-        <CreateFinancingTermModal
-          onClose={() => setShowCreate(false)}
-          onSubmit={handleCreate}
+      {modal.type === 'create' && (
+        <FinancingTermModal
+          title="New Financing Term"
+          error={error}
           isSubmitting={createMutation.isPending}
           restrictedBranchId={restrictedBranchId}
+          onClose={() => setModal({ type: 'none' })}
+          onSubmit={(input) => handleCreate(input as CreateFinancingTermInput)}
+        />
+      )}
+      {modal.type === 'edit' && (
+        <FinancingTermModal
+          title="Edit Financing Term"
+          initial={modal.term}
+          error={error}
+          isSubmitting={updateMutation.isPending}
+          restrictedBranchId={restrictedBranchId}
+          onClose={() => setModal({ type: 'none' })}
+          onSubmit={(input) => handleUpdate(modal.term.id, input)}
+        />
+      )}
+      {modal.type === 'delete' && (
+        <ConfirmDeleteModal
+          term={modal.term}
+          error={error}
+          isLoading={deleteMutation.isPending}
+          onClose={() => setModal({ type: 'none' })}
+          onConfirm={() => handleDelete(modal.term.id)}
         />
       )}
     </div>
   )
 }
 
-function CreateFinancingTermModal({
-  onClose,
-  onSubmit,
+function FinancingTermModal({
+  title,
+  initial,
+  error,
   isSubmitting,
   restrictedBranchId,
+  onClose,
+  onSubmit,
 }: {
-  onClose: () => void
-  onSubmit: (input: CreateFinancingTermInput) => Promise<void>
+  title: string
+  initial?: FinancingTerm
+  error: string
   isSubmitting: boolean
   restrictedBranchId: string | null
+  onClose: () => void
+  onSubmit: (input: CreateFinancingTermInput | UpdateFinancingTermInput) => Promise<void>
 }) {
+  const isEdit = !!initial
   const { data: branchesData, isLoading: branchesLoading } = useBranches()
   const branches = (branchesData?.data ?? []) as Array<{ id: string; name: string }>
   const restrictedBranchName = restrictedBranchId
     ? (branches.find((b) => b.id === restrictedBranchId)?.name ?? 'your branch')
     : null
 
-  const [branchId, setBranchId] = useState(restrictedBranchId ?? '')
-  const [termMonths, setTermMonths] = useState(12)
-  const [factorRate, setFactorRate] = useState(1.15)
-  const [notes, setNotes] = useState('')
+  const [branchId, setBranchId] = useState(initial?.branchId ?? restrictedBranchId ?? '')
+  const [termMonths, setTermMonths] = useState(initial?.termMonths ?? 12)
+  const [factorRate, setFactorRate] = useState(initial?.factorRate ?? 1.15)
+  const [notes, setNotes] = useState(initial?.notes ?? '')
 
   return (
     <>
@@ -206,9 +289,7 @@ function CreateFinancingTermModal({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
           <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-            <h2 className="text-base font-semibold text-prominent-purple-900">
-              New Financing Term
-            </h2>
+            <h2 className="text-base font-semibold text-prominent-purple-900">{title}</h2>
             <button
               onClick={onClose}
               className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -218,9 +299,22 @@ function CreateFinancingTermModal({
           </div>
 
           <div className="space-y-4 px-6 py-5">
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+            )}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">Branch</label>
-              {restrictedBranchId ? (
+              {isEdit ? (
+                <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                  {initial?.branch?.name ?? (
+                    <span className="italic text-gray-500">Tenant-wide</span>
+                  )}
+                  <span className="text-gray-400">
+                    {' '}
+                    — scope can&apos;t be changed after creation
+                  </span>
+                </p>
+              ) : restrictedBranchId ? (
                 <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
                   {restrictedBranchName}{' '}
                   <span className="text-gray-400">
@@ -308,17 +402,75 @@ function CreateFinancingTermModal({
             </button>
             <button
               onClick={() =>
-                onSubmit({
-                  branchId: branchId || undefined,
-                  termMonths,
-                  factorRate,
-                  notes: notes || undefined,
-                })
+                onSubmit(
+                  isEdit
+                    ? { termMonths, factorRate, notes: notes || undefined }
+                    : {
+                        branchId: branchId || undefined,
+                        termMonths,
+                        factorRate,
+                        notes: notes || undefined,
+                      }
+                )
               }
               disabled={isSubmitting || termMonths < 1 || factorRate <= 0}
               className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800 disabled:opacity-50"
             >
-              {isSubmitting ? 'Creating…' : 'Create Term'}
+              {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Term'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ConfirmDeleteModal({
+  term,
+  error,
+  isLoading,
+  onClose,
+  onConfirm,
+}: {
+  term: FinancingTerm
+  error: string
+  isLoading: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} />
+          </button>
+          <h2 className="mb-2 text-lg font-bold text-gray-900">Delete Financing Term</h2>
+          <p className="mb-4 text-sm text-gray-600">
+            Delete the {term.termMonths}-month term at {Number(term.factorRate).toFixed(2)}x
+            {term.branch ? ` for ${term.branch.name}` : ' (tenant-wide)'}? This can&apos;t be
+            undone. Terms already used in a sale can&apos;t be deleted — deactivate those instead.
+          </p>
+          {error && (
+            <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+          )}
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isLoading}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {isLoading ? 'Deleting…' : 'Delete'}
             </button>
           </div>
         </div>

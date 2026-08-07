@@ -11,7 +11,11 @@ import {
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 type WarehouseOption = { id: string; name: string; code: string }
 
@@ -86,6 +90,13 @@ export default function ReceiveStockModal({
 
   const [expandedSerialRows, setExpandedSerialRows] = useState<Set<string>>(new Set())
   const [serialText, setSerialText] = useState<Record<string, string>>({})
+  // Item details for whatever's been picked via live search this session —
+  // items is capped at the first 500 active items (useGoodsReceiving.ts), so
+  // a search result outside that window won't resolve through items.find().
+  // Populated via ItemSearchCombobox's onSelect, keyed by itemId.
+  const [pickedItems, setPickedItems] = useState<Record<string, { name: string } & ItemSearchMeta>>(
+    {}
+  )
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,9 +121,21 @@ export default function ReceiveStockModal({
   )
   const withheldAmount = withholding === 'pct_1' ? Math.round(totalCost * 0.01 * 100) / 100 : 0
 
+  function handleItemSelect(option: SearchComboboxOption): void {
+    const meta = option.meta as ItemSearchMeta | undefined
+    setPickedItems((prev) => ({
+      ...prev,
+      [option.id]: {
+        name: option.primary,
+        costPrice: meta?.costPrice ?? null,
+        isSerialTracked: meta?.isSerialTracked ?? false,
+      },
+    }))
+  }
+
   function handleItemChange(idx: number, itemId: string): void {
     setValue(`lines.${idx}.itemId`, itemId)
-    const item = items.find((i) => i.id === itemId)
+    const item = pickedItems[itemId] ?? items.find((i) => i.id === itemId)
     if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
     if (!item?.isSerialTracked) {
       setValue(`lines.${idx}.autoGenerateSerials`, false)
@@ -131,7 +154,10 @@ export default function ReceiveStockModal({
 
   function isLineSerialTracked(idx: number): boolean {
     const itemId = watchedLines?.[idx]?.itemId
-    return !!items.find((i) => i.id === itemId)?.isSerialTracked
+    if (!itemId) return false
+    return (
+      pickedItems[itemId]?.isSerialTracked ?? !!items.find((i) => i.id === itemId)?.isSerialTracked
+    )
   }
 
   function parseSerials(text: string): string[] {
@@ -453,7 +479,12 @@ export default function ReceiveStockModal({
                                   <ItemSearchCombobox
                                     value={f.value}
                                     onChange={(itemId) => handleItemChange(idx, itemId)}
+                                    onSelect={handleItemSelect}
                                     error={errors.lines?.[idx]?.itemId?.message}
+                                    initialLabel={
+                                      pickedItems[f.value]?.name ??
+                                      items.find((i) => i.id === f.value)?.name
+                                    }
                                   />
                                 )}
                               />

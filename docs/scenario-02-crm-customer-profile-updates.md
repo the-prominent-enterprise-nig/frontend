@@ -34,3 +34,11 @@ Source: client-provided "Core Operational Scenarios" process map, Draft 2, 27 Ju
 5. **Already covered, no gap:** the PDF's "each installment sale receives a separate Account/Contract ID" is already true — `InstallmentAccount` is a distinct model with its own unique `accountNumber`, one-to-many from `Customer`.
 
 **Status: implemented 2026-08-01.** Scope/sequencing questions resolved with the developer: (a) co-maker capture is optional profile-level capture, not gated to a financed-sale threshold; (b) duplicate detection is a soft, dismissible warning (not a hard block, matching the PDF's "flags... duplicates" language); (c) the merge-resolution UI was built now, as a full merge (reassigns every related record, not a lightweight link-only merge) — see plan doc's 2026-08-01 Implementation Log for detail.
+
+---
+
+## Update — 2026-08-07 (developer decision — descope Smart SMS from tracking)
+
+Source: developer instruction, not new client feedback. The plan doc's "Closing the gaps" item #5 ("Smart SMS — scope as a real integration project", = gap #6 in the original numbered gap list) and `scenario-checklist.md`'s Scenario 02 row both tracked "Smart SMS" as an open-but-deferred customer-profile gap. Confirmed first that there is no SMS code inside the customer profile feature itself to begin with — no `smsOptIn`/`smsConsent` field on `Customer`, no SMS UI in `NewCustomerForm.tsx`/`EditCustomerForm.tsx`/`Customer360.tsx`. The only SMS-adjacent code anywhere is unrelated to the profile: the POS checkout phone-field placeholder (`checkout/page.tsx`) and the stubbed `sendSms()` in `receipt-notification.service.ts` (POS digital receipts).
+
+**Decision:** stop tracking Smart SMS as a Scenario 02 gap — removed from `scenario-checklist.md`'s Scenario 02 sub-items. "Closing the gaps" item #6 in the plan doc ("Retargeting — connect segments to an actual send mechanism") remains open and is no longer described as depending on Smart SMS specifically; it can proceed with an email-only send mechanism, or its own SMS/email provider decision, independent of this item. No code changed — this was a scope/tracking decision only.
