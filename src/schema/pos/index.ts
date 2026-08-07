@@ -379,6 +379,17 @@ export interface PosCustomer {
   email?: string
 }
 
+// POS Collections — one row per customer with at least one outstanding
+// installment due, aggregated across all their installment schedules.
+export interface CollectionsCustomer {
+  id: string
+  name: string
+  phone: string | null
+  outstandingCount: number
+  outstandingAmount: number
+  nextDueDate: string
+}
+
 export interface CreateWalkInCustomerInput {
   firstName: string
   lastName: string
@@ -810,6 +821,9 @@ export interface InstallmentScheduleLineWithInvoice {
     totalAmount: number
     amountPaid: number
     status: string
+    /** Non-cancelled payments only — used to warn "already collected today"
+     * before the Collect modal is even opened. */
+    payments: { paymentDate: string; amount: number }[]
   }
 }
 

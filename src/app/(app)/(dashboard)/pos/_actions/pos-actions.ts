@@ -5,6 +5,7 @@ import { revalidateTag } from 'next/cache'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
+  CollectionsCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
   CashierTerminalAccess,
@@ -1080,6 +1081,23 @@ export async function previewInstallment(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function listCollectionsCustomers(
+  opts: { branchId?: string; search?: string } = {}
+): Promise<ApiResponse<CollectionsCustomer[]>> {
+  try {
+    const result = await api.get<CollectionsCustomer[]>('/pos/customers/collections', {
+      ...(opts.branchId ? { branchId: opts.branchId } : {}),
+      ...(opts.search ? { search: opts.search } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch collections customers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch collections customers' }
   }
 }
 
