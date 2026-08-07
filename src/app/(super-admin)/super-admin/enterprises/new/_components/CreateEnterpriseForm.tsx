@@ -60,6 +60,11 @@ const ALL_MODULES = [
   { code: 'inventory', label: 'Inventory', description: 'Stock management and warehousing' },
   { code: 'pos', label: 'Point of Sale', description: 'POS terminals and transactions' },
   { code: 'crm', label: 'CRM', description: 'Customer relationship management' },
+  {
+    code: 'credit',
+    label: 'Credit Applications',
+    description: 'In-house financing applications, investigation, and approval',
+  },
   { code: 'sales', label: 'Sales & Orders', description: 'Quotations and sales orders' },
   {
     code: 'project-management',
