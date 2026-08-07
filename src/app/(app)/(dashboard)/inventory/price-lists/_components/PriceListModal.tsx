@@ -15,11 +15,10 @@ import {
   type PriceUseTypeFormValues,
 } from '@/src/schema/inventory/price-use-types'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { Select } from '@/src/components/ui/Select'
 import type { Currency } from '../_actions/get-currencies'
 import type { Branch } from '../_actions/get-branches'
 import PriceUseTypeModal from '../../price-use-types/_components/PriceUseTypeModal'
-
-const NEW_PRICE_USE_TYPE = '__new__'
 
 type Props = {
   isOpen: boolean
@@ -32,7 +31,6 @@ type Props = {
   onCreatePriceUseType: (data: PriceUseTypeFormValues) => Promise<ApiResponse<unknown>>
   isCreatingPriceUseType: boolean
   initial?: PriceList
-  supersedesFrom?: PriceList
 }
 
 const fieldClass =
@@ -65,23 +63,21 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   expired: 'bg-zinc-100 text-zinc-500',
 }
 
-function toFormValues(list?: PriceList, supersedesFrom?: PriceList): PriceListFormValues {
-  const source = list ?? supersedesFrom
-  if (!source) return EMPTY_VALUES
+function toFormValues(list?: PriceList): PriceListFormValues {
+  if (!list) return EMPTY_VALUES
   return {
-    name: list ? source.name : `${source.name} (new version)`,
-    priceUseTypeId: source.priceUseTypeId,
-    description: source.description ?? '',
-    currency: source.currency,
+    name: list.name,
+    priceUseTypeId: list.priceUseTypeId,
+    description: list.description ?? '',
+    currency: list.currency,
     // A date <input> must never see `value=undefined` after mounting with a
     // real value (or vice versa) — that's what flips it from uncontrolled to
     // controlled and trips React's warning. '' is the "no date" sentinel for
     // the whole form; handleFormSubmit converts it back to undefined for the API.
-    effectiveFrom: source.effectiveFrom?.slice(0, 10) ?? '',
-    effectiveTo: source.effectiveTo?.slice(0, 10) ?? '',
-    priority: source.priority,
-    allowedBranchIds: source.allowedBranchIds ?? [],
-    supersedesId: list ? undefined : supersedesFrom?.id,
+    effectiveFrom: list.effectiveFrom?.slice(0, 10) ?? '',
+    effectiveTo: list.effectiveTo?.slice(0, 10) ?? '',
+    priority: list.priority,
+    allowedBranchIds: list.allowedBranchIds ?? [],
   }
 }
 
@@ -96,10 +92,8 @@ export default function PriceListModal({
   onCreatePriceUseType,
   isCreatingPriceUseType,
   initial,
-  supersedesFrom,
 }: Props) {
   const isEdit = Boolean(initial)
-  const isNewVersion = !isEdit && Boolean(supersedesFrom)
   const [isCreateTypeOpen, setIsCreateTypeOpen] = useState(false)
   const {
     control,
@@ -109,7 +103,7 @@ export default function PriceListModal({
     formState: { errors },
   } = useForm<PriceListFormValues>({
     resolver: zodResolver(PriceListFormSchema),
-    defaultValues: toFormValues(initial, supersedesFrom),
+    defaultValues: toFormValues(initial),
   })
   // Mirrors the Priority field's raw typed text — kept separate from the
   // committed number so the input can sit visually empty mid-edit (e.g.
@@ -118,10 +112,10 @@ export default function PriceListModal({
   const [priorityText, setPriorityText] = useState(String(EMPTY_VALUES.priority))
 
   useEffect(() => {
-    const values = isOpen ? toFormValues(initial, supersedesFrom) : EMPTY_VALUES
+    const values = isOpen ? toFormValues(initial) : EMPTY_VALUES
     reset(values)
     setPriorityText(String(values.priority))
-  }, [isOpen, initial, supersedesFrom, reset])
+  }, [isOpen, initial, reset])
 
   if (!isOpen) return null
 
@@ -152,14 +146,12 @@ export default function PriceListModal({
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">
-              {isEdit ? 'Edit Price List' : isNewVersion ? 'New Version' : 'New Price List'}
+              {isEdit ? 'Edit Price List' : 'New Price List'}
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               {isEdit
                 ? 'Update this pricing tier.'
-                : isNewVersion
-                  ? 'Create a new version to replace an active list.'
-                  : 'Create a new pricing tier for your inventory items.'}
+                : 'Create a new pricing tier for your inventory items.'}
             </p>
           </div>
           <button
@@ -173,13 +165,6 @@ export default function PriceListModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {isNewVersion && supersedesFrom && (
-              <div className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-2 text-xs text-prominent-purple-800">
-                This will supersede <strong>{supersedesFrom.name}</strong> once approved — that
-                version will auto-expire.
-              </div>
-            )}
-
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Name <span className="text-red-500">*</span>
@@ -208,25 +193,16 @@ export default function PriceListModal({
                   name="priceUseTypeId"
                   control={control}
                   render={({ field }) => (
-                    <select
-                      {...field}
-                      className={`${fieldClass} bg-white`}
-                      onChange={(e) => {
-                        if (e.target.value === NEW_PRICE_USE_TYPE) {
-                          setIsCreateTypeOpen(true)
-                          return
-                        }
-                        field.onChange(e)
+                    <Select
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select price use type…"
+                      options={priceUseTypes.map((t) => ({ value: t.id, label: t.name }))}
+                      extraAction={{
+                        label: 'Add new price use type…',
+                        onClick: () => setIsCreateTypeOpen(true),
                       }}
-                    >
-                      <option value="">Select price use type…</option>
-                      {priceUseTypes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                      <option value={NEW_PRICE_USE_TYPE}>+ Add new price use type…</option>
-                    </select>
+                    />
                   )}
                 />
                 {errors.priceUseTypeId && (
@@ -240,14 +216,15 @@ export default function PriceListModal({
                   name="currency"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select currency…</option>
-                      {currencies.map((c) => (
-                        <option key={c.id} value={c.code}>
-                          {c.code} – {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select currency…"
+                      options={currencies.map((c) => ({
+                        value: c.code,
+                        label: `${c.code} – ${c.name}`,
+                      }))}
+                    />
                   )}
                 />
                 {errors.currency && (
@@ -302,7 +279,12 @@ export default function PriceListModal({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Priority</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Priority{' '}
+                  <span className="ml-1 text-xs font-normal text-zinc-400">
+                    (higher wins conflicts)
+                  </span>
+                </label>
                 <Controller
                   name="priority"
                   control={control}
@@ -328,6 +310,10 @@ export default function PriceListModal({
                     />
                   )}
                 />
+                <p className="mt-1 text-xs text-zinc-400">
+                  Only matters if this could clash with another price list on the same sale — the
+                  higher number wins. Leave at 0 if you&apos;re not sure.
+                </p>
                 {errors.priority && (
                   <p className="mt-1 text-xs text-red-600">{errors.priority.message}</p>
                 )}
@@ -413,13 +399,7 @@ export default function PriceListModal({
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting
-                ? 'Saving…'
-                : isEdit
-                  ? 'Save Changes'
-                  : isNewVersion
-                    ? 'Create New Version'
-                    : 'Create Price List'}
+              {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Price List'}
             </button>
           </div>
         </form>
