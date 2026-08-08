@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Trash2, ChevronDown, Layers, Palette, MoreVertical } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { Pencil, Trash2, ChevronDown, Layers, Palette } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
+import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 
 // "Group/Subgroup" classification lives on the category's own parent —
 // primaryCategory is the leaf (subgroup) when it has a parent, in which case
@@ -147,95 +147,6 @@ function LifecycleDropdown({
               {lc}
             </button>
           ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-type RowMenuItem = {
-  label: string
-  icon: ComponentType<{ className?: string }>
-  onClick: () => void
-  variant?: 'danger'
-}
-
-/**
- * Overflow menu for a row's secondary actions (view-adjacent: components/
- * variants, edit, delete). Keeps the row's primary, time-sensitive actions
- * (governance Submit/Confirm/Approve/Reject) as direct buttons while
- * collapsing everything else — same fixed-position dropdown approach as
- * LifecycleDropdown above, since the table's own overflow-x-auto container
- * would otherwise clip an absolutely-positioned menu.
- */
-function RowActionsMenu({ items }: { items: RowMenuItem[] }) {
-  const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<DropdownPos | null>(null)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function handleMouseDown(e: MouseEvent) {
-      if (btnRef.current?.contains(e.target as Node) || menuRef.current?.contains(e.target as Node))
-        return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [open])
-
-  function handleToggle() {
-    if (!btnRef.current) return
-    const rect = btnRef.current.getBoundingClientRect()
-    setPos({
-      top: rect.bottom + window.scrollY + 4,
-      right: window.innerWidth - rect.right,
-    })
-    setOpen((o) => !o)
-  }
-
-  if (items.length === 0) return null
-
-  return (
-    <div className="relative inline-block">
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={handleToggle}
-        className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-        title="More actions"
-      >
-        <MoreVertical className="h-4 w-4" />
-      </button>
-
-      {open && pos && (
-        <div
-          ref={menuRef}
-          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
-        >
-          {items.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => {
-                  item.onClick()
-                  setOpen(false)
-                }}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                  item.variant === 'danger'
-                    ? 'text-red-600 hover:bg-red-50'
-                    : 'text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {item.label}
-              </button>
-            )
-          })}
         </div>
       )}
     </div>

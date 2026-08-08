@@ -474,8 +474,13 @@ export default function CheckoutPage() {
         if (line.priceOverrideBy) return line
         const resolved = resolvedPrices[line.itemId]
         if (!resolved) {
+          // No active price list matches the newly-picked Price Use for this
+          // item — clear unitPrice back to 0 too, not just the resolved
+          // flags. Leaving the old Price Use's unitPrice in place kept the
+          // Order Summary total frozen on the stale price even though the
+          // per-line cell correctly switched to "No price — Override".
           return line.priceResolved
-            ? { ...line, priceResolved: false, priceListItemId: null }
+            ? { ...line, unitPrice: 0, priceResolved: false, priceListItemId: null }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line

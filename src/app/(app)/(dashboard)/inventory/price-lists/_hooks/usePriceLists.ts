@@ -9,6 +9,7 @@ import { updatePriceList } from '../_actions/update-price-list'
 import { approvePriceList } from '../_actions/approve-price-list'
 import { rejectPriceList } from '../_actions/reject-price-list'
 import { resubmitPriceList } from '../_actions/resubmit-price-list'
+import { deletePriceList } from '../_actions/delete-price-list'
 import { getCurrencies } from '../_actions/get-currencies'
 import { getBranches } from '../_actions/get-branches'
 import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
@@ -122,6 +123,22 @@ export function usePriceLists() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deletePriceList(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price list deleted', description: result.message, status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const createPriceUseTypeMutation = useMutation({
     mutationFn: (data: PriceUseTypeFormValues) => createPriceUseType(data),
     onSuccess: (result) => {
@@ -189,6 +206,8 @@ export function usePriceLists() {
     isRejecting: rejectMutation.isPending,
     resubmitPriceList: resubmitMutation.mutateAsync,
     isResubmitting: resubmitMutation.isPending,
+    deletePriceList: deleteMutation.mutateAsync,
+    isDeleting: deleteMutation.isPending,
     refetch: () => queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] }),
   }
 }

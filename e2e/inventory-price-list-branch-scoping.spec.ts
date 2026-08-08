@@ -5,6 +5,7 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
+  pickFromCustomSelect,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List — '
@@ -24,8 +25,7 @@ test.describe('Inventory — Price List Branch Scoping', () => {
     )
 
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await page.locator('select[name="priceUseTypeId"]').selectOption({ label: 'SSC' })
-    await page.locator('select[name="currency"]').selectOption({ value: 'PHP' })
+    await pickFromCustomSelect(page, 'Select price use type…', 'SSC')
     await page.getByLabel('Manila HQ').check()
     await page.getByRole('button', { name: 'Create Price List' }).click()
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
@@ -37,8 +37,11 @@ test.describe('Inventory — Price List Branch Scoping', () => {
     await expect(row).toContainText('Manila HQ')
     await expect(row).not.toContainText('All branches')
 
+    // Edit lives in the row's overflow menu now, not as a direct button. Not
+    // clickStable for the trigger: it toggles open/closed on every click.
+    await row.getByRole('button', { name: 'More actions' }).click()
     await clickStable(
-      row.getByRole('button', { name: 'Edit' }),
+      page.getByRole('button', { name: 'Edit' }),
       page.getByRole('heading', { name: 'Edit Price List' })
     )
     await page.getByLabel('Cebu Office').check()
