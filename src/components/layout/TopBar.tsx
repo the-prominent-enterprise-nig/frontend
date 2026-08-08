@@ -31,7 +31,11 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const navItems = MODULES.filter((mod) => hasPermission(session, mod.requiredPermission))
+  const navItems = MODULES.filter((mod) =>
+    Array.isArray(mod.requiredPermission)
+      ? mod.requiredPermission.some((p) => hasPermission(session, p))
+      : hasPermission(session, mod.requiredPermission)
+  )
 
   const showAdminDropdown =
     hasPermission(session, 'admin:roles:manage') && session?.primaryRole !== 'Business Owner'

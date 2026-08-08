@@ -15,6 +15,10 @@ type Props = {
   onClose: () => void
   priceList: PriceList | null
   canEdit: boolean
+  /** Called after a successful add/remove — refreshes the outer price-lists
+   * table's own (separately-cached) query, since an edit here can change
+   * this list's status server-side and that table shows the status badge. */
+  onItemsChanged?: () => void
 }
 
 const fieldClass =
@@ -22,12 +26,26 @@ const fieldClass =
 
 const emptyForm = { itemId: '', price: '', floorPrice: '', minQty: '' }
 
-export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props) {
+export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItemsChanged }: Props) {
   const [items, setItems] = useState<PriceListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
+  // Tracks this list's status independently of the `priceList` prop, which
+  // is a snapshot taken when the parent opened this modal and never updates
+  // afterward — without this, a second edit in the same still-open session
+  // would still think the list is 'active' even after a first edit already
+  // reverted it, showing the wrong banner/toast on that second edit.
+  // Resynced during render (not an effect) whenever a genuinely different
+  // list is opened, per React's "adjusting state when a prop changes"
+  // pattern — avoids an extra render pass and the set-state-in-effect lint.
+  const [localStatus, setLocalStatus] = useState(priceList?.status)
+  const [syncedForId, setSyncedForId] = useState(priceList?.id)
+  if (priceList?.id !== syncedForId) {
+    setSyncedForId(priceList?.id)
+    setLocalStatus(priceList?.status)
+  }
 
   const load = useCallback(async () => {
     if (!priceList) return
@@ -49,7 +67,28 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props
     onClose()
   }
 
-  async function handleAdd() {
+  // Both item actions can flip an active list back to pending_approval
+  // server-side (see revertToPendingIfActive on the backend) — surface that
+  // as its own toast rather than a generic "saved", since it means the
+  // change doesn't affect checkout until someone re-approves it.
+  function notifyIfRevertedToPending(listStatus: unknown, verb: string) {
+    if (listStatus === 'pending_approval' && localStatus === 'active') {
+      setLocalStatus('pending_approval')
+      showToast({
+        title: `Item ${verb} — list back in Pending Approval`,
+        description: 'This list was active and has stopped applying at checkout until re-approved.',
+        status: 'success',
+      })
+    } else {
+      showToast({ title: `Item ${verb}`, status: 'success' })
+    }
+  }
+
+  // `keepFormOpen` powers "Save & Add Another" — pricing a whole list is
+  // normally many items in a row, and closing the form after every single
+  // one meant reopening it (and re-searching) for each. Keeping it open just
+  // skips that round-trip; the save itself is identical either way.
+  async function handleAdd(keepFormOpen: boolean) {
     if (!form.itemId || form.price === '') return
     setIsSaving(true)
     const res = await upsertPriceListItem(priceList!.id, {
@@ -60,10 +99,12 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props
     })
     setIsSaving(false)
     if (res.success) {
-      showToast({ title: 'Item saved', status: 'success' })
+      const data = res.data as { listStatus?: string } | undefined
+      notifyIfRevertedToPending(data?.listStatus, 'saved')
       setForm(emptyForm)
-      setShowAddForm(false)
+      setShowAddForm(keepFormOpen)
       await load()
+      onItemsChanged?.()
     } else {
       showToast({
         title: 'Failed to save item',
@@ -77,8 +118,10 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props
     if (!confirm(`Remove ${item.item.name} from this price list?`)) return
     const res = await removePriceListItem(priceList!.id, item.itemId)
     if (res.success) {
-      showToast({ title: 'Item removed', status: 'success' })
+      const data = res.data as { listStatus?: string } | undefined
+      notifyIfRevertedToPending(data?.listStatus, 'removed')
       await load()
+      onItemsChanged?.()
     } else {
       showToast({
         title: 'Failed to remove',
@@ -110,6 +153,13 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
               This list is {priceList.status.replace('_', ' ')} — items are read-only. Create a new
               version to make changes.
+            </div>
+          )}
+          {canEdit && localStatus === 'active' && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-800">
+              This list is currently active. Saving a change here moves the whole list back to
+              Pending Approval — it stops applying at checkout entirely (not just this item) until
+              someone re-approves it.
             </div>
           )}
 
@@ -194,7 +244,16 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit }: Props
                 </button>
                 <button
                   type="button"
-                  onClick={handleAdd}
+                  onClick={() => handleAdd(true)}
+                  disabled={isSaving || !form.itemId || form.price === ''}
+                  className="flex items-center gap-1.5 rounded-lg border border-prominent-purple-200 px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+                >
+                  {isSaving && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Save & Add Another
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAdd(false)}
                   disabled={isSaving || !form.itemId || form.price === ''}
                   className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
                 >

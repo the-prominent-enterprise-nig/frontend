@@ -31,6 +31,8 @@ import {
   Building2,
   LayoutGrid,
   List,
+  Printer,
+  FileSignature,
   Trash2,
   Paperclip,
 } from 'lucide-react'
@@ -95,6 +97,11 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
+import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
+import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
+import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution } from './_hooks/usePriceResolution'
@@ -282,6 +289,9 @@ export default function CheckoutPage() {
   // sale would otherwise need to ask someone else for (Business Owner or
   // Branch Manager) — drives the serial-sale banner below.
   const [canOverride, setCanOverride] = useState(false)
+  // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
+  // signed (Cashier-level, cascades to Branch Manager/Business Owner).
+  const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
   useEffect(() => {
     getSessionOrNull().then((s) => {
       if (!s) {
@@ -301,6 +311,7 @@ export default function CheckoutPage() {
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
+      setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
   }, [router])
 
@@ -422,6 +433,14 @@ export default function CheckoutPage() {
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
+  // Scenario 17 Part 6 — every installment sale requires an approved,
+  // not-yet-used CreditApplication for the selected customer.
+  const [approvedCreditApplications, setApprovedCreditApplications] = useState<
+    { id: string; applicationNumber: string; requestedAmount: number }[]
+  >([])
+  const [creditApplicationId, setCreditApplicationId] = useState('')
+  const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
+
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
   const [parkLabel, setParkLabel] = useState('')
@@ -470,8 +489,13 @@ export default function CheckoutPage() {
         if (line.priceOverrideBy) return line
         const resolved = resolvedPrices[line.itemId]
         if (!resolved) {
+          // No active price list matches the newly-picked Price Use for this
+          // item — clear unitPrice back to 0 too, not just the resolved
+          // flags. Leaving the old Price Use's unitPrice in place kept the
+          // Order Summary total frozen on the stale price even though the
+          // per-line cell correctly switched to "No price — Override".
           return line.priceResolved
-            ? { ...line, priceResolved: false, priceListItemId: null }
+            ? { ...line, unitPrice: 0, priceResolved: false, priceListItemId: null }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
@@ -513,6 +537,9 @@ export default function CheckoutPage() {
     releaseFormRequestId: string
     totalAmount: number
     serialLines: { itemName: string; serialNumberLabel?: string }[]
+    /** Scenario 17 Part 7 — set only for installment sales, so
+     * PendingApprovalScreen knows whether to show the Promissory Note card. */
+    creditApplicationId?: string
   } | null>(null)
 
   // Reserve mode success (Scenario 03, Part 3) — separate from `success`
@@ -975,6 +1002,36 @@ export default function CheckoutPage() {
         `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}`
     )
     .join('|')
+
+  // Scenario 17 Part 6 — reload this customer's approved, unused credit
+  // applications whenever the customer or cart's installment-line count
+  // changes; a stale selection from a previously-selected customer must
+  // never carry over. One credit application covers every installment line
+  // in the cart (the backend gate runs once per transaction, not per line).
+  useEffect(() => {
+    setCreditApplicationId('')
+    if (installmentCartLines.length === 0 || !selectedCustomer) {
+      setApprovedCreditApplications([])
+      return
+    }
+    setCreditApplicationsLoading(true)
+    getCreditApplications({
+      status: 'approved',
+      applicantCustomerId: selectedCustomer.id,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        setApprovedCreditApplications(
+          (res.data?.data ?? []).map((a) => ({
+            id: a.id,
+            applicationNumber: a.applicationNumber,
+            requestedAmount: a.requestedAmount,
+          }))
+        )
+      })
+      .finally(() => setCreditApplicationsLoading(false))
+  }, [installmentCartLines.length, selectedCustomer])
 
   useEffect(() => {
     for (const line of installmentCartLines) {
@@ -1455,6 +1512,12 @@ export default function CheckoutPage() {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
+    if (installmentCartLines.length > 0 && !creditApplicationId) {
+      setError(
+        'Select the approved credit application for this customer — every installment sale requires one.'
+      )
+      return
+    }
     for (const l of installmentCartLines) {
       const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
@@ -1554,6 +1617,7 @@ export default function CheckoutPage() {
           // never needs to apply here.
           priceUseTypeId: priceUseTypeId || undefined,
           chargeDueDays: chargeCartLines.length > 0 ? chargeDueDays : undefined,
+          creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1673,7 +1737,12 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
+          setPendingApproval({
+            releaseFormRequestId,
+            totalAmount,
+            serialLines: displayLines,
+            creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
+          })
           return
         }
 
@@ -1993,6 +2062,8 @@ export default function CheckoutPage() {
         releaseFormRequestId={pendingApproval.releaseFormRequestId}
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
+        creditApplicationId={pendingApproval.creditApplicationId}
+        canSignPromissoryNote={canSignPromissoryNote}
         onReset={resetSale}
         fmt={fmt}
       />
@@ -3104,6 +3175,47 @@ export default function CheckoutPage() {
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
+                    {selectedCustomer && (
+                      <div className="mt-2.5">
+                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                          Approved Credit Application
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={creditApplicationId}
+                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            disabled={creditApplicationsLoading}
+                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                          >
+                            <option value="">
+                              {creditApplicationsLoading
+                                ? 'Loading…'
+                                : approvedCreditApplications.length === 0
+                                  ? 'No approved application on file'
+                                  : 'Select an approved application…'}
+                            </option>
+                            {approvedCreditApplications.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.applicationNumber} · ₱
+                                {a.requestedAmount.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                          />
+                        </div>
+                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
+                          <p className="mt-1 text-[11px] text-amber-700">
+                            Every installment sale requires an approved credit application — open
+                            one in Credit Applications first.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3331,6 +3443,8 @@ export default function CheckoutPage() {
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
               const anyInstallmentMissingTerm = installmentCartLines.some((l) => !l.financingTermId)
+              const installmentMissingCreditApplication =
+                installmentCartLines.length > 0 && !creditApplicationId
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
               const priceUseInvalid =
@@ -3346,6 +3460,7 @@ export default function CheckoutPage() {
                 (saleMode === 'sale' &&
                   ((hasChargeOrInstallmentLine && !selectedCustomer) ||
                     anyInstallmentMissingTerm ||
+                    installmentMissingCreditApplication ||
                     balance > 0.009 ||
                     loyaltyOverBalance ||
                     (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
@@ -3367,25 +3482,27 @@ export default function CheckoutPage() {
                           ? 'Select a customer for this cart'
                           : saleMode === 'sale' && anyInstallmentMissingTerm
                             ? 'Select a financing term for every installment item'
-                            : saleMode === 'sale' &&
-                                !hasChargeOrInstallmentLine &&
-                                !selectedCustomer
-                              ? 'Select a customer'
-                              : saleMode === 'sale' && balance > 0.009
-                                ? `Underpaid by ${fmt(balance)}`
-                                : saleMode === 'sale' && loyaltyOverBalance
-                                  ? 'Insufficient loyalty points'
-                                  : needsManagerOverride && !managerOverrideApproved
-                                    ? 'Manager override required'
-                                    : cart.some((l) => l.isSerialTracked)
-                                      ? `Submit for Approval — ${fmt(totalAmount)}`
-                                      : saleMode === 'reserve'
-                                        ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                        : allCharge
-                                          ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                          : allInstallment
-                                            ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                            : `Confirm Sale — ${fmt(totalAmount)}`
+                            : saleMode === 'sale' && installmentMissingCreditApplication
+                              ? 'Select an approved credit application'
+                              : saleMode === 'sale' &&
+                                  !hasChargeOrInstallmentLine &&
+                                  !selectedCustomer
+                                ? 'Select a customer'
+                                : saleMode === 'sale' && balance > 0.009
+                                  ? `Underpaid by ${fmt(balance)}`
+                                  : saleMode === 'sale' && loyaltyOverBalance
+                                    ? 'Insufficient loyalty points'
+                                    : needsManagerOverride && !managerOverrideApproved
+                                      ? 'Manager override required'
+                                      : cart.some((l) => l.isSerialTracked)
+                                        ? `Submit for Approval — ${fmt(totalAmount)}`
+                                        : saleMode === 'reserve'
+                                          ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                          : allCharge
+                                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                            : allInstallment
+                                              ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                              : `Confirm Sale — ${fmt(totalAmount)}`
 
               const colorClass =
                 saleMode === 'reserve'
@@ -4489,21 +4606,107 @@ function SuccessScreen({
 
 // ─── Pending Approval Screen ───────────────────────────────────────────────────
 
+/** Reuses the same window.open + window.print() pattern as
+ * ReleaseApprovalsList.tsx::handlePrint — no server-side PDF generation,
+ * just a styled, printable HTML document opened in a new tab. */
+function handlePrintPromissoryNote(note: PromissoryNote, fmt: (n: number) => string) {
+  const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
+  const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+
+  const lineRows = note.scheduleLines
+    .map(
+      (l) =>
+        `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${fmt(l.amount)}</td></tr>`
+    )
+    .join('')
+
+  const html = `<!DOCTYPE html><html><head><title>PROMISSORY NOTE — ${note.id}</title>
+<style>
+  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
+  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+  .center{text-align:center;margin:3px 0;color:#555}
+  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
+  td{padding:3px 4px}
+  .row{display:flex;justify-content:space-between;padding:2px 0}
+  .sig{margin-top:24px}
+  .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:10px;color:#666}
+  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="banner">PROMISSORY NOTE</div>
+<p class="center" style="font-weight:bold">${note.id}</p>
+<p class="center">Generated ${generatedDate}</p>
+<hr>
+<div class="row"><span>Financing term</span><span>${note.termMonths} months</span></div>
+<div class="row"><span>Total amount</span><span>${fmt(note.totalAmount)}</span></div>
+<div class="row"><span>Down payment</span><span>${fmt(note.downPayment)}</span></div>
+<div class="row" style="font-weight:bold"><span>Amount financed</span><span>${fmt(note.amountFinanced)}</span></div>
+<div class="row" style="font-weight:bold"><span>Total payable</span><span>${fmt(note.totalPayable)}</span></div>
+<div class="row"><span>Monthly installment</span><span>${fmt(note.monthlyInstallment)}</span></div>
+<hr>
+<table><thead><tr><th>#</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lineRows}</tbody></table>
+<hr>
+<div class="row"><span>Status</span><span>${note.signedAt ? 'Signed' : 'Not yet signed'}</span></div>
+${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span></div>` : ''}
+<div class="sig">
+  <div class="sig-line">Applicant signature</div>
+  <div class="sig-line">Co-maker signature</div>
+</div>
+<p class="footer">PROMISSORY NOTE. This document represents a binding commitment to pay per the schedule above.</p>
+<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
+</body></html>`
+
+  const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+  if (w) {
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 400)
+  }
+}
+
 function PendingApprovalScreen({
   releaseFormRequestId,
   totalAmount,
   serialLines,
+  creditApplicationId,
+  canSignPromissoryNote,
   onReset,
   fmt,
 }: {
   releaseFormRequestId: string
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
+  creditApplicationId?: string
+  canSignPromissoryNote: boolean
   onReset: () => void
   fmt: (n: number) => string
 }) {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
+
+  // Scenario 17 Part 7 — the Promissory Note(s) generated alongside this
+  // hold (installment sales only) — one per installment line, so a cart
+  // that mixed several financing terms gets several notes here. Cashier
+  // prints each for the applicant/co-maker to sign, then marks the whole
+  // set signed at once — release stays blocked until every note is signed.
+  const [promissoryNotes, setPromissoryNotes] = useState<PromissoryNote[]>([])
+  const [pnLoading, setPnLoading] = useState(!!creditApplicationId)
+  const [signing, setSigning] = useState(false)
+  const [signError, setSignError] = useState('')
+
+  useEffect(() => {
+    // creditApplicationId is fixed for the lifetime of this screen (set once
+    // from the checkout submit response), so the initial pnLoading state
+    // above already covers it — no need to set it true again here.
+    if (!creditApplicationId) return
+    getPromissoryNote(creditApplicationId).then((res) => {
+      setPnLoading(false)
+      if (res.success && res.data) setPromissoryNotes(res.data)
+    })
+  }, [creditApplicationId])
 
   async function handleCancelRequest() {
     setCancelling(true)
@@ -4515,6 +4718,19 @@ function PendingApprovalScreen({
       return
     }
     onReset()
+  }
+
+  async function handleSignPromissoryNote() {
+    if (!creditApplicationId) return
+    setSigning(true)
+    setSignError('')
+    const res = await signPromissoryNote(creditApplicationId)
+    setSigning(false)
+    if (!res.success || !res.data) {
+      setSignError(res.error ?? 'Failed to sign promissory note.')
+      return
+    }
+    setPromissoryNotes(res.data)
   }
 
   return (
@@ -4544,6 +4760,71 @@ function PendingApprovalScreen({
             <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
           </div>
         </div>
+
+        {creditApplicationId && (
+          <div className="w-full space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 px-5 py-4 text-left">
+            <div className="flex items-center gap-2">
+              <FileSignature size={15} className="text-purple-700" />
+              <p className="text-sm font-semibold text-gray-800">
+                Promissory Note{promissoryNotes.length > 1 ? 's' : ''}
+              </p>
+            </div>
+            {pnLoading ? (
+              <Skeleton className="h-8 w-full" />
+            ) : promissoryNotes.length === 0 ? (
+              <p className="text-xs text-gray-500">Not available yet.</p>
+            ) : (
+              <>
+                {(() => {
+                  const unsigned = promissoryNotes.filter((n) => !n.signedAt)
+                  return (
+                    <p className="text-xs text-gray-600">
+                      {unsigned.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 font-medium text-green-700">
+                          <CheckCircle2 size={12} /> Signed
+                        </span>
+                      ) : (
+                        'Print for the applicant and co-maker to sign, then mark it signed below — release is blocked until then.'
+                      )}
+                    </p>
+                  )
+                })()}
+                <div className="space-y-1.5">
+                  {promissoryNotes.map((note, i) => (
+                    <div key={note.id} className="flex items-center justify-between gap-2">
+                      {promissoryNotes.length > 1 && (
+                        <span className="shrink-0 text-[11px] text-gray-500">
+                          Line {i + 1}
+                          {note.signedAt && (
+                            <CheckCircle2 size={11} className="ml-1 inline text-green-700" />
+                          )}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handlePrintPromissoryNote(note, fmt)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        <Printer size={13} /> Print
+                      </button>
+                    </div>
+                  ))}
+                  {promissoryNotes.some((n) => !n.signedAt) && canSignPromissoryNote && (
+                    <button
+                      type="button"
+                      onClick={handleSignPromissoryNote}
+                      disabled={signing}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                    >
+                      {signing ? 'Signing…' : 'Mark as Signed'}
+                    </button>
+                  )}
+                </div>
+                {signError && <p className="text-xs text-red-600">{signError}</p>}
+              </>
+            )}
+          </div>
+        )}
 
         <p className="break-all font-mono text-[10px] text-gray-400">Ref: {releaseFormRequestId}</p>
 

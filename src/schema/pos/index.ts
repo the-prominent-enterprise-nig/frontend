@@ -251,6 +251,9 @@ export interface CreateTransactionInput {
   chargeDueDays?: number
   /** installment invoices only */
   financingTermId?: string
+  /** Scenario 17 Part 6 — installment invoices only, required. The
+   * customer's approved, not-yet-used CreditApplication this sale fulfills. */
+  creditApplicationId?: string
   /** installment invoices only — amount collected up front. Defaults to 0. */
   downPayment?: number
   customerId?: string
@@ -953,6 +956,12 @@ export interface PosReleaseFormCartLine {
   serialNumberId?: string
   serialNumberLabel?: string
   serialNumber?: string
+  /** Per-line payment mode (2026-08-06) — falls back to the cart snapshot's
+   * own invoiceType when a line omits it, same as the backend's
+   * lineInvoiceType resolution. */
+  invoiceType?: PosInvoiceType
+  financingTermId?: string
+  downPayment?: number
 }
 
 export interface PosReleaseFormCartSnapshot {
@@ -969,6 +978,7 @@ export interface PosReleaseFormCartSnapshot {
   invoiceType?: PosInvoiceType
   financingTermId?: string
   downPayment?: number
+  creditApplicationId?: string
 }
 
 export interface PosReleaseFormRequest {
@@ -1001,6 +1011,26 @@ export interface PosReleaseFormRequest {
   /** Live-computed credit/terms concerns for a charge sale (COD terms, over
    * Net-N days, over credit limit) — advisory only, empty for cash sales. */
   creditWarnings?: string[]
+  /** Scenario 17 Part 7 — generated for installment sales only; empty for
+   * plain RFD/charge requests. Per-line financing (2026-08-06) means one
+   * note per installment line, not one per request. Release is blocked in
+   * approve() until every note's signedAt is set. */
+  promissoryNotes?: {
+    id: string
+    creditApplicationId: string
+    lineIndex: number
+    termMonths: number
+    factorRate: number
+    totalAmount: number
+    downPayment: number
+    amountFinanced: number
+    totalPayable: number
+    monthlyInstallment: number
+    scheduleLines: { lineNumber: number; dueDate: string; amount: number }[]
+    generatedAt: string
+    signedAt?: string | null
+    signedById?: string | null
+  }[]
 }
 
 export interface ReleaseFormStatusResult {

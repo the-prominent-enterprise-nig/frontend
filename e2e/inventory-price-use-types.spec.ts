@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, loginAs, sweepE2EPriceUseTypes } from './utils'
+import {
+  gotoReady,
+  clickStable,
+  fillStable,
+  loginAs,
+  sweepE2EPriceUseTypes,
+  openCustomSelect,
+} from './utils'
 
 const NAME_PREFIX = 'E2E Price Use Type — '
 
@@ -96,11 +103,12 @@ test.describe('Inventory — Price Use Types', () => {
       page.getByRole('heading', { name: 'New Price List' })
     )
     // The dropdown's own async fetch can still be in flight right after the
-    // modal's heading appears — poll for the option instead of taking a
-    // one-shot snapshot of allTextContents().
-    await expect(
-      page.locator('select[name="priceUseTypeId"] option', { hasText: name })
-    ).toHaveCount(1, { timeout: 10_000 })
+    // modal's heading appears — open it and poll for the option instead of
+    // taking a one-shot snapshot.
+    await openCustomSelect(page.getByRole('combobox', { name: 'Select price use type…' }))
+    await expect(page.getByRole('option', { name, exact: true })).toHaveCount(1, {
+      timeout: 10_000,
+    })
   })
 
   test('creates a price use type inline from the price list form, without losing what was already typed', async ({
@@ -117,9 +125,8 @@ test.describe('Inventory — Price Use Types', () => {
     )
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), listName)
 
-    await page
-      .locator('select[name="priceUseTypeId"]')
-      .selectOption({ label: '+ Add new price use type…' })
+    await openCustomSelect(page.getByRole('combobox', { name: 'Select price use type…' }))
+    await page.getByRole('button', { name: 'Add new price use type…' }).click()
     await expect(page.getByRole('heading', { name: 'New Price Use Type' })).toBeVisible({
       timeout: 10_000,
     })
@@ -132,14 +139,11 @@ test.describe('Inventory — Price Use Types', () => {
 
     // Back on the New Price List modal: the name typed earlier survived, and
     // the dropdown now shows the type just created as selected — not reset
-    // to the empty placeholder.
+    // to the empty placeholder. The combobox's accessible name IS its
+    // current selection, so this alone proves both.
     await expect(page.getByRole('heading', { name: 'New Price List' })).toBeVisible()
     await expect(page.getByPlaceholder('e.g. Retail Standard 2026')).toHaveValue(listName)
-    const newTypeId = await page
-      .locator('select[name="priceUseTypeId"] option', { hasText: typeName })
-      .getAttribute('value')
-    expect(newTypeId).toBeTruthy()
-    await expect(page.locator('select[name="priceUseTypeId"]')).toHaveValue(newTypeId ?? '')
+    await expect(page.getByRole('combobox', { name: typeName, exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Create Price List' }).click()
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({

@@ -4,7 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { ReceiveTransferFormSchema } from '@/src/schema/inventory/transfers'
 
-export async function receiveTransfer(id: string, input: unknown): Promise<ApiResponse<void>> {
+export async function receiveTransfer(
+  id: string,
+  input: unknown
+): Promise<ApiResponse<{ status: string }>> {
   if (!id) {
     return { success: false, error: 'Invalid transfer ID', message: 'Transfer ID is required' }
   }
@@ -18,7 +21,21 @@ export async function receiveTransfer(id: string, input: unknown): Promise<ApiRe
     }
   }
 
-  const result = await api.patch(`/inventory/transfers/${id}/receive`, parsed.data)
+  const body = {
+    receivedDate: parsed.data.receivedDate,
+    notes: parsed.data.notes,
+    lines: parsed.data.lines.map((line) => ({
+      stockTransferLineId: line.stockTransferLineId,
+      quantityReceived: line.quantityReceived,
+    })),
+    extraLines: parsed.data.extraLines?.map((line) => ({
+      itemId: line.itemId,
+      quantity: line.quantity,
+      notes: line.notes || undefined,
+    })),
+  }
+
+  const result = await api.patch<{ status: string }>(`/inventory/transfers/${id}/receive`, body)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -33,5 +50,10 @@ export async function receiveTransfer(id: string, input: unknown): Promise<ApiRe
 
   revalidatePath('/inventory/transfers')
 
-  return { success: true, message: 'Transfer received — stock added to destination warehouse' }
+  const message =
+    result.data?.status === 'partially_received'
+      ? 'Transfer partially received — discrepancy recorded, stock added only for received quantities'
+      : 'Transfer received — stock added to destination warehouse'
+
+  return { success: true, data: { status: result.data?.status ?? 'received' }, message }
 }
