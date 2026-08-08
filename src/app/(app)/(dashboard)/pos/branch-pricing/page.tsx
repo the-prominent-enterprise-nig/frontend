@@ -17,6 +17,8 @@ import type {
 } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 interface LookupItem {
   id: string
@@ -46,6 +48,7 @@ type ModalState =
   | { type: 'delete'; record: BranchPricing }
 
 export default function BranchPricingPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.BRANCH_PRICING_READ)
   const { branchId } = usePosBranchContext()
   const { data, isLoading, isFetching, refetch } = useBranchPricing(branchId ?? undefined)
   const createMutation = useCreateBranchPricing()
@@ -66,6 +69,8 @@ export default function BranchPricingPage() {
       setItemMap(map)
     })
   }, [])
+
+  if (status !== 'authorized' || !session) return null
 
   const records: BranchPricing[] = data?.data ?? []
 

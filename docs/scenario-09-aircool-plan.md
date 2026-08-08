@@ -11,6 +11,8 @@ Source: `module-scenarios.md`, scenario "Aircool — aircon sale plus installati
 
 **Not found in Sprint 3-5:** No ticket for step 1's "installation service" as its own sellable item type, and none for step 4 (technician records actual vs. estimated materials — the work-order/job-execution layer this doc's Closing Gap 4 calls "the biggest net-new piece"). Worth raising as new tickets given they're the two steps with no code either.
 
+**Also not found:** no ticket for Closing Gap 6 below (service type at job creation) — developer-defined, 2026-08-08, from a direct meeting comment plus NIG's own "Services Offered" rate card (provided directly, not from a ClickUp ticket or either client PDF).
+
 ## The scenario we're building toward
 
 A customer buys a split-type aircon and needs it installed:
@@ -20,6 +22,7 @@ A customer buys a split-type aircon and needs it installed:
 3. Source materials from warehouse; if short, raise PR→PO to an area supplier (estimates carried on PO).
 4. Technician installs, records actual vs. estimate.
 5. Unused materials return to inventory; finalize/bill aircon + service + materials together; close the draft.
+6. At job creation, the job is tagged with one or more **types of service** from NIG's actual service catalog (General Cleaning, Replacement of Minor/Major Electrical Part(s), Repair Leakage/Recharging, Compressor Replacement + Recharging, Relocation — each with specific sub-items), each carrying its own quoted labor amount — not a single free-text title.
 
 ## What's already done ✅
 
@@ -36,6 +39,7 @@ A customer buys a split-type aircon and needs it installed:
 3. **No linkage from a job/service-draft to a PR/PO**, and PR/PO quantities aren't tied to any install-estimate concept.
 4. **No technician/work-order/job-order concept — MISSING entirely.** No actual-vs-estimated-materials tracking anywhere in schema, backend, or frontend.
 5. **No job-linked material return to inventory.** Only `ReturnRefundRequest` (`schema.prisma:1813`) exists, and it's for customer sales returns, not warehouse-bound unused-material returns from an install job. No stock-issuance/requisition model tied to a job exists either.
+6. **No "type of service" concept at job creation — MISSING entirely, added to scope 2026-08-08.** `ServiceDraft` has `title` (free text), `status`, `notes`, `technicianName` — nothing structured categorizing what kind of job this is. The create form (`ServiceJobFormModal.tsx:264-315`) only collects Branch/Title/Customer/Notes before the Estimated Materials array; there's no service-type picker anywhere. Confirmed with the developer: pricing is a manual quote per job, not a fixed price per service type, and a job can carry more than one service type at once (e.g. General Cleaning + Replacement of Capacitor in the same visit) — so this can't be a single field, it needs to be a repeatable list, structurally similar to how `ServiceDraftLine` already works for materials.
 
 ## Closing the gaps
 
@@ -65,6 +69,25 @@ This is a genuinely new, fairly large feature (job/work-order management layered
 
 **Problem**: no stock-issuance/requisition-return model tied to a job.
 **Fix**: on `ServiceDraft` completion, diff `estimatedQty` vs `actualQty` per line; anything issued-but-unused gets a stock-ledger entry returning it to the warehouse (reuse the existing stock-ledger write pattern from `stock.service.ts`, don't invent a new one). Finalizing bills the aircon + service line + actual materials together as one `PosTransaction`, closing the `ServiceDraft`.
+
+### 6. Add "type of service" at job creation, from NIG's real service catalog
+
+**Problem**: no structured way to say what kind of job this is; `title` is free text only.
+
+**NIG's actual service catalog** (developer-provided 2026-08-08, "Services Offered"), 6 categories with fixed sub-items each:
+
+| Category                                                                    | Sub-items                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General Cleaning                                                            | Window Type; Split Type — Wall/Floor/Ceiling Mounted; Split Type — Ceiling Cassette; FCU; Check-up (Window & Split Type)                                                    |
+| Replacement of Minor Electrical Part                                        | Capacitor; Switches; Magnetic Contactor; Temperature Sensor; Bearing; Thermostat; Relays; Thermistor; Overload Protector                                                    |
+| Replacement of Major Electrical Parts                                       | Fan Motor; Fan Blower; Fan Blade; Blower Wheel; Motor Compressor; Printed Circuit Board; Expansion Valve; Evaporator Coil; Condenser Fan; Air Filter; Condensate Drain Pump |
+| Repair Leakage, Recharging & Reprocessing the System                        | Window Type; Split Type                                                                                                                                                     |
+| Replacement of Motor Compressor, Reprocessing and Recharging of Refrigerant | Window Type; Split Type                                                                                                                                                     |
+| Relocation of Split Type Aircon                                             | Pull Out Existing Unit; Excess Piping After 10ft; Lay Out of Electrical Supply; Chipping Works                                                                              |
+
+**Fix**: add a repeatable `ServiceDraftServiceType` child model (sibling to `ServiceDraftLine`, same `serviceDraftId` FK shape) — `category`, `subType` (both matching the fixed list above, likely a seeded lookup table or enum pair rather than free text, so the list stays authoritative), and `quotedAmount` (manually entered per entry, not looked up — confirmed no fixed price list exists per category/sub-item). Surface as a new repeatable section on `ServiceJobFormModal.tsx`, above or alongside Estimated Materials.
+
+**Materials auto-suggestion** (confirmed in scope): when the sub-type picked belongs to "Replacement of Minor Electrical Part" or "Replacement of Major Electrical Parts" — i.e. it's literally named after a physical part (Capacitor, Fan Motor, Motor Compressor, etc.) — pre-fill a matching Estimated Materials line for that same-named item (cashier can still adjust or remove it). The other four categories (General Cleaning, Repair Leakage/Recharging, Compressor Replacement, Relocation) don't map to a specific part, so no auto-suggestion fires for those — just the quoted labor line.
 
 ## Dead code / unused-feature flags
 

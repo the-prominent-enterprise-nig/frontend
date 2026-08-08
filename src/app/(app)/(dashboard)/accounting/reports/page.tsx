@@ -1,13 +1,14 @@
 import { Suspense } from 'react'
-import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { requirePermission } from '@/src/libs/guards/require-permission'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import ReportsHub from './_components/ReportsHub'
 
 export const metadata = { title: 'Reports | Prominent Enterprise' }
 
 export default async function ReportsPage() {
   const session = await getSessionOrNull()
-  if (!session) redirect('/login')
+  requirePermission(session, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
   return (
     <div className="min-h-screen bg-gray-50">
       <Suspense

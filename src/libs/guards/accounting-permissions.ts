@@ -11,9 +11,15 @@ export const ACCOUNTING_PERMISSIONS = {
 
   JOURNAL_ENTRY_READ: 'accounting:journalEntry:read',
   JOURNAL_ENTRY_CREATE: 'accounting:journalEntry:create',
+  // Posting a journal entry is gated behind the same permission as editing
+  // it (accounting:journalEntry:update) — there is no separate ":post"
+  // permission row in the backend, so JOURNAL_ENTRY_POST used to point at
+  // a permission nobody could ever hold (except via a module wildcard),
+  // silently hiding the Post button from every non-wildcard role that
+  // could legitimately post, e.g. Accountant.
+  JOURNAL_ENTRY_POST: 'accounting:journalEntry:update',
   JOURNAL_ENTRY_UPDATE: 'accounting:journalEntry:update',
   JOURNAL_ENTRY_DELETE: 'accounting:journalEntry:delete',
-  JOURNAL_ENTRY_POST: 'accounting:journalEntry:post',
 
   TRANSACTION_READ: 'accounting:transaction:read',
   TRANSACTION_CREATE: 'accounting:transaction:create',
@@ -71,10 +77,80 @@ export const ACCOUNTING_PERMISSIONS = {
 
   FINANCIAL_REPORT_READ: 'accounting:financial_report:read',
 
+  AP_BILLS_READ: 'accounting:ap-bills:read',
+  AP_BILLS_CREATE: 'accounting:ap-bills:create',
+  AP_BILLS_UPDATE: 'accounting:ap-bills:update',
+  AP_BILLS_DELETE: 'accounting:ap-bills:delete',
+  AP_BILLS_RECEIVE: 'accounting:ap-bills:receive',
+  AP_BILLS_VOUCHER: 'accounting:ap-bills:voucher',
+  AP_BILLS_APPROVE: 'accounting:ap-bills:approve',
+  AP_BILLS_PAY: 'accounting:ap-bills:pay',
+
+  AP_PAYMENT_METHODS_READ: 'accounting:ap-payment-methods:read',
+  AP_PAYMENT_METHODS_CREATE: 'accounting:ap-payment-methods:create',
+  AP_PAYMENT_METHODS_UPDATE: 'accounting:ap-payment-methods:update',
+  AP_PAYMENT_METHODS_DELETE: 'accounting:ap-payment-methods:delete',
+
+  AR_INVOICES_READ: 'accounting:ar-invoices:read',
+  AR_INVOICES_CREATE: 'accounting:ar-invoices:create',
+  AR_INVOICES_UPDATE: 'accounting:ar-invoices:update',
+  AR_INVOICES_DELETE: 'accounting:ar-invoices:delete',
+  AR_INVOICES_SEND: 'accounting:ar-invoices:send',
+  AR_INVOICES_PAY: 'accounting:ar-invoices:pay',
+
+  BANK_ACCOUNTS_READ: 'accounting:bank-accounts:read',
+  BANK_ACCOUNTS_CREATE: 'accounting:bank-accounts:create',
+  BANK_ACCOUNTS_UPDATE: 'accounting:bank-accounts:update',
+  BANK_ACCOUNTS_DELETE: 'accounting:bank-accounts:delete',
+  BANK_ACCOUNTS_RECONCILE: 'accounting:bank-accounts:reconcile',
+  BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
+
+  BUDGET_READ: 'accounting:budget:read',
+  BUDGET_CREATE: 'accounting:budget:create',
+  BUDGET_UPDATE: 'accounting:budget:update',
+  BUDGET_DELETE: 'accounting:budget:delete',
+
+  CASH_FORECAST_READ: 'accounting:cash-forecast:read',
+
+  CREDIT_MEMOS_READ: 'accounting:credit-memos:read',
+  CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
+  CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
+
+  CUSTOMER_ADVANCES_READ: 'accounting:customer-advances:read',
+  CUSTOMER_ADVANCES_CREATE: 'accounting:customer-advances:create',
+  CUSTOMER_ADVANCES_APPLY: 'accounting:customer-advances:apply',
+  CUSTOMER_ADVANCES_REFUND: 'accounting:customer-advances:refund',
+
+  FISCAL_READ: 'accounting:fiscal:read',
+  FISCAL_CREATE: 'accounting:fiscal:create',
+  FISCAL_UPDATE: 'accounting:fiscal:update',
+  FISCAL_CLOSE: 'accounting:fiscal:close',
+  FISCAL_REOPEN: 'accounting:fiscal:reopen',
+  FISCAL_DELETE: 'accounting:fiscal:delete',
+
+  FIXED_ASSET_READ: 'accounting:fixedAsset:read',
+  FIXED_ASSET_CREATE: 'accounting:fixedAsset:create',
+  FIXED_ASSET_UPDATE: 'accounting:fixedAsset:update',
+  FIXED_ASSET_DELETE: 'accounting:fixedAsset:delete',
+  FIXED_ASSET_DEPRECIATE: 'accounting:fixedAsset:depreciate',
+  FIXED_ASSET_DISPOSE: 'accounting:fixedAsset:dispose',
+
+  FX_READ: 'accounting:fx:read',
+  FX_MANAGE: 'accounting:fx:manage',
+  FX_REVALUATE: 'accounting:fx:revaluate',
+
+  RECURRING_ENTRIES_READ: 'accounting:recurring-entries:read',
+  RECURRING_ENTRIES_CREATE: 'accounting:recurring-entries:create',
+  RECURRING_ENTRIES_UPDATE: 'accounting:recurring-entries:update',
+  RECURRING_ENTRIES_DELETE: 'accounting:recurring-entries:delete',
+  RECURRING_ENTRIES_RUN: 'accounting:recurring-entries:run',
+
+  SUPPLIER_DEBIT_MEMOS_READ: 'accounting:supplier-debit-memos:read',
+  SUPPLIER_DEBIT_MEMOS_CREATE: 'accounting:supplier-debit-memos:create',
+  SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
+
   WILDCARD: 'accounting:*',
 } as const
-
-export const FINANCIAL_REPORT_READ = 'accounting:financial_report:read'
 
 export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   (typeof ACCOUNTING_PERMISSIONS)[keyof typeof ACCOUNTING_PERMISSIONS],
@@ -90,9 +166,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:generalLedger:delete': 'Delete general ledgers',
   'accounting:journalEntry:read': 'View journal entries',
   'accounting:journalEntry:create': 'Create journal entries',
-  'accounting:journalEntry:update': 'Edit journal entries',
+  'accounting:journalEntry:update': 'Edit and post journal entries',
   'accounting:journalEntry:delete': 'Delete journal entries',
-  'accounting:journalEntry:post': 'Post journal entries to the ledger',
   'accounting:transaction:read': 'View transactions',
   'accounting:transaction:create': 'Create transactions',
   'accounting:transaction:update': 'Edit transactions',
@@ -138,6 +213,68 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bir_export:generate': 'Generate BIR forms',
   'accounting:financial_report:read':
     'View financial reports (Balance Sheet, Income Statement, Trial Balance, Cash Flow)',
+  'accounting:ap-bills:read': 'View AP bills, match-check results, and payment documents',
+  'accounting:ap-bills:create': 'Create an AP bill (vendor invoice)',
+  'accounting:ap-bills:update': 'Edit a DRAFT AP bill',
+  'accounting:ap-bills:delete': 'Soft-delete a DRAFT AP bill',
+  'accounting:ap-bills:receive': 'Post a DRAFT AP bill to the GL',
+  'accounting:ap-bills:voucher': 'Raise a payment voucher against a received bill',
+  'accounting:ap-bills:approve':
+    'Approve or reject a pending payment voucher (online or onsite stage)',
+  'accounting:ap-bills:pay': 'Record a payment against an AP bill',
+  'accounting:ap-payment-methods:read': 'View AP payment methods and their GL account mappings',
+  'accounting:ap-payment-methods:create': 'Create an AP payment method config',
+  'accounting:ap-payment-methods:update': 'Edit an AP payment method config',
+  'accounting:ap-payment-methods:delete': 'Disable an AP payment method config',
+  'accounting:ar-invoices:read': 'View AR invoices',
+  'accounting:ar-invoices:create': 'Create an AR invoice',
+  'accounting:ar-invoices:update': 'Edit an AR invoice',
+  'accounting:ar-invoices:delete': 'Delete an AR invoice',
+  'accounting:ar-invoices:send': 'Send an AR invoice to the customer',
+  'accounting:ar-invoices:pay': 'Record or cancel a payment against an AR invoice',
+  'accounting:bank-accounts:read': 'View bank accounts and reconciliation history',
+  'accounting:bank-accounts:create': 'Create a bank account',
+  'accounting:bank-accounts:update': 'Edit a bank account',
+  'accounting:bank-accounts:delete': 'Deactivate a bank account',
+  'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
+  'accounting:bank-accounts:adjust':
+    'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
+  'accounting:budget:read': 'View budgets + variance reports',
+  'accounting:budget:create': 'Create budgets per account/dimension/period',
+  'accounting:budget:update': 'Edit budgets',
+  'accounting:budget:delete': 'Delete budgets',
+  'accounting:cash-forecast:read': 'View the rolling cash-flow forecast',
+  'accounting:credit-memos:read': 'View credit memos',
+  'accounting:credit-memos:create': 'Issue a credit memo against an open invoice',
+  'accounting:credit-memos:void': 'Void a credit memo',
+  'accounting:customer-advances:read': 'View customer advances',
+  'accounting:customer-advances:create': 'Record a customer advance (e.g. a reservation deposit)',
+  'accounting:customer-advances:apply': 'Apply a customer advance against an invoice',
+  'accounting:customer-advances:refund': 'Refund a customer advance',
+  'accounting:fiscal:read': 'View fiscal periods + close checklist',
+  'accounting:fiscal:create': 'Create fiscal periods',
+  'accounting:fiscal:update': 'Update fiscal period close-checklist items',
+  'accounting:fiscal:close': 'Soft / hard close a period',
+  'accounting:fiscal:reopen': 'Reopen a closed period (Finance Director only)',
+  'accounting:fiscal:delete': 'Delete open periods',
+  'accounting:fixedAsset:read': 'View fixed assets and history',
+  'accounting:fixedAsset:create': 'Register a new fixed asset',
+  'accounting:fixedAsset:update': 'Edit fixed asset details',
+  'accounting:fixedAsset:delete': 'Retire a fixed asset',
+  'accounting:fixedAsset:depreciate': 'Run depreciation (posts JE)',
+  'accounting:fixedAsset:dispose': 'Dispose a fixed asset (posts gain/loss)',
+  'accounting:fx:read': 'View FX rates + revaluation runs',
+  'accounting:fx:manage': 'Add effective-dated FX rates',
+  'accounting:fx:revaluate': 'Run FX revaluation (posts JE + reversal)',
+  'accounting:recurring-entries:read': 'View recurring journal entry templates',
+  'accounting:recurring-entries:create': 'Create a recurring journal entry template',
+  'accounting:recurring-entries:update': 'Edit a recurring journal entry template',
+  'accounting:recurring-entries:delete': 'Delete a recurring journal entry template',
+  'accounting:recurring-entries:run': 'Manually run a recurring journal entry template now',
+  'accounting:supplier-debit-memos:read': 'View supplier debit memos',
+  'accounting:supplier-debit-memos:create':
+    'Issue a supplier debit memo (goods returned to supplier)',
+  'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
   'accounting:*': 'Wildcard full accounting access',
 }
 

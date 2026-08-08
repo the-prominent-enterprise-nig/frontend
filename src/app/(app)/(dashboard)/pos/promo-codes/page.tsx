@@ -10,6 +10,8 @@ import {
 import { RefreshCw, Tag, Plus, Pencil, Trash2, X, ChevronDown } from 'lucide-react'
 import { PosDate } from '../_components/PosDate'
 import type { PromoCode, CreatePromoCodeInput, UpdatePromoCodeInput } from '@/src/schema/pos'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -30,6 +32,7 @@ type ModalState =
   | { type: 'delete'; promo: PromoCode }
 
 export default function PromoCodesPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.PROMO_CODES_READ)
   const { data, isLoading, isFetching, refetch } = usePromoCodes()
   const createMutation = useCreatePromoCode()
   const updateMutation = useUpdatePromoCode()
@@ -37,6 +40,8 @@ export default function PromoCodesPage() {
 
   const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [error, setError] = useState('')
+
+  if (status !== 'authorized' || !session) return null
 
   const promos: PromoCode[] = data?.data ?? []
 

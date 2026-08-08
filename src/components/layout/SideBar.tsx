@@ -56,6 +56,8 @@ import {
 } from 'lucide-react'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 type NavItem = {
   label: string
@@ -202,111 +204,133 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Journal Entries',
         href: '/accounting/journal-entries',
         icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
       },
       {
         label: 'Chart of Accounts',
         href: '/accounting/chart-of-accounts',
         icon: BookOpen,
+        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
       },
       {
         label: 'Account Mapping',
         href: '/accounting/account-mapping',
         icon: Key,
+        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
       },
       {
         label: 'General Ledger',
         href: '/accounting/general-ledger',
         icon: Library,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       {
         label: 'AR Invoices',
         href: '/accounting/ar-invoices',
         icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
       },
       {
         label: 'AP Bills',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
         label: 'AP Payment Methods',
         href: '/accounting/ap-payment-methods',
         icon: CreditCard,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
       },
       {
         label: 'Expenses',
         href: '/accounting/expenses',
         icon: Coins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
       },
       {
         label: 'Bank Accounts',
         href: '/accounting/bank-accounts',
         icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
       {
         label: 'Bank Reconciliation',
         href: '/accounting/bank-reconciliation',
         icon: HandCoins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
       {
         label: 'Fixed Assets',
         href: '/accounting/fixed-assets',
         icon: ShoppingBag,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
       },
       {
         label: 'Recurring Entries',
         href: '/accounting/recurring-entries',
         icon: RefreshCcw,
+        requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
       },
       {
         label: 'Fiscal Periods',
         href: '/accounting/fiscal-periods',
         icon: CalendarDays,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
       },
       {
         label: 'Vendors',
         href: '/accounting/vendors',
         icon: Truck,
+        requiredPermission: ACCOUNTING_PERMISSIONS.VENDOR_READ,
       },
       {
         label: 'Customers',
         href: '/accounting/customers',
         icon: Users,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
       },
       {
         label: 'Currencies',
         href: '/accounting/currencies',
         icon: Coins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CURRENCY_READ,
       },
       {
         label: 'Tax',
         href: '/accounting/tax',
         icon: FileSpreadsheet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
       {
         label: 'Tax Rates',
         href: '/accounting/tax-rates',
         icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
       {
         label: 'Budgets',
         href: '/accounting/budgets',
         icon: BarChart3,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BUDGET_READ,
       },
       {
         label: 'Cash Forecast',
         href: '/accounting/cash-forecast',
         icon: TrendingUp,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
       },
       {
         label: 'FX Revaluation',
         href: '/accounting/fx-revaluation',
         icon: ArrowLeftRight,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FX_READ,
       },
       {
         label: 'Reports',
         href: '/accounting/reports',
         icon: FileBarChart,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
     ],
     bottom: [],
@@ -883,8 +907,6 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   }
 
   const filterItem = (item: NavItem) => {
-    // Branch managers see all module items — data is scoped server-side by their branchId
-    if (isBranchManager) return true
     if (!item.requiredPermission) return true
     const required = Array.isArray(item.requiredPermission)
       ? item.requiredPermission

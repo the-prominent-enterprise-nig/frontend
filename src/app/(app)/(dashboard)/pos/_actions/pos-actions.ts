@@ -1372,9 +1372,11 @@ export async function getBranches(): Promise<ApiResponse<Branch[]>> {
 
 export async function searchCustomers(q: string): Promise<ApiResponse<PosCustomer[]>> {
   try {
-    const result = await api.get<PosCustomer[] | { data: PosCustomer[] }>('/crm/customers', {
-      search: q,
-      limit: '10',
+    // POS-scoped search (name-or-phone, minimal fields) — not /crm/customers,
+    // which needs crm:customers:read that a Cashier role isn't granted and
+    // returns a much wider (billing/credit/tax) shape than checkout needs.
+    const result = await api.get<PosCustomer[] | { data: PosCustomer[] }>('/pos/customers/search', {
+      q,
     } as Record<string, string>)
     if (!result.success) return { success: false, error: result.error || 'Search failed' }
     const raw = result.data ?? []

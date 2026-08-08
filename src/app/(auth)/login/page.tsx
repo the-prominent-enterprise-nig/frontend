@@ -9,15 +9,15 @@ import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
 import Link from 'next/link'
 import {
   AlertCircle,
-  Briefcase,
   Building2,
-  CalendarDays,
   DollarSign,
   Eye,
   EyeOff,
   Lock,
   Mail,
+  Package,
   ShieldCheck,
+  ShoppingCart,
   Users,
 } from 'lucide-react'
 import { cn } from '@/src/libs/tailwind-merge/utils'
@@ -131,18 +131,17 @@ export default function LoginPage() {
                 <span className="text-violet-200">fully in control.</span>
               </h2>
               <p className="text-sm font-light leading-relaxed text-violet-300/80">
-                Manage HR, payroll, inventory, accounting, and CRM — all from a single unified
-                workspace.
+                Manage sales, inventory, accounting, and CRM — all from a single unified workspace.
               </p>
             </div>
 
             {/* Feature tiles */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                { icon: Users, label: 'HR & Payroll' },
+                { icon: ShoppingCart, label: 'Point of Sale' },
+                { icon: Package, label: 'Inventory' },
                 { icon: DollarSign, label: 'Accounting' },
-                { icon: Briefcase, label: 'Procurement' },
-                { icon: CalendarDays, label: 'Attendance' },
+                { icon: Users, label: 'CRM' },
               ].map(({ icon: Icon, label }) => (
                 <div
                   key={label}

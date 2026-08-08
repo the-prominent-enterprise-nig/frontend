@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useSessionDisplay } from '../../_hooks/usePos'
 import { Monitor, ShoppingCart, RefreshCw } from 'lucide-react'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 function formatCurrency(n: number | string | undefined | null) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
@@ -11,10 +13,14 @@ function formatCurrency(n: number | string | undefined | null) {
 }
 
 export default function CustomerDisplayPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.SESSIONS_READ)
   const [sessionId, setSessionId] = useState('')
   const [activeSessionId, setActiveSessionId] = useState('')
 
   const { data, isLoading, isFetching } = useSessionDisplay(activeSessionId)
+
+  if (status !== 'authorized' || !session) return null
+
   const display = data?.data
 
   return (

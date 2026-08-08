@@ -42,6 +42,7 @@ import {
   displayUnitPriceWithTax,
   lineTaxAmount,
 } from './_utils/calculations'
+import { useRouter } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
@@ -242,6 +243,7 @@ const DECIMAL_CODES = new Set([
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
+  const router = useRouter()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -282,12 +284,25 @@ export default function CheckoutPage() {
   const [canOverride, setCanOverride] = useState(false)
   useEffect(() => {
     getSessionOrNull().then((s) => {
-      if (!s) return
+      if (!s) {
+        router.replace('/login')
+        return
+      }
+      // Scenario 22 Part 5 — checkout had no route-level permission check at
+      // all (only ModuleGuard's broad "holds SOME pos permission" check at
+      // the layout level). A role without pos:transactions:create could
+      // still load this screen; every actual sale-submit call already
+      // 403s from the backend, but the page itself shouldn't render for
+      // them in the first place.
+      if (!can(s, POS_PERMISSIONS.TRANSACTIONS_CREATE)) {
+        router.replace('/403')
+        return
+      }
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
     })
-  }, [])
+  }, [router])
 
   const activeBranchId = useMemo(() => {
     // Branch Managers: use their assigned branch (matches "My Branch" settings)
@@ -2484,7 +2499,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-80 lg:w-[360px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-96 lg:w-[420px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -4662,31 +4677,31 @@ function CatalogCard({
       }`}
     >
       {qty > 0 && (
-        <span className="absolute right-2 top-2 flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
+        <span className="absolute right-2 top-2 flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[10px] font-bold text-white shadow">
           {Number.isInteger(qty) ? qty : qty.toFixed(1)}
         </span>
       )}
-      <p className="line-clamp-2 text-xs font-semibold leading-tight text-gray-900 pr-5">
+      <p className="line-clamp-2 text-sm font-semibold leading-tight text-gray-900 pr-5">
         {item.name}
       </p>
-      {item.sku && <p className="mt-0.5 truncate text-[10px] text-gray-400">{item.sku}</p>}
+      {item.sku && <p className="mt-0.5 truncate text-[11px] text-gray-400">{item.sku}</p>}
       <div className="mt-auto pt-2">
         {item.price <= 0 && (
-          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">No price</p>
         )}
         <div className="flex items-center gap-1.5">
           {item.uomCode && (
-            <span className="text-[9px] font-medium text-gray-400 uppercase">
+            <span className="text-[10px] font-medium text-gray-400 uppercase">
               per {item.uomCode}
             </span>
           )}
           {isOutOfStock ? (
-            <p className="text-[9px] font-bold uppercase tracking-wide text-red-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
               Out of stock
             </p>
           ) : (
             isLowStock && (
-              <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+              <p className="text-[10px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
             )
           )}
         </div>
@@ -4724,36 +4739,36 @@ function CatalogListRow({
             ? onAddMeasured(item)
             : onAdd(item)
       }
-      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all ${
+      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
         isOutOfStock
           ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm active:scale-[0.99]'
       }`}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold text-gray-900">{item.name}</p>
+        <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
         <div className="flex items-center gap-1.5">
-          {item.sku && <p className="truncate text-[10px] text-gray-400">{item.sku}</p>}
+          {item.sku && <p className="truncate text-[11px] text-gray-400">{item.sku}</p>}
           {isOutOfStock ? (
-            <p className="text-[9px] font-bold uppercase tracking-wide text-red-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
               Out of stock
             </p>
           ) : (
             isLowStock && (
-              <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+              <p className="text-[10px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
             )
           )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {item.price <= 0 && (
-          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">No price</p>
         )}
         {item.uomCode && (
-          <p className="text-[9px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
+          <p className="text-[10px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
         )}
         {qty > 0 && (
-          <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
+          <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[10px] font-bold text-white shadow">
             {Number.isInteger(qty) ? qty : qty.toFixed(1)}
           </span>
         )}

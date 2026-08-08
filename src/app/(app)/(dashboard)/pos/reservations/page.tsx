@@ -14,7 +14,7 @@ export const metadata = {
 export default async function SkuReservationsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_READ)) redirect('/pos')
+  if (!can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_READ)) redirect('/403')
 
   const canFulfil = can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_FULFIL)
   const canRequestCancel = can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_CANCEL_REQUEST)

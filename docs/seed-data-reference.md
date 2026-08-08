@@ -19,7 +19,14 @@ Cashier PIN (for cashier-PIN-gated actions like manager overrides/approvals): **
 
 ## Accounts (users)
 
-One Business Owner (no branch, sees everything) + 5 roles per branch × 3 branches = 16 accounts total.
+> **Note (2026-08-08):** this table's "3 branches / 16 accounts" framing is
+> stale — the live dev DB actually has 42 real branches for this tenant
+> (Bago, Guimbal, Murcia, and 39 more), not just Manila HQ/Cebu/Davao, and
+> the b1/b2/b3 accounts below only cover 3 of them. Found while verifying
+> Head Office role variants (below); a full regeneration of this table
+> against current DB state is a separate follow-up, not done here.
+
+One Business Owner (no branch, sees everything) + 5 roles per branch × 3 branches (of the seeded 42) = 16 branch-scoped accounts, plus 4 Head Office accounts added 2026-08-08 (see below).
 
 | Email                             | Name             | Role               | Branch             |
 | --------------------------------- | ---------------- | ------------------ | ------------------ |
@@ -39,6 +46,21 @@ One Business Owner (no branch, sees everything) + 5 roles per branch × 3 branch
 | `technova.b3.stock@test.com`      | Emmalee Howell   | Stock Controller   | Davao Branch (DVO) |
 | `technova.b3.cashier@test.com`    | Flo Jacobi       | Cashier            | Davao Branch (DVO) |
 | `technova.b3.crm@test.com`        | Flavio Pouros    | Marketing Manager  | Davao Branch (DVO) |
+
+### Head Office accounts (added 2026-08-08)
+
+Same role as their branch-scoped counterparts above — no new roles, just no
+branch assigned (no `Employee` record at all, same shape as Business Owner).
+Branch-scoping treats a branchless caller as "no filter," so these see every
+branch's data within their one module, e.g. Head Office Accountant sees
+every branch's journal entries but nothing outside Accounting.
+
+| Email                          | Role              | Sees                                 |
+| ------------------------------ | ----------------- | ------------------------------------ |
+| `technova.accounting@test.com` | Accountant        | All branches, Accounting module only |
+| `technova.stock@test.com`      | Stock Controller  | All branches, Inventory module only  |
+| `technova.cashier@test.com`    | Cashier           | All branches, POS module only        |
+| `technova.crm@test.com`        | Marketing Manager | All branches, CRM module only        |
 
 **Business Owner bypasses every permission check** (`hasPrivilegedRole` short-circuit) — use it for anything without worrying about role gates.
 

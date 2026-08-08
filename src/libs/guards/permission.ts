@@ -119,7 +119,6 @@ const ROLE_MODULE_ACCESS: Record<string, string[]> = {
 
 export function canAccessModule(user: SessionUser, module: string): boolean {
   if (hasPrivilegedRole(user)) return true
-  if (user.primaryRole === 'Branch Manager' || user.roles.includes('Branch Manager')) return true
   if (user.moduleAccess?.includes(module)) return true
 
   const allRoles = [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles].map((r) =>
