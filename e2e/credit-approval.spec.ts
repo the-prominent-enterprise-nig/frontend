@@ -64,8 +64,10 @@ async function createSubmittedApplication(page: Page, label: string): Promise<st
 
 /**
  * Under the Branch Manager's session: start and record the investigation.
- * Branch Manager has credit:investigation:start/record too (Part 4's role
- * hierarchy cascade), so this doesn't need a separate Credit Investigator switch.
+ * Branch Manager has pos:investigation:start/record too (folded into the
+ * pos module, Scenario 22, 2026-08-08 — Part 4's role hierarchy cascade
+ * already covered it via their full pos:* wildcard), so this doesn't need
+ * a separate Credit Investigator switch.
  */
 async function investigateAsManager(page: Page, applicationId: string): Promise<void> {
   await page.request.post(`/api/credit/applications/${applicationId}/investigation/start`)

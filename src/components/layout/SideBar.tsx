@@ -348,11 +348,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Credit Applications',
         href: '/pos/credit-applications',
         icon: CreditCard,
-        // credit:application:view, not a pos: permission — a Credit
-        // Investigator holds this with zero pos:* permissions, and still
+        // pos:application:view — credit was folded into the pos module
+        // (Scenario 22, 2026-08-08). A Credit Investigator holds only this
+        // narrow slice of pos:* (no sessions/transactions/etc.), and still
         // needs their own way into this page (see filterItem below, which
         // checks each item's own requiredPermission independently).
-        requiredPermission: 'credit:application:view',
+        requiredPermission: 'pos:application:view',
         // Has a real [id] detail route (unlike its sibling items here,
         // which are all single-page-with-modals) — without this, viewing
         // an application's detail page wouldn't highlight this as active.
