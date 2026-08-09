@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { X, CreditCard } from 'lucide-react'
 import { useCreditApplications } from '../_hooks/useCreditApplications'
@@ -18,6 +18,7 @@ import { getBranches } from '../../_actions/pos-actions'
 import CreateCreditApplicationModal from './CreateCreditApplicationModal'
 
 export default function CreditApplicationList({ session }: { session: SessionUser }) {
+  const router = useRouter()
   const canCreate = hasPermission(session, CREDIT_PERMISSIONS.APPLICATION_CREATE)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
@@ -150,14 +151,15 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Branch
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {applications.map((app) => (
-                    <tr key={app.id} className="hover:bg-zinc-50">
+                    <tr
+                      key={app.id}
+                      onClick={() => router.push(`/pos/credit-applications/${app.id}`)}
+                      className="cursor-pointer hover:bg-zinc-50"
+                    >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-500">
                         {app.applicationNumber}
                       </td>
@@ -179,14 +181,6 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
                         {app.branch.name}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={`/pos/credit-applications/${app.id}`}
-                          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                        >
-                          Open
-                        </Link>
                       </td>
                     </tr>
                   ))}

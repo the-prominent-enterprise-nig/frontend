@@ -26,7 +26,7 @@ export function ApplicantSearchCombobox({ value, onChange, error, initialLabel }
         const res = await searchApplicantCustomers(query.trim())
         return (res.data ?? []).map((c) => ({
           id: c.id,
-          primary: c.name,
+          primary: c.name ?? c.phone ?? c.email ?? 'Unknown',
           secondary: c.phone ?? c.email ?? undefined,
         }))
       }}
