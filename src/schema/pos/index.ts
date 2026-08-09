@@ -426,7 +426,8 @@ export interface CreateWalkInCustomerInput {
   taxId?: string
   isTaxExempt?: boolean
   taxExemptionRef?: string
-  shippingAddress?: string
+  address?: string
+  barangayCode?: string
   paymentTerms?: string
   status?: import('@/src/schema/crm/types').CustomerStatus
   note?: string

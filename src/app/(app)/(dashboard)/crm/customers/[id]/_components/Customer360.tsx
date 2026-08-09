@@ -209,16 +209,20 @@ export default function Customer360({
       </header>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
+        {/* Full width (lg:col-span-3) — the Address row wraps to several
+            lines for a real PH address, and cramming that into a 1/3-width
+            column read badly (developer-flagged, 2026-08-09). */}
+        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Contact</h2>
           <dl className="space-y-2 text-[13px]">
             <Row label="Email" value={data.email ?? '—'} />
             <Row label="Phone" value={data.phone ?? '—'} />
+            <Row label="Address" value={data.address ?? '—'} />
             <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
           </dl>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
+        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Activity feed</h2>
           {data.interactions.length === 0 && (
             <p className="py-6 text-center text-[13px] text-gray-400">No interactions logged.</p>

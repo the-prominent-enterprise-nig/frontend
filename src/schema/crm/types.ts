@@ -114,7 +114,7 @@ export interface DuplicatePairCustomer {
   customerType: CustomerType
   email?: string | null
   phone?: string | null
-  shippingAddress?: string | null
+  address?: string | null
   createdAt: string
 }
 
@@ -149,8 +149,8 @@ export interface Customer {
   taxExemptionRef?: string | null
   email?: string | null
   phone?: string | null
-  billingAddress?: string | null
-  shippingAddress?: string | null
+  address?: string | null
+  barangayCode?: string | null
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null
@@ -295,6 +295,7 @@ export interface CollectorDetail extends Collector {
   branch?: { id: string; name: string; code: string } | null
   installmentAccounts: CollectorInstallmentAccountSummary[]
   remittances: CollectorRemittance[]
+  areas: { barangayCode: string }[]
 }
 
 export interface AccountingCustomerLite {

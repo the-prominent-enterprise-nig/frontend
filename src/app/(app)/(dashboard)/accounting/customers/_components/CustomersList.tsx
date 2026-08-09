@@ -188,7 +188,7 @@ export default function CustomersList({ session }: Props) {
                         <div className="text-zinc-700">{c.email || '-'}</div>
                         <div className="text-xs text-zinc-500">{c.phone || '-'}</div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-zinc-700">{c.billingAddress || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-zinc-700">{c.address || '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Link
@@ -265,7 +265,7 @@ function customerToFormInput(customer: Customer | null): Partial<CustomerInput> 
     lastName: rest.join(' '),
     email: customer.email ?? '',
     phoneNumber: customer.phone ?? '',
-    address: customer.billingAddress ?? '',
+    address: customer.address ?? '',
     note: customer.notes ?? '',
     customerType: customer.customerType ?? 'individual',
     groupId: customer.groupId ?? '',
