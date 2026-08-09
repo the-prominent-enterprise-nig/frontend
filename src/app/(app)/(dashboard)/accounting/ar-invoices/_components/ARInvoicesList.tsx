@@ -13,12 +13,16 @@ import {
   AlertTriangle,
   KeyRound,
   X,
+  Search,
+  User,
+  Loader2,
 } from 'lucide-react'
 import {
   ARInvoices,
   CreditMemos,
   TaxRates,
   type ARInvoice,
+  type ARInvoiceCustomerResult,
   type ARPayment,
   type TaxRate,
   type PaymentMethod,
@@ -26,7 +30,6 @@ import {
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 
 export default function ARInvoicesList({
@@ -35,7 +38,6 @@ export default function ARInvoicesList({
   initialCustomerId?: string
 } = {}) {
   const [items, setItems] = useState<ARInvoice[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
   const [creating, setCreating] = useState(false)
@@ -44,17 +46,74 @@ export default function ARInvoicesList({
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
   const [deletingFor, setDeletingFor] = useState<ARInvoice | null>(null)
   const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
+  // Set directly when a customer is picked via search below; when arriving
+  // via initialCustomerId (a link from Customer360) there's no name yet, so
+  // the banner below falls back to deriving it from the loaded invoices'
+  // own embedded customer field once they load.
+  const [customerFilterName, setCustomerFilterName] = useState<string | undefined>()
+  // Scenario 23 Gap 4 — search accepts either the invoice's own number or
+  // the POS transaction number that produced it (staff arrive with
+  // whichever one they have in hand, never both); resolved server-side via
+  // ARInvoicesService.findAll()'s structured lookup, not a text match.
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  // Customer search — this screen previously had no way to filter by
+  // customer except arriving via a link from Customer360 (initialCustomerId).
+  // Scoped to accounting:ar-invoices:read (ARInvoices.searchCustomers), not
+  // the CRM customer list — Accountant (accounting:* only) doesn't hold
+  // crm:customers:read, which silently broke this before.
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
+  const [searchingCustomers, setSearchingCustomers] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await ARInvoices.list(customerFilter ? { customerId: customerFilter } : undefined)
+    const res = await ARInvoices.list({
+      ...(customerFilter ? { customerId: customerFilter } : {}),
+      ...(appliedSearch ? { search: appliedSearch } : {}),
+    })
     setItems(res.data?.items ?? [])
     setLoading(false)
-  }, [customerFilter])
+  }, [customerFilter, appliedSearch])
   useEffect(() => {
     load()
-    getCustomers().then((r) => setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[]))
   }, [load])
+  // Arrived via initialCustomerId (a Customer360 link) with no name in
+  // hand — resolve it directly. Not derived from the loaded invoices: a
+  // customer with zero invoices (the exact case Customer360's "View AR
+  // Ledger" link must work for) would leave nothing to derive it from.
+  useEffect(() => {
+    if (!customerFilter || customerFilterName) return
+    ARInvoices.getCustomerById(customerFilter).then((res) => {
+      const name = res.data?.[0]?.name
+      if (name) setCustomerFilterName(name)
+    })
+  }, [customerFilter, customerFilterName])
+  // Auto-search: commits `search` into `appliedSearch` (which actually
+  // drives the query, via `load`'s dependency array) 400ms after the user
+  // stops typing, instead of requiring an explicit Apply click.
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), 400)
+    return () => clearTimeout(timer)
+  }, [search])
+  // Debounced customer search, same pattern as the POS checkout page's
+  // customer picker.
+  useEffect(() => {
+    if (!customerSearch.trim()) {
+      setCustomerResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearchingCustomers(true)
+      const res = await ARInvoices.searchCustomers(customerSearch.trim())
+      setCustomerResults(res.data ?? [])
+      setCustomerSearchOpen(true)
+      setSearchingCustomers(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [customerSearch])
 
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
@@ -85,13 +144,93 @@ export default function ARInvoicesList({
           </button>
         </div>
       </div>
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="relative min-w-56 flex-1">
+          <label className="mb-1 block text-xs font-semibold text-gray-600">Customer</label>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-8 text-sm focus:border-purple-500 focus:outline-none"
+              placeholder="Search by name or phone…"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
+              onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
+            />
+            {searchingCustomers && (
+              <Loader2
+                size={14}
+                className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+              />
+            )}
+          </div>
+          {customerSearchOpen && (
+            <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+              {customerResults.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
+              ) : (
+                customerResults.map((c) => (
+                  <button
+                    key={c.id}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                    onMouseDown={() => {
+                      setCustomerFilter(c.id)
+                      setCustomerFilterName(c.name)
+                      setCustomerSearch('')
+                      setCustomerSearchOpen(false)
+                    }}
+                  >
+                    <User size={13} className="shrink-0 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900">{c.name}</p>
+                      {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+        <div className="min-w-64 flex-1">
+          <label className="mb-1 block text-xs font-semibold text-gray-600">
+            Invoice # or Transaction #
+          </label>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-purple-500 focus:outline-none"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        {appliedSearch && (
+          <button
+            onClick={() => {
+              setSearch('')
+              setAppliedSearch('')
+            }}
+            className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+        )}
+      </div>
       {customerFilter && (
         <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
-          <span>
-            Filtered to {customers.find((c) => c.id === customerFilter)?.name ?? 'this customer'}
-          </span>
+          <span>Filtered to {customerFilterName ?? 'this customer'}</span>
           <button
-            onClick={() => setCustomerFilter(undefined)}
+            onClick={() => {
+              setCustomerFilter(undefined)
+              setCustomerFilterName(undefined)
+            }}
             className="font-medium text-purple-700 hover:underline"
           >
             Clear filter
@@ -210,7 +349,6 @@ export default function ARInvoicesList({
       {(creating || editing) && (
         <InvoiceFormDialog
           initial={editing}
-          customers={customers}
           onClose={() => {
             setCreating(false)
             setEditing(null)
@@ -474,12 +612,10 @@ function CreditMemoDialog({
 
 function InvoiceFormDialog({
   initial,
-  customers,
   onClose,
   onSaved,
 }: {
   initial: ARInvoice | null
-  customers: Customer[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -502,6 +638,30 @@ function InvoiceFormDialog({
     TaxRates.list(true).then((r) => setTaxRates(r.data ?? []))
   }, [])
 
+  // Customer picker — search rather than a full-list <select>, and scoped
+  // to accounting:ar-invoices:read (see ARInvoices.searchCustomers), so an
+  // Accountant without crm:customers:read can still pick one.
+  const [customerLabel, setCustomerLabel] = useState(initial?.customer?.name ?? '')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
+  const [searchingCustomers, setSearchingCustomers] = useState(false)
+  useEffect(() => {
+    if (!customerSearch.trim()) {
+      setCustomerResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearchingCustomers(true)
+      const res = await ARInvoices.searchCustomers(customerSearch.trim())
+      setCustomerResults(res.data ?? [])
+      setCustomerSearchOpen(true)
+      setSearchingCustomers(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [customerSearch])
+
   // When subtotal or tax code changes, recompute tax automatically
   const onTaxCodeChange = (code: string) => {
     const rate = taxRates.find((r) => r.code === code)
@@ -522,6 +682,11 @@ function InvoiceFormDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // The customer field is a search box, not a native <select> — its
+    // visible text isn't what's submitted, so `required` on the input
+    // alone would let a typed-but-never-selected name through with
+    // customerId still empty.
+    if (!form.customerId) return
     setSaving(true)
     const payload = {
       ...form,
@@ -544,19 +709,54 @@ function InvoiceFormDialog({
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
           <Field label="Customer *">
-            <select
-              required
-              value={form.customerId}
-              onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <input
+                required
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 pr-7 text-sm"
+                placeholder="Search by name or phone…"
+                value={customerLabel || customerSearch}
+                onChange={(e) => {
+                  setCustomerLabel('')
+                  setForm({ ...form, customerId: '' })
+                  setCustomerSearch(e.target.value)
+                }}
+                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
+                onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
+              />
+              {searchingCustomers && (
+                <Loader2
+                  size={14}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                />
+              )}
+              {customerSearchOpen && (
+                <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {customerResults.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
+                  ) : (
+                    customerResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                        onMouseDown={() => {
+                          setForm({ ...form, customerId: c.id })
+                          setCustomerLabel(c.name)
+                          setCustomerSearch('')
+                          setCustomerSearchOpen(false)
+                        }}
+                      >
+                        <User size={13} className="shrink-0 text-gray-400" />
+                        <div>
+                          <p className="font-medium text-gray-900">{c.name}</p>
+                          {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Invoice Date *">

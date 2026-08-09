@@ -335,9 +335,27 @@ export interface RecordPaymentResult extends ARInvoice {
   overpayment: { paymentId: string; overpaidAmount: number; wasClosedAccount: boolean } | null
 }
 
+export interface ARInvoiceCustomerResult {
+  id: string
+  name: string
+  phone: string | null
+  customerCode: string
+}
+
 export const ARInvoices = {
   list: (params?: { search?: string; status?: string; customerId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // Scoped to accounting:ar-invoices:read (not the CRM customer list, which
+  // needs crm:customers:read — a permission Accountant doesn't hold) so
+  // this screen's own customer picker works without any CRM grant.
+  searchCustomers: (q: string) =>
+    api.get<ARInvoiceCustomerResult[]>('/ar-invoices/customers/search', { q }),
+  // Resolves one specific customer's name directly — used for the
+  // "Filtered to X" banner when arriving via a customerId link (e.g. from
+  // Customer360) and that customer has zero invoices, so there's nothing
+  // in the loaded list to derive their name from otherwise.
+  getCustomerById: (id: string) =>
+    api.get<ARInvoiceCustomerResult[]>('/ar-invoices/customers/search', { id }),
   get: (id: string) => api.get<ARInvoice>(`/ar-invoices/${id}`),
   create: (body: any) => api.post<ARInvoice>('/ar-invoices', body),
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),

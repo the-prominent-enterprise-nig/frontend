@@ -3,7 +3,18 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, BellPlus, Download, GitMerge, Paperclip, Pencil, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  BellPlus,
+  ChevronRight,
+  Download,
+  GitMerge,
+  Paperclip,
+  Pencil,
+  Receipt,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
@@ -48,6 +59,12 @@ export default function Customer360({
   const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
   const [installmentLoading, setInstallmentLoading] = useState(true)
   const [installmentError, setInstallmentError] = useState<string | null>(null)
+  // Scenario 23 Gap 2 (developer-requested redesign, 2026-08-09) — each
+  // schedule collapses to a summary row (product + term); the full
+  // due-date/invoice-number/rebate breakdown lives behind a click, matching
+  // the row-click-opens-detail-modal convention already used for POS
+  // transactions (TransactionsList.tsx's TransactionDetail).
+  const [scheduleDetailTarget, setScheduleDetailTarget] = useState<InstallmentSchedule | null>(null)
 
   const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
@@ -158,6 +175,18 @@ export default function Customer360({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Developer-requested (2026-08-09): previously the only path to
+              this customer's AR invoices was buried inside an Installment
+              Plan row's detail modal — which didn't exist at all for a
+              charge-only customer with no installment plans. This is a
+              direct, always-visible link regardless of purchase history. */}
+          <Link
+            href={`/accounting/ar-invoices?customerId=${id}`}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <Receipt className="h-4 w-4" />
+            View AR Ledger
+          </Link>
           {canScheduleReminder && (
             <button
               onClick={() => setReminderOpen(true)}
@@ -261,49 +290,35 @@ export default function Customer360({
               No installment plans for this customer.
             </p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {installmentSchedules.map((s) => (
-                <div key={s.id} className="rounded-lg border border-gray-100 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
-                    <span className="font-mono text-gray-500">
-                      {s.posTransaction?.transactionNumber ?? s.id}
-                    </span>
-                    <span className="text-gray-500">
-                      {s.termMonths} mo · {Number(s.factorRate).toFixed(2)}x · Down{' '}
-                      {formatPeso(s.downPayment)} · Total {formatPeso(s.totalPayable)}
-                    </span>
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setScheduleDetailTarget(s)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
+                    <p className="mt-0.5 text-[12px] text-gray-500">
+                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
+                    </p>
                   </div>
-                  <ul className="mt-2 divide-y divide-gray-100">
-                    {s.lines.map((line) => (
-                      <li
-                        key={line.lineNumber}
-                        className="flex items-center justify-between py-1.5 text-[13px]"
-                      >
-                        <span className="text-gray-700">
-                          Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                          {new Date(line.arInvoice.dueDate).toLocaleDateString()}
-                        </span>
-                        <span className="flex items-center gap-2">
-                          <span className="font-medium text-gray-800">
-                            {formatPeso(line.arInvoice.totalAmount)}
-                          </span>
-                          <InstallmentStatusBadge status={line.arInvoice.status} />
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href={`/accounting/ar-invoices?customerId=${id}`}
-                    className="mt-2 inline-block text-[12px] text-prominent-orange-700 hover:underline"
-                  >
-                    View full AR ledger →
-                  </Link>
-                </div>
+                  <ChevronRight size={16} className="shrink-0 text-gray-300" />
+                </button>
               ))}
             </div>
           )}
         </section>
       </div>
+
+      {scheduleDetailTarget && (
+        <InstallmentScheduleDetailModal
+          schedule={scheduleDetailTarget}
+          customerId={id}
+          onClose={() => setScheduleDetailTarget(null)}
+        />
+      )}
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
@@ -479,17 +494,36 @@ export default function Customer360({
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="text-right font-medium text-gray-800">{value}</dd>
+      <dt className={bold ? 'font-bold text-gray-900' : 'text-gray-500'}>{label}</dt>
+      <dd
+        className={
+          bold ? 'text-right font-bold text-gray-900' : 'text-right font-medium text-gray-800'
+        }
+      >
+        {value}
+      </dd>
     </div>
   )
 }
 
 function formatPeso(n: number) {
   return `₱${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Scenario 23 Gap 2 — a schedule can now cover several items sharing one
+// financing term (Gap 5), so there's no single "the" product anymore.
+// Mirrors the "primary item +N more" convention already used for this exact
+// shape elsewhere in POS (Release Approvals' Item/Serial column).
+function productLabel(
+  lines: { item: { name: string; brand: { name: string } | null } | null }[]
+): string {
+  const [first, ...rest] = lines
+  if (!first?.item) return '—'
+  const label = first.item.brand ? `${first.item.name} (${first.item.brand.name})` : first.item.name
+  return rest.length > 0 ? `${label} +${rest.length} more` : label
 }
 
 // ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/
@@ -520,5 +554,117 @@ function InstallmentStatusBadge({ status }: { status: string }) {
     >
       {STATUS_LABELS[status] ?? status}
     </span>
+  )
+}
+
+/** Scenario 23 Gap 2 (developer-requested redesign) — the full breakdown
+ * behind an Installment Plans row's click: invoice numbers, per-due-date
+ * status, and the rebate, all previously shown inline. Same modal chrome
+ * as TransactionsList.tsx's TransactionDetail, for visual consistency with
+ * the equivalent row-click-opens-detail pattern on the POS side. */
+function InstallmentScheduleDetailModal({
+  schedule,
+  customerId,
+  onClose,
+}: {
+  schedule: InstallmentSchedule
+  customerId: string
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+          >
+            <X size={18} />
+          </button>
+          <h2 className="mb-1 text-lg font-bold text-gray-900">
+            {productLabel(schedule.posTransactionLines)}
+          </h2>
+          <p className="mb-4 text-sm text-gray-500">
+            {schedule.posTransaction?.transactionNumber ?? schedule.id}
+          </p>
+
+          {/* Developer-requested (2026-08-09): the header's "+1 more" hides
+              what the other item(s) actually are, and the combined
+              Term/Down/Rebate/Total block below gives no sense of what
+              each item cost. This list answers both — full item names and
+              their own price, not a second/competing set of financing
+              terms (the schedule below stays the single combined
+              contract, per Gap 5's confirmed one-contract-per-term
+              design). */}
+          <div className="mb-4 rounded-xl border border-gray-200 p-3 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items in this plan</p>
+            <ul className="divide-y divide-gray-100" data-testid="installment-plan-items">
+              {schedule.posTransactionLines.map((line) => (
+                <li key={line.id} className="flex items-center justify-between py-1.5">
+                  <span className="text-gray-700">
+                    {line.item
+                      ? line.item.brand
+                        ? `${line.item.name} (${line.item.brand.name})`
+                        : line.item.name
+                      : '—'}
+                    {line.quantity !== 1 && (
+                      <span className="text-gray-400"> ×{line.quantity}</span>
+                    )}
+                  </span>
+                  <span className="font-medium text-gray-800">{formatPeso(line.lineTotal)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
+            <Row label="Term" value={`${schedule.termMonths} months`} />
+            <Row label="Factor rate" value={`${Number(schedule.factorRate).toFixed(2)}x`} />
+            <Row label="Down payment" value={formatPeso(schedule.downPayment)} />
+            {schedule.installmentAccount && (
+              <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
+            )}
+            <div className="border-t border-gray-200 pt-2">
+              <Row label="Total" value={formatPeso(schedule.totalPayable)} bold />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Due Dates</p>
+            <ul className="divide-y divide-gray-100">
+              {schedule.lines.map((line) => (
+                <li
+                  key={line.lineNumber}
+                  className="flex items-center justify-between py-1.5 text-[13px]"
+                >
+                  <span className="text-gray-700">
+                    <span className="font-mono text-[11px] text-gray-400">
+                      {line.arInvoice.invoiceNumber}
+                    </span>
+                    {' · '}
+                    Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
+                    {new Date(line.arInvoice.dueDate).toLocaleDateString()}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium text-gray-800">
+                      {formatPeso(line.arInvoice.totalAmount)}
+                    </span>
+                    <InstallmentStatusBadge status={line.arInvoice.status} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <Link
+            href={`/accounting/ar-invoices?customerId=${customerId}`}
+            className="mt-4 inline-block text-[12px] text-prominent-orange-700 hover:underline"
+          >
+            View full AR ledger →
+          </Link>
+        </div>
+      </div>
+    </>
   )
 }

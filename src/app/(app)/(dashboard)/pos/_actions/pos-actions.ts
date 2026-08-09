@@ -332,9 +332,17 @@ export async function createTransaction(
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to create transaction' }
     }
-    // Pending-approval responses don't create a transaction — nothing to revalidate yet.
     if (!isPendingApproval(result.data)) {
+      // Completed directly (e.g. a self-approving submitter) — no RFD was
+      // created, just the transaction itself.
       revalidateTag(TAGS.transactions, 'max')
+    } else {
+      // Serialized/charge/installment sales that need manager approval
+      // create a new PosReleaseFormRequest here — without this, the Release
+      // & Application Form Approvals screen (cached under this same tag)
+      // can go on showing a stale list that's missing the one just
+      // submitted, until something else happens to revalidate it.
+      revalidateTag(TAGS.releaseFormRequests, 'max')
     }
     return { success: true, data: result.data }
   } catch {
