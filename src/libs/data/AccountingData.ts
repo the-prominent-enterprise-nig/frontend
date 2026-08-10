@@ -328,7 +328,7 @@ export interface Customer {
   customerType?: CustomerType
   email?: string | null
   phone?: string | null
-  billingAddress?: string | null
+  address?: string | null
   notes?: string | null
   groupId?: string | null
   lifecycleStatus?: CustomerLifecycleStatus

@@ -1723,8 +1723,25 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Search customers by phone number for POS customer lookup (IT-PC-02) */
-    get: operations['PosCustomersController_findByPhone']
+    /** Search customers by name or phone for POS customer lookup (IT-PC-02) */
+    get: operations['PosCustomersController_search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/customers/collections': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Customers with at least one outstanding installment due — browsable starting list for the POS Collections screen */
+    get: operations['PosCustomersController_listCollectionsCustomers']
     put?: never
     post?: never
     delete?: never
@@ -1835,6 +1852,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/pos/cashier/price-override/validate-pin': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Validate manager PIN before allowing a checkout price override — fills a price-list gap or adjusts an already-resolved price */
+    post: operations['CashierPinController_validatePriceOverride']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/pos/cashier/manager-override/validate-pin-only': {
     parameters: {
       query?: never
@@ -1846,6 +1880,23 @@ export interface paths {
     put?: never
     /** Identify manager by PIN alone — no User ID required (McDonald's-style in-person override) */
     post: operations['CashierPinController_validateManagerByPinOnly']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/cashier/price-override/validate-pin-only': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Identify a manager for a checkout price override by PIN alone — no User ID required */
+    post: operations['CashierPinController_validatePriceOverrideByPinOnly']
     delete?: never
     options?: never
     head?: never
@@ -1866,6 +1917,46 @@ export interface paths {
     get: operations['CatalogController_findAll']
     put?: never
     post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/catalog/price-use-types': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List price-use types for the sale-level checkout selector
+     * @description Deliberately unguarded by inventory:price-lists:read — Cashier/POS Operator don't hold that permission today, and this only exposes id/name, not full price-list administration data.
+     */
+    get: operations['CatalogController_findPriceUseTypes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/catalog/resolve-prices': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Resolve each cart item's price under the sale's selected Price Use
+     * @description Bulk — one call per Price Use selection/change, not one per line item.
+     */
+    post: operations['CatalogController_resolvePrices']
     delete?: never
     options?: never
     head?: never
@@ -2500,7 +2591,8 @@ export interface paths {
     get: operations['FinancingTermsController_findOne']
     put?: never
     post?: never
-    delete?: never
+    /** Delete a financing term that has never been used in a sale. A branch-assigned caller (Branch Manager) can only delete terms scoped to their own branch. Terms already used in past installment sales cannot be hard-deleted — deactivate them instead. */
+    delete: operations['FinancingTermsController_remove']
     options?: never
     head?: never
     /** Update a financing term (rate, active flag, notes). A branch-assigned caller (Branch Manager) can only update terms scoped to their own branch. */
@@ -2607,6 +2699,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/items/check-duplicates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * Non-blocking near-duplicate check on item name (Scenario 16)
+     * @description Trigram-similarity match on existing item names, optionally scoped to a brand. Returns up to 5 candidates — a warning only, never a hard block (that stays the SKU unique constraint).
+     */
+    get: operations['ItemsController_checkDuplicates']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/{id}': {
     parameters: {
       query?: never
@@ -2626,6 +2738,26 @@ export interface paths {
     patch: operations['ItemsController_update']
     trace?: never
   }
+  '/inventory/items/{id}/receive-initial': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Record one already-in-hand unit for a just-created item (date in, RR#, origin, cost, optional serial)
+     * @description Lighter than /inventory/stock/receive — no Supplier is required (origin may be a warehouse code like "WHSE" for internal stock) and no GL is posted. serialNumber is required when the item is serial-tracked, and rejected otherwise.
+     */
+    post: operations['ItemsController_receiveInitial']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/items/bulk-import': {
     parameters: {
       query?: never
@@ -2637,7 +2769,7 @@ export interface paths {
     put?: never
     /**
      * Bulk-create items from a CSV upload
-     * @description Required columns: sku, name, baseUnitCode. Optional: description, costPrice, sellingPrice. baseUnitCode is matched against existing Unit of Measure codes for the tenant. Each row is processed independently — returns a summary of created items and per-row errors.
+     * @description Required columns: name. Optional: sku, baseUnitCode, description, costPrice, sellingPrice, modelNumber, brand, type, category, subcategory. Column headers are matched case-insensitively, and group/subgroup are accepted as aliases for category/subcategory. sku is auto-generated when omitted. baseUnitCode defaults to "pcs" when omitted, and is otherwise matched against existing Unit of Measure codes for the tenant. brand/type/category/subcategory are resolved by name, creating them if they don't exist yet (subcategory requires category to also be given on the same row). Each row is processed independently — returns a summary of created items and per-row errors.
      */
     post: operations['ItemsController_bulkImport']
     delete?: never
@@ -2661,6 +2793,91 @@ export interface paths {
     head?: never
     /** Update the lifecycle state of an item */
     patch: operations['ItemsController_updateLifecycle']
+    trace?: never
+  }
+  '/inventory/items/{id}/submit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Submit a draft item for Accounting confirmation */
+    post: operations['ItemsController_submitForReview']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/confirm-accounting': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Accounting confirms a submitted item's tax/GL mapping, optionally correcting it first */
+    post: operations['ItemsController_confirmAccounting']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/reject-accounting': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Accounting rejects a submitted item back to draft */
+    post: operations['ItemsController_rejectAccounting']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Master Data Approver approves an item, publishing it to PO/receiving/inventory/POS/reports */
+    post: operations['ItemsController_approveItem']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/items/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Master Data Approver rejects an item back to draft */
+    post: operations['ItemsController_rejectItem']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/inventory/items/{id}/variants': {
@@ -3519,7 +3736,7 @@ export interface paths {
     /** List all stock adjustments (paginated) */
     get: operations['AdjustmentsController_findAll']
     put?: never
-    /** Create a stock adjustment with multiple lines */
+    /** Submit a stock adjustment with multiple lines — pending, does not post to stock/GL yet */
     post: operations['AdjustmentsController_createAdjustment']
     delete?: never
     options?: never
@@ -3534,14 +3751,83 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Get a single stock adjustment */
+    /** Get a single stock adjustment with its lines */
     get: operations['AdjustmentsController_findOne']
+    put?: never
+    post?: never
+    /** Withdraws a still-'submitted' adjustment before anyone has reviewed it */
+    delete: operations['AdjustmentsController_withdraw']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/adjustments/{id}/confirm': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
     put?: never
     post?: never
     delete?: never
     options?: never
     head?: never
-    patch?: never
+    /** Branch Manager confirms a submitted adjustment, escalating it for investigation */
+    patch: operations['AdjustmentsController_confirm']
+    trace?: never
+  }
+  '/inventory/adjustments/{id}/investigate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Business Owner acknowledges a confirmed adjustment for investigation */
+    patch: operations['AdjustmentsController_investigate']
+    trace?: never
+  }
+  '/inventory/adjustments/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Business Owner approves — this is when ledger/balance/GL posting actually happens */
+    patch: operations['AdjustmentsController_approve']
+    trace?: never
+  }
+  '/inventory/adjustments/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Business Owner rejects — no stock/GL mutation occurs */
+    patch: operations['AdjustmentsController_reject']
     trace?: never
   }
   '/inventory/counts': {
@@ -3594,6 +3880,24 @@ export interface paths {
     head?: never
     /** Start a scheduled stock count — transitions to in_progress */
     patch: operations['CountsController_start']
+    trace?: never
+  }
+  '/inventory/counts/{id}/lines': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List the server-snapshotted count lines for this count (expected quantities, plus counted once submitted) */
+    get: operations['CountsController_getLines']
+    put?: never
+    /** Add a count line for an item not covered by the start-time snapshot (e.g. zero on-hand). expectedQty is always resolved server-side from the item's current balance. */
+    post: operations['CountsController_addLine']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/inventory/counts/{id}/submit': {
@@ -3745,6 +4049,26 @@ export interface paths {
     put?: never
     /** Register one or more serial numbers for an item */
     post: operations['SerialNumbersController_register']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/serial-numbers/bulk-import': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Bulk-import historical serialized inventory from a CSV upload
+     * @description Required columns: dateIn, rr, brand, type, group, subgroup, model, serialNumber, price. Optional: origin, description. Column headers are matched case-insensitively, and "serial" is accepted as an alias for serialNumber. Rows sharing an rr are grouped into one historical GoodsReceipt; unknown brand/type/group/subgroup/supplier names are created on the fly; price is recorded as the created item's cost price. Set dryRun=true to preview counts without writing anything.
+     */
+    post: operations['SerialNumbersController_bulkImport']
     delete?: never
     options?: never
     head?: never
@@ -4808,6 +5132,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/procurement/purchase-orders/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Scenario 10 Part 7 — print-ready document envelope for a PO PDF download */
+    get: operations['PurchaseOrderController_getDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/procurement/purchase-orders/from-pr/{prId}': {
     parameters: {
       query?: never
@@ -5048,80 +5389,6 @@ export interface paths {
     patch: operations['ProcurementQuotaController_update']
     trace?: never
   }
-  '/inventory/classification/groups': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List all item groups */
-    get: operations['ItemClassificationController_findGroups']
-    put?: never
-    /** Create an item group */
-    post: operations['ItemClassificationController_createGroup']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/classification/groups/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single item group */
-    get: operations['ItemClassificationController_findGroup']
-    put?: never
-    post?: never
-    /** Delete an item group (cascades to subgroups) */
-    delete: operations['ItemClassificationController_removeGroup']
-    options?: never
-    head?: never
-    /** Update an item group */
-    patch: operations['ItemClassificationController_updateGroup']
-    trace?: never
-  }
-  '/inventory/classification/subgroups': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List item subgroups, optionally filtered by group */
-    get: operations['ItemClassificationController_findSubgroups']
-    put?: never
-    /** Create an item subgroup under a group */
-    post: operations['ItemClassificationController_createSubgroup']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/classification/subgroups/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single item subgroup */
-    get: operations['ItemClassificationController_findSubgroup']
-    put?: never
-    post?: never
-    /** Delete an item subgroup */
-    delete: operations['ItemClassificationController_removeSubgroup']
-    options?: never
-    head?: never
-    /** Update an item subgroup */
-    patch: operations['ItemClassificationController_updateSubgroup']
-    trace?: never
-  }
   '/inventory/classification/brands': {
     parameters: {
       query?: never
@@ -5275,8 +5542,59 @@ export interface paths {
     /** List tax rates for the current tenant */
     get: operations['TaxRatesController_findAll']
     put?: never
-    /** Create a new tax rate */
+    /** Submit a new tax rate for approval */
     post: operations['TaxRatesController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/tax-rates/change-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List tax rate change requests (pending/approved/rejected) */
+    get: operations['TaxRatesController_listChangeRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/tax-rates/change-requests/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve a pending tax rate change (Business Owner only) */
+    post: operations['TaxRatesController_approveChangeRequest']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/tax-rates/change-requests/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a pending tax rate change (Business Owner only) */
+    post: operations['TaxRatesController_rejectChangeRequest']
     delete?: never
     options?: never
     head?: never
@@ -5294,11 +5612,11 @@ export interface paths {
     get: operations['TaxRatesController_findOne']
     put?: never
     post?: never
-    /** Deactivate a tax rate (soft delete) */
+    /** Submit a tax rate deactivation for approval */
     delete: operations['TaxRatesController_deactivate']
     options?: never
     head?: never
-    /** Update a tax rate */
+    /** Submit a tax rate update for approval */
     patch: operations['TaxRatesController_update']
     trace?: never
   }
@@ -5453,6 +5771,476 @@ export interface paths {
     post?: never
     /** Detach a file from a record (file itself is not deleted) */
     delete: operations['FileAttachmentsController_detach']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List installment accounts (paginated, filterable) — a branch-assigned caller is always scoped to their own branch, regardless of what branchId filter is submitted. */
+    get: operations['InstallmentAccountController_findAll']
+    put?: never
+    /** Create an installment account. A branch-assigned caller is always tied to their own branch, regardless of what branchId is submitted. */
+    post: operations['InstallmentAccountController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/price-check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Preview financing terms (AF/MI/PNV/Total Price/ID/PPD) without creating an account */
+    get: operations['InstallmentAccountController_priceCheck']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/suggest-collector': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Suggest a collector for a customer based on their barangay coverage (Scenario 24 Part 4) — a preview only, doesn't assign anything. Returns collectorId: null when there's no coverage match (falls back to manual pick). */
+    get: operations['InstallmentAccountController_suggestCollector']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/graduation-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List Category-C graduation requests across all accounts (e.g. filter status=pending for an approval queue) */
+    get: operations['InstallmentAccountController_listAllGraduationRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/dam-escalation-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List manual DAM escalation requests across all accounts (e.g. filter status=pending for an approval queue) */
+    get: operations['InstallmentAccountController_listAllDamEscalationRequests']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get an installment account with customer, branch, and collector detail */
+    get: operations['InstallmentAccountController_findOne']
+    put?: never
+    post?: never
+    /** Delete an installment account */
+    delete: operations['InstallmentAccountController_remove']
+    options?: never
+    head?: never
+    /** Update an installment account */
+    patch: operations['InstallmentAccountController_update']
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/early-payoff-quote': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Preview the early-closure amount (ID/Terms x Mos Run + LCP - Total Pay't) without settling the account */
+    get: operations['InstallmentAccountController_getEarlyPayoffQuote']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/early-payoff': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Settle an active installment account early */
+    post: operations['InstallmentAccountController_earlyPayoff']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/payments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Record a monthly due payment and score it (+1 if on-time/ahead, +0 if overdue) */
+    post: operations['InstallmentAccountController_recordPayment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/graduation-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List graduation requests for one account */
+    get: operations['InstallmentAccountController_listGraduationRequests']
+    put?: never
+    /** Request graduation to Category C — direct edits to Category C via PATCH are blocked; this starts the management-approval flow */
+    post: operations['InstallmentAccountController_requestGraduation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/graduation-requests/{requestId}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Management approval — promotes the account to Category C */
+    post: operations['InstallmentAccountController_approveGraduation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/graduation-requests/{requestId}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Management rejection — account stays at its current category */
+    post: operations['InstallmentAccountController_rejectGraduation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/dam-escalation-requests': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List DAM escalation requests for one account */
+    get: operations['InstallmentAccountController_listDamEscalationRequests']
+    put?: never
+    /** Request a manual DAM escalation (Scenario 20 "authorized high-risk trigger") ahead of the automatic not_moving rule */
+    post: operations['InstallmentAccountController_requestDamEscalation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/dam-escalation-requests/{requestId}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Management approval — moves the account into DAM early */
+    post: operations['InstallmentAccountController_approveDamEscalation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/dam-escalation-requests/{requestId}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Management rejection — account stays in NAMIDRe */
+    post: operations['InstallmentAccountController_rejectDamEscalation']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/legal-escalation': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update the legal-escalation checklist/status (Scenario 20 gap #5) — only valid once the account is in DAM */
+    patch: operations['InstallmentAccountController_updateLegalEscalation']
+    trace?: never
+  }
+  '/crm/reminders': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List reminders (filterable) */
+    get: operations['ReminderController_findAll']
+    put?: never
+    /** Create a reminder */
+    post: operations['ReminderController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/reminders/mine': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Personal reminder list for the given user (overdue surfaced) */
+    get: operations['ReminderController_findMine']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/reminders/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a reminder by ID */
+    get: operations['ReminderController_findOne']
+    put?: never
+    post?: never
+    /** Delete a reminder */
+    delete: operations['ReminderController_remove']
+    options?: never
+    head?: never
+    /** Update a reminder */
+    patch: operations['ReminderController_update']
+    trace?: never
+  }
+  '/crm/reminders/{id}/complete': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Mark a reminder as completed (auto-logs to interactions) */
+    post: operations['ReminderController_complete']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List customers (paginated, filterable) */
+    get: operations['CustomerController_findAll']
+    put?: never
+    /** Create a customer */
+    post: operations['CustomerController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/check-duplicate': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Non-blocking duplicate check by email/phone — flags, never blocks */
+    get: operations['CustomerController_checkDuplicate']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/duplicates': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** BM/AR Reviewer duplicate queue — active customer pairs sharing an email or phone, excluding already-dismissed pairs */
+    get: operations['CustomerController_findDuplicatePairs']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/duplicates/dismiss': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Mark a flagged pair as not a duplicate */
+    post: operations['CustomerController_dismissDuplicate']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a customer by ID */
+    get: operations['CustomerController_findOne']
+    put?: never
+    post?: never
+    /** Soft-delete a customer */
+    delete: operations['CustomerController_remove']
+    options?: never
+    head?: never
+    /** Update a customer */
+    patch: operations['CustomerController_update']
+    trace?: never
+  }
+  '/crm/customers/{id}/360': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Customer 360 — unified view with leads, interactions, reminders */
+    get: operations['CustomerController_findCustomer360']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/{id}/merge': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Merge a duplicate customer into this one (the survivor) — reassigns all related records, applies reviewer field overrides, soft-deletes the duplicate */
+    post: operations['CustomerController_merge']
+    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -6045,6 +6833,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/reports/cost-center': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ReportsController_costCenter']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ar-invoices': {
     parameters: {
       query?: never
@@ -6055,6 +6859,22 @@ export interface paths {
     get: operations['ARInvoicesController_findAll']
     put?: never
     post: operations['ARInvoicesController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ar-invoices/customers/search': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ARInvoicesController_searchCustomers']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -6184,8 +7004,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
+    /** List AP bills (filter by status/vendor/supplier/search) */
     get: operations['APBillsController_findAll']
     put?: never
+    /** Create an AP bill */
     post: operations['APBillsController_create']
     delete?: never
     options?: never
@@ -6200,13 +7022,33 @@ export interface paths {
       path?: never
       cookie?: never
     }
+    /** Get an AP bill by id */
     get: operations['APBillsController_findOne']
     put?: never
     post?: never
+    /** Soft-delete a DRAFT AP bill */
     delete: operations['APBillsController_remove']
     options?: never
     head?: never
+    /** Update a DRAFT AP bill */
     patch: operations['APBillsController_update']
+    trace?: never
+  }
+  '/ap-bills/{id}/match-check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Scenario 10 Part 2 — 3-way match: PO total vs. matched RRs' total vs. this bill's total */
+    get: operations['APBillsController_matchCheck']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/ap-bills/{id}/receive': {
@@ -6218,7 +7060,76 @@ export interface paths {
     }
     get?: never
     put?: never
+    /** Post a DRAFT bill to the GL */
     post: operations['APBillsController_receive']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Scenario 10 Part 4 — raise a voucher (manual number) against this bill, starting online approval */
+    post: operations['APBillsController_createVoucher']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/approve-online': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve the voucher online — moves it to pending onsite approval */
+    post: operations['APBillsController_approveVoucherOnline']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/approve-onsite': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve the voucher onsite — the final approval step */
+    post: operations['APBillsController_approveVoucherOnsite']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a pending voucher (online or onsite stage) */
+    post: operations['APBillsController_rejectVoucher']
     delete?: never
     options?: never
     head?: never
@@ -6234,7 +7145,114 @@ export interface paths {
     }
     get?: never
     put?: never
+    /** Record a payment against a bill */
     post: operations['APBillsController_recordPayment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/payments/{paymentId}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Scenario 10 Part 5 — print-ready cheque document envelope for a payment */
+    get: operations['APBillsController_getPaymentDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-payment-methods': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List AP payment methods and their GL account mappings */
+    get: operations['APPaymentMethodsController_findAll']
+    put?: never
+    /** Create an AP payment method (how suppliers get paid + GL account) */
+    post: operations['APPaymentMethodsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-payment-methods/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get an AP payment method config by id */
+    get: operations['APPaymentMethodsController_findOne']
+    put?: never
+    post?: never
+    /** Disable an AP payment method config */
+    delete: operations['APPaymentMethodsController_remove']
+    options?: never
+    head?: never
+    /** Update an AP payment method config */
+    patch: operations['APPaymentMethodsController_update']
+    trace?: never
+  }
+  '/supplier-debit-memos': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List supplier debit memos (filter by status/supplier/bill) */
+    get: operations['SupplierDebitMemosController_findAll']
+    put?: never
+    /** Scenario 10 Part 9 — issue a supplier debit memo (goods returned to supplier): posts the GL contra entry, reduces inventory, and reduces the AP balance */
+    post: operations['SupplierDebitMemosController_issue']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/supplier-debit-memos/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a supplier debit memo by id */
+    get: operations['SupplierDebitMemosController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/supplier-debit-memos/{id}/void': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Void a supplier debit memo — reverses its journal entry, restores the returned stock, and restores the bill balance */
+    post: operations['SupplierDebitMemosController_void']
     delete?: never
     options?: never
     head?: never
@@ -7002,128 +8020,6 @@ export interface paths {
     patch: operations['PipelineStageController_update']
     trace?: never
   }
-  '/crm/customers': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List customers (paginated, filterable) */
-    get: operations['CustomerController_findAll']
-    put?: never
-    /** Create a customer */
-    post: operations['CustomerController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/customers/check-duplicate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Non-blocking duplicate check by email/phone — flags, never blocks */
-    get: operations['CustomerController_checkDuplicate']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/customers/duplicates': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** BM/AR Reviewer duplicate queue — active customer pairs sharing an email or phone, excluding already-dismissed pairs */
-    get: operations['CustomerController_findDuplicatePairs']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/customers/duplicates/dismiss': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Mark a flagged pair as not a duplicate */
-    post: operations['CustomerController_dismissDuplicate']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/customers/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a customer by ID */
-    get: operations['CustomerController_findOne']
-    put?: never
-    post?: never
-    /** Soft-delete a customer */
-    delete: operations['CustomerController_remove']
-    options?: never
-    head?: never
-    /** Update a customer */
-    patch: operations['CustomerController_update']
-    trace?: never
-  }
-  '/crm/customers/{id}/360': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Customer 360 — unified view with leads, interactions, reminders */
-    get: operations['CustomerController_findCustomer360']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/customers/{id}/merge': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Merge a duplicate customer into this one (the survivor) — reassigns all related records, applies reviewer field overrides, soft-deletes the duplicate */
-    post: operations['CustomerController_merge']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/crm/leads': {
     parameters: {
       query?: never
@@ -7266,77 +8162,6 @@ export interface paths {
     patch: operations['InteractionController_update']
     trace?: never
   }
-  '/crm/reminders': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List reminders (filterable) */
-    get: operations['ReminderController_findAll']
-    put?: never
-    /** Create a reminder */
-    post: operations['ReminderController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/reminders/mine': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Personal reminder list for the given user (overdue surfaced) */
-    get: operations['ReminderController_findMine']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/reminders/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a reminder by ID */
-    get: operations['ReminderController_findOne']
-    put?: never
-    post?: never
-    /** Delete a reminder */
-    delete: operations['ReminderController_remove']
-    options?: never
-    head?: never
-    /** Update a reminder */
-    patch: operations['ReminderController_update']
-    trace?: never
-  }
-  '/crm/reminders/{id}/complete': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Mark a reminder as completed (auto-logs to interactions) */
-    post: operations['ReminderController_complete']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/crm/customer-segments': {
     parameters: {
       query?: never
@@ -7415,10 +8240,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List collectors (paginated, filterable) */
+    /** List collectors (paginated, filterable). A branch-assigned caller is always scoped to their own branch, regardless of what branchId is submitted. */
     get: operations['CollectorController_findAll']
     put?: never
-    /** Create a collector */
+    /** Create a collector. A branch-assigned caller's collector is always tied to their own branch, regardless of what was submitted. */
     post: operations['CollectorController_create']
     delete?: never
     options?: never
@@ -7456,180 +8281,6 @@ export interface paths {
     put?: never
     /** Record a cash remittance from a collector to the cashier */
     post: operations['CollectorController_remit']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List installment accounts (paginated, filterable) */
-    get: operations['InstallmentAccountController_findAll']
-    put?: never
-    /** Create an installment account */
-    post: operations['InstallmentAccountController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/price-check': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Preview financing terms (AF/MI/PNV/Total Price/ID/PPD) without creating an account */
-    get: operations['InstallmentAccountController_priceCheck']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/graduation-requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List Category-C graduation requests across all accounts (e.g. filter status=pending for an approval queue) */
-    get: operations['InstallmentAccountController_listAllGraduationRequests']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get an installment account with customer, branch, and collector detail */
-    get: operations['InstallmentAccountController_findOne']
-    put?: never
-    post?: never
-    /** Delete an installment account */
-    delete: operations['InstallmentAccountController_remove']
-    options?: never
-    head?: never
-    /** Update an installment account */
-    patch: operations['InstallmentAccountController_update']
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/early-payoff-quote': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Preview the early-closure amount (ID/Terms x Mos Run + LCP - Total Pay't) without settling the account */
-    get: operations['InstallmentAccountController_getEarlyPayoffQuote']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/early-payoff': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Settle an active installment account early */
-    post: operations['InstallmentAccountController_earlyPayoff']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/payments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Record a monthly due payment and score it (+1 if on-time/ahead, +0 if overdue) */
-    post: operations['InstallmentAccountController_recordPayment']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/graduation-requests': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List graduation requests for one account */
-    get: operations['InstallmentAccountController_listGraduationRequests']
-    put?: never
-    /** Request graduation to Category C — direct edits to Category C via PATCH are blocked; this starts the management-approval flow */
-    post: operations['InstallmentAccountController_requestGraduation']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/graduation-requests/{requestId}/approve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Management approval — promotes the account to Category C */
-    post: operations['InstallmentAccountController_approveGraduation']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/crm/installment-accounts/{id}/graduation-requests/{requestId}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Management rejection — account stays at its current category */
-    post: operations['InstallmentAccountController_rejectGraduation']
     delete?: never
     options?: never
     head?: never
@@ -7697,10 +8348,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List collection incentives (paginated, filterable) */
+    /** List collection incentives (paginated, filterable). A branch-assigned caller is always scoped to their own branch, regardless of what branchId is submitted. */
     get: operations['CollectionIncentiveController_findAll']
     put?: never
-    /** Manually enter a collection incentive — A/B categories auto-approve, C/D require management approval */
+    /** Manually enter a collection incentive — A/B categories auto-approve, C/D require management approval. A branch-assigned caller's incentive is always tied to their own branch, regardless of what was submitted. */
     post: operations['CollectionIncentiveController_create']
     delete?: never
     options?: never
@@ -7717,7 +8368,7 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** PROVISIONAL — auto-generate this month's incentives as a flat % of each collector's remitted collections. Rate defaults to 5% pending client confirmation. Safe to re-run; collectors already auto-generated for the period are skipped. */
+    /** PROVISIONAL — auto-generate this month's incentives as a flat % of each collector's remitted collections. Rate defaults to 5% pending client confirmation. Safe to re-run; collectors already auto-generated for the period are skipped. A branch-assigned caller only rolls up incentives for their own branch's collectors. */
     post: operations['CollectionIncentiveController_generateMonthly']
     delete?: never
     options?: never
@@ -8187,6 +8838,213 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/credit/applications': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List credit applications (paginated) */
+    get: operations['CreditApplicationController_findAll']
+    put?: never
+    /** Open a new credit application (draft) */
+    post: operations['CreditApplicationController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single credit application */
+    get: operations['CreditApplicationController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Edit a draft credit application */
+    patch: operations['CreditApplicationController_update']
+    trace?: never
+  }
+  '/credit/applications/{id}/submit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Submit a draft application for investigation — requires at least one document */
+    patch: operations['CreditApplicationController_submit']
+    trace?: never
+  }
+  '/credit/applications/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** BM/Credit Approver approves a pending_approval application */
+    patch: operations['CreditApplicationController_approve']
+    trace?: never
+  }
+  '/credit/applications/{id}/decline': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** BM/Credit Approver declines a pending_approval application */
+    patch: operations['CreditApplicationController_decline']
+    trace?: never
+  }
+  '/credit/applications/{id}/cancel': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Cancel a draft credit application */
+    patch: operations['CreditApplicationController_cancel']
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/documents': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List documents attached to a credit application */
+    get: operations['CreditApplicationDocumentsController_findAll']
+    put?: never
+    /** Attach an already-uploaded file to a draft credit application */
+    post: operations['CreditApplicationDocumentsController_attach']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/documents/{documentId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    /** Detach a document from a draft credit application */
+    delete: operations['CreditApplicationDocumentsController_remove']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/investigation/start': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Claim a submitted application for investigation */
+    post: operations['CreditInvestigationController_start']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/investigation': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Record the investigation outcome — moves the application to pending_approval */
+    post: operations['CreditInvestigationController_record']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/promissory-note': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get the promissory note(s) generated for this application's installment sale — one per installment line */
+    get: operations['PromissoryNoteController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit/applications/{applicationId}/promissory-note/sign': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Mark every promissory note for this application as signed — unblocks release alongside the manager-approval gate */
+    post: operations['PromissoryNoteController_sign']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
 }
 export type webhooks = Record<string, never>
 export interface components {
@@ -8545,6 +9403,22 @@ export interface components {
        */
       secondarySerialNumberId?: string
       notes?: string
+      /** @description PriceListItem this line resolved to under the sale's selected Price Use — omit if manually overridden */
+      priceListItemId?: string
+      /** @description True when unitPrice was manually set by a PIN-approved manager override rather than resolved from priceListItemId */
+      priceOverride?: boolean
+      /**
+       * @description Per-line payment mode, so one cart can mix cash/charge/installment lines. Falls back to the transaction-level invoiceType when omitted (default cash), so whole-cart single-mode sales can keep sending one transaction-level invoiceType and skip this per line.
+       * @enum {string}
+       */
+      invoiceType?: 'cash' | 'charge' | 'installment'
+      /** @description Financing term for this line (installment lines only). Falls back to the transaction-level financingTermId when omitted. */
+      financingTermId?: string
+      /**
+       * @description This line's own down payment (installment lines only) — each installment line carries its own down payment rather than one pooled across the cart. Falls back to the transaction-level downPayment when omitted.
+       * @example 3000
+       */
+      downPayment?: number
     }
     CreateTransactionDto: {
       /** @example uuid-session-id */
@@ -8556,6 +9430,8 @@ export interface components {
       transactionType: 'sale' | 'refund' | 'exchange'
       /** @example uuid-customer-id */
       customerId?: string
+      /** @description Price Use category selected once for this whole sale (WIP/CR-BR/SSC/PROMO/etc.) — every line resolves its price against this unless individually overridden. */
+      priceUseTypeId?: string
       /**
        * @description For refunds/exchanges
        * @example uuid-original-transaction-id
@@ -8642,6 +9518,8 @@ export interface components {
       chargeDueDays?: number
       /** @description Financing term to apply (installment invoices only) */
       financingTermId?: string
+      /** @description Scenario 17 Part 6 — the customer's approved CreditApplication this sale fulfills (installment invoices only, required). Must be 'approved', belong to this customer and branch, and not already linked to another sale. */
+      creditApplicationId?: string
       /**
        * @description Amount collected up front (installment invoices only). Defaults to 0.
        * @example 3000
@@ -8753,6 +9631,7 @@ export interface components {
       itemId: string
       estimatedQty: number
       notes?: string
+      serialNumberId?: string
     }
     CreateServiceDraftDto: {
       branchId?: string
@@ -8771,7 +9650,7 @@ export interface components {
       lines: components['schemas']['CreateServiceDraftLineDto'][]
     }
     StartInstallDto: {
-      technicianId: string
+      technicianName: string
     }
     RecordActualLineDto: {
       lineId: string
@@ -9025,6 +9904,16 @@ export interface components {
        */
       defaultPricingMode?: 'inclusive' | 'exclusive'
     }
+    CoMakerInputDto: {
+      /** @example Maria Santos */
+      name: string
+      /** @example Spouse */
+      relationship: string
+      /** @example +63 917 000 1111 */
+      contactNumber: string
+      /** @example maria@example.com */
+      email?: string
+    }
     CreatePosCustomerDto: {
       /** @example Juan */
       firstName: string
@@ -9034,11 +9923,6 @@ export interface components {
       phoneNumber: string
       /** @example juan@example.com */
       email?: string
-      /**
-       * @description Deprecated — use shippingAddress. Kept for existing callers.
-       * @example 123 Rizal St, Manila
-       */
-      address?: string
       /** @example Referred by store staff */
       note?: string
       /**
@@ -9080,7 +9964,12 @@ export interface components {
       isTaxExempt: boolean
       taxExemptionRef?: string
       /** @example 123 Rizal St, Manila */
-      shippingAddress?: string
+      address?: string
+      /**
+       * @description PSGC code of the customer's barangay, for area-based collector assignment
+       * @example 012802001
+       */
+      barangayCode?: string
       /** @example Net 30 */
       paymentTerms?: string
       /**
@@ -9088,6 +9977,17 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive' | 'blocked'
+      coMakers?: components['schemas']['CoMakerInputDto'][]
+      /** @example Driver's License */
+      idType?: string
+      /** @example N01-23-456789 */
+      idNumber?: string
+      /** @description File id from POST /files/upload */
+      idDocumentFileId?: string
+      /** @default false */
+      consentGiven: boolean
+      /** Format: date-time */
+      consentGivenAt?: string
     }
     RegisterPinDto: {
       /**
@@ -9123,6 +10023,12 @@ export interface components {
     ValidateByPinOnlyDto: {
       /** @example 9999 */
       pin: string
+    }
+    ResolvePosPricesDto: {
+      /** @description PriceUseType ID selected for this sale */
+      priceUseTypeId: string
+      /** @description Item IDs currently in the cart */
+      itemIds: string[]
     }
     CreateCustomPaymentMethodDto: {
       /** @example Company Charge Account */
@@ -9267,6 +10173,11 @@ export interface components {
       financingTermId: string
     }
     UpdateFinancingTermDto: {
+      /**
+       * @description Number of monthly installments
+       * @example 12
+       */
+      termMonths?: number
       factorRate?: number
       isActive?: boolean
       notes?: string
@@ -9416,14 +10327,15 @@ export interface components {
        * @example 365
        */
       warrantyPeriodDays?: number
-      /** @description Item group ID */
-      groupId?: string
-      /** @description Item subgroup ID */
-      subgroupId?: string
       /** @description Item brand ID */
       brandId?: string
       /** @description Item type ID */
       typeId?: string
+      /**
+       * @description Catalog model/part number, e.g. the manufacturer's model code
+       * @example KFM36E0W
+       */
+      modelNumber?: string
     }
     UpdateItemDto: {
       /**
@@ -9534,14 +10446,41 @@ export interface components {
        * @example 365
        */
       warrantyPeriodDays?: number
-      /** @description Item group ID */
-      groupId?: string
-      /** @description Item subgroup ID */
-      subgroupId?: string
       /** @description Item brand ID */
       brandId?: string
       /** @description Item type ID */
       typeId?: string
+      /**
+       * @description Catalog model/part number, e.g. the manufacturer's model code
+       * @example KFM36E0W
+       */
+      modelNumber?: string
+    }
+    ReceiveInitialUnitDto: {
+      /** @description Warehouse to receive this unit into */
+      warehouseId: string
+      /**
+       * @description Date received (YYYY-MM-DD, or MM-DD-YY)
+       * @example 2026-04-25
+       */
+      dateIn: string
+      /**
+       * @description Receiving report number
+       * @example RR#163451S
+       */
+      rr: string
+      /**
+       * @description Supplier name, or a warehouse code (e.g. "WHSE") for internal stock with no trading partner
+       * @example CONCEPTION MIDEA INC.
+       */
+      origin?: string
+      /**
+       * @description Unit cost
+       * @example 38202.75
+       */
+      price?: number
+      /** @description Required when the item is serial-tracked; omit for non-serial-tracked items */
+      serialNumber?: string
     }
     UpdateLifecycleDto: {
       /**
@@ -9549,6 +10488,28 @@ export interface components {
        * @enum {string}
        */
       lifecycle: 'active' | 'discontinued' | 'archived'
+    }
+    ConfirmAccountingDto: {
+      /** @description Corrected tax rate ID, if Accounting needs to fix it before confirming */
+      taxRateId?: string
+      /** @description Corrected revenue account ID, if Accounting needs to fix it before confirming */
+      revenueAccountId?: string
+      /** @description Corrected COGS account ID, if Accounting needs to fix it before confirming */
+      cogsAccountId?: string
+      /** @description Corrected inventory account ID, if Accounting needs to fix it before confirming */
+      inventoryAccountId?: string
+      remarks?: string
+    }
+    RejectAccountingDto: {
+      /** @description Reason the tax/GL mapping was rejected */
+      reason: string
+    }
+    ApproveItemDto: {
+      remarks?: string
+    }
+    RejectItemDto: {
+      /** @description Reason the item was rejected */
+      reason: string
     }
     CreateVariantDto: {
       /**
@@ -10091,6 +11052,30 @@ export interface components {
       /** @description Carrier or trucking company name */
       carrierName: string
     }
+    ReceiveTransferLineDto: {
+      /** @description StockTransferLine UUID this receipt line resolves */
+      stockTransferLineId: string
+      /**
+       * @description Quantity actually received for this line. 0 is valid (nothing arrived / serial not checked off). For a serial-tracked line (quantity is always 1) this must be 0 or 1.
+       * @example 8
+       */
+      quantityReceived: number
+    }
+    ReceiveTransferExtraLineDto: {
+      /** @description Item UUID for stock physically received but not on the original dispatched lines (e.g. a miscounted dispatch, a bundled extra). Non-serial-tracked items only — a serial-tracked overage has to go through the serial-numbers module instead. */
+      itemId: string
+      /** @description Variant UUID */
+      variantId?: string
+      /** @description Batch UUID */
+      batchId?: string
+      /**
+       * @description Quantity received beyond the dispatched lines
+       * @example 2
+       */
+      quantity: number
+      /** @description Why this extra item was received */
+      notes?: string
+    }
     ReceiveTransferDto: {
       /**
        * @description Actual received date (ISO 8601)
@@ -10099,6 +11084,10 @@ export interface components {
       receivedDate: string
       /** @description Receipt notes */
       notes?: string
+      /** @description One entry per OUTSTANDING StockTransferLine — a line not yet at its full dispatched quantity. On a first receive that is every line; on a reopened receive against a 'partially_received' transfer it's only the lines still short, including any with quantityReceived: 0. */
+      lines: components['schemas']['ReceiveTransferLineDto'][]
+      /** @description Items physically received that were never part of the dispatched lines above — recorded as their own receipt lines, distinct from the reconciled ones, so an overage never masquerades as a bigger match against a dispatched line. */
+      extraLines?: components['schemas']['ReceiveTransferExtraLineDto'][]
     }
     AdjustmentLineDto: {
       /** @description Item UUID */
@@ -10145,6 +11134,10 @@ export interface components {
       /** @description Adjustment lines (at least 1 required) */
       lines: components['schemas']['AdjustmentLineDto'][]
     }
+    RejectAdjustmentDto: {
+      /** @description Reason the adjustment was rejected */
+      reason: string
+    }
     CreateCountDto: {
       /** @description Warehouse UUID to count */
       warehouseId: string
@@ -10159,6 +11152,18 @@ export interface components {
        */
       scheduledDate: string
     }
+    AddCountLineDto: {
+      /** @description Item UUID */
+      itemId: string
+      /** @description Variant UUID */
+      variantId?: string
+      /** @description Batch UUID */
+      batchId?: string
+      /** @description Location UUID within the warehouse */
+      locationId?: string
+      /** @description Serial number UUID — a genuinely unexpected physical unit found during a serial-level count (Scenario 19 Part 5) */
+      serialNumberId?: string
+    }
     CountLineSubmitDto: {
       /** @description Item UUID */
       itemId: string
@@ -10168,11 +11173,8 @@ export interface components {
       batchId?: string
       /** @description Location UUID within the warehouse */
       locationId?: string
-      /**
-       * @description Expected (system) quantity before count
-       * @example 100
-       */
-      expectedQty: number
+      /** @description Serial number UUID — present only for a serial-level count line (Scenario 19 Part 5); matches the line by serial instead of item/variant/batch/location */
+      serialNumberId?: string
       /**
        * @description Actual quantity counted
        * @example 97
@@ -10254,6 +11256,7 @@ export interface components {
         | 'scrapped'
         | 'in_repair'
         | 'pulled_out'
+        | 'lost_in_transit'
       /**
        * @description Required when status is sold
        * @example customer-uuid
@@ -10284,6 +11287,21 @@ export interface components {
        * @example branch-uuid
        */
       hostBranchId: string
+      /**
+       * @description Optional name for the caravan event these serials are being consigned for
+       * @example Summer Caravan 2026 — SM Cebu
+       */
+      eventName?: string
+      /**
+       * @description Event start date. If given with eventEndDate, must not be after it.
+       * @example 2026-08-15
+       */
+      eventStartDate?: string
+      /**
+       * @description Event end date. If given with eventStartDate, must not be before it.
+       * @example 2026-08-17
+       */
+      eventEndDate?: string
     }
     CloseConsignmentDto: {
       /**
@@ -10712,6 +11730,14 @@ export interface components {
       /** @description Pricing breakdown, e.g. "(3,649 - 30% - 20%)" */
       description?: string
       notes?: string
+      /** @description Scenario 10 Part 6 — supplier suggested retail/list price for this line */
+      srp?: number
+      /** @enum {string} */
+      discountType?: 'percentage' | 'amount'
+      /** @description Interpreted per discountType — a percent (0-100) or a flat amount off srp */
+      discountValue?: number
+      /** @description Scenario 10 Part 8 — a supplier-given free unit; unitPrice/lineTotal are forced to 0 server-side when true */
+      isFreebie?: boolean
     }
     CreatePoDto: {
       supplierId: string
@@ -10740,6 +11766,14 @@ export interface components {
       /** @description Pricing breakdown, e.g. "(3,649 - 30% - 20%)" */
       description?: string
       notes?: string
+      /** @description Scenario 10 Part 6 — supplier suggested retail/list price for this line */
+      srp?: number
+      /** @enum {string} */
+      discountType?: 'percentage' | 'amount'
+      /** @description Interpreted per discountType — a percent (0-100) or a flat amount off srp */
+      discountValue?: number
+      /** @description Scenario 10 Part 8 — a supplier-given free unit; unitPrice/lineTotal are forced to 0 server-side when true */
+      isFreebie?: boolean
     }
     ConvertPrToPoDto: {
       supplierId: string
@@ -10822,32 +11856,6 @@ export interface components {
       isActive?: boolean
       notes?: string
     }
-    CreateItemGroupDto: {
-      /** @example Mobile Phones */
-      name: string
-      /** @example All mobile phone products */
-      description?: string
-    }
-    UpdateItemGroupDto: {
-      /** @example Mobile Phones */
-      name?: string
-      /** @example All mobile phone products */
-      description?: string
-    }
-    CreateItemSubgroupDto: {
-      /** @description Parent group ID */
-      groupId: string
-      /** @example Android Phones */
-      name: string
-      description?: string
-    }
-    UpdateItemSubgroupDto: {
-      /** @description Parent group ID */
-      groupId?: string
-      /** @example Android Phones */
-      name?: string
-      description?: string
-    }
     CreateItemBrandDto: {
       /** @example Samsung */
       name: string
@@ -10922,6 +11930,12 @@ export interface components {
       effectiveFrom?: string
       effectiveTo?: string
     }
+    ApproveTaxRateChangeDto: {
+      remarks?: string
+    }
+    RejectTaxRateChangeDto: {
+      reason: string
+    }
     UpdateTaxRateDto: {
       name?: string
       rate?: number
@@ -10942,6 +11956,417 @@ export interface components {
       entityType: string
       /** @description UUID of the target record */
       entityId: string
+    }
+    CreateInstallmentAccountDto: {
+      /** @example IA-0001 */
+      accountNumber: string
+      /** @description Accounting customer ID */
+      customerId: string
+      branchId?: string
+      collectorId?: string
+      /** @description Linked AR invoice, if this account bills through one */
+      arInvoiceId?: string
+      /** @description Set only when this account was auto-created from a POS installment-line sale (TransactionsService.createLinkedInstallmentAccount) rather than hand-entered — bridges the POS InstallmentSchedule to this collections ledger. */
+      installmentScheduleId?: string
+      /**
+       * @description Listed Cash Price
+       * @example 50000
+       */
+      listedCashPrice: number
+      /**
+       * @description Down payment
+       * @example 10000
+       */
+      downPayment: number
+      /**
+       * @description Term in months (1-12 per policy)
+       * @example 12
+       */
+      termMonths: number
+      /**
+       * @description MI factor applied to Amount Financed
+       * @example 0.0954
+       */
+      miFactor: number
+      lastOrNumber?: string
+      lastOrDate?: string
+      lastOrAmount?: number
+    }
+    InstallmentAccountListItemDto: {
+      id: string
+      accountNumber: string
+      customerId: string
+      branchId?: string
+      collectorId?: string
+      currentBalance: string
+      /** @enum {string} */
+      category?: 'A' | 'B' | 'C' | 'D'
+      /** @enum {string} */
+      classification?: 'official' | 'arrears' | 'not_moving'
+      agingBucket?: string
+      /** @enum {string} */
+      status: 'active' | 'closed' | 'early_closed' | 'written_off'
+      createdAt: string
+    }
+    InstallmentAccountPaginationMetaDto: {
+      total: number
+      page: number
+      limit: number
+      lastPage: number
+    }
+    PaginatedInstallmentAccountDto: {
+      data: components['schemas']['InstallmentAccountListItemDto'][]
+      meta: components['schemas']['InstallmentAccountPaginationMetaDto']
+    }
+    UpdateInstallmentAccountDto: {
+      /** @example IA-0001 */
+      accountNumber?: string
+      /** @description Accounting customer ID */
+      customerId?: string
+      branchId?: string
+      collectorId?: string
+      /** @description Linked AR invoice, if this account bills through one */
+      arInvoiceId?: string
+      /** @description Set only when this account was auto-created from a POS installment-line sale (TransactionsService.createLinkedInstallmentAccount) rather than hand-entered — bridges the POS InstallmentSchedule to this collections ledger. */
+      installmentScheduleId?: string
+      /**
+       * @description Listed Cash Price
+       * @example 50000
+       */
+      listedCashPrice?: number
+      /**
+       * @description Down payment
+       * @example 10000
+       */
+      downPayment?: number
+      /**
+       * @description Term in months (1-12 per policy)
+       * @example 12
+       */
+      termMonths?: number
+      /**
+       * @description MI factor applied to Amount Financed
+       * @example 0.0954
+       */
+      miFactor?: number
+      lastOrNumber?: string
+      lastOrDate?: string
+      lastOrAmount?: number
+      /** @enum {string} */
+      status?: 'active' | 'closed' | 'early_closed' | 'written_off'
+      /** @enum {string} */
+      category?: 'A' | 'B' | 'C' | 'D'
+      /** @enum {string} */
+      classification?: 'official' | 'arrears' | 'not_moving'
+      /** @example current | 30 | 60 | 90 | over_90 */
+      agingBucket?: string
+      arrears?: number
+      penalty?: number
+      miDue?: number
+      notYetDue?: number
+      totalDue?: number
+      uncollected?: number
+      currentBalance?: number
+      dpBalance?: number
+    }
+    EarlyPayoffDto: {
+      /**
+       * @description Full payoff amount received. Defaults to the computed early-closure quote (ID/Terms x Mos Run + LCP - Total Pay't) if omitted.
+       * @example 32000
+       */
+      payoffAmount?: number
+      /** @example 2026-07-15T00:00:00.000Z */
+      paidAt: string
+      /** @description OR number for the payoff receipt */
+      orNumber?: string
+    }
+    RecordPaymentDto: {
+      /**
+       * @description Monthly installment amount received
+       * @example 3816
+       */
+      amount: number
+      /**
+       * @description The due date this payment settles
+       * @example 2026-08-15T00:00:00.000Z
+       */
+      dueDate: string
+      /** @example 2026-08-10T00:00:00.000Z */
+      paidAt: string
+      orNumber?: string
+    }
+    RequestGraduationDto: {
+      notes?: string
+    }
+    RejectGraduationDto: {
+      reason?: string
+    }
+    RequestDamEscalationDto: {
+      /** @description Scenario 20 (DAM) — why this account should move to DAM early, ahead of the automatic not_moving classification rule */
+      reason?: string
+    }
+    RejectDamEscalationDto: {
+      reason?: string
+    }
+    UpdateLegalEscalationDto: {
+      /**
+       * @description Scenario 20 (DAM) gap #5 — checklist/status only, no document generation
+       * @enum {string}
+       */
+      status: 'none' | 'soa_prepared' | 'demand_letter_sent' | 'small_claims_pack_ready' | 'filed'
+      notes?: string
+    }
+    CreateReminderDto: {
+      /** @example tenant-001 */
+      tenantId: string
+      /** @description One of customerId/leadId/installmentAccountId required */
+      customerId?: string
+      /** @description One of customerId/leadId/installmentAccountId required */
+      leadId?: string
+      /** @description Scenario 20 (NAMIDRe) — one of customerId/leadId/installmentAccountId required. A collections follow-up task against an installment account rather than a generic CRM reminder. */
+      installmentAccountId?: string
+      /** @description Collector this NAMIDRe task is assigned to, if applicable */
+      collectorId?: string
+      /** @description User ID — sales rep this is assigned to */
+      assignedTo: string
+      /** @enum {string} */
+      reminderType: 'call' | 'email' | 'visit' | 'other'
+      /** @example 2026-05-20T09:00:00.000Z */
+      dueAt: string
+      /** @example Follow up on Q2 proposal */
+      note?: string
+    }
+    ReminderDto: {
+      id: string
+      customerId?: string
+      leadId?: string
+      installmentAccountId?: string
+      collectorId?: string
+      assignedTo: string
+      /** @enum {string} */
+      reminderType: 'call' | 'email' | 'visit' | 'other'
+      dueAt: string
+      note?: string
+      /** @enum {string} */
+      status: 'pending' | 'completed' | 'overdue' | 'cancelled'
+      completedAt?: string
+      createdAt: string
+    }
+    UpdateReminderDto: {
+      /** @example tenant-001 */
+      tenantId?: string
+      /** @description One of customerId/leadId/installmentAccountId required */
+      customerId?: string
+      /** @description One of customerId/leadId/installmentAccountId required */
+      leadId?: string
+      /** @description Scenario 20 (NAMIDRe) — one of customerId/leadId/installmentAccountId required. A collections follow-up task against an installment account rather than a generic CRM reminder. */
+      installmentAccountId?: string
+      /** @description Collector this NAMIDRe task is assigned to, if applicable */
+      collectorId?: string
+      /** @description User ID — sales rep this is assigned to */
+      assignedTo?: string
+      /** @enum {string} */
+      reminderType?: 'call' | 'email' | 'visit' | 'other'
+      /** @example 2026-05-20T09:00:00.000Z */
+      dueAt?: string
+      /** @example Follow up on Q2 proposal */
+      note?: string
+    }
+    CompleteReminderDto: {
+      /**
+       * @description Outcome/proof of the contact (Scenario 20 NAMIDRe) — used as the auto-logged interaction outcome instead of a generic note.
+       * @example Reached customer, promised to pay by Friday
+       */
+      outcome?: string
+      /**
+       * @description Dedicated phone/channel used for this contact (Scenario 20 NAMIDRe)
+       * @example +639171234567
+       */
+      contactPhone?: string
+      /** @description Scenario 20 (DAM) — structured Promise-to-Pay, distinct from a generic outcome note */
+      isPromiseToPay?: boolean
+      /** @description Committed amount, only meaningful when isPromiseToPay */
+      ptpAmount?: number
+      /**
+       * @description Committed date, only meaningful when isPromiseToPay
+       * @example 2026-08-15T00:00:00.000Z
+       */
+      ptpDate?: string
+    }
+    CustomerBankAccountInputDto: {
+      /** @example BPI */
+      bankName: string
+      /** @example 1234-5678-9012 */
+      accountNumber: string
+      /** @example Maria Santos */
+      accountName?: string
+      /** @default false */
+      isPrimary: boolean
+    }
+    CreateCustomerDto: {
+      firstName: string
+      lastName: string
+      phoneNumber?: string
+      address?: string
+      email: string
+      note?: string
+      /**
+       * @default individual
+       * @enum {string}
+       */
+      customerType: 'individual' | 'business' | 'employee'
+      /** @description Groups related customer records (e.g. same household) so their invoices can be tracked together */
+      groupId?: string
+      /**
+       * @default alive
+       * @enum {string}
+       */
+      lifecycleStatus: 'alive' | 'dead' | 'employed'
+    }
+    CustomerBankAccountDto: {
+      id: string
+      bankName: string
+      accountNumber: string
+      accountName?: string
+      /** @default false */
+      isPrimary: boolean
+      createdAt: string
+      updatedAt: string
+    }
+    CoMakerDto: {
+      id: string
+      name: string
+      relationship: string
+      contactNumber: string
+      email?: string
+      createdAt: string
+      updatedAt: string
+    }
+    IdDocumentFileDto: {
+      id: string
+      originalName: string
+      mimeType: string
+      size: number
+    }
+    MergedFromDto: {
+      id: string
+      customerCode: string
+      name: string
+      mergedAt?: string
+    }
+    CustomerDetailDto: {
+      id: string
+      customerCode: string
+      name: string
+      /** @enum {string} */
+      customerType: 'individual' | 'business' | 'employee'
+      email?: string
+      phone?: string
+      /** @enum {string} */
+      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
+      /** @enum {string} */
+      status: 'active' | 'inactive' | 'blocked'
+      groupId?: string
+      createdAt: string
+      companyName?: string
+      /** @enum {string} */
+      businessCategory?: 'private' | 'government'
+      employeeNumber?: string
+      birthday?: string
+      taxId?: string
+      isTaxExempt: boolean
+      taxExemptionRef?: string
+      address?: string
+      barangayCode?: string
+      paymentTerms?: string
+      creditLimit?: number
+      notes?: string
+      bankAccounts: components['schemas']['CustomerBankAccountDto'][]
+      coMakers: components['schemas']['CoMakerDto'][]
+      idType?: string
+      idNumber?: string
+      idDocumentFile?: components['schemas']['IdDocumentFileDto']
+      /** @default false */
+      consentGiven: boolean
+      consentGivenAt?: string
+      updatedAt: string
+      /** @description Only present when this response came from following an old, merged-away customer id — tells the UI where the data actually came from */
+      mergedFrom?: components['schemas']['MergedFromDto']
+    }
+    CustomerListItemDto: {
+      id: string
+      customerCode: string
+      name: string
+      /** @enum {string} */
+      customerType: 'individual' | 'business' | 'employee'
+      email?: string
+      phone?: string
+      /** @enum {string} */
+      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
+      /** @enum {string} */
+      status: 'active' | 'inactive' | 'blocked'
+      groupId?: string
+      createdAt: string
+    }
+    PaginationMetaDto: {
+      total: number
+      page: number
+      limit: number
+      lastPage: number
+    }
+    PaginatedCustomerDto: {
+      data: components['schemas']['CustomerListItemDto'][]
+      meta: components['schemas']['PaginationMetaDto']
+    }
+    DuplicateCheckMatchDto: {
+      id: string
+      name: string
+    }
+    DuplicateCheckResultDto: {
+      duplicate: boolean
+      /** @enum {string} */
+      matchedField?: 'email' | 'phone'
+      customer?: components['schemas']['DuplicateCheckMatchDto']
+    }
+    DuplicatePairCustomerDto: {
+      id: string
+      customerCode: string
+      name: string
+      /** @enum {string} */
+      customerType: 'individual' | 'business' | 'employee'
+      email?: string
+      phone?: string
+      address?: string
+      createdAt: string
+    }
+    DuplicatePairDto: {
+      customerA: components['schemas']['DuplicatePairCustomerDto']
+      customerB: components['schemas']['DuplicatePairCustomerDto']
+      /** @enum {string} */
+      matchedField: 'email' | 'phone'
+    }
+    DismissDuplicateDto: {
+      customerAId: string
+      customerBId: string
+    }
+    UpdateCustomerDto: {
+      firstName?: string
+      lastName?: string
+      phoneNumber?: string
+      address?: string
+      email?: string
+      note?: string
+      /** @enum {string} */
+      customerType?: 'individual' | 'business' | 'employee'
+      groupId?: string
+      /** @enum {string} */
+      lifecycleStatus?: 'alive' | 'dead' | 'employed'
+    }
+    MergeCustomersDto: {
+      /** @description The losing record — merged into the :id in the URL, then soft-deleted */
+      duplicateId: string
+      /** @description Reviewer-chosen field values to apply to the surviving record (e.g. picking the duplicate's phone number over the survivor's). Only the fields provided are changed — everything else keeps the survivor's current value. */
+      fieldOverrides?: components['schemas']['UpdateCustomerDto']
     }
     SupplierBankAccountInputDto: {
       /** @example BPI */
@@ -11078,12 +12503,6 @@ export interface components {
       status: 'active' | 'inactive' | 'blacklisted'
       createdAt: string
       updatedAt: string
-    }
-    PaginationMetaDto: {
-      total: number
-      page: number
-      limit: number
-      lastPage: number
     }
     PaginatedSupplierDto: {
       data: components['schemas']['SupplierListItemDto'][]
@@ -11378,176 +12797,6 @@ export interface components {
       businessType?: string
       visibility?: boolean
     }
-    CreateCustomerDto: {
-      /**
-       * @description Ignored on create — the server always derives this from the authenticated session.
-       * @example tenant-001
-       */
-      tenantId?: string
-      /**
-       * @description Ignored on create — the server always auto-generates a unique code.
-       * @example CUS-0001
-       */
-      customerCode?: string
-      /** @example Maria Santos */
-      name: string
-      /**
-       * @default individual
-       * @enum {string}
-       */
-      customerType: 'individual' | 'business' | 'employee'
-      /** @example Santos Trading Inc. */
-      companyName?: string
-      /**
-       * @description Business-only sub-classification, for customerType business only
-       * @enum {string}
-       */
-      businessCategory?: 'private' | 'government'
-      /**
-       * @description NIG employee ID, for customerType employee only
-       * @example EMP-0042
-       */
-      employeeNumber?: string
-      /**
-       * Format: date-time
-       * @example 1990-05-14
-       */
-      birthday?: string
-      bankAccounts?: components['schemas']['CustomerBankAccountInputDto'][]
-      coMakers?: components['schemas']['CoMakerInputDto'][]
-      /** @example Driver's License */
-      idType?: string
-      /** @example N01-23-456789 */
-      idNumber?: string
-      /** @description File ID from POST /files/upload of the scanned ID */
-      idDocumentFileId?: string
-      /** @default false */
-      consentGiven: boolean
-      /**
-       * Format: date-time
-       * @description Set by the client at the moment consent is given
-       */
-      consentGivenAt?: string
-      /**
-       * @description Groups related customer records (e.g. same household) so their invoices can be tracked together
-       * @example household-santos
-       */
-      groupId?: string
-      /** @example 009-123-456-000 */
-      taxId?: string
-      /**
-       * @default false
-       * @example false
-       */
-      isTaxExempt: boolean
-      taxExemptionRef?: string
-      /** @example maria@example.com */
-      email?: string
-      /** @example +63 917 123 4567 */
-      phone: string
-      billingAddress?: string
-      shippingAddress?: string
-      /** @example Net 30 */
-      paymentTerms?: string
-      /** @example 100000 */
-      creditLimit?: number
-      /**
-       * @default pos_walkin
-       * @enum {string}
-       */
-      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
-      /**
-       * @default active
-       * @enum {string}
-       */
-      status: 'active' | 'inactive' | 'blocked'
-      notes?: string
-    }
-    UpdateCustomerDto: {
-      /**
-       * @description Ignored on create — the server always derives this from the authenticated session.
-       * @example tenant-001
-       */
-      tenantId?: string
-      /**
-       * @description Ignored on create — the server always auto-generates a unique code.
-       * @example CUS-0001
-       */
-      customerCode?: string
-      /** @example Maria Santos */
-      name?: string
-      /**
-       * @default individual
-       * @enum {string}
-       */
-      customerType: 'individual' | 'business' | 'employee'
-      /** @example Santos Trading Inc. */
-      companyName?: string
-      /**
-       * @description Business-only sub-classification, for customerType business only
-       * @enum {string}
-       */
-      businessCategory?: 'private' | 'government'
-      /**
-       * @description NIG employee ID, for customerType employee only
-       * @example EMP-0042
-       */
-      employeeNumber?: string
-      /**
-       * Format: date-time
-       * @example 1990-05-14
-       */
-      birthday?: string
-      bankAccounts?: components['schemas']['CustomerBankAccountInputDto'][]
-      coMakers?: components['schemas']['CoMakerInputDto'][]
-      /** @example Driver's License */
-      idType?: string
-      /** @example N01-23-456789 */
-      idNumber?: string
-      /** @description File ID from POST /files/upload of the scanned ID */
-      idDocumentFileId?: string
-      /** @default false */
-      consentGiven: boolean
-      /**
-       * Format: date-time
-       * @description Set by the client at the moment consent is given
-       */
-      consentGivenAt?: string
-      /**
-       * @description Groups related customer records (e.g. same household) so their invoices can be tracked together
-       * @example household-santos
-       */
-      groupId?: string
-      /** @example 009-123-456-000 */
-      taxId?: string
-      /**
-       * @default false
-       * @example false
-       */
-      isTaxExempt: boolean
-      taxExemptionRef?: string
-      /** @example maria@example.com */
-      email?: string
-      /** @example +63 917 123 4567 */
-      phone?: string
-      billingAddress?: string
-      shippingAddress?: string
-      /** @example Net 30 */
-      paymentTerms?: string
-      /** @example 100000 */
-      creditLimit?: number
-      /**
-       * @default pos_walkin
-       * @enum {string}
-       */
-      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
-      /**
-       * @default active
-       * @enum {string}
-       */
-      status: 'active' | 'inactive' | 'blocked'
-      notes?: string
-    }
     TransactionLineDto: {
       accountId: string
       /** @example 0 */
@@ -11579,6 +12828,24 @@ export interface components {
       currencyId?: string
       transactions?: components['schemas']['TransactionLineDto'][]
     }
+    RecordArPaymentDto: {
+      /** @description Amount received */
+      amount?: number
+      /** @description Withholding tax amount, if any */
+      withholdingAmount?: number
+      bankAccountId?: string
+      /** @description Date the payment was collected */
+      paymentDate?: string
+      /** @enum {string} */
+      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
+      /** @description OR / reference number */
+      reference?: string
+      notes?: string
+      /** @description Branch this payment was collected at (POS Collections) */
+      branchId?: string
+      /** @description Collector who took this payment, if any (POS Collections) — omitted for a walk-in counter payment */
+      collectorId?: string
+    }
     CreateCreditMemoDto: {
       /** @description AR invoice the credit memo is applied to */
       arInvoiceId: string
@@ -11588,6 +12855,107 @@ export interface components {
        */
       amount: number
       /** @example Damaged goods returned */
+      reason?: string
+      /** @description Defaults to today when omitted */
+      memoDate?: string
+      /** @description Auto-generated when omitted */
+      memoNumber?: string
+    }
+    CreateAPBillDto: {
+      /** @description Manual bill number — auto-generated (AP-<timestamp>) if omitted */
+      billNumber?: string
+      /** @description General AP payee (utilities, rent, non-supplier expenses) */
+      vendorId: string
+      /** @description Scenario 10 Part 1 — set when this bill originates from a PO/RR against a real inventory Supplier, distinct from vendorId. Enables the 3-way match. */
+      supplierId?: string
+      /** @description Scenario 10 Part 2 — the PO this invoice bills against, for the 3-way match */
+      purchaseOrderId?: string
+      /** @description Scenario 10 Part 2 — Receiving Reports matched against this bill (a bill can match several partial-delivery RRs against the same PO) */
+      goodsReceiptIds?: string[]
+      billDate: string
+      dueDate: string
+      description?: string
+      /** @default 0 */
+      subtotal: number
+      /** @default 0 */
+      taxAmount: number
+      /** @description Defaults to subtotal + taxAmount if omitted */
+      totalAmount?: number
+      costCenter?: string
+      /** @description Override the default expense GL account */
+      expenseAccountId?: string
+      taxCode?: string
+    }
+    UpdateAPBillDto: {
+      supplierId?: string
+      purchaseOrderId?: string
+      goodsReceiptIds?: string[]
+      billDate?: string
+      dueDate?: string
+      description?: string
+      subtotal?: number
+      taxAmount?: number
+      costCenter?: string
+      expenseAccountId?: string
+      taxCode?: string
+    }
+    CreateVoucherDto: {
+      /** @description Manual voucher number */
+      voucherNumber: string
+    }
+    RejectVoucherDto: {
+      reason: string
+    }
+    RecordAPPaymentDto: {
+      amount: number
+      paymentDate: string
+      method?: string
+      reference?: string
+      notes?: string
+      /** @default 0 */
+      withholdingAmount: number
+      bankAccountId?: string
+      /** @description Scenario 10 Part 5 — cheque number when this payment was made by check */
+      chequeNumber?: string
+    }
+    CreateAPPaymentMethodConfigDto: {
+      /** @description Standard key (e.g. "cash", "check", "bank_transfer") — omit for a custom method */
+      key?: string
+      name: string
+      /** @description Short label shown in the payment form */
+      label: string
+      /** @description GL account credited on payment — falls back to the DEFAULT_CASH mapping if unset */
+      glAccountId?: string
+      /** @default true */
+      isEnabled: boolean
+      /** @default 0 */
+      displayOrder: number
+    }
+    UpdateAPPaymentMethodConfigDto: {
+      name?: string
+      label?: string
+      glAccountId?: string
+      isEnabled?: boolean
+      displayOrder?: number
+    }
+    CreateSupplierDebitMemoDto: {
+      /** @description AP bill the supplier return is applied to */
+      apBillId: string
+      /** @description Item being returned to the supplier */
+      itemId: string
+      /** @description Warehouse the returned stock is leaving from */
+      warehouseId: string
+      /**
+       * @description Quantity being returned
+       * @example 5
+       */
+      quantity: number
+      /**
+       * @description Debit amount (must not exceed the AP bill outstanding balance)
+       * @example 2500
+       */
+      amount: number
+      /** @example Defective units returned to supplier */
       reason?: string
       /** @description Defaults to today when omitted */
       memoDate?: string
@@ -11695,152 +13063,6 @@ export interface components {
        * @example false
        */
       isLostStage: boolean
-    }
-    CustomerBankAccountInputDto: {
-      /** @example BPI */
-      bankName: string
-      /** @example 1234-5678-9012 */
-      accountNumber: string
-      /** @example Maria Santos */
-      accountName?: string
-      /** @default false */
-      isPrimary: boolean
-    }
-    CoMakerInputDto: {
-      /** @example Maria Santos */
-      name: string
-      /** @example Spouse */
-      relationship: string
-      /** @example +63 917 000 1111 */
-      contactNumber: string
-      /** @example maria@example.com */
-      email?: string
-    }
-    CustomerBankAccountDto: {
-      id: string
-      bankName: string
-      accountNumber: string
-      accountName?: string
-      /** @default false */
-      isPrimary: boolean
-      createdAt: string
-      updatedAt: string
-    }
-    CoMakerDto: {
-      id: string
-      name: string
-      relationship: string
-      contactNumber: string
-      email?: string
-      createdAt: string
-      updatedAt: string
-    }
-    IdDocumentFileDto: {
-      id: string
-      originalName: string
-      mimeType: string
-      size: number
-    }
-    MergedFromDto: {
-      id: string
-      customerCode: string
-      name: string
-      mergedAt?: string
-    }
-    CustomerDetailDto: {
-      id: string
-      customerCode: string
-      name: string
-      /** @enum {string} */
-      customerType: 'individual' | 'business' | 'employee'
-      email?: string
-      phone?: string
-      /** @enum {string} */
-      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
-      /** @enum {string} */
-      status: 'active' | 'inactive' | 'blocked'
-      groupId?: string
-      createdAt: string
-      companyName?: string
-      /** @enum {string} */
-      businessCategory?: 'private' | 'government'
-      employeeNumber?: string
-      birthday?: string
-      taxId?: string
-      isTaxExempt: boolean
-      taxExemptionRef?: string
-      billingAddress?: string
-      shippingAddress?: string
-      paymentTerms?: string
-      creditLimit?: number
-      notes?: string
-      bankAccounts: components['schemas']['CustomerBankAccountDto'][]
-      coMakers: components['schemas']['CoMakerDto'][]
-      idType?: string
-      idNumber?: string
-      idDocumentFile?: components['schemas']['IdDocumentFileDto']
-      /** @default false */
-      consentGiven: boolean
-      consentGivenAt?: string
-      updatedAt: string
-      /** @description Only present when this response came from following an old, merged-away customer id — tells the UI where the data actually came from */
-      mergedFrom?: components['schemas']['MergedFromDto']
-    }
-    CustomerListItemDto: {
-      id: string
-      customerCode: string
-      name: string
-      /** @enum {string} */
-      customerType: 'individual' | 'business' | 'employee'
-      email?: string
-      phone?: string
-      /** @enum {string} */
-      sourceChannel: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
-      /** @enum {string} */
-      status: 'active' | 'inactive' | 'blocked'
-      groupId?: string
-      createdAt: string
-    }
-    PaginatedCustomerDto: {
-      data: components['schemas']['CustomerListItemDto'][]
-      meta: components['schemas']['PaginationMetaDto']
-    }
-    DuplicateCheckMatchDto: {
-      id: string
-      name: string
-    }
-    DuplicateCheckResultDto: {
-      duplicate: boolean
-      /** @enum {string} */
-      matchedField?: 'email' | 'phone'
-      customer?: components['schemas']['DuplicateCheckMatchDto']
-    }
-    DuplicatePairCustomerDto: {
-      id: string
-      customerCode: string
-      name: string
-      /** @enum {string} */
-      customerType: 'individual' | 'business' | 'employee'
-      email?: string
-      phone?: string
-      shippingAddress?: string
-      createdAt: string
-    }
-    DuplicatePairDto: {
-      customerA: components['schemas']['DuplicatePairCustomerDto']
-      customerB: components['schemas']['DuplicatePairCustomerDto']
-      /** @enum {string} */
-      matchedField: 'email' | 'phone'
-    }
-    DismissDuplicateDto: {
-      customerAId: string
-      customerBId: string
-    }
-    MergeCustomersDto: {
-      /** @description The losing record — merged into the :id in the URL, then soft-deleted */
-      duplicateId: string
-      /** @description Reviewer-chosen field values to apply to the surviving record (e.g. picking the duplicate's phone number over the survivor's). Only the fields provided are changed — everything else keeps the survivor's current value. */
-      fieldOverrides?: components['schemas']['UpdateCustomerDto']
     }
     CreateLeadDto: {
       /** @example tenant-001 */
@@ -11960,16 +13182,34 @@ export interface components {
     CreateInteractionDto: {
       /** @example tenant-001 */
       tenantId: string
-      /** @description Customer UUID (one of customerId/leadId required) */
+      /** @description Customer UUID (one of customerId/leadId/installmentAccountId required) */
       customerId?: string
-      /** @description Lead UUID (one of customerId/leadId required) */
+      /** @description Lead UUID (one of customerId/leadId/installmentAccountId required) */
       leadId?: string
+      /** @description Scenario 20 (NAMIDRe) — one of customerId/leadId/installmentAccountId required. A collections contact log against an installment account. */
+      installmentAccountId?: string
+      /** @description Collector who logged this contact, if applicable */
+      collectorId?: string
+      /**
+       * @description Dedicated phone/channel used for this contact (Scenario 20 NAMIDRe), e.g. the branch NAMIDRe line
+       * @example +639171234567
+       */
+      contactPhone?: string
       /** @enum {string} */
       interactionType: 'call' | 'email' | 'meeting' | 'visit' | 'message' | 'other'
       /** @example Discussed Q2 pricing tiers */
       summary: string
       /** @example Customer requested a follow-up next week */
       outcome?: string
+      /** @description Scenario 20 (DAM) — structured Promise-to-Pay, distinct from a generic outcome note */
+      isPromiseToPay?: boolean
+      /** @description Committed amount, only meaningful when isPromiseToPay */
+      ptpAmount?: number
+      /**
+       * @description Committed date, only meaningful when isPromiseToPay
+       * @example 2026-08-15T00:00:00.000Z
+       */
+      ptpDate?: string
       /** @description User ID of logger */
       loggedBy: string
       /** @example 2026-05-14T10:30:00.000Z */
@@ -11979,10 +13219,16 @@ export interface components {
       id: string
       customerId?: string
       leadId?: string
+      installmentAccountId?: string
+      collectorId?: string
+      contactPhone?: string
       /** @enum {string} */
       interactionType: 'call' | 'email' | 'meeting' | 'visit' | 'message' | 'other'
       summary: string
       outcome?: string
+      isPromiseToPay?: boolean
+      ptpAmount?: number
+      ptpDate?: string
       loggedBy: string
       occurredAt: string
       createdAt: string
@@ -11990,66 +13236,38 @@ export interface components {
     UpdateInteractionDto: {
       /** @example tenant-001 */
       tenantId?: string
-      /** @description Customer UUID (one of customerId/leadId required) */
+      /** @description Customer UUID (one of customerId/leadId/installmentAccountId required) */
       customerId?: string
-      /** @description Lead UUID (one of customerId/leadId required) */
+      /** @description Lead UUID (one of customerId/leadId/installmentAccountId required) */
       leadId?: string
+      /** @description Scenario 20 (NAMIDRe) — one of customerId/leadId/installmentAccountId required. A collections contact log against an installment account. */
+      installmentAccountId?: string
+      /** @description Collector who logged this contact, if applicable */
+      collectorId?: string
+      /**
+       * @description Dedicated phone/channel used for this contact (Scenario 20 NAMIDRe), e.g. the branch NAMIDRe line
+       * @example +639171234567
+       */
+      contactPhone?: string
       /** @enum {string} */
       interactionType?: 'call' | 'email' | 'meeting' | 'visit' | 'message' | 'other'
       /** @example Discussed Q2 pricing tiers */
       summary?: string
       /** @example Customer requested a follow-up next week */
       outcome?: string
+      /** @description Scenario 20 (DAM) — structured Promise-to-Pay, distinct from a generic outcome note */
+      isPromiseToPay?: boolean
+      /** @description Committed amount, only meaningful when isPromiseToPay */
+      ptpAmount?: number
+      /**
+       * @description Committed date, only meaningful when isPromiseToPay
+       * @example 2026-08-15T00:00:00.000Z
+       */
+      ptpDate?: string
       /** @description User ID of logger */
       loggedBy?: string
       /** @example 2026-05-14T10:30:00.000Z */
       occurredAt?: string
-    }
-    CreateReminderDto: {
-      /** @example tenant-001 */
-      tenantId: string
-      /** @description One of customerId/leadId required */
-      customerId?: string
-      /** @description One of customerId/leadId required */
-      leadId?: string
-      /** @description User ID — sales rep this is assigned to */
-      assignedTo: string
-      /** @enum {string} */
-      reminderType: 'call' | 'email' | 'visit' | 'other'
-      /** @example 2026-05-20T09:00:00.000Z */
-      dueAt: string
-      /** @example Follow up on Q2 proposal */
-      note?: string
-    }
-    ReminderDto: {
-      id: string
-      customerId?: string
-      leadId?: string
-      assignedTo: string
-      /** @enum {string} */
-      reminderType: 'call' | 'email' | 'visit' | 'other'
-      dueAt: string
-      note?: string
-      /** @enum {string} */
-      status: 'pending' | 'completed' | 'overdue' | 'cancelled'
-      completedAt?: string
-      createdAt: string
-    }
-    UpdateReminderDto: {
-      /** @example tenant-001 */
-      tenantId?: string
-      /** @description One of customerId/leadId required */
-      customerId?: string
-      /** @description One of customerId/leadId required */
-      leadId?: string
-      /** @description User ID — sales rep this is assigned to */
-      assignedTo?: string
-      /** @enum {string} */
-      reminderType?: 'call' | 'email' | 'visit' | 'other'
-      /** @example 2026-05-20T09:00:00.000Z */
-      dueAt?: string
-      /** @example Follow up on Q2 proposal */
-      note?: string
     }
     CreateCustomerSegmentDto: {
       /** @example tenant-001 */
@@ -12103,6 +13321,14 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description PSGC barangay codes this collector covers, for area-based auto-assignment. Omitted = leave coverage unchanged (update only); an explicit empty array clears it.
+       * @example [
+       *       "012802001",
+       *       "012802002"
+       *     ]
+       */
+      areaBarangayCodes?: string[]
     }
     CollectorListItemDto: {
       id: string
@@ -12130,6 +13356,14 @@ export interface components {
        * @enum {string}
        */
       status: 'active' | 'inactive'
+      /**
+       * @description PSGC barangay codes this collector covers, for area-based auto-assignment. Omitted = leave coverage unchanged (update only); an explicit empty array clears it.
+       * @example [
+       *       "012802001",
+       *       "012802002"
+       *     ]
+       */
+      areaBarangayCodes?: string[]
     }
     CreateRemittanceDto: {
       /** @example 15000 */
@@ -12142,146 +13376,6 @@ export interface components {
       /** @description Names the collection run/batch this remittance belongs to */
       collectionBatch?: string
       notes?: string
-    }
-    CreateInstallmentAccountDto: {
-      /** @example IA-0001 */
-      accountNumber: string
-      /** @description Accounting customer ID */
-      customerId: string
-      branchId?: string
-      collectorId?: string
-      /** @description Linked AR invoice, if this account bills through one */
-      arInvoiceId?: string
-      /**
-       * @description Listed Cash Price
-       * @example 50000
-       */
-      listedCashPrice: number
-      /**
-       * @description Down payment
-       * @example 10000
-       */
-      downPayment: number
-      /**
-       * @description Term in months (1-12 per policy)
-       * @example 12
-       */
-      termMonths: number
-      /**
-       * @description MI factor applied to Amount Financed
-       * @example 0.0954
-       */
-      miFactor: number
-      lastOrNumber?: string
-      lastOrDate?: string
-      lastOrAmount?: number
-    }
-    InstallmentAccountListItemDto: {
-      id: string
-      accountNumber: string
-      customerId: string
-      branchId?: string
-      collectorId?: string
-      currentBalance: string
-      /** @enum {string} */
-      category?: 'A' | 'B' | 'C' | 'D'
-      /** @enum {string} */
-      classification?: 'official' | 'arrears' | 'not_moving'
-      agingBucket?: string
-      /** @enum {string} */
-      status: 'active' | 'closed' | 'early_closed' | 'written_off'
-      createdAt: string
-    }
-    InstallmentAccountPaginationMetaDto: {
-      total: number
-      page: number
-      limit: number
-      lastPage: number
-    }
-    PaginatedInstallmentAccountDto: {
-      data: components['schemas']['InstallmentAccountListItemDto'][]
-      meta: components['schemas']['InstallmentAccountPaginationMetaDto']
-    }
-    UpdateInstallmentAccountDto: {
-      /** @example IA-0001 */
-      accountNumber?: string
-      /** @description Accounting customer ID */
-      customerId?: string
-      branchId?: string
-      collectorId?: string
-      /** @description Linked AR invoice, if this account bills through one */
-      arInvoiceId?: string
-      /**
-       * @description Listed Cash Price
-       * @example 50000
-       */
-      listedCashPrice?: number
-      /**
-       * @description Down payment
-       * @example 10000
-       */
-      downPayment?: number
-      /**
-       * @description Term in months (1-12 per policy)
-       * @example 12
-       */
-      termMonths?: number
-      /**
-       * @description MI factor applied to Amount Financed
-       * @example 0.0954
-       */
-      miFactor?: number
-      lastOrNumber?: string
-      lastOrDate?: string
-      lastOrAmount?: number
-      /** @enum {string} */
-      status?: 'active' | 'closed' | 'early_closed' | 'written_off'
-      /** @enum {string} */
-      category?: 'A' | 'B' | 'C' | 'D'
-      /** @enum {string} */
-      classification?: 'official' | 'arrears' | 'not_moving'
-      /** @example current | 30 | 60 | 90 | over_90 */
-      agingBucket?: string
-      arrears?: number
-      penalty?: number
-      miDue?: number
-      notYetDue?: number
-      totalDue?: number
-      uncollected?: number
-      currentBalance?: number
-      dpBalance?: number
-    }
-    EarlyPayoffDto: {
-      /**
-       * @description Full payoff amount received. Defaults to the computed early-closure quote (ID/Terms x Mos Run + LCP - Total Pay't) if omitted.
-       * @example 32000
-       */
-      payoffAmount?: number
-      /** @example 2026-07-15T00:00:00.000Z */
-      paidAt: string
-      /** @description OR number for the payoff receipt */
-      orNumber?: string
-    }
-    RecordPaymentDto: {
-      /**
-       * @description Monthly installment amount received
-       * @example 3816
-       */
-      amount: number
-      /**
-       * @description The due date this payment settles
-       * @example 2026-08-15T00:00:00.000Z
-       */
-      dueDate: string
-      /** @example 2026-08-10T00:00:00.000Z */
-      paidAt: string
-      orNumber?: string
-    }
-    RequestGraduationDto: {
-      notes?: string
-    }
-    RejectGraduationDto: {
-      reason?: string
     }
     CreateAgentDto: {
       /** @example Maria Santos */
@@ -12423,6 +13517,68 @@ export interface components {
     UpdateModulesDto: Record<string, never>
     UpdateSubscriptionDto: Record<string, never>
     CreateTenantAdminDto: Record<string, never>
+    CreateCreditApplicationDto: {
+      /** @description Branch UUID where this application is being taken */
+      branchId: string
+      /** @description Applicant customer UUID */
+      applicantCustomerId: string
+      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker) */
+      coMakerId: string
+      /**
+       * @description Requested financing amount
+       * @example 25000
+       */
+      requestedAmount: number
+      /** @description Free-text description of what is being financed (e.g. "Split-type aircon 1.5HP") */
+      itemDescription?: string
+    }
+    UpdateCreditApplicationDto: {
+      /** @description Branch UUID where this application is being taken */
+      branchId?: string
+      /** @description Applicant customer UUID */
+      applicantCustomerId?: string
+      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker) */
+      coMakerId?: string
+      /**
+       * @description Requested financing amount
+       * @example 25000
+       */
+      requestedAmount?: number
+      /** @description Free-text description of what is being financed (e.g. "Split-type aircon 1.5HP") */
+      itemDescription?: string
+    }
+    DeclineCreditApplicationDto: {
+      /** @description Reason the application was declined */
+      reason: string
+    }
+    CancelCreditApplicationDto: {
+      /** @description Reason the application was cancelled */
+      reason: string
+    }
+    AttachCreditApplicationDocumentDto: {
+      /** @description UUID of a file already uploaded via POST /files/upload */
+      fileId: string
+      /**
+       * @description What this document is
+       * @enum {string}
+       */
+      documentType:
+        | 'applicant_id'
+        | 'applicant_income_proof'
+        | 'applicant_expense_proof'
+        | 'co_maker_id'
+        | 'co_maker_income_proof'
+        | 'other'
+    }
+    RecordCreditInvestigationDto: {
+      /**
+       * @description The Credit Investigator's affordability recommendation
+       * @enum {string}
+       */
+      affordabilityOutcome: 'recommend_approve' | 'recommend_decline'
+      /** @description Investigation notes */
+      notes?: string
+    }
   }
   responses: never
   parameters: never
@@ -13706,6 +14862,7 @@ export interface operations {
         branchId?: string
         transactionType?: 'sale' | 'refund' | 'exchange'
         customerId?: string
+        /** @description Scenario 23 Gap 3 — unified search: partial, case-insensitive match against the transaction number OR any invoice number it produced (charge invoice, or any installment due-date invoice). */
         transactionNumber?: string
         dateFrom?: string
         dateTo?: string
@@ -15250,9 +16407,10 @@ export interface operations {
       }
     }
   }
-  PosCustomersController_findByPhone: {
+  PosCustomersController_search: {
     parameters: {
       query: {
+        q: string
         phone: string
       }
       header?: never
@@ -15262,6 +16420,27 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Matching customers (max 10) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PosCustomersController_listCollectionsCustomers: {
+    parameters: {
+      query: {
+        branchId: string
+        search: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Customers with outstanding dues */
       200: {
         headers: {
           [name: string]: unknown
@@ -15394,7 +16573,51 @@ export interface operations {
       }
     }
   }
+  CashierPinController_validatePriceOverride: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ValidateManagerOverrideDto']
+      }
+    }
+    responses: {
+      /** @description Returns { valid: true, managerId, managerName } on success */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   CashierPinController_validateManagerByPinOnly: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ValidateByPinOnlyDto']
+      }
+    }
+    responses: {
+      /** @description Returns { valid: true, managerId, managerName } on success */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CashierPinController_validatePriceOverrideByPinOnly: {
     parameters: {
       query?: never
       header?: never
@@ -15431,6 +16654,46 @@ export interface operations {
     responses: {
       /** @description List of sellable items */
       200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CatalogController_findPriceUseTypes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CatalogController_resolvePrices: {
+    parameters: {
+      query?: {
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResolvePosPricesDto']
+      }
+    }
+    responses: {
+      201: {
         headers: {
           [name: string]: unknown
         }
@@ -16310,6 +17573,25 @@ export interface operations {
       }
     }
   }
+  FinancingTermsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   FinancingTermsController_update: {
     parameters: {
       query?: never
@@ -16509,12 +17791,15 @@ export interface operations {
         search?: string
         /** @description Filter by item lifecycle status */
         lifecycle?: 'active' | 'discontinued' | 'archived'
+        /** @description Filter by governance approval status (Scenario 16). Only honored for callers who hold an item-governance permission (create/update/confirm_tax_mapping/approve) — everyone else is always restricted to approved items regardless of this filter. */
+        approvalStatus?:
+          | 'draft'
+          | 'pending_accounting_confirmation'
+          | 'pending_approval'
+          | 'approved'
+          | 'rejected'
         /** @description Filter by primary category ID */
         primaryCategoryId?: string
-        /** @description Filter by group ID */
-        groupId?: string
-        /** @description Filter by subgroup ID */
-        subgroupId?: string
         /** @description Filter by brand ID */
         brandId?: string
         /** @description Filter by type ID */
@@ -16563,6 +17848,29 @@ export interface operations {
       }
       /** @description SKU already exists for this tenant */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_checkDuplicates: {
+    parameters: {
+      query: {
+        /** @description Item name to check for near-duplicates */
+        name: string
+        /** @description Restrict the check to items of this brand */
+        brandId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Array of possible-duplicate candidates */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -16658,6 +17966,31 @@ export interface operations {
       }
     }
   }
+  ItemsController_receiveInitial: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReceiveInitialUnitDto']
+      }
+    }
+    responses: {
+      /** @description { goodsReceiptId, serialNumberId } */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemsController_bulkImport: {
     parameters: {
       query?: never
@@ -16708,6 +18041,127 @@ export interface operations {
       }
       /** @description Item not found */
       404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_submitForReview: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Item moved to pending_accounting_confirmation */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_confirmAccounting: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConfirmAccountingDto']
+      }
+    }
+    responses: {
+      /** @description Item moved to pending_approval */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_rejectAccounting: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectAccountingDto']
+      }
+    }
+    responses: {
+      /** @description Item moved to rejected */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_approveItem: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveItemDto']
+      }
+    }
+    responses: {
+      /** @description Item moved to approved */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ItemsController_rejectItem: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Item UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectItemDto']
+      }
+    }
+    responses: {
+      /** @description Item moved to rejected */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -17303,6 +18757,7 @@ export interface operations {
           | 'adjustment'
           | 'return'
           | 'write_off'
+          | 'supplier_return'
         /** @description Start of date range (inclusive) */
         startDate?: string
         /** @description End of date range (inclusive) */
@@ -17872,6 +19327,7 @@ export interface operations {
           | 'adjustment'
           | 'return'
           | 'write_off'
+          | 'supplier_return'
         /** @description Start of date range (inclusive) */
         startDate?: string
         /** @description End of date range (inclusive) */
@@ -18075,11 +19531,14 @@ export interface operations {
           | 'draft'
           | 'in_transit'
           | 'received'
+          | 'partially_received'
           | 'cancelled'
         /** @description Filter by source warehouse UUID */
         fromWarehouseId?: string
         /** @description Filter by destination warehouse UUID */
         toWarehouseId?: string
+        /** @description Search by transfer number, item name/SKU (model number), or serial number */
+        search?: string
         /** @description Page number (1-based) */
         page?: number
         /** @description Items per page */
@@ -18402,6 +19861,8 @@ export interface operations {
         warehouseId?: string
         /** @description Filter by reason code */
         reasonCode?: 'damaged' | 'miscounted' | 'expired' | 'theft' | 'write_off' | 'found'
+        /** @description Filter by approval chain status */
+        status?: 'submitted' | 'confirmed' | 'investigating' | 'approved' | 'rejected'
         /** @description Page number (1-based) */
         page?: number
         /** @description Items per page */
@@ -18435,7 +19896,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Stock adjustment created */
+      /** @description Stock adjustment submitted */
       201: {
         headers: {
           [name: string]: unknown
@@ -18457,6 +19918,114 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Stock adjustment detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AdjustmentsController_withdraw: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock adjustment UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AdjustmentsController_confirm: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock adjustment UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Adjustment moved to confirmed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AdjustmentsController_investigate: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock adjustment UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Adjustment moved to investigating */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AdjustmentsController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock adjustment UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Adjustment moved to approved and posted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AdjustmentsController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock adjustment UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectAdjustmentDto']
+      }
+    }
+    responses: {
+      /** @description Adjustment moved to rejected */
       200: {
         headers: {
           [name: string]: unknown
@@ -18551,6 +20120,52 @@ export interface operations {
     responses: {
       /** @description Stock count started */
       200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CountsController_getLines: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock count UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Stock count lines */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CountsController_addLine: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Stock count UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AddCountLineDto']
+      }
+    }
+    responses: {
+      /** @description Count line added (or existing line returned) */
+      201: {
         headers: {
           [name: string]: unknown
         }
@@ -18773,6 +20388,7 @@ export interface operations {
           | 'scrapped'
           | 'in_repair'
           | 'pulled_out'
+          | 'lost_in_transit'
         /** @description Read-only visibility scope. "company" returns matching serials across every branch (each with its warehouse) instead of forcing the caller's own branch — used only to show cross-branch availability in the POS serial picker, never to populate the sellable list. Requires itemId. Defaults to "branch" (the existing, sellable, caller-branch-forced behavior). */
         scope?: 'branch' | 'company'
         /** @description Case-insensitive substring match against the serial number. */
@@ -18810,6 +20426,34 @@ export interface operations {
     }
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SerialNumbersController_bulkImport: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          /** Format: binary */
+          file: string
+          warehouseId: string
+          /** @example false */
+          dryRun?: string
+        }
+      }
+    }
+    responses: {
+      /** @description { created, skipped, dryRun, errors: [...] } */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -20448,7 +22092,7 @@ export interface operations {
           | 'cancelled'
         supplierId?: string
         branchId?: string
-        /** @description Search by PO code */
+        /** @description Search by PO number, item name/SKU (model number), supplier name, or notes */
         search?: string
         /** @description Filter by order date from (YYYY-MM-DD) */
         dateFrom?: string
@@ -20535,6 +22179,25 @@ export interface operations {
     }
   }
   PurchaseOrderController_getReceipts: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PurchaseOrderController_getDocument: {
     parameters: {
       query?: never
       header?: never
@@ -20880,206 +22543,6 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['UpdateProcurementQuotaDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_findGroups: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_createGroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateItemGroupDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_findGroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_removeGroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_updateGroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateItemGroupDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_findSubgroups: {
-    parameters: {
-      query?: {
-        groupId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_createSubgroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateItemSubgroupDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_findSubgroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_removeSubgroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ItemClassificationController_updateSubgroup: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateItemSubgroupDto']
       }
     }
     responses: {
@@ -21440,6 +22903,71 @@ export interface operations {
       }
     }
   }
+  TaxRatesController_listChangeRequests: {
+    parameters: {
+      query?: {
+        status?: 'pending' | 'approved' | 'rejected'
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TaxRatesController_approveChangeRequest: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ApproveTaxRateChangeDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TaxRatesController_rejectChangeRequest: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectTaxRateChangeDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   TaxRatesController_findOne: {
     parameters: {
       query?: never
@@ -21737,6 +23265,941 @@ export interface operations {
     requestBody?: never
     responses: {
       204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_findAll: {
+    parameters: {
+      query?: {
+        /** @description Search by account number */
+        search?: string
+        customerId?: string
+        branchId?: string
+        collectorId?: string
+        category?: 'A' | 'B' | 'C' | 'D'
+        classification?: 'official' | 'arrears' | 'not_moving'
+        /** @description Scenario 20 (DAM) — filter to accounts in the DAM track */
+        inDam?: boolean
+        status?: 'active' | 'closed' | 'early_closed' | 'written_off'
+        agingBucket?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PaginatedInstallmentAccountDto']
+        }
+      }
+    }
+  }
+  InstallmentAccountController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateInstallmentAccountDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_priceCheck: {
+    parameters: {
+      query: {
+        /** @description Listed Cash Price */
+        listedCashPrice: number
+        /** @description Down payment */
+        downPayment: number
+        /** @description Term in months (1-12) */
+        termMonths: number
+        /** @description MI factor applied to Amount Financed */
+        miFactor: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_suggestCollector: {
+    parameters: {
+      query: {
+        customerId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_listAllGraduationRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_listAllDamEscalationRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateInstallmentAccountDto']
+      }
+    }
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_getEarlyPayoffQuote: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_earlyPayoff: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EarlyPayoffDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordPaymentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_listGraduationRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_requestGraduation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestGraduationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_approveGraduation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_rejectGraduation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectGraduationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_listDamEscalationRequests: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_requestDamEscalation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RequestDamEscalationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_approveDamEscalation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_rejectDamEscalation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        requestId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectDamEscalationDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_updateLegalEscalation: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateLegalEscalationDto']
+      }
+    }
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReminderController_findAll: {
+    parameters: {
+      query?: {
+        assignedTo?: string
+        status?: 'pending' | 'completed' | 'overdue' | 'cancelled'
+        customerId?: string
+        leadId?: string
+        installmentAccountId?: string
+        collectorId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto'][]
+        }
+      }
+    }
+  }
+  ReminderController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateReminderDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto']
+        }
+      }
+    }
+  }
+  ReminderController_findMine: {
+    parameters: {
+      query: {
+        userId: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto'][]
+        }
+      }
+    }
+  }
+  ReminderController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto']
+        }
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReminderController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReminderController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateReminderDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto']
+        }
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReminderController_complete: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CompleteReminderDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ReminderDto']
+        }
+      }
+    }
+  }
+  CustomerController_findAll: {
+    parameters: {
+      query?: {
+        /** @description Search by code, name, email, phone, or company */
+        search?: string
+        status?: 'active' | 'inactive' | 'blocked'
+        sourceChannel?: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
+        /** @description Filter to customers sharing this Group ID */
+        groupId?: string
+        page?: number
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PaginatedCustomerDto']
+        }
+      }
+    }
+  }
+  CustomerController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCustomerDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CustomerDetailDto']
+        }
+      }
+    }
+  }
+  CustomerController_checkDuplicate: {
+    parameters: {
+      query?: {
+        email?: string
+        phone?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DuplicateCheckResultDto']
+        }
+      }
+    }
+  }
+  CustomerController_findDuplicatePairs: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['DuplicatePairDto'][]
+        }
+      }
+    }
+  }
+  CustomerController_dismissDuplicate: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DismissDuplicateDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CustomerDetailDto']
+        }
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateCustomerDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CustomerDetailDto']
+        }
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_findCustomer360: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Customer with related activity */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_merge: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MergeCustomersDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CustomerDetailDto']
+        }
+      }
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -22840,6 +25303,8 @@ export interface operations {
       query: {
         startDate: string
         endDate: string
+        branchId: string
+        view: string
       }
       header?: never
       path?: never
@@ -22991,6 +25456,26 @@ export interface operations {
       }
     }
   }
+  ReportsController_costCenter: {
+    parameters: {
+      query: {
+        startDate: string
+        endDate: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ARInvoicesController_findAll: {
     parameters: {
       query: {
@@ -23022,6 +25507,26 @@ export interface operations {
     requestBody?: never
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ARInvoicesController_searchCustomers: {
+    parameters: {
+      query: {
+        q: string
+        id: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -23114,7 +25619,11 @@ export interface operations {
       }
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordArPaymentDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -23227,10 +25736,12 @@ export interface operations {
   }
   APBillsController_findAll: {
     parameters: {
-      query: {
-        search: string
-        status: string
-        vendorId: string
+      query?: {
+        search?: string
+        status?: string
+        vendorId?: string
+        /** @description Scenario 10 Part 1 — filter to bills originating from this supplier */
+        supplierId?: string
       }
       header?: never
       path?: never
@@ -23253,7 +25764,11 @@ export interface operations {
       path?: never
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAPBillDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -23310,6 +25825,29 @@ export interface operations {
       }
       cookie?: never
     }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAPBillDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_matchCheck: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
     requestBody?: never
     responses: {
       200: {
@@ -23339,7 +25877,295 @@ export interface operations {
       }
     }
   }
+  APBillsController_createVoucher: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateVoucherDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_approveVoucherOnline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_approveVoucherOnsite: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_rejectVoucher: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectVoucherDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   APBillsController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordAPPaymentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_getPaymentDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        paymentId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAPPaymentMethodConfigDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAPPaymentMethodConfigDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SupplierDebitMemosController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ISSUED' | 'VOID'
+        supplierId?: string
+        apBillId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SupplierDebitMemosController_issue: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateSupplierDebitMemoDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SupplierDebitMemosController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  SupplierDebitMemosController_void: {
     parameters: {
       query?: never
       header?: never
@@ -24741,259 +27567,6 @@ export interface operations {
       }
     }
   }
-  CustomerController_findAll: {
-    parameters: {
-      query?: {
-        /** @description Search by code, name, email, phone, or company */
-        search?: string
-        status?: 'active' | 'inactive' | 'blocked'
-        sourceChannel?: 'pos_walkin' | 'sales' | 'crm_lead' | 'online'
-        /** @description Filter to customers sharing this Group ID */
-        groupId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['PaginatedCustomerDto']
-        }
-      }
-    }
-  }
-  CustomerController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateCustomerDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['CustomerDetailDto']
-        }
-      }
-    }
-  }
-  CustomerController_checkDuplicate: {
-    parameters: {
-      query?: {
-        email?: string
-        phone?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['DuplicateCheckResultDto']
-        }
-      }
-    }
-  }
-  CustomerController_findDuplicatePairs: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['DuplicatePairDto'][]
-        }
-      }
-    }
-  }
-  CustomerController_dismissDuplicate: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['DismissDuplicateDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CustomerController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['CustomerDetailDto']
-        }
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CustomerController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      204: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CustomerController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateCustomerDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['CustomerDetailDto']
-        }
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CustomerController_findCustomer360: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Customer with related activity */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CustomerController_merge: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['MergeCustomersDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['CustomerDetailDto']
-        }
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   LeadController_findAll: {
     parameters: {
       query?: {
@@ -25240,7 +27813,11 @@ export interface operations {
       query?: {
         customerId?: string
         leadId?: string
+        installmentAccountId?: string
+        collectorId?: string
         interactionType?: 'call' | 'email' | 'meeting' | 'visit' | 'message' | 'other'
+        /** @description Scenario 20 (DAM) — filter to Promise-to-Pay interactions */
+        isPromiseToPay?: boolean
         page?: number
         limit?: number
       }
@@ -25363,180 +27940,6 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
-      }
-    }
-  }
-  ReminderController_findAll: {
-    parameters: {
-      query?: {
-        assignedTo?: string
-        status?: 'pending' | 'completed' | 'overdue' | 'cancelled'
-        customerId?: string
-        leadId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto'][]
-        }
-      }
-    }
-  }
-  ReminderController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateReminderDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto']
-        }
-      }
-    }
-  }
-  ReminderController_findMine: {
-    parameters: {
-      query: {
-        userId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto'][]
-        }
-      }
-    }
-  }
-  ReminderController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto']
-        }
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReminderController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      204: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReminderController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateReminderDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto']
-        }
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReminderController_complete: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ReminderDto']
-        }
       }
     }
   }
@@ -25827,345 +28230,6 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['CreateRemittanceDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_findAll: {
-    parameters: {
-      query?: {
-        /** @description Search by account number */
-        search?: string
-        customerId?: string
-        branchId?: string
-        collectorId?: string
-        category?: 'A' | 'B' | 'C' | 'D'
-        classification?: 'official' | 'arrears' | 'not_moving'
-        status?: 'active' | 'closed' | 'early_closed' | 'written_off'
-        agingBucket?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['PaginatedInstallmentAccountDto']
-        }
-      }
-    }
-  }
-  InstallmentAccountController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateInstallmentAccountDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_priceCheck: {
-    parameters: {
-      query: {
-        /** @description Listed Cash Price */
-        listedCashPrice: number
-        /** @description Down payment */
-        downPayment: number
-        /** @description Term in months (1-12) */
-        termMonths: number
-        /** @description MI factor applied to Amount Financed */
-        miFactor: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_listAllGraduationRequests: {
-    parameters: {
-      query: {
-        status: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateInstallmentAccountDto']
-      }
-    }
-    responses: {
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_getEarlyPayoffQuote: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_earlyPayoff: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['EarlyPayoffDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_recordPayment: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RecordPaymentDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_listGraduationRequests: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_requestGraduation: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RequestGraduationDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_approveGraduation: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-        requestId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  InstallmentAccountController_rejectGraduation: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-        requestId: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectGraduationDto']
       }
     }
     responses: {
@@ -27179,6 +29243,360 @@ export interface operations {
     }
     requestBody?: never
     responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_findAll: {
+    parameters: {
+      query?: {
+        /** @description Filter by status */
+        status?:
+          | 'draft'
+          | 'submitted'
+          | 'under_investigation'
+          | 'pending_approval'
+          | 'approved'
+          | 'declined'
+          | 'cancelled'
+        /** @description Filter by branch UUID */
+        branchId?: string
+        /** @description Filter by applicant customer UUID */
+        applicantCustomerId?: string
+        /** @description Scenario 17 Part 6 — when true, only return applications not yet consumed by a POS sale (posTransactionId is null). Combine with status=approved for a checkout picker. */
+        unconsumed?: boolean
+        /** @description Page number (1-based) */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated list of credit applications */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCreditApplicationDto']
+      }
+    }
+    responses: {
+      /** @description Credit application created */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Credit application detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateCreditApplicationDto']
+      }
+    }
+    responses: {
+      /** @description Credit application updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_submit: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Credit application submitted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Credit application approved */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_decline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DeclineCreditApplicationDto']
+      }
+    }
+    responses: {
+      /** @description Credit application declined */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationController_cancel: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CancelCreditApplicationDto']
+      }
+    }
+    responses: {
+      /** @description Credit application cancelled */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationDocumentsController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Document list */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationDocumentsController_attach: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AttachCreditApplicationDocumentDto']
+      }
+    }
+    responses: {
+      /** @description Document attached */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditApplicationDocumentsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+        /** @description Credit application document UUID */
+        documentId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditInvestigationController_start: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Application moved to under_investigation */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditInvestigationController_record: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordCreditInvestigationDto']
+      }
+    }
+    responses: {
+      /** @description Investigation recorded */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PromissoryNoteController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Promissory notes, one per installment line */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PromissoryNoteController_sign: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Credit application UUID */
+        applicationId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Promissory notes signed */
       200: {
         headers: {
           [name: string]: unknown

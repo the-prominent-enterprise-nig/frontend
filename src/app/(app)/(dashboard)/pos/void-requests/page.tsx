@@ -11,7 +11,7 @@ export const metadata = {
 export default async function VoidRequestsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.TRANSACTIONS_READ)) redirect('/pos')
+  if (!can(session, POS_PERMISSIONS.TRANSACTIONS_READ)) redirect('/403')
 
   const isManager = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
 

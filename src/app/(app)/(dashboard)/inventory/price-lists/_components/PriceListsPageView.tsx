@@ -11,17 +11,19 @@ import {
   CheckCircle,
   XCircle,
   RotateCcw,
-  Copy,
   ListChecks,
+  Trash2,
 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
+import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { usePriceLists } from '../_hooks/usePriceLists'
 import PriceListModal from './PriceListModal'
 import { ApprovePriceListModal } from './ApprovePriceListModal'
 import { RejectPriceListModal } from './RejectPriceListModal'
 import { PriceListItemsModal } from './PriceListItemsModal'
+import { DeletePriceListModal } from './DeletePriceListModal'
 import type {
   ApprovePriceListFormValues,
   PriceList,
@@ -30,8 +32,14 @@ import type {
 } from '@/src/schema/inventory/price-lists'
 import type { Branch } from '../_actions/get-branches'
 
-const EDITABLE_STATUSES = ['pending_approval', 'rejected']
-const SUPERSEDABLE_STATUSES = ['active', 'inactive', 'expired']
+// Editing an 'active' list is allowed too — it drops back to
+// pending_approval on save (see the backend's revertToPendingIfActive) so
+// the change can't reach checkout without a fresh approval. Only genuinely
+// retired statuses (inactive, expired) stay locked.
+const EDITABLE_STATUSES = ['pending_approval', 'rejected', 'active']
+// Deleting an already-retired list is a no-op from the user's perspective —
+// only offer it for lists that are actually still "live" in some sense.
+const DELETABLE_STATUSES = ['pending_approval', 'rejected', 'active']
 
 const STATUS_BADGE_CLASS: Record<string, string> = {
   pending_approval: 'bg-amber-100 text-amber-700',
@@ -72,16 +80,107 @@ function formatEffectiveRange(from?: string | null, to?: string | null) {
   return `${formatDate(from)} – ${formatDate(to)}`
 }
 
+type PriceListActionsProps = {
+  pl: PriceList
+  canUpdate: boolean
+  canApprove: boolean
+  canDelete: boolean
+  isResubmitting: boolean
+  justify?: 'start' | 'end'
+  onManageItems: () => void
+  onEdit: () => void
+  onApprove: () => void
+  onReject: () => void
+  onResubmit: () => void
+  onDelete: () => void
+}
+
+// Shared between the desktop table row and the mobile card so the two
+// layouts can't drift out of sync on which buttons show for which status.
+// Only Manage Items (always relevant) and Approve/Reject (the one time-
+// sensitive governance action) stay as direct buttons — Edit, Resubmit, and
+// Delete collapse into an overflow menu so a pending list with full
+// permissions doesn't cram icon buttons into one row.
+function PriceListActions({
+  pl,
+  canUpdate,
+  canApprove,
+  canDelete,
+  isResubmitting,
+  justify = 'end',
+  onManageItems,
+  onEdit,
+  onApprove,
+  onReject,
+  onResubmit,
+  onDelete,
+}: PriceListActionsProps) {
+  const menuItems: RowMenuItem[] = [
+    ...(canUpdate && EDITABLE_STATUSES.includes(pl.status)
+      ? [{ label: 'Edit', icon: Pencil, onClick: onEdit }]
+      : []),
+    ...(pl.status === 'rejected' && canUpdate
+      ? [
+          {
+            label: isResubmitting ? 'Resubmitting…' : 'Resubmit',
+            icon: RotateCcw,
+            onClick: onResubmit,
+          },
+        ]
+      : []),
+    ...(canDelete && DELETABLE_STATUSES.includes(pl.status)
+      ? [{ label: 'Delete', icon: Trash2, onClick: onDelete, variant: 'danger' as const }]
+      : []),
+  ]
+
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-1 ${justify === 'end' ? 'justify-end' : 'justify-start'}`}
+    >
+      <button
+        type="button"
+        title="Manage Items"
+        onClick={onManageItems}
+        className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
+      >
+        <ListChecks className="h-4 w-4" />
+      </button>
+      {pl.status === 'pending_approval' && canApprove && (
+        <>
+          <button
+            type="button"
+            title="Approve"
+            onClick={onApprove}
+            className="rounded-lg p-1.5 text-green-700 hover:bg-green-50"
+          >
+            <CheckCircle className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Reject"
+            onClick={onReject}
+            className="rounded-lg p-1.5 text-red-700 hover:bg-red-50"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </>
+      )}
+      <RowActionsMenu items={menuItems} />
+    </div>
+  )
+}
+
 export default function PriceListsPageView({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_CREATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
   const canApprove = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_APPROVE)
+  const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_DELETE)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingList, setEditingList] = useState<PriceList | undefined>(undefined)
-  const [versioningFrom, setVersioningFrom] = useState<PriceList | undefined>(undefined)
   const [approvingList, setApprovingList] = useState<PriceList | null>(null)
   const [rejectingList, setRejectingList] = useState<PriceList | null>(null)
   const [managingItemsList, setManagingItemsList] = useState<PriceList | null>(null)
+  const [deletingList, setDeletingList] = useState<PriceList | null>(null)
 
   const {
     priceLists,
@@ -91,6 +190,8 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     error,
     page,
     setPage,
+    showInactive,
+    setShowInactive,
     currencies,
     branches,
     priceUseTypes,
@@ -106,24 +207,18 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     isRejecting,
     resubmitPriceList,
     isResubmitting,
+    deletePriceList,
+    isDeleting,
     refetch,
   } = usePriceLists()
 
   function openCreateModal() {
     setEditingList(undefined)
-    setVersioningFrom(undefined)
     setIsModalOpen(true)
   }
 
   function openEditModal(list: PriceList) {
     setEditingList(list)
-    setVersioningFrom(undefined)
-    setIsModalOpen(true)
-  }
-
-  function openNewVersionModal(list: PriceList) {
-    setEditingList(undefined)
-    setVersioningFrom(list)
     setIsModalOpen(true)
   }
 
@@ -139,6 +234,10 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     await rejectPriceList({ id, data })
   }
 
+  async function handleDelete(id: string) {
+    await deletePriceList(id)
+  }
+
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -151,6 +250,15 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm text-zinc-500">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-600"
+              />
+              <span className="hidden sm:inline">Show inactive/expired</span>
+            </label>
             <Link
               href="/inventory/price-use-types"
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
@@ -171,10 +279,10 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
+                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-3 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 sm:px-4"
               >
                 <Plus className="h-4 w-4" />
-                New Price List
+                <span className="hidden sm:inline">New Price List</span>
               </button>
             )}
           </div>
@@ -203,129 +311,139 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               )}
             </div>
           ) : (
-            <table className="w-full table-fixed text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50">
-                  <th className="w-[40%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Price List
-                  </th>
-                  <th className="w-[14%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    Status
-                  </th>
-                  <th className="w-[20%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                    Effective
-                  </th>
-                  <th className="w-[16%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                    Branches
-                  </th>
-                  {(canUpdate || canApprove) && (
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
+            <>
+              {/* Mobile: card list */}
+              <ul className="divide-y divide-zinc-100 md:hidden">
                 {priceLists.map((pl) => (
-                  <tr key={pl.id} className="hover:bg-zinc-50">
-                    <td className="px-4 py-3">
-                      <p className="truncate font-medium text-zinc-900">{pl.name}</p>
-                      {pl.description && (
-                        <p className="truncate text-xs text-zinc-400">{pl.description}</p>
-                      )}
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {pl.priceUseType && (
-                          <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
-                            {pl.priceUseType.name}
-                          </span>
+                  <li key={pl.id} className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-zinc-900">{pl.name}</p>
+                        {pl.description && (
+                          <p className="truncate text-xs text-zinc-400">{pl.description}</p>
                         )}
-                        <span className="text-[11px] text-zinc-400">
-                          {pl.currency} · Priority {pl.priority}
-                        </span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
                       <span
-                        className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
+                        className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
                       >
                         {STATUS_LABELS[pl.status] ?? pl.status}
                       </span>
-                    </td>
-                    <td className="hidden px-4 py-3 text-zinc-600 sm:table-cell">
-                      {formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}
-                    </td>
-                    <td className="hidden truncate px-4 py-3 text-zinc-600 md:table-cell">
-                      {branchScopeLabel(pl.allowedBranchIds, branches)}
-                    </td>
-                    {(canUpdate || canApprove) && (
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            title="Manage Items"
-                            onClick={() => setManagingItemsList(pl)}
-                            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
-                          >
-                            <ListChecks className="h-4 w-4" />
-                          </button>
-                          {canUpdate && EDITABLE_STATUSES.includes(pl.status) && (
-                            <button
-                              type="button"
-                              title="Edit"
-                              onClick={() => openEditModal(pl)}
-                              className="rounded-lg p-1.5 text-prominent-purple-700 hover:bg-prominent-purple-50"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          )}
-                          {canCreate && SUPERSEDABLE_STATUSES.includes(pl.status) && (
-                            <button
-                              type="button"
-                              title="New Version"
-                              onClick={() => openNewVersionModal(pl)}
-                              className="rounded-lg p-1.5 text-prominent-purple-700 hover:bg-prominent-purple-50"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </button>
-                          )}
-                          {pl.status === 'pending_approval' && canApprove && (
-                            <>
-                              <button
-                                type="button"
-                                title="Approve"
-                                onClick={() => setApprovingList(pl)}
-                                className="rounded-lg p-1.5 text-green-700 hover:bg-green-50"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                title="Reject"
-                                onClick={() => setRejectingList(pl)}
-                                className="rounded-lg p-1.5 text-red-700 hover:bg-red-50"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          {pl.status === 'rejected' && canUpdate && (
-                            <button
-                              type="button"
-                              title="Resubmit"
-                              onClick={() => resubmitPriceList(pl.id)}
-                              disabled={isResubmitting}
-                              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {pl.priceUseType && (
+                        <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                          {pl.priceUseType.name}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-zinc-400">
+                        {pl.currency} · Priority {pl.priority}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-0.5 text-xs text-zinc-500">
+                      <p>{formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}</p>
+                      <p className="truncate">{branchScopeLabel(pl.allowedBranchIds, branches)}</p>
+                    </div>
+                    {(canUpdate || canApprove || canDelete) && (
+                      <div className="mt-3 border-t border-zinc-100 pt-3">
+                        <PriceListActions
+                          pl={pl}
+                          canUpdate={canUpdate}
+                          canApprove={canApprove}
+                          canDelete={canDelete}
+                          isResubmitting={isResubmitting}
+                          justify="start"
+                          onManageItems={() => setManagingItemsList(pl)}
+                          onEdit={() => openEditModal(pl)}
+                          onApprove={() => setApprovingList(pl)}
+                          onReject={() => setRejectingList(pl)}
+                          onResubmit={() => resubmitPriceList(pl.id)}
+                          onDelete={() => setDeletingList(pl)}
+                        />
+                      </div>
                     )}
-                  </tr>
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+
+              {/* Desktop: table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-180 table-fixed text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50">
+                      <th className="w-[40%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Price List
+                      </th>
+                      <th className="w-[14%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Status
+                      </th>
+                      <th className="w-[20%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Effective
+                      </th>
+                      <th className="w-[16%] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Branches
+                      </th>
+                      {(canUpdate || canApprove || canDelete) && (
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          Actions
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {priceLists.map((pl) => (
+                      <tr key={pl.id} className="hover:bg-zinc-50">
+                        <td className="px-4 py-3">
+                          <p className="truncate font-medium text-zinc-900">{pl.name}</p>
+                          {pl.description && (
+                            <p className="truncate text-xs text-zinc-400">{pl.description}</p>
+                          )}
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {pl.priceUseType && (
+                              <span className="inline-flex rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                                {pl.priceUseType.name}
+                              </span>
+                            )}
+                            <span className="text-[11px] text-zinc-400">
+                              {pl.currency} · Priority {pl.priority}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
+                          >
+                            {STATUS_LABELS[pl.status] ?? pl.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-zinc-600">
+                          {formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}
+                        </td>
+                        <td className="truncate px-4 py-3 text-zinc-600">
+                          {branchScopeLabel(pl.allowedBranchIds, branches)}
+                        </td>
+                        {(canUpdate || canApprove || canDelete) && (
+                          <td className="px-4 py-3 text-right">
+                            <PriceListActions
+                              pl={pl}
+                              canUpdate={canUpdate}
+                              canApprove={canApprove}
+                              canDelete={canDelete}
+                              isResubmitting={isResubmitting}
+                              onManageItems={() => setManagingItemsList(pl)}
+                              onEdit={() => openEditModal(pl)}
+                              onApprove={() => setApprovingList(pl)}
+                              onReject={() => setRejectingList(pl)}
+                              onResubmit={() => resubmitPriceList(pl.id)}
+                              onDelete={() => setDeletingList(pl)}
+                            />
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {pagination.totalPages > 1 && (
@@ -364,10 +482,10 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         currencies={currencies}
         branches={branches}
         priceUseTypes={priceUseTypes}
+        priceLists={priceLists}
         onCreatePriceUseType={createPriceUseType}
         isCreatingPriceUseType={isCreatingPriceUseType}
         initial={editingList}
-        supersedesFrom={versioningFrom}
       />
 
       <PriceListItemsModal
@@ -377,6 +495,12 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         canEdit={Boolean(
           canUpdate && managingItemsList && EDITABLE_STATUSES.includes(managingItemsList.status)
         )}
+        // Editing items on an active list can flip its status server-side
+        // (see revertToPendingIfActive) — this modal only reloads its own
+        // item list on save, not the outer table's separately-cached query,
+        // so the status badge there would otherwise stay stale until the
+        // next 30s background refetch.
+        onItemsChanged={refetch}
       />
 
       <ApprovePriceListModal
@@ -393,6 +517,14 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         priceList={rejectingList}
         onReject={handleReject}
         isRejecting={isRejecting}
+      />
+
+      <DeletePriceListModal
+        open={deletingList !== null}
+        onClose={() => setDeletingList(null)}
+        priceList={deletingList}
+        onDelete={handleDelete}
+        isDeleting={isDeleting}
       />
     </div>
   )

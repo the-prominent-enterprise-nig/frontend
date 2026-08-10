@@ -8,6 +8,20 @@ type Params = {
   limit?: number
   search?: string
   status?: string
+  // Retired lists (inactive/expired) have no hard-delete, so anything ever
+  // deactivated — a real lapsed price list, or Playwright test fixtures —
+  // stays in the table forever. Default to hiding them so the working view
+  // only shows what's actually live or actionable; pass true to see everything.
+  includeInactive?: boolean
+}
+
+const RETIRED_STATUSES = ['inactive', 'expired']
+
+function visibleRows(
+  rows: PriceListListResponse['data'],
+  includeInactive: boolean | undefined
+): PriceListListResponse['data'] {
+  return includeInactive ? rows : rows.filter((pl) => !RETIRED_STATUSES.includes(pl.status))
 }
 
 export async function getPriceLists(
@@ -32,15 +46,21 @@ export async function getPriceLists(
     const limit = params.limit ?? 20
 
     if (Array.isArray(raw)) {
+      const filtered = visibleRows(raw, params.includeInactive)
       const start = (page - 1) * limit
       return {
         success: true,
-        data: { data: raw.slice(start, start + limit), total: raw.length, page, limit },
+        data: { data: filtered.slice(start, start + limit), total: filtered.length, page, limit },
       }
     }
 
     if (raw && Array.isArray((raw as PriceListListResponse).data)) {
-      return { success: true, data: raw as PriceListListResponse }
+      const paginated = raw as PriceListListResponse
+      const filtered = visibleRows(paginated.data, params.includeInactive)
+      return {
+        success: true,
+        data: { ...paginated, data: filtered, total: filtered.length },
+      }
     }
 
     return {

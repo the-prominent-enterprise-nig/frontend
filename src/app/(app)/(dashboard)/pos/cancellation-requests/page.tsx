@@ -10,6 +10,8 @@ import {
 import type { PosCancellationRequest } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 function CancellationRequestSkeletonCard() {
   return (
@@ -47,6 +49,7 @@ function CancellationRequestSkeletonCard() {
 }
 
 export default function CancellationRequestsPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
   const { branchId } = usePosBranchContext()
   const [requests, setRequests] = useState<PosCancellationRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +68,8 @@ export default function CancellationRequestsPage() {
     const interval = setInterval(load, 10000)
     return () => clearInterval(interval)
   }, [load])
+
+  if (status !== 'authorized' || !session) return null
 
   async function handleApprove(req: PosCancellationRequest) {
     setActing((p) => ({ ...p, [req.id]: true }))

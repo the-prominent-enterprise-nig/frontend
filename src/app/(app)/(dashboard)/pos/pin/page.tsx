@@ -1,9 +1,15 @@
 import { getCashierPinStatus } from '../_actions/pos-actions'
 import { CashierPinManager } from '@/src/components/pos/CashierPinManager'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { requirePermission } from '@/src/libs/guards/require-permission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 export const metadata = { title: 'POS PIN | Prominent Enterprise' }
 
 export default async function CashierPinPage() {
+  const session = await getSessionOrNull()
+  requirePermission(session, POS_PERMISSIONS.CASHIER_PIN_VERIFY)
+
   const statusRes = await getCashierPinStatus()
   return (
     <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">

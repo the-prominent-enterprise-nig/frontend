@@ -19,26 +19,70 @@ Cashier PIN (for cashier-PIN-gated actions like manager overrides/approvals): **
 
 ## Accounts (users)
 
-One Business Owner (no branch, sees everything) + 5 roles per branch × 3 branches = 16 accounts total.
+> **Note (2026-08-08):** this table's "3 branches / 16 accounts" framing is
+> stale — the live dev DB actually has 42 real branches for this tenant
+> (Bago, Guimbal, Murcia, and 39 more), not just Manila HQ/Cebu/Davao, and
+> the b1/b2/b3 accounts below only cover 3 of them. Found while verifying
+> Head Office role variants (below); a full regeneration of this table
+> against current DB state is a separate follow-up, not done here.
+>
+> **Note (2026-08-08, merge from development, resolved):** development
+> independently seeded a role literally named `Inventory` (b1/b2/b3.
+> inventory@test.com) with real users, distinct from the `inventory`
+> legacy slug this branch already purges. Checked directly against this
+> environment's DB post-merge: neither the `Inventory` role, its
+> `RolePermission` rows, nor its 3 seeded users exist here at all — this
+> dev DB never ran development's seed. The merged `prisma/seed.ts` source
+> also no longer creates the role (its `role.upsert` call didn't survive
+> the merge, only its permission grant did, which was already dropped as
+> redundant — `Stock Controller`'s `inventory:*` wildcard is a strict
+> superset of what `Inventory` granted). So there was nothing to reassign
+> or purge; the 3 rows below have been removed as inapplicable to this
+> environment. Same applies to Credit Investigator's b1/b2/b3.
+> investigator@test.com — merged into the role/permission model, but not
+> yet seeded as real users here.
 
-| Email                             | Name             | Role               | Branch             |
-| --------------------------------- | ---------------- | ------------------ | ------------------ |
-| `technova.owner@test.com`         | Darrin Kassulke  | **Business Owner** | — (all branches)   |
-| `technova.b1.manager@test.com`    | Jasper Rempel    | Branch Manager     | Manila HQ (MNL)    |
-| `technova.b1.accounting@test.com` | Fred Murray      | Accountant         | Manila HQ (MNL)    |
-| `technova.b1.stock@test.com`      | Jenna Hahn       | Stock Controller   | Manila HQ (MNL)    |
-| `technova.b1.cashier@test.com`    | Tyrell Buckridge | Cashier            | Manila HQ (MNL)    |
-| `technova.b1.crm@test.com`        | Shelia Yost      | Marketing Manager  | Manila HQ (MNL)    |
-| `technova.b2.manager@test.com`    | Irma Daniel      | Branch Manager     | Cebu Office (CBU)  |
-| `technova.b2.accounting@test.com` | Bette Little     | Accountant         | Cebu Office (CBU)  |
-| `technova.b2.stock@test.com`      | Janis Langosh    | Stock Controller   | Cebu Office (CBU)  |
-| `technova.b2.cashier@test.com`    | Lexus Boehm      | Cashier            | Cebu Office (CBU)  |
-| `technova.b2.crm@test.com`        | Corey Torp       | Marketing Manager  | Cebu Office (CBU)  |
-| `technova.b3.manager@test.com`    | Malcolm Moore    | Branch Manager     | Davao Branch (DVO) |
-| `technova.b3.accounting@test.com` | Adriana Cronin   | Accountant         | Davao Branch (DVO) |
-| `technova.b3.stock@test.com`      | Emmalee Howell   | Stock Controller   | Davao Branch (DVO) |
-| `technova.b3.cashier@test.com`    | Flo Jacobi       | Cashier            | Davao Branch (DVO) |
-| `technova.b3.crm@test.com`        | Flavio Pouros    | Marketing Manager  | Davao Branch (DVO) |
+One Business Owner (no branch, sees everything) + 7 roles per branch × 3 branches = 22 accounts total.
+
+| Email                               | Name                    | Role                 | Branch             |
+| ----------------------------------- | ----------------------- | -------------------- | ------------------ |
+| `technova.owner@test.com`           | Darrin Kassulke         | **Business Owner**   | — (all branches)   |
+| `technova.b1.manager@test.com`      | Jasper Rempel           | Branch Manager       | Manila HQ (MNL)    |
+| `technova.b1.accounting@test.com`   | Fred Murray             | Accountant           | Manila HQ (MNL)    |
+| `technova.b1.stock@test.com`        | Jenna Hahn              | Stock Controller     | Manila HQ (MNL)    |
+| `technova.b1.approver@test.com`     | Shelia Yost             | Master Data Approver | Manila HQ (MNL)    |
+| `technova.b1.investigator@test.com` | Alessandra Buenaventura | Credit Investigator  | Manila HQ (MNL)    |
+| `technova.b1.cashier@test.com`      | Tyrell Buckridge        | Cashier              | Manila HQ (MNL)    |
+| `technova.b1.crm@test.com`          | Shelia Yost             | Marketing Manager    | Manila HQ (MNL)    |
+| `technova.b2.manager@test.com`      | Irma Daniel             | Branch Manager       | Cebu Office (CBU)  |
+| `technova.b2.accounting@test.com`   | Bette Little            | Accountant           | Cebu Office (CBU)  |
+| `technova.b2.stock@test.com`        | Janis Langosh           | Stock Controller     | Cebu Office (CBU)  |
+| `technova.b2.approver@test.com`     | Emmalee Howell          | Master Data Approver | Cebu Office (CBU)  |
+| `technova.b2.investigator@test.com` | Marcus Villaruel        | Credit Investigator  | Cebu Office (CBU)  |
+| `technova.b2.cashier@test.com`      | Lexus Boehm             | Cashier              | Cebu Office (CBU)  |
+| `technova.b2.crm@test.com`          | Corey Torp              | Marketing Manager    | Cebu Office (CBU)  |
+| `technova.b3.manager@test.com`      | Malcolm Moore           | Branch Manager       | Davao Branch (DVO) |
+| `technova.b3.accounting@test.com`   | Adriana Cronin          | Accountant           | Davao Branch (DVO) |
+| `technova.b3.stock@test.com`        | Emmalee Howell          | Stock Controller     | Davao Branch (DVO) |
+| `technova.b3.approver@test.com`     | Lois Yundt              | Master Data Approver | Davao Branch (DVO) |
+| `technova.b3.investigator@test.com` | Priya Ocampo            | Credit Investigator  | Davao Branch (DVO) |
+| `technova.b3.cashier@test.com`      | Flo Jacobi              | Cashier              | Davao Branch (DVO) |
+| `technova.b3.crm@test.com`          | Flavio Pouros           | Marketing Manager    | Davao Branch (DVO) |
+
+### Head Office accounts (added 2026-08-08)
+
+Same role as their branch-scoped counterparts above — no new roles, just no
+branch assigned (no `Employee` record at all, same shape as Business Owner).
+Branch-scoping treats a branchless caller as "no filter," so these see every
+branch's data within their one module, e.g. Head Office Accountant sees
+every branch's journal entries but nothing outside Accounting.
+
+| Email                          | Role              | Sees                                 |
+| ------------------------------ | ----------------- | ------------------------------------ |
+| `technova.accounting@test.com` | Accountant        | All branches, Accounting module only |
+| `technova.stock@test.com`      | Stock Controller  | All branches, Inventory module only  |
+| `technova.cashier@test.com`    | Cashier           | All branches, POS module only        |
+| `technova.crm@test.com`        | Marketing Manager | All branches, CRM module only        |
 
 **Business Owner bypasses every permission check** (`hasPrivilegedRole` short-circuit) — use it for anything without worrying about role gates.
 

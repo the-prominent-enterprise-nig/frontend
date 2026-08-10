@@ -5,6 +5,7 @@ import { revalidateTag } from 'next/cache'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import type {
   PosCustomer,
+  CollectionsCustomer,
   CreateWalkInCustomerInput,
   PosTerminal,
   CashierTerminalAccess,
@@ -331,9 +332,17 @@ export async function createTransaction(
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to create transaction' }
     }
-    // Pending-approval responses don't create a transaction — nothing to revalidate yet.
     if (!isPendingApproval(result.data)) {
+      // Completed directly (e.g. a self-approving submitter) — no RFD was
+      // created, just the transaction itself.
       revalidateTag(TAGS.transactions, 'max')
+    } else {
+      // Serialized/charge/installment sales that need manager approval
+      // create a new PosReleaseFormRequest here — without this, the Release
+      // & Application Form Approvals screen (cached under this same tag)
+      // can go on showing a stale list that's missing the one just
+      // submitted, until something else happens to revalidate it.
+      revalidateTag(TAGS.releaseFormRequests, 'max')
     }
     return { success: true, data: result.data }
   } catch {
@@ -1069,6 +1078,19 @@ export async function updateFinancingTerm(
   }
 }
 
+export async function deleteFinancingTerm(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/financing-terms/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete financing term' }
+    }
+    revalidateTag(TAGS.financingTerms, 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete financing term' }
+  }
+}
+
 export async function previewInstallment(
   input: ComputeInstallmentPreviewInput
 ): Promise<ApiResponse<InstallmentPreview>> {
@@ -1080,6 +1102,23 @@ export async function previewInstallment(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to compute installment preview' }
+  }
+}
+
+export async function listCollectionsCustomers(
+  opts: { branchId?: string; search?: string } = {}
+): Promise<ApiResponse<CollectionsCustomer[]>> {
+  try {
+    const result = await api.get<CollectionsCustomer[]>('/pos/customers/collections', {
+      ...(opts.branchId ? { branchId: opts.branchId } : {}),
+      ...(opts.search ? { search: opts.search } : {}),
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch collections customers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch collections customers' }
   }
 }
 
@@ -1341,9 +1380,11 @@ export async function getBranches(): Promise<ApiResponse<Branch[]>> {
 
 export async function searchCustomers(q: string): Promise<ApiResponse<PosCustomer[]>> {
   try {
-    const result = await api.get<PosCustomer[] | { data: PosCustomer[] }>('/crm/customers', {
-      search: q,
-      limit: '10',
+    // POS-scoped search (name-or-phone, minimal fields) — not /crm/customers,
+    // which needs crm:customers:read that a Cashier role isn't granted and
+    // returns a much wider (billing/credit/tax) shape than checkout needs.
+    const result = await api.get<PosCustomer[] | { data: PosCustomer[] }>('/pos/customers/search', {
+      q,
     } as Record<string, string>)
     if (!result.success) return { success: false, error: result.error || 'Search failed' }
     const raw = result.data ?? []
@@ -1762,6 +1803,9 @@ export interface ResolvedPosPrice {
   price: number
   floorPrice: number | null
   minQty: number | null
+  /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
+   * rate card, when one exists for this item's price list. */
+  downPayment: number | null
 }
 
 /** Bulk-resolves every itemId's price under one Price Use in a single call —

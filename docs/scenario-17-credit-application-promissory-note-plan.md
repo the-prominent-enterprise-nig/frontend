@@ -71,3 +71,39 @@ Ordered by risk/value.
 ## Dead code / unused-feature flags
 
 None found.
+
+## Implementation Log — 2026-08-05
+
+**For this scenario, I have done:**
+
+- Closing gap #1 (scope confirmation): every installment sale requires the full formal credit-application flow — no peso threshold, no new-customer-only carve-out (developer-confirmed).
+- Closing gap #2 (`CreditApplication` entity), split into three parts:
+  - Part 1: `CreditApplication` model/migration/CRUD/permissions, `PosTransaction.creditApplicationId`-style forward link scaffolding.
+  - Part 2: `CreditApplicationDocument` model + upload UI (applicant/co-maker ID, income/expense proof).
+  - Part 3: Cashier intake UI (`/credit/applications`) — applicant + co-maker selection, document upload, submit gate.
+- Closing gap #3 (Credit Investigator role + CI/adjudication record), split into two parts:
+  - Part 4: `Credit Investigator` role + `CreditInvestigation` model (affordability outcome, notes) — distinct from the existing `Collector` role per the 2026-07-31 naming decision.
+  - Part 5: BM/Credit Approver review UI — the existing Branch Manager role with a new `credit:application:approve` permission, not a new role (developer-confirmed).
+- Bridging step (not its own gap item, but required to connect gap #2 to the scenario's actual sale): Part 6 — POS checkout now requires an approved, unconsumed `CreditApplication` for every installment sale; `CreditApplication.posTransactionId` is set once consumed.
+- Closing gap #4 (Promissory Note generation + signature gate): Part 7 — `PromissoryNote` model generated when an installment sale is submitted for release (mirrors the RFD printable-HTML pattern, no new PDF library); `signedAt`/`signedById` gate release in `ReleaseFormRequestsService.approve()` alongside the existing manager-approval gate. Signing is Cashier-level (developer-confirmed 2026-08-05, over Branch-Manager-only), cascading to Branch Manager/Business Owner.
+- Closing gap #5 (sequencing): confirmed Scenario 02's co-maker entity existed before starting gap #2/#4 work.
+
+**Worth flagging:**
+
+- `CreditApplication` has no `financingTermId`/requested-term field — the Promissory Note's term/schedule is captured from the checkout DTO at RFD-submit time, not from the application itself. If a future scenario needs the applicant to request specific terms up front, that'd be a new field on `CreditApplication`.
+- The Promissory Note signature gate only applies within the hold+approve (RFD) flow — an actor who already holds `pos:transaction:override` self-approves and bypasses it, same carve-out the existing manager-approval gate already has. Consistent, not a new loophole.
+- `docs/seed-data-reference.md` was out of date on role/account counts (16 accounts documented vs 22 actually seeded) — corrected this run alongside the Credit Investigator additions.
+- Discovered and fixed unrelated pre-existing gaps during manual testing: zero `FinancingTerm` rows existed anywhere in the seed (any installment sale would have hit this, not just this scenario's); a three-layer sidebar-visibility bug hid the Credit module from non-owner roles (backend `PERMISSION_MODULE_TO_NAV` map, tenant `enabledModules`, two super-admin module-toggle checklists).
+- Flagged but did not fix (out of scope): `pos-checkout-multi-serial-cart.spec.ts` and `pos-release-form-request.e2e-spec.ts` have pre-existing failures unrelated to this scenario (a stale-session serial-picker issue and a July 28 commit requiring a customer on every sale, respectively).
+
+## Implementation Log — 2026-08-06
+
+**For this scenario, I have done:**
+
+- Bug fix: `PromissoryNote.creditApplicationId` was `@unique`, which crashed (500) any resubmit of an installment sale after its first hold was rejected or cancelled — the application stays `approved`/unconsumed, so `ReleaseFormRequestsService.submit()` tried to insert a second `PromissoryNote` row for the same application and hit the constraint. Fixed by dropping that uniqueness (kept only on `releaseFormRequestId`) and adding a `pendingHold` guard in `TransactionsService.validateAndPrepare()` so a still-live pending hold on an application is rejected with a clear message instead — closes the ambiguity the uniqueness constraint was accidentally also preventing. `PromissoryNoteService.findByApplication` now returns the most-recently-generated note. New backend tests PN-05/PN-06.
+- UX gap fix: there was no way to reach a Promissory Note's print/sign controls other than the checkout Pending Approval screen, which is pure React state — lost on navigation, refresh, or tab close, permanently stranding that sale unsigned. Added the same Print + Mark as Signed controls to `ReleaseApprovalsList.tsx`'s detail modal (available to both the submitting Cashier's own-requests view and the reviewing manager). New frontend e2e test covers this fallback path.
+- Developer-requested restructure: Credit Applications moved from its own top-level sidebar module to living inside POS, at `/pos/credit-applications`. This reverses the earlier 2026-08-05 "keep it a separate module" decision — the developer changed their mind, then iterated on exactly where "inside POS" meant: first tried as a tab in `PosNav.tsx`'s horizontal Operations bar, then moved to a direct entry in the **left sidebar's** POS sub-nav (`navItemsBySegment.pos` in `SideBar.tsx`) instead, matching how "Release Approvals" already gets its own direct sidebar link rather than living in the tab bar — `PosNav.tsx` is back to its pre-change state. Handled a real regression this created: Credit Investigator holds zero `pos:*` permissions. Two independent things make this work: (1) the LEFT SIDEBAR item itself is gated by `credit:application:view` directly (each `config.main` item is filtered by its own `requiredPermission`, not the module's), so Credit Investigator sees the item once inside `/pos/*`; (2) they still need a way to _reach_ `/pos/*` at all — the top-level "Point of Sale" entry point (`modules.ts`) had its `requiredPermission` widened to `pos:sessions:open` OR any `credit:*` permission (`AppModule.requiredPermission` now accepts `string | string[]`, `TopBar.tsx`'s filter treats an array as "any of"), and the backend's `PERMISSION_MODULE_TO_NAV` map now points `credit` at `['pos']` so a credit-only role's computed `moduleAccess` includes `pos` — this is also what `ModuleGuard`'s `canAccessModule` check on the `/pos` layout relies on to let them in at all. `ROLE_MODULE_ACCESS` in both `usePermission.ts`/`permission.ts` dropped `credit` (now redundant). Verified end-to-end twice (once per iteration): logged in as a seeded Credit Investigator, confirmed they see "Point of Sale," land on `/pos`, and see _only_ "Credit Applications" in the left sidebar (Operations/Management/etc. correctly hidden — no `pos:*` permissions). Deliberately left the backend's tenant-level `enabledModules` feature-flag and the two super-admin module-toggle checklists untouched — separate per-tenant billing/feature concern from navigation, not part of what was asked.
+
+**Worth flagging:**
+
+- Both issues above were found by directly asking "is anything missing?" and reproducing edge cases (reject-then-resubmit; navigate-away-before-signing) rather than by a developer bug report — worth treating this kind of adversarial pass as standard before considering a part done, not just the happy-path manual test steps.

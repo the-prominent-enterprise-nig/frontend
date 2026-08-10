@@ -242,8 +242,12 @@ export function useTransferManager() {
         showToast({ title: 'Transfer received', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
-        if (selectedTransfer) {
-          setSelectedTransfer((prev) => (prev ? { ...prev, status: 'received' } : null))
+        // Unlike every other transfer action, receive has two possible
+        // outcomes (received vs partially_received) — use whatever the
+        // server actually resolved instead of assuming one.
+        if (selectedTransfer && result.data?.status) {
+          const status = result.data.status as TransferStatus
+          setSelectedTransfer((prev) => (prev ? { ...prev, status } : null))
         }
       } else {
         showToast({

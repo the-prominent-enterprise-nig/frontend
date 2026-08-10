@@ -67,6 +67,21 @@ export const RegisterSerialsFormInputSchema = z.object({
 
 export type RegisterSerialsFormInput = z.infer<typeof RegisterSerialsFormInputSchema>
 
+// Scenario 08 (Caravan) — "Consign to Branch" bulk action.
+export const ConsignToBranchFormSchema = z
+  .object({
+    hostBranchId: z.string().min(1, 'Host branch is required'),
+    eventName: z.string().max(150, 'Event name is too long').optional(),
+    eventStartDate: z.string().optional(),
+    eventEndDate: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      !data.eventStartDate || !data.eventEndDate || data.eventEndDate >= data.eventStartDate,
+    { message: 'Event end date cannot be before the start date', path: ['eventEndDate'] }
+  )
+export type ConsignToBranchFormValues = z.infer<typeof ConsignToBranchFormSchema>
+
 export const UpdateSerialStatusFormSchema = z.object({
   status: SerialStatusSchema,
   warehouseId: z.string().optional(),
@@ -131,6 +146,11 @@ export const SerialNumberSummarySchema = z.object({
   // host branch for an event while ownership stays with currentWarehouse's
   // own branch.
   consignedToBranch: SerialBranchSchema.optional().nullable(),
+  // Optional event metadata captured at consign time, cleared alongside
+  // consignedToBranch at event close or sale.
+  caravanEventName: z.string().optional().nullable(),
+  caravanEventStartDate: z.string().optional().nullable(),
+  caravanEventEndDate: z.string().optional().nullable(),
   goodsReceiptLine: SerialReceiptSchema,
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),

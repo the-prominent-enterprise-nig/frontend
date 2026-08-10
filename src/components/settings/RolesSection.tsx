@@ -36,6 +36,7 @@ function getAccessBadgeClass(level: AccessLevel): string {
   if (level === 'full') return 'bg-emerald-50 text-emerald-700 ring-emerald-200'
   if (level === 'manage') return 'bg-blue-50 text-blue-700 ring-blue-200'
   if (level === 'view') return 'bg-amber-50 text-amber-700 ring-amber-200'
+  if (level === 'mixed') return 'bg-orange-50 text-orange-700 ring-orange-200'
   return 'bg-zinc-100 text-zinc-500 ring-zinc-200'
 }
 
@@ -67,8 +68,8 @@ export default function RolesSection({
     try {
       const result = await createRole({
         name: data.name,
-        // Note: permissionIds can be assigned later via the AssignPermissionsModal
-        // The isActive and description fields are ignored by the API for now
+        description: data.description || undefined,
+        permissionIds: data.permissionIds,
       })
 
       if (!result.success) {
@@ -163,9 +164,15 @@ export default function RolesSection({
                   const isNearBottom = index >= filtered.length - 3
                   const moduleAccess = ACCESS_MODULES.map((moduleConfig) => ({
                     moduleConfig,
-                    level: getAccessLevelForRole(role, moduleConfig),
+                    level: getAccessLevelForRole(role, moduleConfig, availablePermissions),
                   })).filter((item) => item.level !== 'none')
                   const isProtected = PROTECTED_ROLE_NAMES.has(role.name)
+                  // Business Owner's permissions and active status can't be
+                  // changed by anyone via the API (see roles.service.ts's
+                  // assertNotFounderRole) — the other fixed roles aren't
+                  // backend-protected from this yet, so only Business Owner
+                  // gets these two disabled here.
+                  const isFounderRole = role.name === 'Business Owner'
                   return (
                     <tr key={role.id} className="border-t border-zinc-100 hover:bg-zinc-50">
                       <td className="px-4 py-3 font-medium text-zinc-900">{role.name}</td>
@@ -189,14 +196,24 @@ export default function RolesSection({
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setAssignTarget(role)}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-50 px-3 py-1 text-xs font-medium text-prominent-purple-700 transition hover:bg-prominent-purple-100"
-                        >
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          {role.permissions.length} permissions
-                        </button>
+                        {isFounderRole ? (
+                          <span
+                            title="Business Owner's permissions are fixed and can't be edited"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-500"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {role.permissions.length} permissions
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setAssignTarget(role)}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-50 px-3 py-1 text-xs font-medium text-prominent-purple-700 transition hover:bg-prominent-purple-100"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {role.permissions.length} permissions
+                          </button>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -227,22 +244,31 @@ export default function RolesSection({
                               <div
                                 className={`absolute right-0 z-50 ${isNearBottom ? 'bottom-full mb-1' : 'top-full mt-1'} w-44 rounded-xl border border-zinc-200 bg-white shadow-lg`}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => setAssignTarget(role)}
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-                                >
-                                  <ShieldCheck className="h-4 w-4 text-prominent-purple-600" />
-                                  Assign
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleActive(role.id)}
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
-                                >
-                                  <Pencil className="h-4 w-4 text-zinc-500" />
-                                  {role.isActive ? 'Deactivate' : 'Activate'}
-                                </button>
+                                {!isFounderRole && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAssignTarget(role)}
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                                  >
+                                    <ShieldCheck className="h-4 w-4 text-prominent-purple-600" />
+                                    Assign
+                                  </button>
+                                )}
+                                {!isFounderRole && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleActive(role.id)}
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                                  >
+                                    <Pencil className="h-4 w-4 text-zinc-500" />
+                                    {role.isActive ? 'Deactivate' : 'Activate'}
+                                  </button>
+                                )}
+                                {isFounderRole && (
+                                  <span className="block px-3 py-2.5 text-xs text-zinc-400">
+                                    Fixed — no actions available
+                                  </span>
+                                )}
                                 {!isProtected && (
                                   <button
                                     type="button"
@@ -275,6 +301,7 @@ export default function RolesSection({
 
       <CreateRoleModal
         isOpen={isCreateOpen}
+        availablePermissions={availablePermissions}
         onClose={() => setIsCreateOpen(false)}
         onSave={handleCreate}
       />

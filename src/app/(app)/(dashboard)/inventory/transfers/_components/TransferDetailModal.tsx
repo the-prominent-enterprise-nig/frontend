@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
   X,
@@ -17,6 +17,7 @@ import {
   Ban,
   Receipt,
   UserCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -37,6 +38,8 @@ import {
   printInventoryDocument,
   type PrintDocumentEnvelope,
 } from '@/src/libs/print/printInventoryDocument'
+import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 const STATUS_CONFIG = {
   pending_manager_approval: {
@@ -54,6 +57,11 @@ const STATUS_CONFIG = {
   draft: { label: 'Accepted', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
   in_transit: { label: 'In Transit', color: 'bg-blue-100 text-blue-700', icon: Truck },
   received: { label: 'Received', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+  partially_received: {
+    label: 'Partially Received',
+    color: 'bg-amber-100 text-amber-700',
+    icon: AlertTriangle,
+  },
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-600', icon: XCircle },
 }
 
@@ -236,7 +244,21 @@ export default function TransferDetailModal({
     defaultValues: {
       receivedDate: new Date().toISOString().split('T')[0],
       notes: '',
+      lines: [],
+      extraLines: [],
     },
+  })
+  const { fields: receiveLineFields } = useFieldArray({
+    control: receiveForm.control,
+    name: 'lines',
+  })
+  const {
+    fields: extraLineFields,
+    append: appendExtraLine,
+    remove: removeExtraLine,
+  } = useFieldArray({
+    control: receiveForm.control,
+    name: 'extraLines',
   })
 
   const rejectHqForm = useForm<RejectHqTransferFormValues>({
@@ -284,6 +306,13 @@ export default function TransferDetailModal({
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
   const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
+  const isReceivedStatus = status === 'received' || status === 'partially_received'
+  // Unlisted items received alongside the transfer — GoodsReceiptLines with
+  // no stockTransferLineId, i.e. not one of the reconciled dispatched lines.
+  // A reopened partially_received transfer issues its own separate GRN per
+  // receive call, so there can be more than one — aggregate extras across
+  // all of them, not just the first.
+  const extraLinesReceived = (transfer?.goodsReceipts ?? []).flatMap((grn) => grn.lines ?? [])
 
   async function handleDispatchSubmit(data: DispatchTransferFormValues) {
     if (!transfer) return
@@ -300,6 +329,33 @@ export default function TransferDetailModal({
       setShowDispatchForm(false)
       dispatchForm.reset()
     }
+  }
+
+  function openReceiveForm() {
+    if (!transfer) return
+    // Only lines not yet at their full dispatched quantity are actionable —
+    // on a first receive that's every line; on a reopened partially_received
+    // transfer it's just what's still short. Default each to its full
+    // remaining amount — the common case is everything arrived; the user
+    // reduces the number or unchecks a serial only for the exceptional
+    // shortfall.
+    const outstanding = (transfer.lines ?? []).filter(
+      (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
+    )
+    receiveForm.reset({
+      receivedDate: new Date().toISOString().split('T')[0],
+      notes: '',
+      lines: outstanding.map((line) => ({
+        stockTransferLineId: line.id ?? '',
+        dispatchedQty: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
+        isSerial: !!line.serialNumberId,
+        serialLabel: line.serialNumber?.serialNumber,
+        itemLabel: line.item?.name ?? line.itemId ?? undefined,
+        quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
+      })),
+      extraLines: [],
+    })
+    setShowReceiveForm(true)
   }
 
   async function handleReceiveSubmit(data: ReceiveTransferFormValues) {
@@ -495,23 +551,55 @@ export default function TransferDetailModal({
               </div>
             )}
 
-            {/* Receiving report (GRN) — issued when the transfer is received */}
-            {status === 'received' &&
+            {/* Receiving report (GRN) — issued when the transfer is received
+                (in full or in part) */}
+            {(status === 'received' || status === 'partially_received') &&
               transfer.goodsReceipts &&
               transfer.goodsReceipts.length > 0 && (
                 <div className="rounded-xl border border-green-200 bg-green-50 p-4">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-green-800">
                     <Receipt className="h-4 w-4" />
-                    Receiving Report Issued
+                    {transfer.goodsReceipts.length > 1
+                      ? 'Receiving Reports Issued'
+                      : 'Receiving Report Issued'}
                   </p>
-                  <p className="mt-1 font-mono text-sm text-green-700">
-                    {transfer.goodsReceipts[0].code}
-                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {transfer.goodsReceipts.map((grn) => (
+                      <p key={grn.id} className="font-mono text-sm text-green-700">
+                        {grn.code}
+                      </p>
+                    ))}
+                  </div>
+                  {extraLinesReceived.length > 0 && (
+                    <div className="mt-3 border-t border-green-200 pt-3">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Unlisted Items Received
+                      </p>
+                      <ul className="mt-1.5 space-y-1">
+                        {extraLinesReceived.map((line) => (
+                          <li key={line.id} className="flex items-center justify-between text-sm">
+                            <span className="text-zinc-700">
+                              {line.item?.name ?? line.itemId}
+                              {line.notes && (
+                                <span className="ml-1.5 text-xs text-zinc-400">— {line.notes}</span>
+                              )}
+                            </span>
+                            <span className="font-medium text-zinc-700">
+                              +{line.quantityReceived}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
             {/* Logistics / Driver info (displayed when in_transit or received) */}
-            {(status === 'in_transit' || status === 'received') &&
+            {(status === 'in_transit' ||
+              status === 'received' ||
+              status === 'partially_received') &&
               (transfer.driverName || transfer.vehiclePlate || transfer.carrierName) && (
                 <div>
                   <p className="mb-2 text-sm font-medium text-zinc-700">Logistics</p>
@@ -550,6 +638,11 @@ export default function TransferDetailModal({
                         <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                           Qty
                         </th>
+                        {isReceivedStatus && (
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Received
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -571,6 +664,31 @@ export default function TransferDetailModal({
                           <td className="px-3 py-2 text-right font-medium text-zinc-700">
                             {line.quantity}
                           </td>
+                          {isReceivedStatus && (
+                            <td className="px-3 py-2 text-right">
+                              {line.serialNumberId ? (
+                                line.serialNumber?.status === 'lost_in_transit' ? (
+                                  <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                    Lost in Transit
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                    Received
+                                  </span>
+                                )
+                              ) : (
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className="font-medium text-zinc-700">
+                                    {line.receivedQuantity ?? 0}
+                                  </span>
+                                  <QtyVarianceBadge
+                                    ordered={line.quantity}
+                                    received={line.receivedQuantity ?? 0}
+                                  />
+                                </div>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -661,7 +779,7 @@ export default function TransferDetailModal({
                     color="text-green-700 bg-green-100"
                   />
                 )}
-                {(status === 'in_transit' || status === 'received') && (
+                {(status === 'in_transit' || isReceivedStatus) && (
                   <LedgerEvent
                     icon={<Truck className="h-3.5 w-3.5" />}
                     label={`Dispatched — stock deducted from ${transfer.fromWarehouse?.name ?? 'source'}`}
@@ -675,6 +793,14 @@ export default function TransferDetailModal({
                     label={`Received — stock added to ${transfer.toWarehouse?.name ?? 'destination'}`}
                     timestamp={transfer.receivedAt}
                     color="text-green-700 bg-green-100"
+                  />
+                )}
+                {status === 'partially_received' && (
+                  <LedgerEvent
+                    icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                    label="Partially received — see item table for shortfalls"
+                    timestamp={transfer.receivedAt}
+                    color="text-amber-700 bg-amber-100"
                   />
                 )}
                 {status === 'cancelled' && (
@@ -845,7 +971,9 @@ export default function TransferDetailModal({
                 onSubmit={receiveForm.handleSubmit(handleReceiveSubmit)}
                 className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
               >
-                <p className="text-sm font-medium text-zinc-700">Confirm Receipt</p>
+                <p className="text-sm font-medium text-zinc-700">
+                  {status === 'partially_received' ? 'Continue Receiving' : 'Confirm Receipt'}
+                </p>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
                     Received Date <span className="text-red-500">*</span>
@@ -861,6 +989,159 @@ export default function TransferDetailModal({
                     </p>
                   )}
                 </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Items Received
+                  </label>
+                  <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
+                    {receiveLineFields.map((lineField, idx) => (
+                      <div
+                        key={lineField.id}
+                        className="flex items-center justify-between gap-3 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-zinc-800">
+                            {lineField.itemLabel ?? '—'}
+                          </p>
+                          <p className="truncate text-xs text-zinc-400">
+                            {lineField.isSerial
+                              ? (lineField.serialLabel ?? '—')
+                              : `Remaining: ${lineField.dispatchedQty}`}
+                          </p>
+                        </div>
+                        <div className="shrink-0">
+                          {lineField.isSerial ? (
+                            <Controller
+                              name={`lines.${idx}.quantityReceived`}
+                              control={receiveForm.control}
+                              render={({ field }) => (
+                                <label className="flex items-center gap-1.5 text-sm text-zinc-600">
+                                  <input
+                                    type="checkbox"
+                                    checked={field.value === 1}
+                                    onChange={(e) => field.onChange(e.target.checked ? 1 : 0)}
+                                    className="h-4 w-4 rounded border-zinc-300 text-green-600 focus:ring-green-500"
+                                  />
+                                  Received
+                                </label>
+                              )}
+                            />
+                          ) : (
+                            <Controller
+                              name={`lines.${idx}.quantityReceived`}
+                              control={receiveForm.control}
+                              render={({ field }) => (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={lineField.dispatchedQty}
+                                  // Number('') is 0, which would otherwise
+                                  // snap the field straight back to "0" the
+                                  // instant it's cleared — NaN lets it sit
+                                  // visually blank while being edited.
+                                  value={Number.isNaN(field.value) ? '' : field.value}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value === '' ? NaN : Number(e.target.value)
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    if (Number.isNaN(field.value)) field.onChange(0)
+                                  }}
+                                  className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                />
+                              )}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {receiveForm.formState.errors.lines && (
+                    <p className="mt-1 text-xs text-red-600">
+                      Check the quantities above — some values are invalid.
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="block text-xs font-medium text-zinc-600">
+                      Unlisted Items{' '}
+                      <span className="font-normal text-zinc-400">
+                        (received but not on the transfer)
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => appendExtraLine({ itemId: '', quantity: 1, notes: '' })}
+                      className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                    >
+                      + Add unlisted item
+                    </button>
+                  </div>
+                  {extraLineFields.length > 0 && (
+                    <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
+                      {extraLineFields.map((extraField, idx) => (
+                        <div
+                          key={extraField.id}
+                          className="flex items-center gap-2 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <Controller
+                              name={`extraLines.${idx}.itemId`}
+                              control={receiveForm.control}
+                              render={({ field }) => (
+                                <ItemSearchCombobox
+                                  value={field.value ?? ''}
+                                  onChange={(id) => field.onChange(id)}
+                                  error={
+                                    receiveForm.formState.errors.extraLines?.[idx]?.itemId?.message
+                                  }
+                                />
+                              )}
+                            />
+                          </div>
+                          <Controller
+                            name={`extraLines.${idx}.quantity`}
+                            control={receiveForm.control}
+                            render={({ field }) => (
+                              <input
+                                type="number"
+                                min={0.01}
+                                step="any"
+                                value={Number.isNaN(field.value) ? '' : field.value}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === '' ? NaN : Number(e.target.value)
+                                  )
+                                }
+                                onBlur={() => {
+                                  if (Number.isNaN(field.value)) field.onChange(0)
+                                }}
+                                className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            )}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeExtraLine(idx)}
+                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                            aria-label="Remove unlisted item"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Serial-tracked items can&apos;t be added here — route those through the serial
+                    numbers module.
+                  </p>
+                </div>
+
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">Notes</label>
                   <Controller
@@ -879,7 +1160,10 @@ export default function TransferDetailModal({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowReceiveForm(false)}
+                    onClick={() => {
+                      setShowReceiveForm(false)
+                      receiveForm.reset()
+                    }}
                     className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
                   >
                     Back
@@ -1103,7 +1387,7 @@ export default function TransferDetailModal({
                 )}
               </div>
               <div className="flex gap-3">
-                {(status === 'in_transit' || status === 'received') && (
+                {(status === 'in_transit' || isReceivedStatus) && (
                   <button
                     type="button"
                     onClick={async () => {
@@ -1146,11 +1430,21 @@ export default function TransferDetailModal({
                 {status === 'in_transit' && canReceiveThis && (
                   <button
                     type="button"
-                    onClick={() => setShowReceiveForm(true)}
+                    onClick={openReceiveForm}
                     className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
                   >
                     <CheckCircle className="h-4 w-4" />
                     Mark Received
+                  </button>
+                )}
+                {status === 'partially_received' && canReceiveThis && (
+                  <button
+                    type="button"
+                    onClick={openReceiveForm}
+                    className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                    Receive Remaining
                   </button>
                 )}
                 {status === 'pending_manager_approval' && canManagerRejectThis && (

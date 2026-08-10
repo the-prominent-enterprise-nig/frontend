@@ -289,6 +289,7 @@ export default function UsersSection({
                     const createdDate = new Date(user.createdAt).toLocaleDateString()
 
                     const isSelf = currentUserId === user.id
+                    const isProtectedFounder = user.isFounder && !isSelf
 
                     return (
                       <tr
@@ -302,6 +303,14 @@ export default function UsersSection({
                             {isSelf && (
                               <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-xs font-medium text-prominent-purple-700">
                                 You
+                              </span>
+                            )}
+                            {isProtectedFounder && (
+                              <span
+                                title="The founding Business Owner account can only be modified by itself"
+                                className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                              >
+                                Founder · Protected
                               </span>
                             )}
                           </div>
@@ -326,8 +335,17 @@ export default function UsersSection({
                         </td>
                         <td className="px-4 py-3 text-zinc-500">{createdDate}</td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          {isSelf ? (
-                            <span className="px-1.5 text-sm text-zinc-400">—</span>
+                          {isSelf || isProtectedFounder ? (
+                            <span
+                              className="px-1.5 text-sm text-zinc-400"
+                              title={
+                                isProtectedFounder
+                                  ? 'Protected — no one but the founder can modify this account'
+                                  : undefined
+                              }
+                            >
+                              —
+                            </span>
                           ) : (
                             <div className="relative">
                               <button

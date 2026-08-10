@@ -31,13 +31,20 @@ import {
   Building2,
   LayoutGrid,
   List,
+  Printer,
+  FileSignature,
+  Trash2,
+  Paperclip,
 } from 'lucide-react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
   displayUnitPriceWithTax,
   lineTaxAmount,
 } from './_utils/calculations'
+import { useRouter } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
@@ -47,6 +54,10 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import CustomerExtraFields, {
   type CustomerExtraFieldsValues,
 } from '@/src/components/crm/CustomerExtraFields'
+import { ID_TYPE_OPTIONS, type CoMakerFormValues } from '@/src/schema/crm/customer'
+import type { DuplicateCheckResult } from '@/src/schema/crm/types'
+import { customersApi } from '@/src/libs/api/crm'
+import { uploadIdDocument } from '@/src/app/(app)/(dashboard)/crm/customers/_actions/upload-id-document'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
 import {
   itemLookup,
@@ -86,6 +97,11 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
+import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
+import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
+import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
 import { usePriceResolution } from './_hooks/usePriceResolution'
@@ -150,6 +166,10 @@ interface CartLine {
    * selected Price Use — null until resolved, stays null if manually
    * overridden instead. */
   priceListItemId?: string | null
+  /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
+   * rate card, resolved alongside priceListItemId. Preferred over the
+   * generic 10%-floor auto-fill when set. */
+  priceListDownPayment?: number | null
   /** True once unitPrice reflects either a real Price Use resolution or a
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
@@ -234,6 +254,7 @@ const DECIMAL_CODES = new Set([
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
+  const router = useRouter()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -272,14 +293,31 @@ export default function CheckoutPage() {
   // sale would otherwise need to ask someone else for (Business Owner or
   // Branch Manager) — drives the serial-sale banner below.
   const [canOverride, setCanOverride] = useState(false)
+  // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
+  // signed (Cashier-level, cascades to Branch Manager/Business Owner).
+  const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
   useEffect(() => {
     getSessionOrNull().then((s) => {
-      if (!s) return
+      if (!s) {
+        router.replace('/login')
+        return
+      }
+      // Scenario 22 Part 5 — checkout had no route-level permission check at
+      // all (only ModuleGuard's broad "holds SOME pos permission" check at
+      // the layout level). A role without pos:transactions:create could
+      // still load this screen; every actual sale-submit call already
+      // 403s from the backend, but the page itself shouldn't render for
+      // them in the first place.
+      if (!can(s, POS_PERMISSIONS.TRANSACTIONS_CREATE)) {
+        router.replace('/403')
+        return
+      }
       setIsBranchManager(s.primaryRole === 'Branch Manager')
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
+      setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
-  }, [])
+  }, [router])
 
   const activeBranchId = useMemo(() => {
     // Branch Managers: use their assigned branch (matches "My Branch" settings)
@@ -394,10 +432,21 @@ export default function CheckoutPage() {
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
+  const [installmentPreviewErrors, setInstallmentPreviewErrors] = useState<
+    Record<string, string | null>
+  >({})
   const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState<
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  // Scenario 17 Part 6 — every installment sale requires an approved,
+  // not-yet-used CreditApplication for the selected customer.
+  const [approvedCreditApplications, setApprovedCreditApplications] = useState<
+    { id: string; applicationNumber: string; requestedAmount: number }[]
+  >([])
+  const [creditApplicationId, setCreditApplicationId] = useState('')
+  const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -447,8 +496,19 @@ export default function CheckoutPage() {
         if (line.priceOverrideBy) return line
         const resolved = resolvedPrices[line.itemId]
         if (!resolved) {
+          // No active price list matches the newly-picked Price Use for this
+          // item — clear unitPrice back to 0 too, not just the resolved
+          // flags. Leaving the old Price Use's unitPrice in place kept the
+          // Order Summary total frozen on the stale price even though the
+          // per-line cell correctly switched to "No price — Override".
           return line.priceResolved
-            ? { ...line, priceResolved: false, priceListItemId: null }
+            ? {
+                ...line,
+                unitPrice: 0,
+                priceResolved: false,
+                priceListItemId: null,
+                priceListDownPayment: null,
+              }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
@@ -456,6 +516,7 @@ export default function CheckoutPage() {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
+          priceListDownPayment: resolved.downPayment,
           priceResolved: true,
         }
       })
@@ -490,6 +551,9 @@ export default function CheckoutPage() {
     releaseFormRequestId: string
     totalAmount: number
     serialLines: { itemName: string; serialNumberLabel?: string }[]
+    /** Scenario 17 Part 7 — set only for installment sales, so
+     * PendingApprovalScreen knows whether to show the Promissory Note card. */
+    creditApplicationId?: string
   } | null>(null)
 
   // Reserve mode success (Scenario 03, Part 3) — separate from `success`
@@ -953,6 +1017,36 @@ export default function CheckoutPage() {
     )
     .join('|')
 
+  // Scenario 17 Part 6 — reload this customer's approved, unused credit
+  // applications whenever the customer or cart's installment-line count
+  // changes; a stale selection from a previously-selected customer must
+  // never carry over. One credit application covers every installment line
+  // in the cart (the backend gate runs once per transaction, not per line).
+  useEffect(() => {
+    setCreditApplicationId('')
+    if (installmentCartLines.length === 0 || !selectedCustomer) {
+      setApprovedCreditApplications([])
+      return
+    }
+    setCreditApplicationsLoading(true)
+    getCreditApplications({
+      status: 'approved',
+      applicantCustomerId: selectedCustomer.id,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        setApprovedCreditApplications(
+          (res.data?.data ?? []).map((a) => ({
+            id: a.id,
+            applicationNumber: a.applicationNumber,
+            requestedAmount: a.requestedAmount,
+          }))
+        )
+      })
+      .finally(() => setCreditApplicationsLoading(false))
+  }, [installmentCartLines.length, selectedCustomer])
+
   useEffect(() => {
     for (const line of installmentCartLines) {
       const lineAmount =
@@ -962,6 +1056,7 @@ export default function CheckoutPage() {
       const financingTermId = line.financingTermId
       if (!financingTermId || lineAmount <= 0) {
         setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
+        setInstallmentPreviewErrors((prev) => ({ ...prev, [line.lineId]: null }))
         continue
       }
       if (installmentPreviewTimers.current[line.lineId]) {
@@ -978,6 +1073,10 @@ export default function CheckoutPage() {
         setInstallmentPreviews((prev) => ({
           ...prev,
           [line.lineId]: res.success ? (res.data ?? null) : null,
+        }))
+        setInstallmentPreviewErrors((prev) => ({
+          ...prev,
+          [line.lineId]: res.success ? null : (res.error ?? null),
         }))
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: false }))
       }, 300)
@@ -1172,7 +1271,30 @@ export default function CheckoutPage() {
 
   function setLineFinancingTermId(lineIds: string | string[], financingTermId: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, financingTermId } : l)))
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        // Pre-fill the down payment as soon as a term is picked (never
+        // overwriting a value the cashier already typed) — otherwise the
+        // cart sits at a blank/0 down payment that reads as "nothing to
+        // collect" but can't actually be submitted that way. Scenario 15,
+        // Part 5 — a curated per-SKU down payment from the real NIG rate
+        // card wins over the generic 10%-floor fallback when one exists.
+        if (l.downPaymentInput) return { ...l, financingTermId }
+        const downPaymentInput =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : (
+                Math.round(
+                  displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) *
+                    l.quantity *
+                    0.1 *
+                    100
+                ) / 100
+              ).toFixed(2)
+        return { ...l, financingTermId, downPaymentInput }
+      })
+    )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
@@ -1302,6 +1424,7 @@ export default function CheckoutPage() {
               priceOverrideApproverName: result.managerName,
               priceResolved: true,
               priceListItemId: null,
+              priceListDownPayment: null,
             }
           : l
       )
@@ -1432,11 +1555,25 @@ export default function CheckoutPage() {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
+    if (installmentCartLines.length > 0 && !creditApplicationId) {
+      setError(
+        'Select the approved credit application for this customer — every installment sale requires one.'
+      )
+      return
+    }
     for (const l of installmentCartLines) {
       const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
+        return
+      }
+      // 0.005 (half a centavo) tolerance absorbs float noise from the
+      // tax-inclusive/exclusive price conversion above — without it, typing
+      // the exact rounded-to-centavo value shown by the "Min" hint below
+      // can land a hair under the true unrounded floor and be rejected.
+      if (downPayment < 0.1 * lineAmount - 0.005) {
+        setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
         return
       }
     }
@@ -1531,6 +1668,7 @@ export default function CheckoutPage() {
           // never needs to apply here.
           priceUseTypeId: priceUseTypeId || undefined,
           chargeDueDays: chargeCartLines.length > 0 ? chargeDueDays : undefined,
+          creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1650,7 +1788,12 @@ export default function CheckoutPage() {
           })
 
           setSubmitting(false)
-          setPendingApproval({ releaseFormRequestId, totalAmount, serialLines: displayLines })
+          setPendingApproval({
+            releaseFormRequestId,
+            totalAmount,
+            serialLines: displayLines,
+            creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
+          })
           return
         }
 
@@ -1805,6 +1948,7 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setChargeDueDays(30)
     setInstallmentPreviews({})
+    setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
     localStorage.removeItem(POS_FROM_TAB_KEY)
     setCancellationReqId(null)
@@ -1970,6 +2114,8 @@ export default function CheckoutPage() {
         releaseFormRequestId={pendingApproval.releaseFormRequestId}
         totalAmount={pendingApproval.totalAmount}
         serialLines={pendingApproval.serialLines}
+        creditApplicationId={pendingApproval.creditApplicationId}
+        canSignPromissoryNote={canSignPromissoryNote}
         onReset={resetSale}
         fmt={fmt}
       />
@@ -2476,7 +2622,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-80 lg:w-[360px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-96 lg:w-[420px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -3010,6 +3156,15 @@ export default function CheckoutPage() {
                               className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                             />
                           </div>
+                          <p className="text-[10px] text-gray-500">
+                            Min{' '}
+                            {fmt(
+                              0.1 *
+                                displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                line.quantity
+                            )}{' '}
+                            (10% of sale amount)
+                          </p>
                           {line.financingTermId && (
                             <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
                               {installmentPreviewLoading[line.lineId] ? (
@@ -3026,7 +3181,9 @@ export default function CheckoutPage() {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="opacity-70">Preview unavailable.</span>
+                                <span className="opacity-70">
+                                  {installmentPreviewErrors[line.lineId] ?? 'Preview unavailable.'}
+                                </span>
                               )}
                             </div>
                           )}
@@ -3081,6 +3238,47 @@ export default function CheckoutPage() {
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
+                    {selectedCustomer && (
+                      <div className="mt-2.5">
+                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                          Approved Credit Application
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={creditApplicationId}
+                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            disabled={creditApplicationsLoading}
+                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                          >
+                            <option value="">
+                              {creditApplicationsLoading
+                                ? 'Loading…'
+                                : approvedCreditApplications.length === 0
+                                  ? 'No approved application on file'
+                                  : 'Select an approved application…'}
+                            </option>
+                            {approvedCreditApplications.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.applicationNumber} · ₱
+                                {a.requestedAmount.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                          />
+                        </div>
+                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
+                          <p className="mt-1 text-[11px] text-amber-700">
+                            Every installment sale requires an approved credit application — open
+                            one in Credit Applications first.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3308,6 +3506,8 @@ export default function CheckoutPage() {
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
               const anyInstallmentMissingTerm = installmentCartLines.some((l) => !l.financingTermId)
+              const installmentMissingCreditApplication =
+                installmentCartLines.length > 0 && !creditApplicationId
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
               const priceUseInvalid =
@@ -3323,6 +3523,7 @@ export default function CheckoutPage() {
                 (saleMode === 'sale' &&
                   ((hasChargeOrInstallmentLine && !selectedCustomer) ||
                     anyInstallmentMissingTerm ||
+                    installmentMissingCreditApplication ||
                     balance > 0.009 ||
                     loyaltyOverBalance ||
                     (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
@@ -3344,25 +3545,27 @@ export default function CheckoutPage() {
                           ? 'Select a customer for this cart'
                           : saleMode === 'sale' && anyInstallmentMissingTerm
                             ? 'Select a financing term for every installment item'
-                            : saleMode === 'sale' &&
-                                !hasChargeOrInstallmentLine &&
-                                !selectedCustomer
-                              ? 'Select a customer'
-                              : saleMode === 'sale' && balance > 0.009
-                                ? `Underpaid by ${fmt(balance)}`
-                                : saleMode === 'sale' && loyaltyOverBalance
-                                  ? 'Insufficient loyalty points'
-                                  : needsManagerOverride && !managerOverrideApproved
-                                    ? 'Manager override required'
-                                    : cart.some((l) => l.isSerialTracked)
-                                      ? `Submit for Approval — ${fmt(totalAmount)}`
-                                      : saleMode === 'reserve'
-                                        ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                        : allCharge
-                                          ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                          : allInstallment
-                                            ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                            : `Confirm Sale — ${fmt(totalAmount)}`
+                            : saleMode === 'sale' && installmentMissingCreditApplication
+                              ? 'Select an approved credit application'
+                              : saleMode === 'sale' &&
+                                  !hasChargeOrInstallmentLine &&
+                                  !selectedCustomer
+                                ? 'Select a customer'
+                                : saleMode === 'sale' && balance > 0.009
+                                  ? `Underpaid by ${fmt(balance)}`
+                                  : saleMode === 'sale' && loyaltyOverBalance
+                                    ? 'Insufficient loyalty points'
+                                    : needsManagerOverride && !managerOverrideApproved
+                                      ? 'Manager override required'
+                                      : cart.some((l) => l.isSerialTracked)
+                                        ? `Submit for Approval — ${fmt(totalAmount)}`
+                                        : saleMode === 'reserve'
+                                          ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                          : allCharge
+                                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                            : allInstallment
+                                              ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                              : `Confirm Sale — ${fmt(totalAmount)}`
 
               const colorClass =
                 saleMode === 'reserve'
@@ -4466,21 +4669,107 @@ function SuccessScreen({
 
 // ─── Pending Approval Screen ───────────────────────────────────────────────────
 
+/** Reuses the same window.open + window.print() pattern as
+ * ReleaseApprovalsList.tsx::handlePrint — no server-side PDF generation,
+ * just a styled, printable HTML document opened in a new tab. */
+function handlePrintPromissoryNote(note: PromissoryNote, fmt: (n: number) => string) {
+  const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
+  const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+
+  const lineRows = note.scheduleLines
+    .map(
+      (l) =>
+        `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${fmt(l.amount)}</td></tr>`
+    )
+    .join('')
+
+  const html = `<!DOCTYPE html><html><head><title>PROMISSORY NOTE — ${note.id}</title>
+<style>
+  body{font-family:monospace;font-size:12px;max-width:420px;margin:0 auto;padding:16px}
+  .banner{background:#000;color:#fff;text-align:center;padding:6px 0;font-size:14px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+  .center{text-align:center;margin:3px 0;color:#555}
+  hr{border:none;border-top:1px dashed #aaa;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:#888;padding:2px 4px}
+  td{padding:3px 4px}
+  .row{display:flex;justify-content:space-between;padding:2px 0}
+  .sig{margin-top:24px}
+  .sig-line{border-top:1px solid #333;margin-top:36px;padding-top:4px;font-size:10px;color:#666}
+  .footer{text-align:center;font-size:10px;color:#aaa;margin-top:10px}
+  @media print{.no-print{display:none}}
+</style></head><body>
+<div class="banner">PROMISSORY NOTE</div>
+<p class="center" style="font-weight:bold">${note.id}</p>
+<p class="center">Generated ${generatedDate}</p>
+<hr>
+<div class="row"><span>Financing term</span><span>${note.termMonths} months</span></div>
+<div class="row"><span>Total amount</span><span>${fmt(note.totalAmount)}</span></div>
+<div class="row"><span>Down payment</span><span>${fmt(note.downPayment)}</span></div>
+<div class="row" style="font-weight:bold"><span>Amount financed</span><span>${fmt(note.amountFinanced)}</span></div>
+<div class="row" style="font-weight:bold"><span>Total payable</span><span>${fmt(note.totalPayable)}</span></div>
+<div class="row"><span>Monthly installment</span><span>${fmt(note.monthlyInstallment)}</span></div>
+<hr>
+<table><thead><tr><th>#</th><th>Due date</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lineRows}</tbody></table>
+<hr>
+<div class="row"><span>Status</span><span>${note.signedAt ? 'Signed' : 'Not yet signed'}</span></div>
+${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span></div>` : ''}
+<div class="sig">
+  <div class="sig-line">Applicant signature</div>
+  <div class="sig-line">Co-maker signature</div>
+</div>
+<p class="footer">PROMISSORY NOTE. This document represents a binding commitment to pay per the schedule above.</p>
+<button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
+</body></html>`
+
+  const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+  if (w) {
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 400)
+  }
+}
+
 function PendingApprovalScreen({
   releaseFormRequestId,
   totalAmount,
   serialLines,
+  creditApplicationId,
+  canSignPromissoryNote,
   onReset,
   fmt,
 }: {
   releaseFormRequestId: string
   totalAmount: number
   serialLines: { itemName: string; serialNumberLabel?: string }[]
+  creditApplicationId?: string
+  canSignPromissoryNote: boolean
   onReset: () => void
   fmt: (n: number) => string
 }) {
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState('')
+
+  // Scenario 17 Part 7 — the Promissory Note(s) generated alongside this
+  // hold (installment sales only) — one per installment line, so a cart
+  // that mixed several financing terms gets several notes here. Cashier
+  // prints each for the applicant/co-maker to sign, then marks the whole
+  // set signed at once — release stays blocked until every note is signed.
+  const [promissoryNotes, setPromissoryNotes] = useState<PromissoryNote[]>([])
+  const [pnLoading, setPnLoading] = useState(!!creditApplicationId)
+  const [signing, setSigning] = useState(false)
+  const [signError, setSignError] = useState('')
+
+  useEffect(() => {
+    // creditApplicationId is fixed for the lifetime of this screen (set once
+    // from the checkout submit response), so the initial pnLoading state
+    // above already covers it — no need to set it true again here.
+    if (!creditApplicationId) return
+    getPromissoryNote(creditApplicationId).then((res) => {
+      setPnLoading(false)
+      if (res.success && res.data) setPromissoryNotes(res.data)
+    })
+  }, [creditApplicationId])
 
   async function handleCancelRequest() {
     setCancelling(true)
@@ -4492,6 +4781,19 @@ function PendingApprovalScreen({
       return
     }
     onReset()
+  }
+
+  async function handleSignPromissoryNote() {
+    if (!creditApplicationId) return
+    setSigning(true)
+    setSignError('')
+    const res = await signPromissoryNote(creditApplicationId)
+    setSigning(false)
+    if (!res.success || !res.data) {
+      setSignError(res.error ?? 'Failed to sign promissory note.')
+      return
+    }
+    setPromissoryNotes(res.data)
   }
 
   return (
@@ -4521,6 +4823,71 @@ function PendingApprovalScreen({
             <span className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</span>
           </div>
         </div>
+
+        {creditApplicationId && (
+          <div className="w-full space-y-2 rounded-xl border border-purple-100 bg-purple-50/50 px-5 py-4 text-left">
+            <div className="flex items-center gap-2">
+              <FileSignature size={15} className="text-purple-700" />
+              <p className="text-sm font-semibold text-gray-800">
+                Promissory Note{promissoryNotes.length > 1 ? 's' : ''}
+              </p>
+            </div>
+            {pnLoading ? (
+              <Skeleton className="h-8 w-full" />
+            ) : promissoryNotes.length === 0 ? (
+              <p className="text-xs text-gray-500">Not available yet.</p>
+            ) : (
+              <>
+                {(() => {
+                  const unsigned = promissoryNotes.filter((n) => !n.signedAt)
+                  return (
+                    <p className="text-xs text-gray-600">
+                      {unsigned.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 font-medium text-green-700">
+                          <CheckCircle2 size={12} /> Signed
+                        </span>
+                      ) : (
+                        'Print for the applicant and co-maker to sign, then mark it signed below — release is blocked until then.'
+                      )}
+                    </p>
+                  )
+                })()}
+                <div className="space-y-1.5">
+                  {promissoryNotes.map((note, i) => (
+                    <div key={note.id} className="flex items-center justify-between gap-2">
+                      {promissoryNotes.length > 1 && (
+                        <span className="shrink-0 text-[11px] text-gray-500">
+                          Line {i + 1}
+                          {note.signedAt && (
+                            <CheckCircle2 size={11} className="ml-1 inline text-green-700" />
+                          )}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handlePrintPromissoryNote(note, fmt)}
+                        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        <Printer size={13} /> Print
+                      </button>
+                    </div>
+                  ))}
+                  {promissoryNotes.some((n) => !n.signedAt) && canSignPromissoryNote && (
+                    <button
+                      type="button"
+                      onClick={handleSignPromissoryNote}
+                      disabled={signing}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-purple-700 px-3 py-2 text-xs font-bold text-white hover:bg-purple-800 disabled:opacity-50"
+                    >
+                      {signing ? 'Signing…' : 'Mark as Signed'}
+                    </button>
+                  )}
+                </div>
+                {signError && <p className="text-xs text-red-600">{signError}</p>}
+              </>
+            )}
+          </div>
+        )}
 
         <p className="break-all font-mono text-[10px] text-gray-400">Ref: {releaseFormRequestId}</p>
 
@@ -4654,31 +5021,31 @@ function CatalogCard({
       }`}
     >
       {qty > 0 && (
-        <span className="absolute right-2 top-2 flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
+        <span className="absolute right-2 top-2 flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[10px] font-bold text-white shadow">
           {Number.isInteger(qty) ? qty : qty.toFixed(1)}
         </span>
       )}
-      <p className="line-clamp-2 text-xs font-semibold leading-tight text-gray-900 pr-5">
+      <p className="line-clamp-2 text-sm font-semibold leading-tight text-gray-900 pr-5">
         {item.name}
       </p>
-      {item.sku && <p className="mt-0.5 truncate text-[10px] text-gray-400">{item.sku}</p>}
+      {item.sku && <p className="mt-0.5 truncate text-[11px] text-gray-400">{item.sku}</p>}
       <div className="mt-auto pt-2">
         {item.price <= 0 && (
-          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">No price</p>
         )}
         <div className="flex items-center gap-1.5">
           {item.uomCode && (
-            <span className="text-[9px] font-medium text-gray-400 uppercase">
+            <span className="text-[10px] font-medium text-gray-400 uppercase">
               per {item.uomCode}
             </span>
           )}
           {isOutOfStock ? (
-            <p className="text-[9px] font-bold uppercase tracking-wide text-red-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
               Out of stock
             </p>
           ) : (
             isLowStock && (
-              <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+              <p className="text-[10px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
             )
           )}
         </div>
@@ -4716,36 +5083,36 @@ function CatalogListRow({
             ? onAddMeasured(item)
             : onAdd(item)
       }
-      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition-all ${
+      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all ${
         isOutOfStock
           ? 'cursor-not-allowed border-gray-100 bg-gray-50 opacity-60'
           : 'border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm active:scale-[0.99]'
       }`}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-semibold text-gray-900">{item.name}</p>
+        <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
         <div className="flex items-center gap-1.5">
-          {item.sku && <p className="truncate text-[10px] text-gray-400">{item.sku}</p>}
+          {item.sku && <p className="truncate text-[11px] text-gray-400">{item.sku}</p>}
           {isOutOfStock ? (
-            <p className="text-[9px] font-bold uppercase tracking-wide text-red-500">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-red-500">
               Out of stock
             </p>
           ) : (
             isLowStock && (
-              <p className="text-[9px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
+              <p className="text-[10px] font-medium text-amber-500">Low stock: {item.stockQty}</p>
             )
           )}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {item.price <= 0 && (
-          <p className="text-[9px] font-bold uppercase tracking-wide text-amber-500">No price</p>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">No price</p>
         )}
         {item.uomCode && (
-          <p className="text-[9px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
+          <p className="text-[10px] font-medium text-gray-400 uppercase">per {item.uomCode}</p>
         )}
         {qty > 0 && (
-          <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[9px] font-bold text-white shadow">
+          <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-purple-600 text-[10px] font-bold text-white shadow">
             {Number.isInteger(qty) ? qty : qty.toFixed(1)}
           </span>
         )}
@@ -4777,11 +5144,69 @@ function NewCustomerModal({
     taxId: '',
     isTaxExempt: false,
     taxExemptionRef: '',
-    shippingAddress: '',
+    address: '',
+    barangayCode: '',
     notes: '',
+    coMakers: [] as CoMakerFormValues[],
+    idType: '',
+    idNumber: '',
+    idDocumentFileId: '',
+    consentGiven: false,
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Same non-blocking, debounced check CRM's "Add Customer" form uses — never
+  // prevents submission, just warns so the cashier can double-check before
+  // creating a second profile for the same person.
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateCheckResult | null>(null)
+  const [duplicateDismissed, setDuplicateDismissed] = useState(false)
+  const duplicateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [uploadingId, setUploadingId] = useState(false)
+  const [idDocumentName, setIdDocumentName] = useState<string | null>(null)
+
+  useEffect(() => {
+    const email = form.email.trim()
+    const phone = form.phone.trim()
+    if (!email && !phone) {
+      setDuplicateWarning(null)
+      return
+    }
+    if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
+    duplicateTimer.current = setTimeout(async () => {
+      const res = await customersApi.checkDuplicate({
+        email: email || undefined,
+        phone: phone || undefined,
+      })
+      if (res.success && res.data) {
+        setDuplicateWarning(res.data.duplicate ? res.data : null)
+        setDuplicateDismissed(false)
+      }
+    }, 300)
+    return () => {
+      if (duplicateTimer.current) clearTimeout(duplicateTimer.current)
+    }
+  }, [form.email, form.phone])
+
+  async function handleIdFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingId(true)
+    const formData = new FormData()
+    formData.set('file', file)
+    const result = await uploadIdDocument(formData)
+    setUploadingId(false)
+
+    if (result.success && result.data) {
+      setForm((p) => ({ ...p, idDocumentFileId: result.data!.id }))
+      setIdDocumentName(result.data.originalName)
+    } else {
+      setError(result.message ?? 'ID document upload failed')
+      e.target.value = ''
+    }
+  }
 
   async function handleSubmit() {
     if (!form.firstName.trim()) {
@@ -4813,10 +5238,17 @@ function NewCustomerModal({
       taxId: form.taxId.trim() || undefined,
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.isTaxExempt ? form.taxExemptionRef.trim() || undefined : undefined,
-      shippingAddress: form.shippingAddress.trim() || undefined,
+      address: form.address.trim() || undefined,
+      barangayCode: form.barangayCode || undefined,
       // Fixed, not user-selectable — a walk-in customer always starts active.
       status: 'active',
       note: form.notes.trim() || undefined,
+      coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
+      idType: form.idType || undefined,
+      idNumber: form.idNumber || undefined,
+      idDocumentFileId: form.idDocumentFileId || undefined,
+      consentGiven: form.consentGiven,
+      consentGivenAt: form.consentGiven ? new Date() : undefined,
     })
     setSubmitting(false)
     if (!res.success || !res.data) {
@@ -4831,49 +5263,237 @@ function NewCustomerModal({
     <Overlay onClose={onClose} width="2xl">
       <h2 className="mb-4 text-lg font-bold text-gray-900">New Customer</h2>
       {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
-          <input
-            autoFocus
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.firstName}
-            onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
+      <div className="max-h-[78vh] space-y-3 overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">First Name *</label>
+            <input
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.firstName}
+              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.lastName}
+              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
+            <PhoneInput
+              value={form.phone}
+              defaultCountry="PH"
+              international
+              countryCallingCodeEditable={false}
+              onChange={(v) => setForm((p) => ({ ...p, phone: v ?? '' }))}
+              numberInputProps={{ className: 'phone-input-field' }}
+              className="ph-phone-input"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
+            <input
+              type="email"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.email}
+              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+            />
+          </div>
         </div>
+
+        {duplicateWarning?.duplicate && !duplicateDismissed && (
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1">
+              A customer named{' '}
+              <span className="font-medium">{duplicateWarning.customer?.name}</span> already has
+              this {duplicateWarning.matchedField}. You can still create this profile if it&apos;s a
+              different person.
+            </div>
+            <button
+              type="button"
+              onClick={() => setDuplicateDismissed(true)}
+              className="shrink-0 text-amber-600 hover:text-amber-800"
+              aria-label="Dismiss duplicate warning"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        <CustomerExtraFields
+          values={form}
+          onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
+        />
+
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Last Name</label>
-          <input
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.lastName}
-            onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-          />
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-semibold text-gray-600">
+              Co-maker (guarantor)
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                setForm((p) => ({
+                  ...p,
+                  coMakers: [
+                    ...p.coMakers,
+                    { name: '', relationship: '', contactNumber: '', email: '' },
+                  ],
+                }))
+              }
+              className="flex items-center gap-1 text-[12px] font-medium text-purple-700 hover:text-purple-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add co-maker
+            </button>
+          </div>
+          <div className="mt-2 space-y-3">
+            {form.coMakers.map((cm, idx) => (
+              <div
+                key={idx}
+                className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-end gap-2 rounded-lg border border-gray-200 p-3"
+              >
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Name</label>
+                  <input
+                    value={cm.name}
+                    maxLength={255}
+                    placeholder="e.g. Juan Dela Cruz"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], name: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Relationship
+                  </label>
+                  <input
+                    value={cm.relationship}
+                    maxLength={100}
+                    placeholder="e.g. Spouse"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], relationship: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">
+                    Contact number
+                  </label>
+                  <input
+                    value={cm.contactNumber}
+                    maxLength={50}
+                    placeholder="e.g. 0917 000 1111"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], contactNumber: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-medium text-gray-600">Email</label>
+                  <input
+                    value={cm.email ?? ''}
+                    maxLength={255}
+                    type="email"
+                    onChange={(e) => {
+                      const next = [...form.coMakers]
+                      next[idx] = { ...next[idx], email: e.target.value }
+                      setForm((p) => ({ ...p, coMakers: next }))
+                    }}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm((p) => ({
+                      ...p,
+                      coMakers: p.coMakers.filter((_, i) => i !== idx),
+                    }))
+                  }
+                  className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                  aria-label="Remove co-maker"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
+
         <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Phone *</label>
-          <input
-            type="tel"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            placeholder="09XX XXX XXXX"
-            value={form.phone}
-            onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
-          <input
-            type="email"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-            value={form.email}
-            onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-          />
-        </div>
-        <div className="col-span-2">
-          <CustomerExtraFields
-            values={form}
-            onChange={(patch) => setForm((p) => ({ ...p, ...patch }))}
-          />
+          <label className="block text-xs font-semibold text-gray-600">
+            ID & Consent <span className="font-normal text-gray-400">(optional)</span>
+          </label>
+          <div className="mt-2 grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[12px] font-medium text-gray-600">ID Type</label>
+              <select
+                value={form.idType}
+                onChange={(e) => setForm((p) => ({ ...p, idType: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+              >
+                <option value="">Select ID type</option>
+                {ID_TYPE_OPTIONS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium text-gray-600">ID Number</label>
+              <input
+                value={form.idNumber}
+                maxLength={100}
+                onChange={(e) => setForm((p) => ({ ...p, idNumber: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm"
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="block text-[12px] font-medium text-gray-600">ID Document</label>
+            <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-500">
+              <Paperclip className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {uploadingId ? 'Uploading…' : (idDocumentName ?? 'Attach a scanned ID')}
+              </span>
+              <input
+                type="file"
+                className="hidden"
+                disabled={uploadingId}
+                onChange={handleIdFileChange}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex items-start gap-2">
+            <input
+              id="pos-new-customer-consent"
+              type="checkbox"
+              checked={form.consentGiven}
+              onChange={(e) => setForm((p) => ({ ...p, consentGiven: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300"
+            />
+            <label htmlFor="pos-new-customer-consent" className="text-[13px] text-gray-700">
+              Customer has given consent to store their ID information on file.
+            </label>
+          </div>
         </div>
       </div>
       <div className="mt-5 flex justify-end gap-3">

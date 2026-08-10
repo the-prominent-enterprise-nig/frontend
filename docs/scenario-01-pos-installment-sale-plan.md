@@ -2,6 +2,8 @@
 
 Source: `module-scenarios.md`, scenario "POS — a customer walks in and buys."
 
+Reopened 2026-08-10: developer-defined addition — installment sales need a minimum down payment floor, not previously in scope. See Closing Gap 4 below.
+
 ## Related ClickUp Tickets (Sprint 3-5)
 
 - [86d3d19gh](https://app.clickup.com/t/86d3d19gh) — "AA Cashier, ISBAT assign a specific serial number to each serialized unit added to a sale" — _Sprint 3, for qa_
@@ -31,7 +33,7 @@ A walk-in customer buys a phone on installment at a branch:
 2. Start the sale, pull the customer from CRM, tag the selling agent.
 3. Add the item by serial — blocked without a matching serial; split aircon needs indoor+outdoor; furniture set uses one serial across part-SKUs.
 4. Price, discount, 12% VAT (inclusive) shown.
-5. Cash or Credit — installment shows term options + MI (amount financed × factor), down payment kept separate.
+5. Cash or Credit — installment shows term options + MI (amount financed × factor), down payment kept separate, minimum 10% of the item's sale amount.
 6. Take payment — cash/GCash/card/bank, splittable across tenders, each mapped to a GL account.
 7. Release document — cash sale → digital RFD; credit sale → Application Form + RFD; manager approval where required.
 8. Post automatically — inventory by serial, journal (sale/VAT/COGS/payment), AR + installment schedule for a charge sale.
@@ -56,6 +58,7 @@ A walk-in customer buys a phone on installment at a branch:
 1. **RFD / Application Form has no printable document artifact.** `PosReleaseFormRequest` (`schema.prisma:1707`) computes a `requestType: 'RFD' | 'Application Form' | 'RFD + Application Form'` label (`backend/src/pos/release-form-requests.service.ts:256-270`) and drives the approvals UI (`pos/release-approvals/_components/ReleaseApprovalsList.tsx`) — but no PDF/print/export code exists anywhere in the POS frontend (no `@react-pdf`, no `window.print`, no PDF lib). It's a status-tracked approval record with a type label, not a document a branch can hand to a customer or file.
 2. **COGS posting is weighted-average-only and silently non-blocking.** `pos-posting.service.ts:76-87` and `transactions.service.ts:593-598` both explicitly flag FIFO/LIFO as a known, deferred follow-up. Worse: COGS posting skips silently on a mapping failure (`pos-posting.service.ts:160-161`) rather than failing the sale — a missing COGS/Inventory account mapping produces an unbalanced-looking P&L with no error surfaced to anyone.
 3. **Agent Commission ledger has no UI.** Backend fires correctly and records every commission (`transactions.service.ts:1708-1739`), but there is no frontend consumer anywhere — only a raw JSON endpoint (`GET /crm/agents/:id/commissions`). Not broken, just orphaned.
+4. **No minimum down payment enforcement — found 2026-08-10.** `transactions.service.ts:307-315` validates only that `downPayment` isn't negative and doesn't exceed the line's sale amount — there's no floor. A cashier can set an installment sale's down payment as low as ₱0 today. Developer-confirmed: down payment must be at least 10% of the item's (line's) sale amount. Note this doesn't conflict with Scenario 15's curated price-list DP figures, which already run well above 10% (~22% in the real rate card) — this floor mainly guards the cases outside curated data: a cashier manually lowering DP below the suggestion, or an item with no price-list entry where DP is entered freehand.
 
 ## Closing the gaps
 
@@ -75,6 +78,11 @@ Ordered by risk/value.
 
 **Problem**: a fully-working backend feature (rate config on `Agent`, ledger on every completed sale) has zero UI, so Sales Agents/Business Owners can't see what they've earned without hitting a raw JSON endpoint.
 **Fix**: add a simple commission ledger view — e.g. under CRM → Sales Agents → [agent] detail, a table sourced from the existing `GET /crm/agents/:id/commissions` endpoint (no new backend work needed). If commission isn't actually a near-term priority, note that explicitly rather than leaving it silently orphaned.
+
+### 4. Enforce a 10%-of-item minimum down payment
+
+**Problem**: no floor exists on `downPayment` today — only negative and exceeds-amount are rejected.
+**Fix**: add a third check alongside the existing two at `transactions.service.ts:307-315` — reject with a clear error (e.g. `"downPayment must be at least 10% of line {i+1}'s sale amount"`) when `downPayment < 0.10 * lineAmount`. Applies per line (per item), not per transaction total, matching how `downPayment` is already scoped in this validation block. Assumed default, not explicitly confirmed: a hard block at submit time, consistent with the existing negative/exceeds-amount checks in the same block, rather than a warning/override — flag if a manager-override path is wanted instead.
 
 ## Dead code / unused-feature flags
 
@@ -96,3 +104,19 @@ Ordered by risk/value.
 - Weighted-average-costed sales still don't get a `StockLedger` entry at sale time (only FIFO/LIFO now do) — a separate, pre-existing gap in `computeAvgCost()`'s running-average accuracy, not touched here since it's out of this scenario's scope.
 - `pos-serial-branch-scoping.e2e-spec.ts` has 2 pre-existing failing tests (confirmed via `git stash` to fail identically against unmodified code) — unrelated to this work, likely accumulated test-data drift on long-lived fixture warehouses.
 - This scenario's work landed on new branches in both repos (`feat/pos-installment-scenario-gaps`), separate from the concurrently in-flight payment-method-merge/POS-config-consolidation work.
+
+## Implementation Log — 2026-08-10
+
+**For this scenario, I have done:**
+
+- Closing Gap 4 (10%-of-item minimum down payment) — implemented as a hard block (developer-confirmed: no manager-override path). Backend: a third check alongside the existing negative/exceeds-amount checks in `TransactionsService.validateAndPrepare()` (`transactions.service.ts`), rejecting with `"downPayment must be at least 10% of line {i+1}'s sale amount"` when below the floor — applies per line, same scope as the pre-existing checks. Frontend: the identical check mirrored in `checkout/page.tsx`'s pre-submit validation, plus a new inline "Min ₱X (10% of sale amount)" hint under the down payment input.
+
+**Worth flagging:**
+
+- Two follow-up bugs found and fixed during the developer's live testing of this part, both in the same UI area:
+  - Selecting a financing term now auto-fills the down payment input at the 10% floor (never overwriting a value already typed) — without this, an installment line left at its default blank/0 down payment rendered a misleading "Nothing to collect at checkout for this cart." even though a 0 down payment can no longer actually be submitted. A cashier can still manually lower it below the floor; that's still correctly blocked at submit.
+  - A down payment typed above the item's sale amount used to render a bare, unexplained "Preview unavailable." in the installment preview box. Root cause: the backend's `/pos/financing-terms/preview` endpoint already validated this (pre-existing check, not new) and returned a clear 400 message, but the frontend discarded the error text on any preview failure. Now surfaces the real backend message (e.g. "downPayment cannot exceed the total sale amount") in place of the generic text.
+- Fixed a real floating-point precision bug the new floor check introduced: `downPayment < 0.1 * lineAmount` compared raw (unrounded) floats, so a cashier typing the exact rounded-to-centavo value shown by the "Min" hint could land a hair below the true unrounded threshold and be wrongly rejected — most visible on tax-inclusive-converted prices. Fixed with a 0.005 (half-centavo) tolerance on both backend and frontend checks.
+- Updating pre-existing tests that used a `0`/blank down payment as a "don't-care" convenience value for the real floor: backend unit tests (`transactions.service.spec.ts`) and e2e (`pos-installment-financing.e2e-spec.ts`, 9 of its 14 IF-tests plus PN-01/02/03/05/06) bumped to a valid floor value where the test's own assertions didn't depend on exactly-0 math; one test (IF-02) needed its financing term and credit limit re-derived since its "financed totalPayable exceeds a limit set at the full sale price" exploit only works when `factorRate > 1/(1-floor)`, which the suite's default 1.1 term no longer clears once the 10% floor nets out — switched to the suite's 1.2 term instead, same discriminating logic otherwise. Frontend e2e (`customer360-installment-plan-detail.spec.ts`, `ar-invoice-detail-view.spec.ts`, `pos-checkout-promissory-note.spec.ts`, `pos-collections-same-day-guard.spec.ts`) got the same treatment for their direct `POST /pos/transactions` fixture calls.
+- New backend unit tests (`transactions.service.spec.ts`) and e2e tests (`pos-installment-financing.e2e-spec.ts`) for the floor itself (below-floor rejection, exactly-at-floor acceptance). New frontend e2e (`pos-checkout-installment-down-payment-floor.spec.ts`) covering the auto-fill, the below-floor block, and the preview-error surfacing fix.
+- `pos-collections-same-day-guard.spec.ts` has a pre-existing, unrelated failure (missing `creditApplicationId` on its own installment-sale fixture, predates this work) — confirmed unrelated via the error message, not fixed here.

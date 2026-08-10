@@ -52,6 +52,7 @@ export default function UserDetailDrawer({
 
   const branchAccess = user.userBranches.map((ub) => ub.branch)
   const roles = user.userRoles.map((ur) => ur.role)
+  const isProtectedFounder = user.isFounder && !isSelf
 
   return (
     <>
@@ -72,6 +73,11 @@ export default function UserDetailDrawer({
                 {isSelf && (
                   <span className="shrink-0 rounded-full bg-prominent-purple-100 px-2 py-0.5 text-xs font-medium text-prominent-purple-700">
                     You
+                  </span>
+                )}
+                {isProtectedFounder && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    Founder · Protected
                   </span>
                 )}
               </div>
@@ -236,55 +242,69 @@ export default function UserDetailDrawer({
 
         {/* Footer actions */}
         {!isSelf && (
-          <div className="border-t border-zinc-200 px-6 py-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onEdit(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => onAssignRole(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <UserCog className="h-4 w-4" />
-              Assign Role
-            </button>
-            <button
-              type="button"
-              onClick={() => onAssignBranch(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <Building2 className="h-4 w-4" />
-              Manage Branches
-            </button>
-            <button
-              type="button"
-              onClick={() => onToggleActive(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <Power className="h-4 w-4" />
-              {user.isActive ? 'Deactivate' : 'Activate'}
-            </button>
-            <button
-              type="button"
-              onClick={() => onResetPassword(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <KeyRound className="h-4 w-4" />
-              Reset Password
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(user)}
-              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </button>
+          <div className="border-t border-zinc-200 px-6 py-4">
+            {isProtectedFounder && (
+              <p className="mb-3 text-xs text-zinc-500">
+                This is the founding Business Owner account — only the account itself can change its
+                profile, roles, branches, or active status.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {!isProtectedFounder && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onEdit(user)}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAssignRole(user)}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <UserCog className="h-4 w-4" />
+                    Assign Role
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAssignBranch(user)}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Manage Branches
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleActive(user)}
+                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                  >
+                    <Power className="h-4 w-4" />
+                    {user.isActive ? 'Deactivate' : 'Activate'}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => onResetPassword(user)}
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+              >
+                <KeyRound className="h-4 w-4" />
+                Reset Password
+              </button>
+              {!isProtectedFounder && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(user)}
+                  className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@ export const TransferStatusSchema = z.enum([
   'draft',
   'in_transit',
   'received',
+  'partially_received',
   'cancelled',
 ])
 
@@ -50,9 +51,37 @@ export const DispatchTransferFormSchema = z.object({
   carrierName: z.string().min(1, 'Carrier name is required').max(150),
 })
 
+export const ReceiveTransferLineSchema = z
+  .object({
+    stockTransferLineId: z.string().min(1),
+    // Read-only context carried in the form for display/validation only —
+    // stripped before the value is sent to the API.
+    dispatchedQty: z.number(),
+    isSerial: z.boolean(),
+    serialLabel: z.string().optional(),
+    itemLabel: z.string().optional(),
+    quantityReceived: z.number().min(0, 'Cannot be negative'),
+  })
+  .refine((d) => d.quantityReceived <= d.dispatchedQty, {
+    message: 'Cannot receive more than what was dispatched',
+    path: ['quantityReceived'],
+  })
+  .refine((d) => !d.isSerial || d.quantityReceived === 0 || d.quantityReceived === 1, {
+    message: 'A serial line must be 0 (missing) or 1 (received)',
+    path: ['quantityReceived'],
+  })
+
+export const ReceiveTransferExtraLineSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  quantity: z.number().positive('Quantity must be greater than 0'),
+  notes: z.string().max(500).optional(),
+})
+
 export const ReceiveTransferFormSchema = z.object({
   receivedDate: z.string().min(1, 'Received date is required'),
   notes: z.string().max(500).optional(),
+  lines: z.array(ReceiveTransferLineSchema).min(1, 'At least one line is required'),
+  extraLines: z.array(ReceiveTransferExtraLineSchema).optional(),
 })
 
 export const RejectHqTransferFormSchema = z.object({
@@ -71,6 +100,8 @@ export type CreateTransferFormValues = z.infer<typeof CreateTransferFormSchema>
 export type CreateTransferLineValues = z.infer<typeof CreateTransferLineSchema>
 export type DispatchTransferFormValues = z.infer<typeof DispatchTransferFormSchema>
 export type ReceiveTransferFormValues = z.infer<typeof ReceiveTransferFormSchema>
+export type ReceiveTransferLineValues = z.infer<typeof ReceiveTransferLineSchema>
+export type ReceiveTransferExtraLineValues = z.infer<typeof ReceiveTransferExtraLineSchema>
 export type RejectHqTransferFormValues = z.infer<typeof RejectHqTransferFormSchema>
 export type RejectTransferFormValues = z.infer<typeof RejectTransferFormSchema>
 export type RejectManagerTransferFormValues = z.infer<typeof RejectManagerTransferFormSchema>
@@ -88,8 +119,17 @@ const TransferLineSchema = z.object({
   itemId: z.string().optional(),
   item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
   quantity: z.number(),
+  receivedQuantity: z.number().nullable().optional(),
   serialNumberId: z.string().nullable().optional(),
-  serialNumber: z.object({ id: z.string(), serialNumber: z.string() }).nullable().optional(),
+  serialNumber: z
+    .object({
+      id: z.string(),
+      serialNumber: z.string(),
+      status: z.string().nullable().optional(),
+      currentWarehouseId: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 })
 
 export const TransferSummarySchema = z.object({
@@ -135,6 +175,19 @@ export const TransferSummarySchema = z.object({
         id: z.string(),
         code: z.string(),
         receivedAt: z.string().nullable().optional(),
+        // Extra/unlisted items received alongside the transfer — lines with
+        // no stockTransferLineId, i.e. not a reconciled dispatched line.
+        lines: z
+          .array(
+            z.object({
+              id: z.string(),
+              itemId: z.string(),
+              item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
+              quantityReceived: z.number(),
+              notes: z.string().nullable().optional(),
+            })
+          )
+          .optional(),
       })
     )
     .optional(),

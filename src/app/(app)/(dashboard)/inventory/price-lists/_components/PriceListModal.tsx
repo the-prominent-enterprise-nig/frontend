@@ -15,11 +15,10 @@ import {
   type PriceUseTypeFormValues,
 } from '@/src/schema/inventory/price-use-types'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { Select } from '@/src/components/ui/Select'
 import type { Currency } from '../_actions/get-currencies'
 import type { Branch } from '../_actions/get-branches'
 import PriceUseTypeModal from '../../price-use-types/_components/PriceUseTypeModal'
-
-const NEW_PRICE_USE_TYPE = '__new__'
 
 type Props = {
   isOpen: boolean
@@ -29,10 +28,13 @@ type Props = {
   currencies: Currency[]
   branches: Branch[]
   priceUseTypes: PriceUseType[]
+  /** Scenario 15, Part 4 — every other price list, used to populate the
+   * "Supersedes" picker (filtered to the currently-selected Price Use
+   * Type, excluding this list itself when editing). */
+  priceLists: PriceList[]
   onCreatePriceUseType: (data: PriceUseTypeFormValues) => Promise<ApiResponse<unknown>>
   isCreatingPriceUseType: boolean
   initial?: PriceList
-  supersedesFrom?: PriceList
 }
 
 const fieldClass =
@@ -47,6 +49,7 @@ const EMPTY_VALUES: PriceListFormValues = {
   effectiveTo: '',
   priority: 0,
   allowedBranchIds: [],
+  supersedesId: '',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -65,23 +68,22 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   expired: 'bg-zinc-100 text-zinc-500',
 }
 
-function toFormValues(list?: PriceList, supersedesFrom?: PriceList): PriceListFormValues {
-  const source = list ?? supersedesFrom
-  if (!source) return EMPTY_VALUES
+function toFormValues(list?: PriceList): PriceListFormValues {
+  if (!list) return EMPTY_VALUES
   return {
-    name: list ? source.name : `${source.name} (new version)`,
-    priceUseTypeId: source.priceUseTypeId,
-    description: source.description ?? '',
-    currency: source.currency,
+    name: list.name,
+    priceUseTypeId: list.priceUseTypeId,
+    description: list.description ?? '',
+    currency: list.currency,
     // A date <input> must never see `value=undefined` after mounting with a
     // real value (or vice versa) — that's what flips it from uncontrolled to
     // controlled and trips React's warning. '' is the "no date" sentinel for
     // the whole form; handleFormSubmit converts it back to undefined for the API.
-    effectiveFrom: source.effectiveFrom?.slice(0, 10) ?? '',
-    effectiveTo: source.effectiveTo?.slice(0, 10) ?? '',
-    priority: source.priority,
-    allowedBranchIds: source.allowedBranchIds ?? [],
-    supersedesId: list ? undefined : supersedesFrom?.id,
+    effectiveFrom: list.effectiveFrom?.slice(0, 10) ?? '',
+    effectiveTo: list.effectiveTo?.slice(0, 10) ?? '',
+    priority: list.priority,
+    allowedBranchIds: list.allowedBranchIds ?? [],
+    supersedesId: list.supersedesId ?? '',
   }
 }
 
@@ -93,24 +95,31 @@ export default function PriceListModal({
   currencies,
   branches,
   priceUseTypes,
+  priceLists,
   onCreatePriceUseType,
   isCreatingPriceUseType,
   initial,
-  supersedesFrom,
 }: Props) {
   const isEdit = Boolean(initial)
-  const isNewVersion = !isEdit && Boolean(supersedesFrom)
   const [isCreateTypeOpen, setIsCreateTypeOpen] = useState(false)
   const {
     control,
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<PriceListFormValues>({
     resolver: zodResolver(PriceListFormSchema),
-    defaultValues: toFormValues(initial, supersedesFrom),
+    defaultValues: toFormValues(initial),
   })
+  // Only offer lists under the same Price Use Type as candidates to
+  // supersede — cross-type supersession isn't blocked server-side, but it's
+  // never what an admin actually means by "new version of this list".
+  const selectedPriceUseTypeId = watch('priceUseTypeId')
+  const supersedeCandidates = priceLists.filter(
+    (pl) => pl.priceUseTypeId === selectedPriceUseTypeId && pl.id !== initial?.id
+  )
   // Mirrors the Priority field's raw typed text — kept separate from the
   // committed number so the input can sit visually empty mid-edit (e.g.
   // clearing "0" to type "25") instead of a forced field.onChange(0)
@@ -118,18 +127,25 @@ export default function PriceListModal({
   const [priorityText, setPriorityText] = useState(String(EMPTY_VALUES.priority))
 
   useEffect(() => {
-    const values = isOpen ? toFormValues(initial, supersedesFrom) : EMPTY_VALUES
+    const values = isOpen ? toFormValues(initial) : EMPTY_VALUES
     reset(values)
     setPriorityText(String(values.priority))
-  }, [isOpen, initial, supersedesFrom, reset])
+  }, [isOpen, initial, reset])
 
   if (!isOpen) return null
 
   async function handleFormSubmit(data: PriceListFormValues) {
+    // Guard against a stale supersedesId left over from before the Price
+    // Use Type was changed mid-edit — only ever submit it when it's still
+    // one of the currently-valid (same-type, non-self) candidates.
+    const supersedesId = supersedeCandidates.some((pl) => pl.id === data.supersedesId)
+      ? data.supersedesId
+      : undefined
     const result = await onSubmit({
       ...data,
       effectiveFrom: data.effectiveFrom || undefined,
       effectiveTo: data.effectiveTo || undefined,
+      supersedesId,
     })
     if (result.success) onClose()
   }
@@ -152,14 +168,12 @@ export default function PriceListModal({
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">
-              {isEdit ? 'Edit Price List' : isNewVersion ? 'New Version' : 'New Price List'}
+              {isEdit ? 'Edit Price List' : 'New Price List'}
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               {isEdit
                 ? 'Update this pricing tier.'
-                : isNewVersion
-                  ? 'Create a new version to replace an active list.'
-                  : 'Create a new pricing tier for your inventory items.'}
+                : 'Create a new pricing tier for your inventory items.'}
             </p>
           </div>
           <button
@@ -173,13 +187,6 @@ export default function PriceListModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {isNewVersion && supersedesFrom && (
-              <div className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-2 text-xs text-prominent-purple-800">
-                This will supersede <strong>{supersedesFrom.name}</strong> once approved — that
-                version will auto-expire.
-              </div>
-            )}
-
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Name <span className="text-red-500">*</span>
@@ -208,25 +215,16 @@ export default function PriceListModal({
                   name="priceUseTypeId"
                   control={control}
                   render={({ field }) => (
-                    <select
-                      {...field}
-                      className={`${fieldClass} bg-white`}
-                      onChange={(e) => {
-                        if (e.target.value === NEW_PRICE_USE_TYPE) {
-                          setIsCreateTypeOpen(true)
-                          return
-                        }
-                        field.onChange(e)
+                    <Select
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select price use type…"
+                      options={priceUseTypes.map((t) => ({ value: t.id, label: t.name }))}
+                      extraAction={{
+                        label: 'Add new price use type…',
+                        onClick: () => setIsCreateTypeOpen(true),
                       }}
-                    >
-                      <option value="">Select price use type…</option>
-                      {priceUseTypes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                      <option value={NEW_PRICE_USE_TYPE}>+ Add new price use type…</option>
-                    </select>
+                    />
                   )}
                 />
                 {errors.priceUseTypeId && (
@@ -240,14 +238,15 @@ export default function PriceListModal({
                   name="currency"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select currency…</option>
-                      {currencies.map((c) => (
-                        <option key={c.id} value={c.code}>
-                          {c.code} – {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    <Select
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Select currency…"
+                      options={currencies.map((c) => ({
+                        value: c.code,
+                        label: `${c.code} – ${c.name}`,
+                      }))}
+                    />
                   )}
                 />
                 {errors.currency && (
@@ -302,7 +301,12 @@ export default function PriceListModal({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Priority</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Priority{' '}
+                  <span className="ml-1 text-xs font-normal text-zinc-400">
+                    (higher wins conflicts)
+                  </span>
+                </label>
                 <Controller
                   name="priority"
                   control={control}
@@ -328,6 +332,10 @@ export default function PriceListModal({
                     />
                   )}
                 />
+                <p className="mt-1 text-xs text-zinc-400">
+                  Only matters if this could clash with another price list on the same sale — the
+                  higher number wins. Leave at 0 if you&apos;re not sure.
+                </p>
                 {errors.priority && (
                   <p className="mt-1 text-xs text-red-600">{errors.priority.message}</p>
                 )}
@@ -396,6 +404,38 @@ export default function PriceListModal({
                 )}
               />
             </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Supersedes{' '}
+                <span className="ml-1 text-xs font-normal text-zinc-400">
+                  (optional — the prior version this replaces)
+                </span>
+              </label>
+              <Controller
+                name="supersedesId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    placeholder={
+                      selectedPriceUseTypeId
+                        ? 'None — this is a new list, not a replacement'
+                        : 'Pick a Price Use Type first'
+                    }
+                    options={supersedeCandidates.map((pl) => ({
+                      value: pl.id,
+                      label: pl.name,
+                    }))}
+                  />
+                )}
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                On approval, the superseded list auto-expires. Only lists under the same Price Use
+                Type are shown.
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
@@ -413,13 +453,7 @@ export default function PriceListModal({
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting
-                ? 'Saving…'
-                : isEdit
-                  ? 'Save Changes'
-                  : isNewVersion
-                    ? 'Create New Version'
-                    : 'Create Price List'}
+              {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Price List'}
             </button>
           </div>
         </form>

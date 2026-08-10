@@ -1,6 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus,
   RefreshCw,
@@ -9,50 +13,136 @@ import {
   Send,
   PhilippinePeso,
   ReceiptText,
+  FilePlus,
   History,
   AlertTriangle,
   KeyRound,
   X,
+  Search,
+  User,
+  Loader2,
 } from 'lucide-react'
 import {
   ARInvoices,
   CreditMemos,
+  DebitMemos,
   TaxRates,
   type ARInvoice,
+  type ARInvoiceCustomerResult,
   type ARPayment,
   type TaxRate,
+  type PaymentMethod,
+  PAYMENT_METHOD_OPTIONS,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import {
+  buildCreateCreditMemoFormSchema,
+  type CreateCreditMemoFormValues,
+} from '@/src/schema/accounting/credit-memos'
+import {
+  CreateDebitMemoFormSchema,
+  type CreateDebitMemoFormValues,
+} from '@/src/schema/accounting/debit-memos'
+import { ItemSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_components/ItemSearchCombobox'
+import { SerialSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/transfers/_components/SerialSearchCombobox'
+import { getSerialNumbers } from '@/src/app/(app)/(dashboard)/inventory/serial-numbers/_actions/get-serial-numbers'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
+import Tooltip from '@/src/components/ui/Tooltip'
+
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+}
 
 export default function ARInvoicesList({
   initialCustomerId,
 }: {
   initialCustomerId?: string
 } = {}) {
+  const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
+  const [debitingFor, setDebitingFor] = useState<ARInvoice | null>(null)
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
   const [deletingFor, setDeletingFor] = useState<ARInvoice | null>(null)
   const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
+  // Set directly when a customer is picked via search below; when arriving
+  // via initialCustomerId (a link from Customer360) there's no name yet, so
+  // the banner below falls back to deriving it from the loaded invoices'
+  // own embedded customer field once they load.
+  const [customerFilterName, setCustomerFilterName] = useState<string | undefined>()
+  // Scenario 23 Gap 4 — search accepts either the invoice's own number or
+  // the POS transaction number that produced it (staff arrive with
+  // whichever one they have in hand, never both); resolved server-side via
+  // ARInvoicesService.findAll()'s structured lookup, not a text match.
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  // Customer search — this screen previously had no way to filter by
+  // customer except arriving via a link from Customer360 (initialCustomerId).
+  // Scoped to accounting:ar-invoices:read (ARInvoices.searchCustomers), not
+  // the CRM customer list — Accountant (accounting:* only) doesn't hold
+  // crm:customers:read, which silently broke this before.
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
+  const [searchingCustomers, setSearchingCustomers] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await ARInvoices.list(customerFilter ? { customerId: customerFilter } : undefined)
+    const res = await ARInvoices.list({
+      ...(customerFilter ? { customerId: customerFilter } : {}),
+      ...(appliedSearch ? { search: appliedSearch } : {}),
+    })
     setItems(res.data?.items ?? [])
     setLoading(false)
-  }, [customerFilter])
+  }, [customerFilter, appliedSearch])
   useEffect(() => {
     load()
-    getCustomers().then((r) => setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[]))
   }, [load])
+  // Arrived via initialCustomerId (a Customer360 link) with no name in
+  // hand — resolve it directly. Not derived from the loaded invoices: a
+  // customer with zero invoices (the exact case Customer360's "View AR
+  // Ledger" link must work for) would leave nothing to derive it from.
+  useEffect(() => {
+    if (!customerFilter || customerFilterName) return
+    ARInvoices.getCustomerById(customerFilter).then((res) => {
+      const name = res.data?.[0]?.name
+      if (name) setCustomerFilterName(name)
+    })
+  }, [customerFilter, customerFilterName])
+  // Auto-search: commits `search` into `appliedSearch` (which actually
+  // drives the query, via `load`'s dependency array) 400ms after the user
+  // stops typing, instead of requiring an explicit Apply click.
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), 400)
+    return () => clearTimeout(timer)
+  }, [search])
+  // Debounced customer search, same pattern as the POS checkout page's
+  // customer picker.
+  useEffect(() => {
+    if (!customerSearch.trim()) {
+      setCustomerResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearchingCustomers(true)
+      const res = await ARInvoices.searchCustomers(customerSearch.trim())
+      setCustomerResults(res.data ?? [])
+      setCustomerSearchOpen(true)
+      setSearchingCustomers(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [customerSearch])
 
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
@@ -83,13 +173,93 @@ export default function ARInvoicesList({
           </button>
         </div>
       </div>
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="relative min-w-56 flex-1">
+          <label className="mb-1 block text-xs font-semibold text-gray-600">Customer</label>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-8 text-sm focus:border-purple-500 focus:outline-none"
+              placeholder="Search by name or phone…"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
+              onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
+            />
+            {searchingCustomers && (
+              <Loader2
+                size={14}
+                className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+              />
+            )}
+          </div>
+          {customerSearchOpen && (
+            <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+              {customerResults.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
+              ) : (
+                customerResults.map((c) => (
+                  <button
+                    key={c.id}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                    onMouseDown={() => {
+                      setCustomerFilter(c.id)
+                      setCustomerFilterName(c.name)
+                      setCustomerSearch('')
+                      setCustomerSearchOpen(false)
+                    }}
+                  >
+                    <User size={13} className="shrink-0 text-gray-400" />
+                    <div>
+                      <p className="font-medium text-gray-900">{c.name}</p>
+                      {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+        <div className="min-w-64 flex-1">
+          <label className="mb-1 block text-xs font-semibold text-gray-600">
+            Invoice # or Transaction #
+          </label>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-purple-500 focus:outline-none"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        {appliedSearch && (
+          <button
+            onClick={() => {
+              setSearch('')
+              setAppliedSearch('')
+            }}
+            className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+        )}
+      </div>
       {customerFilter && (
         <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
-          <span>
-            Filtered to {customers.find((c) => c.id === customerFilter)?.name ?? 'this customer'}
-          </span>
+          <span>Filtered to {customerFilterName ?? 'this customer'}</span>
           <button
-            onClick={() => setCustomerFilter(undefined)}
+            onClick={() => {
+              setCustomerFilter(undefined)
+              setCustomerFilterName(undefined)
+            }}
             className="font-medium text-purple-700 hover:underline"
           >
             Clear filter
@@ -126,75 +296,115 @@ export default function ARInvoicesList({
               </tr>
             ) : (
               items.map((i) => (
-                <tr key={i.id}>
-                  <td className="px-3 py-2 font-mono text-xs">{i.invoiceNumber}</td>
-                  <td className="px-3 py-2">{i.customer?.name}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(i.invoiceDate)}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(i.dueDate)}</td>
+                <tr
+                  key={i.id}
+                  onClick={() => router.push(`/accounting/ar-invoices/${i.id}`)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
+                  <td className="px-3 py-2 max-w-40">
+                    <span
+                      title={i.invoiceNumber}
+                      className="block truncate font-mono text-xs text-purple-700"
+                    >
+                      {i.invoiceNumber}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 max-w-40">
+                    <span title={i.customer?.name} className="block truncate">
+                      {i.customer?.name}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
                   <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-700">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
+                    >
                       {i.status}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1">
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-0.5">
+                      <div className="flex items-center gap-0.5">
                         {i.status === 'DRAFT' ? (
-                          <button
-                            onClick={() => send(i.id)}
-                            title="Send"
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                          <Tooltip label="Send">
                             <button
-                              onClick={() => setPayingFor(i)}
-                              title="Record payment"
+                              onClick={() => send(i.id)}
+                              aria-label="Send"
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
                             >
-                              <PhilippinePeso className="w-4 h-4" />
+                              <Send className="w-4 h-4" />
                             </button>
+                          </Tooltip>
+                        ) : (
+                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                            <Tooltip label="Record payment">
+                              <button
+                                onClick={() => setPayingFor(i)}
+                                aria-label="Record payment"
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                              >
+                                <PhilippinePeso className="w-4 h-4" />
+                              </button>
+                            </Tooltip>
                           )
                         )}
                         {(i.payments?.length ?? 0) > 0 && (
-                          <button
-                            onClick={() => setHistoryFor(i)}
-                            title="Payment history"
-                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-                          >
-                            <History className="w-4 h-4" />
-                          </button>
+                          <Tooltip label="Payment history">
+                            <button
+                              onClick={() => setHistoryFor(i)}
+                              aria-label="Payment history"
+                              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
                         )}
                         {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
-                          <button
-                            onClick={() => setCreditingFor(i)}
-                            title="Issue credit memo"
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                          >
-                            <ReceiptText className="w-4 h-4" />
-                          </button>
+                          <Tooltip label="Issue credit memo">
+                            <button
+                              onClick={() => setCreditingFor(i)}
+                              aria-label="Issue credit memo"
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                            >
+                              <ReceiptText className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
+                        )}
+                        {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                          <Tooltip label="Issue debit memo">
+                            <button
+                              onClick={() => setDebitingFor(i)}
+                              aria-label="Issue debit memo"
+                              className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                            >
+                              <FilePlus className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditing(i)}
-                          title="Edit"
-                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setDeletingFor(i)}
-                          title="Delete"
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
+                        <Tooltip label="Edit">
+                          <button
+                            onClick={() => setEditing(i)}
+                            aria-label="Edit"
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete">
+                          <button
+                            onClick={() => setDeletingFor(i)}
+                            aria-label="Delete"
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   </td>
@@ -208,7 +418,6 @@ export default function ARInvoicesList({
       {(creating || editing) && (
         <InvoiceFormDialog
           initial={editing}
-          customers={customers}
           onClose={() => {
             setCreating(false)
             setEditing(null)
@@ -236,6 +445,16 @@ export default function ARInvoicesList({
           onClose={() => setCreditingFor(null)}
           onSaved={() => {
             setCreditingFor(null)
+            load()
+          }}
+        />
+      )}
+      {debitingFor && (
+        <DebitMemoDialog
+          invoice={debitingFor}
+          onClose={() => setDebitingFor(null)}
+          onSaved={() => {
+            setDebitingFor(null)
             load()
           }}
         />
@@ -359,6 +578,150 @@ function DeleteInvoiceDialog({
   )
 }
 
+const CREDIT_MEMO_TYPE_OPTIONS: { value: CreateCreditMemoFormValues['type']; label: string }[] = [
+  { value: 'sales_return', label: 'Sales Return' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+  { value: 'goodwill', label: 'Goodwill' },
+]
+
+function CreditMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateCreditMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  // Mirrors CreateTransferModal's TransferLineRow — the serial picker only
+  // makes sense once we know the item is serial-tracked at all.
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Not status-filtered to 'in_stock' — the whole point here is picking a
+  // unit that was already SOLD (and is now being returned/credited), the
+  // opposite of what a transfer's source-warehouse picker needs.
+  const serialsQuery = useQuery({
+    queryKey: ['credit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Deduction">
+          <Controller
+            name={`lines.${index}.deductionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific serial returned (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`credit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
 function CreditMemoDialog({
   invoice,
   onClose,
@@ -369,25 +732,50 @@ function CreditMemoDialog({
   onSaved: () => void
 }) {
   const outstanding = invoice.totalAmount - invoice.amountPaid
-  const [form, setForm] = useState({
-    amount: String(outstanding),
-    reason: '',
-    memoDate: new Date().toISOString().slice(0, 10),
-  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const amount = Number(form.amount) || 0
-  const remaining = outstanding - amount
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateCreditMemoFormValues>({
+    resolver: zodResolver(buildCreateCreditMemoFormSchema(outstanding)),
+    defaultValues: {
+      type: 'sales_return',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', deductionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) -
+      (Number(l?.deductionAmount) || 0),
+    0
+  )
+  const remaining = outstanding - total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateCreditMemoFormValues) {
     setSaving(true)
     setError(null)
     const res = await CreditMemos.issue({
       arInvoiceId: invoice.id,
-      amount,
-      reason: form.reason || undefined,
-      memoDate: form.memoDate,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        deductionAmount: l.deductionAmount || undefined,
+      })),
     })
     setSaving(false)
     if (!res.success) {
@@ -396,52 +784,109 @@ function CreditMemoDialog({
     }
     onSaved()
   }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
           <h3 className="text-lg font-semibold">Issue Credit Memo</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
           <div className="text-sm text-gray-600">
             Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Outstanding:{' '}
             <span className="font-semibold">{fmtMoney(outstanding)}</span>
           </div>
-          <Field label="Credit Amount *">
-            <input
-              required
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={outstanding}
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {CREDIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             />
           </Field>
-          <div className="text-xs text-gray-500">
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    deductionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <CreditMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Credit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
             Remaining after credit: <span className="font-semibold">{fmtMoney(remaining)}</span>
           </div>
+
           <Field label="Reason">
-            <textarea
-              value={form.reason}
-              onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              placeholder="Returns, discount, billing adjustment..."
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Returns, discount, billing adjustment..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
             />
           </Field>
           <Field label="Memo Date *">
-            <input
-              required
-              type="date"
-              value={form.memoDate}
-              onChange={(e) => setForm({ ...form, memoDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
             />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -458,7 +903,7 @@ function CreditMemoDialog({
             </button>
             <button
               type="submit"
-              disabled={saving || amount <= 0 || amount > outstanding + 0.01}
+              disabled={saving}
               className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
             >
               {saving ? 'Issuing...' : 'Issue Credit Memo'}
@@ -470,14 +915,345 @@ function CreditMemoDialog({
   )
 }
 
+const DEBIT_MEMO_TYPE_OPTIONS: { value: CreateDebitMemoFormValues['type']; label: string }[] = [
+  { value: 'unit_replacement', label: 'Unit Replacement' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+]
+
+function DebitMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateDebitMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Status-filtered to 'in_stock', the opposite of CreditMemoLineRow's own
+  // choice — a debit memo's primary case is handing the customer a NEW
+  // replacement unit, not referencing one already sold.
+  const serialsQuery = useQuery({
+    queryKey: ['debit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'in_stock', limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Addition">
+          <Controller
+            name={`lines.${index}.additionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific replacement serial (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`debit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
+function DebitMemoDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateDebitMemoFormValues>({
+    resolver: zodResolver(CreateDebitMemoFormSchema),
+    defaultValues: {
+      type: 'unit_replacement',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', additionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) +
+      (Number(l?.additionAmount) || 0),
+    0
+  )
+  const newTotal = invoice.totalAmount + total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateDebitMemoFormValues) {
+    setSaving(true)
+    setError(null)
+    const res = await DebitMemos.issue({
+      arInvoiceId: invoice.id,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        additionAmount: l.additionAmount || undefined,
+      })),
+    })
+    setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to issue debit memo')
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
+          <h3 className="text-lg font-semibold">Issue Debit Memo</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Current total:{' '}
+            <span className="font-semibold">{fmtMoney(invoice.totalAmount)}</span>
+          </div>
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {DEBIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+          </Field>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    additionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <DebitMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Debit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
+            New invoice total: <span className="font-semibold">{fmtMoney(newTotal)}</span>
+          </div>
+
+          <Field label="Reason">
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Replacement unit, under-billed fee..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+          </Field>
+          <Field label="Memo Date *">
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
+          </Field>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-semibold bg-orange-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Issuing...' : 'Issue Debit Memo'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function InvoiceFormDialog({
   initial,
-  customers,
   onClose,
   onSaved,
 }: {
   initial: ARInvoice | null
-  customers: Customer[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -500,6 +1276,30 @@ function InvoiceFormDialog({
     TaxRates.list(true).then((r) => setTaxRates(r.data ?? []))
   }, [])
 
+  // Customer picker — search rather than a full-list <select>, and scoped
+  // to accounting:ar-invoices:read (see ARInvoices.searchCustomers), so an
+  // Accountant without crm:customers:read can still pick one.
+  const [customerLabel, setCustomerLabel] = useState(initial?.customer?.name ?? '')
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
+  const [searchingCustomers, setSearchingCustomers] = useState(false)
+  useEffect(() => {
+    if (!customerSearch.trim()) {
+      setCustomerResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    const timer = setTimeout(async () => {
+      setSearchingCustomers(true)
+      const res = await ARInvoices.searchCustomers(customerSearch.trim())
+      setCustomerResults(res.data ?? [])
+      setCustomerSearchOpen(true)
+      setSearchingCustomers(false)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [customerSearch])
+
   // When subtotal or tax code changes, recompute tax automatically
   const onTaxCodeChange = (code: string) => {
     const rate = taxRates.find((r) => r.code === code)
@@ -520,6 +1320,11 @@ function InvoiceFormDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // The customer field is a search box, not a native <select> — its
+    // visible text isn't what's submitted, so `required` on the input
+    // alone would let a typed-but-never-selected name through with
+    // customerId still empty.
+    if (!form.customerId) return
     setSaving(true)
     const payload = {
       ...form,
@@ -542,19 +1347,54 @@ function InvoiceFormDialog({
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
           <Field label="Customer *">
-            <select
-              required
-              value={form.customerId}
-              onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <input
+                required
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 pr-7 text-sm"
+                placeholder="Search by name or phone…"
+                value={customerLabel || customerSearch}
+                onChange={(e) => {
+                  setCustomerLabel('')
+                  setForm({ ...form, customerId: '' })
+                  setCustomerSearch(e.target.value)
+                }}
+                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
+                onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
+              />
+              {searchingCustomers && (
+                <Loader2
+                  size={14}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                />
+              )}
+              {customerSearchOpen && (
+                <div className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {customerResults.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
+                  ) : (
+                    customerResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                        onMouseDown={() => {
+                          setForm({ ...form, customerId: c.id })
+                          setCustomerLabel(c.name)
+                          setCustomerSearch('')
+                          setCustomerSearchOpen(false)
+                        }}
+                      >
+                        <User size={13} className="shrink-0 text-gray-400" />
+                        <div>
+                          <p className="font-medium text-gray-900">{c.name}</p>
+                          {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Invoice Date *">
@@ -671,10 +1511,13 @@ function PaymentDialog({
   const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
   const isClosedAccount = invoice.status === 'PAID'
   const [form, setForm] = useState({
-    amount: String(outstanding || ''),
+    // outstanding is always a valid non-negative number (Math.max(...) above),
+    // so this never needs a `|| ''` fallback — that idiom would blank the
+    // field out for a legitimately-zero outstanding balance (0 is falsy).
+    amount: String(outstanding),
     withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
-    method: '',
+    method: 'CASH' as PaymentMethod,
     reference: '',
     notes: '',
   })
@@ -798,12 +1641,17 @@ function PaymentDialog({
             />
           </Field>
           <Field label="Method">
-            <input
+            <select
               value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value })}
-              placeholder="Cash, Bank Transfer..."
+              onChange={(e) => setForm({ ...form, method: e.target.value as PaymentMethod })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
+            >
+              {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Reference">
             <input
@@ -885,7 +1733,9 @@ function PaymentHistoryModal({
                       </div>
                       <div className="text-xs text-gray-500">
                         {fmtDate(p.paymentDate)}
-                        {p.method ? ` · ${p.method}` : ''}
+                        {p.method
+                          ? ` · ${PAYMENT_METHOD_OPTIONS.find((o) => o.value === p.method)?.label ?? p.method}`
+                          : ''}
                         {p.reference ? ` · ${p.reference}` : ''}
                       </div>
                       {p.cancelReason && (

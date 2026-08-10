@@ -33,6 +33,8 @@ import type {
 } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -47,6 +49,7 @@ type ModalState =
   | { type: 'cashiers'; terminal: PosTerminal }
 
 export default function TerminalsPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.TERMINALS_READ)
   const { branchId } = usePosBranchContext()
   const { data, isLoading, isFetching, refetch } = useTerminals(branchId ? { branchId } : undefined)
   const createMutation = useCreateTerminal()
@@ -55,6 +58,8 @@ export default function TerminalsPage() {
 
   const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [error, setError] = useState('')
+
+  if (status !== 'authorized' || !session) return null
 
   const terminals: PosTerminal[] = data?.data ?? []
 

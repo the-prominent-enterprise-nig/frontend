@@ -7,12 +7,14 @@ import { ArrowLeft } from 'lucide-react'
 import { collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../../_actions/get-branches'
 import { createCollectorSchema, type CreateCollectorInput } from '@/src/schema/crm/collector'
+import CollectorAreaPicker from '@/src/components/crm/CollectorAreaPicker'
 
 const initial: CreateCollectorInput = {
   stubNumber: '',
   name: '',
   branchId: '',
   status: 'active',
+  areaBarangayCodes: [],
 }
 
 export default function NewCollectorForm() {
@@ -125,6 +127,18 @@ export default function NewCollectorForm() {
               <option value="inactive">Inactive</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-medium text-gray-700">Coverage areas</label>
+          <p className="mt-0.5 mb-2 text-[12px] text-gray-500">
+            Barangays this collector covers — used to auto-assign or filter collectors when creating
+            an installment account for a customer in one of these areas.
+          </p>
+          <CollectorAreaPicker
+            value={form.areaBarangayCodes ?? []}
+            onChange={(next) => setField('areaBarangayCodes', next)}
+          />
         </div>
 
         {serverError && (

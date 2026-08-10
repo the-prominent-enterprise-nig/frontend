@@ -9,6 +9,7 @@ import { updatePriceList } from '../_actions/update-price-list'
 import { approvePriceList } from '../_actions/approve-price-list'
 import { rejectPriceList } from '../_actions/reject-price-list'
 import { resubmitPriceList } from '../_actions/resubmit-price-list'
+import { deletePriceList } from '../_actions/delete-price-list'
 import { getCurrencies } from '../_actions/get-currencies'
 import { getBranches } from '../_actions/get-branches'
 import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
@@ -25,11 +26,12 @@ export function usePriceLists() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
+  const [showInactive, setShowInactive] = useState(false)
 
   const listQuery = useQuery({
-    queryKey: ['inventory-price-lists', { page, limit }],
+    queryKey: ['inventory-price-lists', { page, limit, showInactive }],
     queryFn: async () => {
-      const result = await getPriceLists({ page, limit })
+      const result = await getPriceLists({ page, limit, includeInactive: showInactive })
       if (!result.success) throw new Error(result.message ?? 'Failed to load price lists')
       return result
     },
@@ -122,6 +124,22 @@ export function usePriceLists() {
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deletePriceList(id),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Price list deleted', description: result.message, status: 'success' })
+        queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] })
+      } else {
+        showToast({
+          title: 'Failed',
+          description: humanizePriceListError(result.message),
+          status: 'error',
+        })
+      }
+    },
+  })
+
   const createPriceUseTypeMutation = useMutation({
     mutationFn: (data: PriceUseTypeFormValues) => createPriceUseType(data),
     onSuccess: (result) => {
@@ -174,6 +192,11 @@ export function usePriceLists() {
     error: listQuery.error,
     page,
     setPage,
+    showInactive,
+    setShowInactive: (value: boolean) => {
+      setShowInactive(value)
+      setPage(1)
+    },
     currencies: currenciesQuery.data ?? [],
     branches: branchesQuery.data ?? [],
     priceUseTypes: priceUseTypesQuery.data ?? [],
@@ -189,6 +212,8 @@ export function usePriceLists() {
     isRejecting: rejectMutation.isPending,
     resubmitPriceList: resubmitMutation.mutateAsync,
     isResubmitting: resubmitMutation.isPending,
+    deletePriceList: deleteMutation.mutateAsync,
+    isDeleting: deleteMutation.isPending,
     refetch: () => queryClient.refetchQueries({ queryKey: ['inventory-price-lists'] }),
   }
 }

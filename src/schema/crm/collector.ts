@@ -17,6 +17,7 @@ export const createCollectorSchema = z.object({
     .transform((v) => v || undefined)
     .optional(),
   status: CollectorStatusEnum.optional(),
+  areaBarangayCodes: z.array(z.string().max(20)).optional(),
 })
 
 export type CreateCollectorInput = z.infer<typeof createCollectorSchema>

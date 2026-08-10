@@ -208,6 +208,25 @@ export interface PosTransaction {
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
   session?: PosSession
+  invoices?: PosTransactionInvoice[]
+}
+
+// Scenario 23 Gap 1 — every invoice a transaction produced (the charge
+// invoice, and/or each installment schedule's per-due-date invoices),
+// flattened into one list for the transaction detail screen. `source`
+// distinguishes the two cases; lineNumber/totalLines/termMonths are only
+// set for installment-sourced rows.
+export interface PosTransactionInvoice {
+  id: string
+  invoiceNumber: string
+  dueDate: string
+  totalAmount: number
+  amountPaid: number
+  status: string
+  source: 'charge' | 'installment'
+  lineNumber: number | null
+  totalLines: number | null
+  termMonths: number | null
 }
 
 export interface CreateTransactionLineInput {
@@ -251,6 +270,9 @@ export interface CreateTransactionInput {
   chargeDueDays?: number
   /** installment invoices only */
   financingTermId?: string
+  /** Scenario 17 Part 6 — installment invoices only, required. The
+   * customer's approved, not-yet-used CreditApplication this sale fulfills. */
+  creditApplicationId?: string
   /** installment invoices only — amount collected up front. Defaults to 0. */
   downPayment?: number
   customerId?: string
@@ -379,6 +401,17 @@ export interface PosCustomer {
   email?: string
 }
 
+// POS Collections — one row per customer with at least one outstanding
+// installment due, aggregated across all their installment schedules.
+export interface CollectionsCustomer {
+  id: string
+  name: string
+  phone: string | null
+  outstandingCount: number
+  outstandingAmount: number
+  nextDueDate: string
+}
+
 export interface CreateWalkInCustomerInput {
   firstName: string
   lastName: string
@@ -393,10 +426,17 @@ export interface CreateWalkInCustomerInput {
   taxId?: string
   isTaxExempt?: boolean
   taxExemptionRef?: string
-  shippingAddress?: string
+  address?: string
+  barangayCode?: string
   paymentTerms?: string
   status?: import('@/src/schema/crm/types').CustomerStatus
   note?: string
+  coMakers?: import('@/src/schema/crm/customer').CoMakerFormValues[]
+  idType?: string
+  idNumber?: string
+  idDocumentFileId?: string
+  consentGiven?: boolean
+  consentGivenAt?: Date
 }
 
 export interface AddPaymentInput {
@@ -775,6 +815,7 @@ export interface CreateFinancingTermInput {
 }
 
 export interface UpdateFinancingTermInput {
+  termMonths?: number
   factorRate?: number
   isActive?: boolean
   notes?: string
@@ -810,6 +851,9 @@ export interface InstallmentScheduleLineWithInvoice {
     totalAmount: number
     amountPaid: number
     status: string
+    /** Non-cancelled payments only — used to warn "already collected today"
+     * before the Collect modal is even opened. */
+    payments: { paymentDate: string; amount: number }[]
   }
 }
 
@@ -825,6 +869,20 @@ export interface InstallmentSchedule {
   posTransaction?: { transactionNumber: string; occurredAt: string }
   financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
+  // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule
+  // can cover several items sharing one term, not just one.
+  posTransactionLines: {
+    id: string
+    itemId: string
+    quantity: number
+    unitPrice: number
+    lineTotal: number
+    item: { name: string; brand: { name: string } | null } | null
+  }[]
+  // The rebate — fixed 7.5% of the monthly installment. Null if this
+  // schedule has no linked InstallmentAccount (shouldn't normally happen,
+  // every POS installment line creates one, but the relation is optional).
+  installmentAccount: { ppd: number } | null
 }
 
 // Void Requests
@@ -932,6 +990,12 @@ export interface PosReleaseFormCartLine {
   serialNumberId?: string
   serialNumberLabel?: string
   serialNumber?: string
+  /** Per-line payment mode (2026-08-06) — falls back to the cart snapshot's
+   * own invoiceType when a line omits it, same as the backend's
+   * lineInvoiceType resolution. */
+  invoiceType?: PosInvoiceType
+  financingTermId?: string
+  downPayment?: number
 }
 
 export interface PosReleaseFormCartSnapshot {
@@ -948,6 +1012,7 @@ export interface PosReleaseFormCartSnapshot {
   invoiceType?: PosInvoiceType
   financingTermId?: string
   downPayment?: number
+  creditApplicationId?: string
 }
 
 export interface PosReleaseFormRequest {
@@ -980,6 +1045,26 @@ export interface PosReleaseFormRequest {
   /** Live-computed credit/terms concerns for a charge sale (COD terms, over
    * Net-N days, over credit limit) — advisory only, empty for cash sales. */
   creditWarnings?: string[]
+  /** Scenario 17 Part 7 — generated for installment sales only; empty for
+   * plain RFD/charge requests. Per-line financing (2026-08-06) means one
+   * note per installment line, not one per request. Release is blocked in
+   * approve() until every note's signedAt is set. */
+  promissoryNotes?: {
+    id: string
+    creditApplicationId: string
+    lineIndex: number
+    termMonths: number
+    factorRate: number
+    totalAmount: number
+    downPayment: number
+    amountFinanced: number
+    totalPayable: number
+    monthlyInstallment: number
+    scheduleLines: { lineNumber: number; dueDate: string; amount: number }[]
+    generatedAt: string
+    signedAt?: string | null
+    signedById?: string | null
+  }[]
 }
 
 export interface ReleaseFormStatusResult {

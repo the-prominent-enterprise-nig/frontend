@@ -11,6 +11,8 @@ Source: `module-scenarios.md`, scenario "Aircool — aircon sale plus installati
 
 **Not found in Sprint 3-5:** No ticket for step 1's "installation service" as its own sellable item type, and none for step 4 (technician records actual vs. estimated materials — the work-order/job-execution layer this doc's Closing Gap 4 calls "the biggest net-new piece"). Worth raising as new tickets given they're the two steps with no code either.
 
+**Also not found:** no ticket for Closing Gap 6 below (service type at job creation) — developer-defined, 2026-08-08, from a direct meeting comment plus NIG's own "Services Offered" rate card (provided directly, not from a ClickUp ticket or either client PDF).
+
 ## The scenario we're building toward
 
 A customer buys a split-type aircon and needs it installed:
@@ -20,6 +22,7 @@ A customer buys a split-type aircon and needs it installed:
 3. Source materials from warehouse; if short, raise PR→PO to an area supplier (estimates carried on PO).
 4. Technician installs, records actual vs. estimate.
 5. Unused materials return to inventory; finalize/bill aircon + service + materials together; close the draft.
+6. At job creation, the job is tagged with one or more **types of service** from NIG's actual service catalog (General Cleaning, Replacement of Minor/Major Electrical Part(s), Repair Leakage/Recharging, Compressor Replacement + Recharging, Relocation — each with specific sub-items), each carrying its own quoted labor amount — not a single free-text title.
 
 ## What's already done ✅
 
@@ -36,6 +39,7 @@ A customer buys a split-type aircon and needs it installed:
 3. **No linkage from a job/service-draft to a PR/PO**, and PR/PO quantities aren't tied to any install-estimate concept.
 4. **No technician/work-order/job-order concept — MISSING entirely.** No actual-vs-estimated-materials tracking anywhere in schema, backend, or frontend.
 5. **No job-linked material return to inventory.** Only `ReturnRefundRequest` (`schema.prisma:1813`) exists, and it's for customer sales returns, not warehouse-bound unused-material returns from an install job. No stock-issuance/requisition model tied to a job exists either.
+6. **No "type of service" concept at job creation — MISSING entirely, added to scope 2026-08-08.** `ServiceDraft` has `title` (free text), `status`, `notes`, `technicianName` — nothing structured categorizing what kind of job this is. The create form (`ServiceJobFormModal.tsx:264-315`) only collects Branch/Title/Customer/Notes before the Estimated Materials array; there's no service-type picker anywhere. Confirmed with the developer: pricing is a manual quote per job, not a fixed price per service type, and a job can carry more than one service type at once (e.g. General Cleaning + Replacement of Capacitor in the same visit) — so this can't be a single field, it needs to be a repeatable list, structurally similar to how `ServiceDraftLine` already works for materials.
 
 ## Closing the gaps
 
@@ -65,6 +69,25 @@ This is a genuinely new, fairly large feature (job/work-order management layered
 
 **Problem**: no stock-issuance/requisition-return model tied to a job.
 **Fix**: on `ServiceDraft` completion, diff `estimatedQty` vs `actualQty` per line; anything issued-but-unused gets a stock-ledger entry returning it to the warehouse (reuse the existing stock-ledger write pattern from `stock.service.ts`, don't invent a new one). Finalizing bills the aircon + service line + actual materials together as one `PosTransaction`, closing the `ServiceDraft`.
+
+### 6. Add "type of service" at job creation, from NIG's real service catalog
+
+**Problem**: no structured way to say what kind of job this is; `title` is free text only.
+
+**NIG's actual service catalog** (developer-provided 2026-08-08, "Services Offered"), 6 categories with fixed sub-items each:
+
+| Category                                                                    | Sub-items                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| General Cleaning                                                            | Window Type; Split Type — Wall/Floor/Ceiling Mounted; Split Type — Ceiling Cassette; FCU; Check-up (Window & Split Type)                                                    |
+| Replacement of Minor Electrical Part                                        | Capacitor; Switches; Magnetic Contactor; Temperature Sensor; Bearing; Thermostat; Relays; Thermistor; Overload Protector                                                    |
+| Replacement of Major Electrical Parts                                       | Fan Motor; Fan Blower; Fan Blade; Blower Wheel; Motor Compressor; Printed Circuit Board; Expansion Valve; Evaporator Coil; Condenser Fan; Air Filter; Condensate Drain Pump |
+| Repair Leakage, Recharging & Reprocessing the System                        | Window Type; Split Type                                                                                                                                                     |
+| Replacement of Motor Compressor, Reprocessing and Recharging of Refrigerant | Window Type; Split Type                                                                                                                                                     |
+| Relocation of Split Type Aircon                                             | Pull Out Existing Unit; Excess Piping After 10ft; Lay Out of Electrical Supply; Chipping Works                                                                              |
+
+**Fix**: add a repeatable `ServiceDraftServiceType` child model (sibling to `ServiceDraftLine`, same `serviceDraftId` FK shape) — `category`, `subType` (both matching the fixed list above, likely a seeded lookup table or enum pair rather than free text, so the list stays authoritative), and `quotedAmount` (manually entered per entry, not looked up — confirmed no fixed price list exists per category/sub-item). Surface as a new repeatable section on `ServiceJobFormModal.tsx`, above or alongside Estimated Materials.
+
+**Materials auto-suggestion** (confirmed in scope): when the sub-type picked belongs to "Replacement of Minor Electrical Part" or "Replacement of Major Electrical Parts" — i.e. it's literally named after a physical part (Capacitor, Fan Motor, Motor Compressor, etc.) — pre-fill a matching Estimated Materials line for that same-named item (cashier can still adjust or remove it). The other four categories (General Cleaning, Repair Leakage/Recharging, Compressor Replacement, Relocation) don't map to a specific part, so no auto-suggestion fires for those — just the quoted labor line.
 
 ## Dead code / unused-feature flags
 
@@ -123,6 +146,21 @@ None — this scenario's building blocks (dual-serial capture, PR/PO, ParkedSale
 - The frontend's generated OpenAPI types (`src/libs/generated/types/generated.ts`) were found to be significantly stale relative to `development`'s actual backend (a ~51k-line diff on `pnpm generate:types`) — not touched, since this feature's frontend code reads `ServiceDraft` through a hand-maintained Zod schema (`src/schema/pos/service-drafts.ts`), not the generated types. Worth a dedicated regeneration pass at some point, just not bundled into this scenario's diff.
 - Two new Prisma migrations added: `20260728032600_add_service_draft_invoice`, `20260728032837_service_draft_invoice_cascade_delete`. Both purely additive (new tables/constraint only).
 - Both repos are on a new branch `feat/aircool-issue-return-billing` (created off `development`) for this run's work. Nothing has been committed in either repo yet.
+
+## Implementation Log — 2026-08-10
+
+**For this scenario, I have done:**
+
+- **Closing Gap 6 (type of service at job creation):** new `ServiceCategory` enum + `ServiceDraftServiceType` child model (`category`, `subType`, `quotedAmount`), validated server-side against NIG's real 6-category "Services Offered" catalog (`SERVICE_CATALOG` in `src/pos/service-catalog.const.ts`, mirrored on the frontend). New "Types of Service" section on the New/Edit Service Job form — category picker → filtered sub-type picker → quoted amount, repeatable. Deliberately **not** pre-added by default the way Estimated Materials is (found live: a pre-added-but-empty row still fails its own required fields even though the array itself is optional, silently blocking submission on every pre-existing service-draft flow that never touches this section — caught and fixed before it shipped). Materials auto-suggestion: picking a sub-type under either "Replacement of ... Electrical Part(s)" category auto-adds a matching Estimated Materials line if a same-named item exists in the catalog. Shown on the detail view with a running total. `serviceTypes` is deliberately **optional at the API layer** — the doc's own Fix text implied "always tagged," but hard-requiring it would have broken all 38 existing POST/PATCH calls across this file's other test suites (Part 2/Sourcing/Install/Complete/Serial Tracking), a real breaking change to an already-shipped endpoint.
+- **New follow-up, not in the original 6-item plan** (developer-requested, 2026-08-10): link a service job to the POS transaction/invoice it was sold on. `ServiceDraft.posTransactionId` has existed since Closing Gap 2 (nullable, unique, tenant-scoped-validated backend) but had no UI at all — a dead scaffold. Added `TransactionSearchCombobox` (a new "Linked Sale" field on the form, searches by transaction number, reuses the same cross-resolve search Scenario 23 already built for POS Transactions ↔ AR Invoices) and a "Linked Sale" tile on the detail view. No backend changes needed — the field and its validation already existed, just unreachable.
+
+**Worth flagging:**
+
+- A real bug was found and fixed while building the Linked Sale picker: its search results crashed silently — `t.totalAmount.toFixed(2)` was called on a value that's actually a **string** over the API (Prisma Decimal serializes as a string, not a number), the exact same gotcha this doc's own 2026-07-28 log entry already flagged for `ServiceDraftInvoiceLine`'s `unitPrice`/`lineTotal`. Fixed with `Number(t.totalAmount).toFixed(2)`. Worth a broader sweep for any other numeric-display code touching a raw Decimal field with the same latent issue — it doesn't crash until the field is actually run through a number-only method.
+- Both closing-gap items in this run were manually tested and confirmed by the developer live (Types of Service + materials auto-suggestion; Linked Sale link/display/clear).
+- e2e-tested both sides: backend — 7 new tests for service types (`ServiceDraft — Service Types (Closing Gap 6) E2E`) + 6 new tests for the linked-sale field (`ServiceDraft — Linked Sale (posTransactionId) E2E`) in `test/aircool.e2e-spec.ts`; full 68-test suite re-run clean (3 pre-existing, unrelated Cashier-permission failures confirmed via `git stash` to exist independent of this work). Frontend — `pos-service-draft-service-type.spec.ts` (2 tests) and `pos-service-draft-linked-sale.spec.ts` (2 tests), plus the full `pos-service-draft-*` suite re-run to confirm no regressions to the pre-existing Sourcing/Install/Complete/Serial specs.
+- New migration: `20260810120000_add_service_draft_service_type` (purely additive — new enum + table).
+- Both repos are on branch `feat/aircool-service-type-and-invoice-link`, created off `development`.
 
 ## Implementation Log — 2026-08-05
 

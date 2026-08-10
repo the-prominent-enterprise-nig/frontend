@@ -12,7 +12,7 @@ export const metadata = {
 export default async function ServiceJobsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.SERVICE_DRAFTS_READ)) redirect('/pos')
+  if (!can(session, POS_PERMISSIONS.SERVICE_DRAFTS_READ)) redirect('/403')
 
   return (
     <div className="min-h-screen bg-zinc-50">

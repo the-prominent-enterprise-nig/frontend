@@ -5,16 +5,24 @@ import { gotoReady, clickStable, fillStable, loginAs } from './utils'
 // itself is covered by backend/test/item-master-governance.e2e-spec.ts; this
 // spec exercises the actual UI: the create-time draft notice, the status
 // badge, and the Submit/Confirm/Approve/Reject row actions + modals across
-// the three governance personas (HO Inventory, Accountant, Master Data
+// the governance personas (Stock Controller, Accountant, Master Data
 // Approver — seeded technova.b1.* accounts, prisma/seed.ts).
 //
 // Test items are created directly via the API (not through the create form —
 // already covered by inventory-item-master.spec.ts) so this spec can focus
 // on the governance controls, and are deleted in afterEach.
+//
+// Scenario 22 Part 7 — this spec used to run its item-create/draft steps as
+// a separate 'Inventory' role (bare inventory:* wildcard). That role was
+// retired as a redundant duplicate of Stock Controller; items:create/update
+// moved to Stock Controller (the fixed-role-list member) to close the gap,
+// but items:delete deliberately stayed Business-Owner-only, so cleanup now
+// runs as Owner instead.
 
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const SEARCH_PLACEHOLDER = 'Search by name or SKU…'
-const INVENTORY_EMAIL = 'technova.b1.inventory@test.com'
+const STOCK_EMAIL = 'technova.b1.stock@test.com'
+const OWNER_EMAIL = 'technova.owner@test.com'
 const ACCOUNTING_EMAIL = 'technova.b1.accounting@test.com'
 const APPROVER_EMAIL = 'technova.b1.approver@test.com'
 const CASHIER_EMAIL = 'technova.b1.cashier@test.com'
@@ -46,17 +54,17 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
 
   test.afterEach(async ({ page }) => {
     if (!createdItemIds.length) return
-    // Delete as the Inventory role (holds inventory:*) regardless of which
-    // persona the test itself ended on — Accounting/Approver/Cashier don't
-    // hold items:delete.
-    await switchTo(page, INVENTORY_EMAIL)
+    // Delete as Business Owner — items:delete deliberately stayed
+    // Owner-only when items:create/update moved to Stock Controller
+    // (Scenario 22 Part 7), so none of this spec's personas hold it.
+    await switchTo(page, OWNER_EMAIL)
     for (const id of createdItemIds.splice(0)) {
       await page.request.delete(`/api/inventory/items/${id}`).catch(() => {})
     }
   })
 
   test('create form shows the draft governance notice', async ({ page }) => {
-    await loginAs(page, INVENTORY_EMAIL, DEV_PASSWORD)
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     await gotoReady(page, '/inventory/items')
     await clickStable(
       page.getByRole('button', { name: 'Add Item' }),
@@ -68,7 +76,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
   test('walks a draft item through submit → confirm-accounting → approve across roles', async ({
     page,
   }) => {
-    await loginAs(page, INVENTORY_EMAIL, DEV_PASSWORD)
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { id, sku } = await createDraftItem(page)
     createdItemIds.push(id)
 
@@ -122,7 +130,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
   })
 
   test('Accountant can reject a submitted item, visible with its reason', async ({ page }) => {
-    await loginAs(page, INVENTORY_EMAIL, DEV_PASSWORD)
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { id, sku } = await createDraftItem(page)
     createdItemIds.push(id)
 
@@ -157,7 +165,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
   // list the way HO Inventory/Accounting/Approver do — the core governance
   // gate this scenario adds.
   test('a plain items:read caller never sees a draft item in the list', async ({ page }) => {
-    await loginAs(page, INVENTORY_EMAIL, DEV_PASSWORD)
+    await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
     const { id, sku } = await createDraftItem(page)
     createdItemIds.push(id)
 

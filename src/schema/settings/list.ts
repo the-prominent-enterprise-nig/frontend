@@ -66,6 +66,7 @@ export const UserSchema = z.object({
   firstName: z.string().nullable().optional(),
   lastName: z.string().nullable().optional(),
   isActive: z.boolean(),
+  isFounder: z.boolean().optional().default(false),
   employeeId: z.string().nullable(),
   employee: SessionEmployeeSchema.nullable(),
   userBranches: z.array(UserBranchSchema),

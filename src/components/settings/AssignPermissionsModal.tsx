@@ -1,6 +1,6 @@
 'use client'
 
-import { Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { type Permission, type Role } from '@/src/schema/settings/list'
@@ -9,6 +9,8 @@ import { showToast } from '@/src/components/ui/toast'
 import {
   ACCESS_LEVEL_LABELS,
   ACCESS_MODULES,
+  SETTABLE_ACCESS_LEVELS,
+  countEffectivePermissions,
   formatPermission,
   getAccessLevelForPermissions,
   getModulePermissions,
@@ -34,12 +36,14 @@ export default function AssignPermissionsModal({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isSaving, setIsSaving] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (role && isOpen) {
       setSelected(new Set(role.permissions.map((rolePermission) => rolePermission.permission.id)))
       setAdvancedOpen(false)
       setSearch('')
+      setExpandedModules(new Set())
     }
   }, [role, isOpen])
 
@@ -53,8 +57,8 @@ export default function AssignPermissionsModal({
       return {
         moduleConfig,
         permissionCount: modulePermissions.length,
-        selectedCount: selectedModulePermissions.length,
-        level: getAccessLevelForPermissions(selectedModulePermissions),
+        selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
+        level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
       }
     }).sort((a, b) => {
       if (a.level !== 'none' && b.level === 'none') return -1
@@ -63,21 +67,26 @@ export default function AssignPermissionsModal({
     })
   }, [availablePermissions, selected])
 
-  const filteredAdvancedPermissions = useMemo(() => {
+  const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return availablePermissions
 
-    return availablePermissions.filter((permission) => {
-      const key = `${permission.module}:${permission.resource}:${permission.action}`
-      return key.includes(query) || formatPermission(permission).toLowerCase().includes(query)
-    })
+    return ACCESS_MODULES.map((moduleConfig) => {
+      const modulePermissions = getModulePermissions(availablePermissions, moduleConfig).filter(
+        (permission) => {
+          if (!query) return true
+          const key = `${permission.module}:${permission.resource}:${permission.action}`
+          return key.includes(query) || formatPermission(permission).toLowerCase().includes(query)
+        }
+      )
+      return { moduleConfig, permissions: modulePermissions }
+    }).filter((group) => group.permissions.length > 0)
   }, [availablePermissions, search])
 
   const selectedAdvancedCount = useMemo(() => {
     return availablePermissions.filter((permission) => selected.has(permission.id)).length
   }, [availablePermissions, selected])
 
-  function handleAccessLevelChange(moduleKey: string, level: AccessLevel) {
+  function handleAccessLevelChange(moduleKey: string, level: Exclude<AccessLevel, 'mixed'>) {
     const moduleConfig = ACCESS_MODULES.find((item) => item.key === moduleKey)
     if (!moduleConfig) return
 
@@ -103,6 +112,15 @@ export default function AssignPermissionsModal({
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      return next
+    })
+  }
+
+  function toggleModuleExpanded(moduleKey: string) {
+    setExpandedModules((prev) => {
+      const next = new Set(prev)
+      if (next.has(moduleKey)) next.delete(moduleKey)
+      else next.add(moduleKey)
       return next
     })
   }
@@ -180,7 +198,9 @@ export default function AssignPermissionsModal({
                 className={`rounded-xl border p-4 ${
                   level === 'none'
                     ? 'border-zinc-200 bg-white'
-                    : 'border-prominent-purple-200 bg-prominent-purple-50/50'
+                    : level === 'mixed'
+                      ? 'border-orange-300 bg-orange-50/60'
+                      : 'border-prominent-purple-200 bg-prominent-purple-50/50'
                 }`}
               >
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -189,10 +209,17 @@ export default function AssignPermissionsModal({
                     <p className="mt-1 text-xs text-zinc-500">
                       {selectedCount} of {permissionCount} capabilities enabled
                     </p>
+                    {level === 'mixed' && (
+                      <p className="mt-1 text-xs font-medium text-orange-700">
+                        Different resources in this module currently have different access levels.
+                        Pick a level below to make it uniform, or use Advanced permissions to review
+                        what&apos;s actually granted.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-4">
-                    {(Object.keys(ACCESS_LEVEL_LABELS) as AccessLevel[]).map((accessLevel) => (
+                    {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
                       <button
                         key={accessLevel}
                         type="button"
@@ -249,37 +276,79 @@ export default function AssignPermissionsModal({
                   </p>
                 </div>
 
-                <div className="grid gap-2 md:grid-cols-2">
-                  {filteredAdvancedPermissions.map((permission) => {
-                    const permissionKey = `${permission.module}:${permission.resource}:${permission.action}`
+                <div className="space-y-2">
+                  {advancedGroups.map(({ moduleConfig, permissions }) => {
+                    const isSearching = search.trim().length > 0
+                    const isExpanded = isSearching || expandedModules.has(moduleConfig.key)
+                    const selectedInGroup = permissions.filter((permission) =>
+                      selected.has(permission.id)
+                    ).length
 
                     return (
-                      <label
-                        key={permission.id}
-                        className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
-                          selected.has(permission.id)
-                            ? 'border-prominent-purple-300 bg-prominent-purple-50'
-                            : 'border-zinc-200 hover:bg-zinc-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.has(permission.id)}
-                          onChange={() => handleToggleAdvancedPermission(permission.id)}
-                          className="mt-0.5 h-4 w-4 accent-prominent-purple-700"
-                        />
-                        <div>
-                          <p className="text-sm font-medium text-zinc-800">
-                            {formatPermission(permission)}
-                          </p>
-                          <p className="mt-0.5 font-mono text-xs text-zinc-400">{permissionKey}</p>
-                        </div>
-                      </label>
+                      <div key={moduleConfig.key} className="rounded-lg border border-zinc-200">
+                        <button
+                          type="button"
+                          onClick={() => toggleModuleExpanded(moduleConfig.key)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left"
+                        >
+                          <span className="flex items-center gap-2">
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-zinc-400" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-zinc-400" />
+                            )}
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                              {moduleConfig.label}
+                            </span>
+                          </span>
+                          <span className="text-xs text-zinc-400">
+                            {selectedInGroup} of {permissions.length} selected
+                          </span>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="grid gap-2 border-t border-zinc-100 p-3 md:grid-cols-2">
+                            {permissions.map((permission) => {
+                              const isWildcard =
+                                permission.resource === '*' && permission.action === '*'
+                              const permissionKey = `${permission.module}:${permission.resource}:${permission.action}`
+
+                              return (
+                                <label
+                                  key={permission.id}
+                                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+                                    selected.has(permission.id)
+                                      ? 'border-prominent-purple-300 bg-prominent-purple-50'
+                                      : 'border-zinc-200 hover:bg-zinc-50'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.has(permission.id)}
+                                    onChange={() => handleToggleAdvancedPermission(permission.id)}
+                                    className="mt-0.5 h-4 w-4 accent-prominent-purple-700"
+                                  />
+                                  <div>
+                                    <p className="text-sm font-medium text-zinc-800">
+                                      {isWildcard
+                                        ? `All ${moduleConfig.label} capabilities`
+                                        : formatPermission(permission)}
+                                    </p>
+                                    <p className="mt-0.5 font-mono text-xs text-zinc-400">
+                                      {permissionKey}
+                                    </p>
+                                  </div>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
 
-                {filteredAdvancedPermissions.length === 0 && (
+                {advancedGroups.length === 0 && (
                   <p className="py-8 text-center text-sm text-zinc-500">
                     No permissions match your search.
                   </p>

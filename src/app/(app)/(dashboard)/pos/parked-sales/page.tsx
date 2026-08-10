@@ -13,6 +13,8 @@ import type { ParkedSale } from '@/src/schema/pos'
 import { usePosSocket, toParkedSale } from '@/src/libs/hooks/usePosSocket'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 import { PosDateTime } from '../_components/PosDate'
 
@@ -26,6 +28,7 @@ function itemCount(cartData: Record<string, unknown>): number {
 }
 
 export default function ParkedSalesPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.TRANSACTIONS_READ)
   const router = useRouter()
   const { branchId } = usePosBranchContext()
   const { data: terminalsData } = useTerminals(branchId ? { branchId } : undefined)
@@ -62,6 +65,8 @@ export default function ParkedSalesPage() {
       setRealtimeSales((prev) => prev?.filter((s) => s.id !== id) ?? null)
     },
   })
+
+  if (status !== 'authorized' || !session) return null
 
   const sales = realtimeSales ?? (data?.data ?? []).filter((s) => s.status === 'parked')
 

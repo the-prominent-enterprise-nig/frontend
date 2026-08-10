@@ -96,6 +96,36 @@ async function pickCustomer(page: Page, searchTerm: string, fullName: string): P
   await resultButton.click()
 }
 
+/** Drives CollectorAreaPicker's Region/Province/City SearchableSelects
+ * (type-ahead comboboxes with short placeholders — "Region"/"Province"/
+ * "City", not the longer "Type to search X" used by PhilippineAddressPicker
+ * since this component packs four fields into one row). Wrapped in toPass:
+ * picking a parent level resets and reloads the next level's option list. */
+async function pickAreaLevel(page: Page, placeholder: string, optionLabel: string) {
+  const combobox = page.getByPlaceholder(placeholder, { exact: true })
+  await expect(async () => {
+    await combobox.click()
+    await combobox.fill(optionLabel)
+    const option = page.getByRole('button', { name: optionLabel, exact: true })
+    await expect(option).toBeVisible({ timeout: 2_000 })
+    await option.click()
+    await expect(combobox).toHaveValue(optionLabel, { timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
+
+/** Picks Region → Province → City → Barangay then clicks Add, for
+ * CollectorAreaPicker (Scenario 24 Part 3). */
+async function addCollectorArea(
+  page: Page,
+  chain: { region: string; province: string; city: string; barangay: string }
+) {
+  await pickAreaLevel(page, 'Region', chain.region)
+  await pickAreaLevel(page, 'Province', chain.province)
+  await pickAreaLevel(page, 'City', chain.city)
+  await pickAreaLevel(page, 'Barangay', chain.barangay)
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+}
+
 test.describe('CRM — Collectors', () => {
   test('creates a collector, edits it, records a remittance, then deletes it (cleanup)', async ({
     page,
@@ -167,6 +197,86 @@ test.describe('CRM — Collectors', () => {
     expect(del.ok()).toBeTruthy()
   })
 
+  test('assigns, edits, and removes coverage areas on a collector', async ({ page }) => {
+    const suffix = Date.now()
+    const shortSuffix = String(suffix).slice(-8)
+    const stubNumber = `E2E-${shortSuffix}`
+    const name = `E2E Area Collector ${suffix}`
+
+    const chainA = {
+      region: 'National Capital Region (NCR)',
+      province: 'Ncr, Second District',
+      city: 'Quezon City',
+      barangay: 'Alicia',
+    }
+    const chainB = {
+      region: 'Region VI (Western Visayas)',
+      province: 'Iloilo',
+      city: 'Iloilo City (Capital)',
+      barangay: 'Santa Cruz',
+    }
+
+    await gotoReady(page, '/crm/collectors/new')
+    await submitStable(
+      async () => {
+        await fillAllStable([
+          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Name *'), value: name },
+        ])
+        await addCollectorArea(page, chainA)
+        await expect(page.getByText('Areas covered (1)')).toBeVisible()
+        await expect(page.getByText('Alicia, Quezon City')).toBeVisible()
+      },
+      () => page.getByRole('button', { name: 'Create collector' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const collectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
+    expect(collectorId).toBeTruthy()
+
+    // Detail page resolves the stored barangayCode back to a readable label.
+    await expect(page.getByRole('heading', { name: 'Coverage areas' })).toBeVisible()
+    await expect(page.getByText('Alicia, Quezon City')).toBeVisible({ timeout: 10_000 })
+
+    // Edit — add a second area from a different city, then remove the first.
+    await page.getByRole('link', { name: 'Edit' }).click()
+    await expect(page).toHaveURL(`/crm/collectors/${collectorId}/edit`)
+    await expect(page.getByText('Alicia, Quezon City')).toBeVisible({ timeout: 10_000 })
+
+    await submitStable(
+      async () => {
+        // Idempotent on retry: addBarangay() no-ops on an already-present
+        // code, and each removal is guarded by its own visibility check —
+        // safe to redo the whole sequence if a hydration reconciliation
+        // wipes the form between an earlier attempt and the submit click.
+        if (!(await page.getByText('Santa Cruz, Iloilo City (Capital)').isVisible())) {
+          await addCollectorArea(page, chainB)
+          await expect(page.getByText('Santa Cruz, Iloilo City (Capital)')).toBeVisible()
+        }
+        if (await page.getByText('Alicia, Quezon City').isVisible()) {
+          await page.getByRole('button', { name: 'Remove Alicia, Quezon City' }).click()
+        }
+        await expect(page.getByText('Areas covered (1)')).toBeVisible()
+        await expect(page.getByText('Alicia, Quezon City')).toHaveCount(0)
+      },
+      () => page.getByRole('button', { name: 'Save changes' }).click(),
+      () => expect(page).toHaveURL(`/crm/collectors/${collectorId}`, { timeout: 8_000 })
+    )
+    await expect(page.getByText('Santa Cruz, Iloilo City (Capital)')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByText('Alicia, Quezon City')).toHaveCount(0)
+
+    // Verify the underlying data directly too, not just the resolved label.
+    const detail = await page.request.get(`/api/crm/collectors/${collectorId}`)
+    const detailBody = await detail.json()
+    expect((detailBody.areas as { barangayCode: string }[]).map((a) => a.barangayCode)).toEqual([
+      '063022001',
+    ]) // Santa Cruz, Iloilo City
+
+    const del = await page.request.delete(`/api/crm/collectors/${collectorId}`)
+    expect(del.ok()).toBeTruthy()
+  })
+
   test('lists collectors and filters them by search', async ({ page }) => {
     const suffix = Date.now()
     const shortSuffix = String(suffix).slice(-8)
@@ -191,10 +301,46 @@ test.describe('CRM — Collectors', () => {
     // Both the mobile card list and desktop table render simultaneously
     // (Tailwind responsive classes only toggle CSS display) — scope to the
     // desktop table to avoid a strict-mode multi-match.
-    await expect(page.locator('table').getByText(name)).toBeVisible({ timeout: 10_000 })
+    const row = page.locator('table tbody tr', { has: page.getByText(name) })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    // The whole row navigates to the detail page, not just the stub-number
+    // cell — clicking anywhere else in the row (e.g. the Name cell) must
+    // still work.
+    await row.getByText(name).click()
+    await expect(page).toHaveURL(`/crm/collectors/${collectorId}`, { timeout: 10_000 })
+    await expect(page.getByRole('heading', { name })).toBeVisible()
 
     const del = await page.request.delete(`/api/crm/collectors/${collectorId}`)
     expect(del.ok()).toBeTruthy()
+  })
+
+  test('deletes a collector from its detail page', async ({ page }) => {
+    const suffix = Date.now()
+    const shortSuffix = String(suffix).slice(-8)
+    const stubNumber = `E2E-${shortSuffix}`
+    const name = `E2E Delete Collector ${suffix}`
+
+    await gotoReady(page, '/crm/collectors/new')
+    await submitStable(
+      () =>
+        fillAllStable([
+          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Name *'), value: name },
+        ]),
+      () => page.getByRole('button', { name: 'Create collector' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const collectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
+    expect(collectorId).toBeTruthy()
+
+    await expect(page.getByRole('heading', { name: 'Danger Zone' })).toBeVisible()
+    page.once('dialog', (dialog) => dialog.accept())
+    await page.getByRole('button', { name: 'Delete collector' }).click()
+    await expect(page).toHaveURL('/crm/collectors', { timeout: 10_000 })
+
+    const check = await page.request.get(`/api/crm/collectors/${collectorId}`)
+    expect(check.status()).toBe(404)
   })
 })
 
@@ -245,6 +391,239 @@ test.describe('CRM — Installment Accounts', () => {
     // bottom text button — the text one is rendered last.
     await page.getByRole('button', { name: 'Close' }).last().click()
     await expect(page.getByRole('heading', { name: 'Installment price checker' })).toHaveCount(0)
+  })
+
+  test('suggests and auto-selects a collector by the customer’s barangay coverage', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const shortSuffix = String(suffix).slice(-8)
+    const barangayCode = '020901002' // Ihubok I, Basco, Batanes — untouched by any other test fixture
+
+    // Fixture customer created directly via API (barangayCode isn't reachable
+    // through createCustomerViaUi's minimal form fill) — the picker's own
+    // capture of brgy_code is already covered by the Scenario 24 Part 2 test.
+    const customerName = `${CUSTOMER_NAME_PREFIX}Area${suffix}`
+    const customerRes = await page.request.post('/api/crm/customers', {
+      data: {
+        name: customerName,
+        phone: `0917${suffix.toString().slice(-7)}`,
+        barangayCode,
+      },
+    })
+    expect(customerRes.ok()).toBeTruthy()
+    const customerId = (await customerRes.json()).id as string
+    createdCustomerIds.push(customerId)
+
+    // A collector covering that exact barangay — the suggestion should pick it.
+    const stubNumber = `E2EAREA${shortSuffix}`
+    const collectorName = `E2E Area-Match Collector ${suffix}`
+    await gotoReady(page, '/crm/collectors/new')
+    await submitStable(
+      async () => {
+        await fillAllStable([
+          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Name *'), value: collectorName },
+        ])
+        await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
+        await pickAreaLevel(page, 'Province', 'Batanes')
+        await pickAreaLevel(page, 'City', 'Basco (Capital)')
+        await pickAreaLevel(page, 'Barangay', 'Ihubok I (Kaychanarianan)')
+        await page.getByRole('button', { name: 'Add', exact: true }).click()
+        await expect(page.getByText('Areas covered (1)')).toBeVisible()
+      },
+      () => page.getByRole('button', { name: 'Create collector' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const collectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
+    expect(collectorId).toBeTruthy()
+
+    const accountNumber = `E2E-IA-AREA-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, customerName.slice(-10), customerName)
+        const collectorSelect = page.getByLabel('Collector')
+        await expect(collectorSelect).toHaveValue(collectorId!, { timeout: 10_000 })
+        await expect(
+          collectorSelect.locator('option', {
+            hasText: `${stubNumber} — ${collectorName} — suggested`,
+          })
+        ).toHaveCount(1)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '6' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.1' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    const detail = await page.request.get(`/api/crm/installment-accounts/${accountId}`)
+    const detailBody = await detail.json()
+    expect(detailBody.collectorId).toBe(collectorId)
+
+    // Cleanup
+    const delAccount = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(delAccount.ok()).toBeTruthy()
+    const delCollector = await page.request.delete(`/api/crm/collectors/${collectorId}`)
+    expect(delCollector.ok()).toBeTruthy()
+  })
+
+  test('suggests a collector on the Edit form for an account that has none yet, without overriding an existing pick', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const shortSuffix = String(suffix).slice(-8)
+    const barangayCode = '020901005' // Chanarian, Basco, Batanes — untouched by any other test fixture
+
+    const customerName = `${CUSTOMER_NAME_PREFIX}EditArea${suffix}`
+    const customerRes = await page.request.post('/api/crm/customers', {
+      data: {
+        name: customerName,
+        phone: `0917${suffix.toString().slice(-7)}`,
+        barangayCode,
+      },
+    })
+    expect(customerRes.ok()).toBeTruthy()
+    const customerId = (await customerRes.json()).id as string
+    createdCustomerIds.push(customerId)
+
+    // Created with no collector, and no coverage exists yet for this
+    // barangay — auto-assign-on-create has nothing to match, so this proves
+    // the Edit-form suggestion below is a genuinely separate lookup, not a
+    // leftover from creation.
+    const accountRes = await page.request.post('/api/crm/installment-accounts', {
+      data: {
+        accountNumber: `E2E-IA-EDITAREA-${suffix}`,
+        customerId,
+        listedCashPrice: 20000,
+        downPayment: 2000,
+        termMonths: 6,
+        miFactor: 0.1,
+      },
+    })
+    expect(accountRes.ok()).toBeTruthy()
+    const accountBody = await accountRes.json()
+    const accountId = accountBody.id as string
+    expect(accountBody.collectorId ?? null).toBeNull()
+
+    // Now give a collector coverage over that same barangay.
+    const stubNumber = `E2EEDA${shortSuffix}`
+    const collectorName = `E2E Edit-Area Collector ${suffix}`
+    await gotoReady(page, '/crm/collectors/new')
+    await submitStable(
+      async () => {
+        await fillAllStable([
+          { locator: page.getByLabel('Stub number *'), value: stubNumber },
+          { locator: page.getByLabel('Name *'), value: collectorName },
+        ])
+        await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
+        await pickAreaLevel(page, 'Province', 'Batanes')
+        await pickAreaLevel(page, 'City', 'Basco (Capital)')
+        await pickAreaLevel(page, 'Barangay', 'Chanarian')
+        await page.getByRole('button', { name: 'Add', exact: true }).click()
+        await expect(page.getByText('Areas covered (1)')).toBeVisible()
+      },
+      () => page.getByRole('button', { name: 'Create collector' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const collectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
+    expect(collectorId).toBeTruthy()
+
+    await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
+    const collectorSelect = page.getByLabel('Collector')
+    await expect(collectorSelect).toHaveValue(collectorId!, { timeout: 10_000 })
+    await expect(
+      collectorSelect.locator('option', { hasText: `${stubNumber} — ${collectorName} — suggested` })
+    ).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await page.waitForURL(`/crm/installment-accounts/${accountId}`, { timeout: 10_000 })
+    const afterSave = await page.request.get(`/api/crm/installment-accounts/${accountId}`)
+    expect((await afterSave.json()).collectorId).toBe(collectorId)
+
+    // A second, different collector also covering the area — editing again
+    // must NOT silently swap out the now-already-assigned collector.
+    const otherStub = `E2EEDB${shortSuffix}`
+    const otherName = `E2E Edit-Area Collector B ${suffix}`
+    await gotoReady(page, '/crm/collectors/new')
+    await submitStable(
+      async () => {
+        await fillAllStable([
+          { locator: page.getByLabel('Stub number *'), value: otherStub },
+          { locator: page.getByLabel('Name *'), value: otherName },
+        ])
+        await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
+        await pickAreaLevel(page, 'Province', 'Batanes')
+        await pickAreaLevel(page, 'City', 'Basco (Capital)')
+        await pickAreaLevel(page, 'Barangay', 'Chanarian')
+        await page.getByRole('button', { name: 'Add', exact: true }).click()
+        await expect(page.getByText('Areas covered (1)')).toBeVisible()
+      },
+      () => page.getByRole('button', { name: 'Create collector' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const otherCollectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
+
+    await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
+    await expect(page.getByLabel('Collector')).toHaveValue(collectorId!, { timeout: 10_000 })
+
+    // Cleanup
+    const delAccount = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(delAccount.ok()).toBeTruthy()
+    const delCollector = await page.request.delete(`/api/crm/collectors/${collectorId}`)
+    expect(delCollector.ok()).toBeTruthy()
+    const delOtherCollector = await page.request.delete(`/api/crm/collectors/${otherCollectorId}`)
+    expect(delOtherCollector.ok()).toBeTruthy()
+  })
+
+  test('Edit form shows a read-only summary of the customer and original financing terms', async ({
+    page,
+  }) => {
+    const suffix = Date.now()
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
+
+    const accountNumber = `E2E-IA-SUMMARY-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '6' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.1' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    // AF = 18000, MI = 1800, PNV = 10800, Total price = 10800 + 2000 = 12800
+    await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
+    await expect(
+      page.getByText('Account summary (set at creation, not editable here)')
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(fullName)).toBeVisible()
+    await expect(page.getByText('6 months')).toBeVisible()
+    await expect(page.getByText('₱20,000.00')).toBeVisible()
+    await expect(page.getByText('₱2,000.00')).toBeVisible()
+    await expect(page.getByText('₱18,000.00')).toBeVisible()
+    await expect(page.getByText('₱1,800.00').first()).toBeVisible()
+    await expect(page.getByText('₱10,800.00').first()).toBeVisible()
+    await expect(page.getByText('₱12,800.00')).toBeVisible()
+
+    // Cleanup
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
   })
 
   test('creates an account with a correct financing preview and records an on-time payment', async ({
@@ -411,6 +790,44 @@ test.describe('CRM — Installment Accounts', () => {
     await expect(page.getByRole('combobox').nth(0)).toHaveValue('A')
     await page.getByRole('combobox').nth(2).selectOption('closed')
     await expect(page.getByRole('combobox').nth(2)).toHaveValue('closed')
+  })
+
+  test('list rows are fully clickable, not just the account number cell', async ({ page }) => {
+    const suffix = Date.now()
+    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    createdCustomerIds.push(customerId)
+
+    const accountNumber = `E2E-IA-ROW-${suffix}`
+    await gotoReady(page, '/crm/installment-accounts/new')
+    await submitStable(
+      async () => {
+        await pickCustomer(page, fullName.split(' ')[1], fullName)
+        await fillAllStable([
+          { locator: page.getByLabel('Account number *'), value: accountNumber },
+          { locator: page.getByLabel('Term (months) *'), value: '6' },
+          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
+          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
+          { locator: page.getByLabel('MI factor *'), value: '0.1' },
+        ])
+      },
+      () => page.getByRole('button', { name: 'Create account' }).click(),
+      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
+    )
+    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+
+    await gotoReady(page, '/crm/installment-accounts')
+    await expect(page.getByRole('heading', { name: 'Installment Accounts' })).toBeVisible()
+    const row = page.locator('table tbody tr', { has: page.getByText(accountNumber) })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    // Click the Customer cell, not the Account # cell — the whole row must
+    // navigate, matching the CRM Customers/Collectors lists' convention.
+    await row.getByText(fullName).click()
+    await expect(page).toHaveURL(`/crm/installment-accounts/${accountId}`, { timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: accountNumber })).toBeVisible()
+
+    const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
+    expect(del.ok()).toBeTruthy()
   })
 })
 

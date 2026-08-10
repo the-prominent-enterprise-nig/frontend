@@ -11,7 +11,7 @@ export const metadata = {
 export default async function CollectionsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)) redirect('/pos')
+  if (!can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)) redirect('/403')
 
   return <CollectionsScreen />
 }

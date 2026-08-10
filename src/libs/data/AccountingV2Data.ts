@@ -270,13 +270,24 @@ export const Reports = {
 }
 
 // ============ AR Invoices ============
+
+// Mirrors the backend's PaymentMethod enum (also used by JournalEntry).
+export type PaymentMethod = 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
+
+export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'CARD', label: 'Card' },
+  { value: 'CHECK', label: 'Check' },
+  { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+]
+
 export interface ARPayment {
   id: string
   arInvoiceId: string
   amount: number
   withholdingAmount: number
   paymentDate: string
-  method?: string | null
+  method?: PaymentMethod | null
   reference?: string | null
   notes?: string | null
   isOverpayment: boolean
@@ -285,7 +296,36 @@ export interface ARPayment {
   cancelledAt?: string | null
   cancelledById?: string | null
   cancelReason?: string | null
+  branchId?: string | null
+  collectorId?: string | null
   createdAt: string
+}
+
+export interface RecordArPaymentInput {
+  amount: number
+  paymentDate: string
+  method?: PaymentMethod
+  reference?: string
+  notes?: string
+  withholdingAmount?: number
+  bankAccountId?: string
+  branchId?: string
+  collectorId?: string
+}
+
+export interface ARInvoiceInstallmentItem {
+  id: string
+  itemId: string
+  quantity: number | string
+  unitPrice: number | string
+  item: { id: string; name: string; brand: { name: string } | null } | null
+  lineTotal: number
+}
+
+export interface ARInvoiceInstallmentDetail {
+  termMonths: number | null
+  rebate: number | string | null
+  items: ARInvoiceInstallmentItem[]
 }
 
 export interface ARInvoice {
@@ -303,6 +343,9 @@ export interface ARInvoice {
   status: string
   costCenter?: string
   payments?: ARPayment[]
+  /** Scenario 25 — present only when this invoice is one due-date line of a
+   * POS installment schedule; null for charge-mode invoices. */
+  installmentDetail?: ARInvoiceInstallmentDetail | null
 }
 
 export interface RecordPaymentResult extends ARInvoice {
@@ -310,14 +353,36 @@ export interface RecordPaymentResult extends ARInvoice {
   overpayment: { paymentId: string; overpaidAmount: number; wasClosedAccount: boolean } | null
 }
 
+export interface ARInvoiceCustomerResult {
+  id: string
+  name: string
+  phone: string | null
+  customerCode: string
+}
+
 export const ARInvoices = {
   list: (params?: { search?: string; status?: string; customerId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // Scoped to accounting:ar-invoices:read (not the CRM customer list, which
+  // needs crm:customers:read — a permission Accountant doesn't hold) so
+  // this screen's own customer picker works without any CRM grant.
+  searchCustomers: (q: string) =>
+    api.get<ARInvoiceCustomerResult[]>('/ar-invoices/customers/search', { q }),
+  // Resolves one specific customer's name directly — used for the
+  // "Filtered to X" banner when arriving via a customerId link (e.g. from
+  // Customer360) and that customer has zero invoices, so there's nothing
+  // in the loaded list to derive their name from otherwise.
+  getCustomerById: (id: string) =>
+    api.get<ARInvoiceCustomerResult[]>('/ar-invoices/customers/search', { id }),
   get: (id: string) => api.get<ARInvoice>(`/ar-invoices/${id}`),
+  // Scenario 25 — print-ready envelope for the per-invoice detail page's
+  // Print/Download action, same PrintDocumentEnvelope shape Purchase Orders
+  // already use with printInventoryDocument().
+  getDocument: (id: string) => api.get<unknown>(`/ar-invoices/${id}/document`),
   create: (body: any) => api.post<ARInvoice>('/ar-invoices', body),
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
-  recordPayment: (id: string, body: any) =>
+  recordPayment: (id: string, body: RecordArPaymentInput) =>
     api.post<RecordPaymentResult>(`/ar-invoices/${id}/payments`, body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
@@ -326,6 +391,18 @@ export const ARInvoices = {
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
+export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'
+export interface CreditMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  deductionAmount: number
+}
 export interface CreditMemo {
   id: string
   memoNumber: string
@@ -340,10 +417,22 @@ export interface CreditMemo {
     status: string
   } | null
   memoDate: string
+  type: CreditMemoType
   amount: number
+  lines: CreditMemoLine[]
   reason?: string | null
   status: CreditMemoStatus
   journalEntryId?: string | null
+  /** Set when this memo was auto-created from an approved POS return/refund
+   * (Scenario 13 Part 3) rather than issued by hand. */
+  sourceReturnRequestId?: string | null
+}
+export interface CreateCreditMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  deductionAmount?: number
 }
 export const CreditMemos = {
   list: (params?: {
@@ -353,9 +442,74 @@ export const CreditMemos = {
     arInvoiceId?: string
   }) => api.get<{ items: CreditMemo[]; total: number }>('/credit-memos', params as any),
   get: (id: string) => api.get<CreditMemo>(`/credit-memos/${id}`),
-  issue: (body: { arInvoiceId: string; amount: number; reason?: string; memoDate?: string }) =>
-    api.post<CreditMemo>('/credit-memos', body),
+  issue: (body: {
+    arInvoiceId: string
+    type: CreditMemoType
+    lines: CreateCreditMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<CreditMemo>('/credit-memos', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
+}
+
+// ============ Debit Memos ============
+export type DebitMemoStatus = 'ISSUED' | 'VOID'
+export type DebitMemoType = 'unit_replacement' | 'billing_adjustment'
+export interface DebitMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  additionAmount: number
+}
+export interface DebitMemo {
+  id: string
+  memoNumber: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string } | null
+  arInvoiceId: string
+  arInvoice?: {
+    id: string
+    invoiceNumber: string
+    totalAmount: number
+    amountPaid: number
+    status: string
+  } | null
+  memoDate: string
+  type: DebitMemoType
+  amount: number
+  lines: DebitMemoLine[]
+  reason?: string | null
+  status: DebitMemoStatus
+  journalEntryId?: string | null
+}
+export interface CreateDebitMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  additionAmount?: number
+}
+export const DebitMemos = {
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    arInvoiceId?: string
+  }) => api.get<{ items: DebitMemo[]; total: number }>('/debit-memos', params as any),
+  get: (id: string) => api.get<DebitMemo>(`/debit-memos/${id}`),
+  issue: (body: {
+    arInvoiceId: string
+    type: DebitMemoType
+    lines: CreateDebitMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<DebitMemo>('/debit-memos', body),
+  void: (id: string) => api.post<DebitMemo>(`/debit-memos/${id}/void`, {}),
 }
 
 // ============ AP Bills ============

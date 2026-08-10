@@ -9,6 +9,8 @@ import {
 } from '../_hooks/usePos'
 import { RefreshCw, CreditCard, Plus, X, ChevronDown, History } from 'lucide-react'
 import type { GiftCard, IssueGiftCardInput, GiftCardHistoryEntry } from '@/src/schema/pos'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -31,6 +33,7 @@ function formatDate(s?: string | null) {
 }
 
 export default function GiftCardsPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.GIFT_CARDS_READ)
   const { data, isLoading, isFetching, refetch } = useGiftCards()
   const issueMutation = useIssueGiftCard()
   const voidMutation = useVoidGiftCard()
@@ -40,6 +43,8 @@ export default function GiftCardsPage() {
   const [voidReason, setVoidReason] = useState('')
   const [historyTarget, setHistoryTarget] = useState<GiftCard | null>(null)
   const [error, setError] = useState('')
+
+  if (status !== 'authorized' || !session) return null
 
   const cards: GiftCard[] = data?.data ?? []
 
