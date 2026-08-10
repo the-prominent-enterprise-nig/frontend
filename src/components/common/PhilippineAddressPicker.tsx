@@ -1,66 +1,31 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Check, AlertTriangle } from 'lucide-react'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-
-interface PhRegion {
-  region_code: string
-  region_name: string
-}
-interface PhProvince {
-  province_code: string
-  province_name: string
-  region_code: string
-}
-interface PhCity {
-  city_code: string
-  city_name: string
-  province_code: string
-}
-interface PhBarangay {
-  brgy_code: string
-  brgy_name: string
-  city_code: string
-}
-
-// Self-hosted under public/data/ph-address (see that folder) instead of the
-// select-philippines-address package, which hit a third-party GitHub Pages
-// host with no caching — 8-10s per level, even for the 2KB region file.
-// Each dataset is fetched once per page session (module-level cache, not
-// per-component-instance) and filtered client-side for every subsequent
-// selection, so switching regions/provinces/cities after the first load is
-// instant.
-let regionsCache: Promise<PhRegion[]> | null = null
-let provincesCache: Promise<PhProvince[]> | null = null
-let citiesCache: Promise<PhCity[]> | null = null
-let barangaysCache: Promise<PhBarangay[]> | null = null
-
-function fetchRegions(): Promise<PhRegion[]> {
-  regionsCache ??= fetch('/data/ph-address/region.json').then((r) => r.json())
-  return regionsCache
-}
-function fetchProvinces(): Promise<PhProvince[]> {
-  provincesCache ??= fetch('/data/ph-address/province.json').then((r) => r.json())
-  return provincesCache
-}
-function fetchCities(): Promise<PhCity[]> {
-  citiesCache ??= fetch('/data/ph-address/city.json').then((r) => r.json())
-  return citiesCache
-}
-function fetchBarangays(): Promise<PhBarangay[]> {
-  barangaysCache ??= fetch('/data/ph-address/barangay.json').then((r) => r.json())
-  return barangaysCache
-}
+import {
+  fetchRegions,
+  fetchProvinces,
+  fetchCities,
+  fetchBarangays,
+  type PhRegion,
+  type PhProvince,
+  type PhCity,
+  type PhBarangay,
+} from '@/src/libs/data/ph-address'
 
 /** Cash-register-style Philippine address picker — Region → Province →
  * City/Municipality → Barangay, each a searchable (type-to-filter) select
  * like Shopee/Lazada's address forms, plus a street/building line, composed
- * into one formatted string (the shape Customer.shippingAddress expects —
- * a single free-text field, not structured columns). */
+ * into one formatted string (the shape Customer.address expects — a single
+ * free-text field, not structured columns) AND the selected barangay's own
+ * brgy_code (Scenario 24 Part 2 — barangay names repeat across different
+ * cities/provinces nationwide, e.g. multiple "San Isidro"s, so a name alone
+ * can't be used as a reliable area key downstream; the code can). */
 export default function PhilippineAddressPicker({
   onChange,
 }: {
-  onChange: (formattedAddress: string) => void
+  onChange: (value: { address: string; barangayCode: string }) => void
 }) {
   const [regionList, setRegionList] = useState<PhRegion[]>([])
   const [provinceList, setProvinceList] = useState<PhProvince[]>([])
@@ -70,7 +35,10 @@ export default function PhilippineAddressPicker({
   const [regionCode, setRegionCode] = useState('')
   const [provinceCode, setProvinceCode] = useState('')
   const [cityCode, setCityCode] = useState('')
-  const [barangayName, setBarangayName] = useState('')
+  // Tracks the barangay's brgy_code, not its name — within one already
+  // city-filtered barangayList this is unambiguous, and it's what actually
+  // gets emitted upstream (see the composing effect below).
+  const [barangayCode, setBarangayCode] = useState('')
   const [street, setStreet] = useState('')
 
   const [loadingRegions, setLoadingRegions] = useState(true)
@@ -90,7 +58,7 @@ export default function PhilippineAddressPicker({
     setCityList([])
     setCityCode('')
     setBarangayList([])
-    setBarangayName('')
+    setBarangayCode('')
     if (!regionCode) return
     setLoadingProvinces(true)
     fetchProvinces()
@@ -102,7 +70,7 @@ export default function PhilippineAddressPicker({
     setCityList([])
     setCityCode('')
     setBarangayList([])
-    setBarangayName('')
+    setBarangayCode('')
     if (!provinceCode) return
     setLoadingCities(true)
     fetchCities()
@@ -112,7 +80,7 @@ export default function PhilippineAddressPicker({
 
   useEffect(() => {
     setBarangayList([])
-    setBarangayName('')
+    setBarangayCode('')
     if (!cityCode) return
     setLoadingBarangays(true)
     fetchBarangays()
@@ -120,19 +88,24 @@ export default function PhilippineAddressPicker({
       .finally(() => setLoadingBarangays(false))
   }, [cityCode])
 
-  // Compose and bubble up the formatted address whenever any part changes.
-  // Fires with '' (not a bare "Philippines") until the user has actually
-  // entered something — callers editing an existing address can ignore
-  // empty callbacks to avoid clobbering a pre-filled value before the user
-  // has touched this picker.
+  // Compose and bubble up the formatted address (plus the raw barangayCode,
+  // for area-based collector assignment) whenever any part changes. Fires
+  // with '' (not a bare "Philippines") until the user has actually entered
+  // something — callers editing an existing address can ignore empty
+  // callbacks to avoid clobbering a pre-filled value before the user has
+  // touched this picker.
   useEffect(() => {
     const region = regionList.find((r) => r.region_code === regionCode)?.region_name
     const province = provinceList.find((p) => p.province_code === provinceCode)?.province_name
     const city = cityList.find((c) => c.city_code === cityCode)?.city_name
+    const barangayName = barangayList.find((b) => b.brgy_code === barangayCode)?.brgy_name
     const realParts = [street, barangayName, city, province, region].filter(Boolean)
-    onChange(realParts.length === 0 ? '' : [...realParts, 'Philippines'].join(', '))
+    onChange({
+      address: realParts.length === 0 ? '' : [...realParts, 'Philippines'].join(', '),
+      barangayCode,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [street, regionCode, provinceCode, cityCode, barangayName])
+  }, [street, regionCode, provinceCode, cityCode, barangayCode])
 
   return (
     <div className="space-y-3">
@@ -185,16 +158,43 @@ export default function PhilippineAddressPicker({
           <label className="block text-[13px] font-medium text-gray-700">Barangay</label>
           <SearchableSelect
             className="mt-1"
-            value={barangayName}
-            onChange={setBarangayName}
+            value={barangayCode}
+            onChange={setBarangayCode}
             disabled={!cityCode}
             loading={loadingBarangays}
             loadingLabel="Loading barangays…"
             placeholder="Type to search barangay"
-            options={barangayList.map((b) => ({ value: b.brgy_name, label: b.brgy_name }))}
+            options={barangayList.map((b) => ({ value: b.brgy_code, label: b.brgy_name }))}
           />
         </div>
       </div>
+
+      {/* A typed street value and an actually-picked barangay can render
+       * identically once composed into the flat address string below (e.g.
+       * a real barangay literally named "PHHC Block 17" reads exactly like
+       * someone typing a street name) — found live, twice, as customers
+       * silently ending up with no barangayCode despite a complete-looking
+       * address. This makes which one actually happened unambiguous. */}
+      {cityCode && (
+        <p
+          className={`flex items-center gap-1.5 text-[12px] ${
+            barangayCode ? 'text-emerald-600' : 'text-amber-600'
+          }`}
+        >
+          {barangayCode ? (
+            <>
+              <Check className="h-3.5 w-3.5 shrink-0" />
+              Barangay selected: {barangayList.find((b) => b.brgy_code === barangayCode)?.brgy_name}
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              No barangay picked yet — select one above; typing it into the street line below
+              won&apos;t match it to a collector area.
+            </>
+          )}
+        </p>
+      )}
 
       <div>
         <label className="block text-[13px] font-medium text-gray-700">

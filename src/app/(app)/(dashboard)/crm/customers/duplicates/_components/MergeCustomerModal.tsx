@@ -21,7 +21,7 @@ const COMPARE_FIELDS: CompareField[] = [
   { key: 'employeeNumber', label: 'Employee ID' },
   { key: 'email', label: 'Email' },
   { key: 'phone', label: 'Phone' },
-  { key: 'shippingAddress', label: 'Address' },
+  { key: 'address', label: 'Address' },
   { key: 'taxId', label: 'Tax ID' },
   { key: 'groupId', label: 'Group ID' },
   { key: 'idType', label: 'ID Type' },

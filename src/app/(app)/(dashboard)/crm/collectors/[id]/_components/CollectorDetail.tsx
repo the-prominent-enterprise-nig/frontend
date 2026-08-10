@@ -2,10 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Banknote, Pencil } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Banknote, Pencil, Trash2 } from 'lucide-react'
 import { collectorsApi } from '@/src/libs/api/crm'
 import RecordRemittanceModal from '@/src/components/crm/RecordRemittanceModal'
 import type { CollectorDetail as CollectorDetailType } from '@/src/schema/crm/types'
+import {
+  fetchCities,
+  fetchBarangays,
+  type PhCity,
+  type PhBarangay,
+} from '@/src/libs/data/ph-address'
 
 const CATEGORY_COLORS: Record<string, string> = {
   A: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -35,15 +42,42 @@ export default function CollectorDetail({
   id,
   canEdit,
   canRemit,
+  canDelete,
 }: {
   id: string
   canEdit: boolean
   canRemit: boolean
+  canDelete: boolean
 }) {
+  const router = useRouter()
   const [collector, setCollector] = useState<CollectorDetailType | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [remitOpen, setRemitOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [allCities, setAllCities] = useState<PhCity[]>([])
+  const [allBarangays, setAllBarangays] = useState<PhBarangay[]>([])
+
+  useEffect(() => {
+    fetchCities().then((c) => setAllCities(Array.isArray(c) ? c : []))
+    fetchBarangays().then((b) => setAllBarangays(Array.isArray(b) ? b : []))
+  }, [])
+
+  async function handleDelete() {
+    if (!collector) return
+    if (!confirm(`Delete ${collector.name}? This can't be undone from here.`)) return
+    setDeleting(true)
+    setDeleteError(null)
+    const res = await collectorsApi.remove(id)
+    setDeleting(false)
+    if (res.success) {
+      router.push('/crm/collectors')
+      router.refresh()
+    } else {
+      setDeleteError(res.error ?? 'Failed to delete collector')
+    }
+  }
 
   function reload() {
     collectorsApi.get(id).then((res) => {
@@ -204,6 +238,31 @@ export default function CollectorDetail({
       </div>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Coverage areas</h2>
+        {collector.areas.length === 0 ? (
+          <p className="py-2 text-[13px] text-gray-400">
+            No areas assigned — this collector won&apos;t be auto-matched to installment accounts by
+            customer location.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {collector.areas.map((a) => {
+              const b = allBarangays.find((x) => x.brgy_code === a.barangayCode)
+              const city = b ? allCities.find((c) => c.city_code === b.city_code) : undefined
+              return (
+                <li
+                  key={a.barangayCode}
+                  className="inline-flex items-center rounded-full bg-prominent-purple-50 px-3 py-1 text-[12px] font-medium text-prominent-purple-700 ring-1 ring-inset ring-prominent-purple-200"
+                >
+                  {b ? `${b.brgy_name}${city ? `, ${city.city_name}` : ''}` : a.barangayCode}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Remittance history</h2>
         {collector.remittances.length === 0 && (
           <p className="py-4 text-center text-[13px] text-gray-400">No remittances recorded yet.</p>
@@ -232,6 +291,30 @@ export default function CollectorDetail({
           ))}
         </ul>
       </section>
+
+      {canDelete && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-5">
+          <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-md text-[13px] text-red-700">
+              Deleting {collector.name} is permanent and can&apos;t be undone from here.
+            </p>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              {deleting ? 'Deleting…' : 'Delete collector'}
+            </button>
+          </div>
+          {deleteError && (
+            <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-800">
+              {deleteError}
+            </p>
+          )}
+        </div>
+      )}
 
       <RecordRemittanceModal
         open={remitOpen}

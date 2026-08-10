@@ -35,6 +35,22 @@ const empty: FormState = {
   penalty: '',
 }
 
+type AccountSummary = {
+  customerName: string
+  listedCashPrice: number
+  downPayment: number
+  termMonths: number
+  miFactor: number
+  amountFinanced: number
+  monthlyInstallment: number
+  pnv: number
+  totalPrice: number
+}
+
+function peso(n: number): string {
+  return `₱${n.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+}
+
 export default function EditInstallmentAccountForm({ id }: { id: string }) {
   const router = useRouter()
   const [form, setForm] = useState<FormState>(empty)
@@ -48,6 +64,13 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [originalCategory, setOriginalCategory] = useState<InstallmentAccountCategory | ''>('')
+  const [summary, setSummary] = useState<AccountSummary | null>(null)
+
+  // Scenario 24 Part 4 follow-up — same area-based suggestion Create already
+  // has. Only auto-selects when this account genuinely has no collector yet
+  // (loaded collectorId is empty) — an already-assigned collector is never
+  // silently swapped out just because a "better" area match exists.
+  const [suggestedCollectorId, setSuggestedCollectorId] = useState<string | null>(null)
 
   useEffect(() => {
     // Guards against React Strict Mode's dev-mode double-effect-invocation
@@ -60,7 +83,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       installmentAccountsApi.get(id),
       getBranches(),
       collectorsApi.list({ limit: 200 }),
-    ]).then(([accountRes, branchesRes, collectorsRes]) => {
+    ]).then(async ([accountRes, branchesRes, collectorsRes]) => {
       if (cancelled) return
       if (branchesRes.success && branchesRes.data) setBranches(branchesRes.data.data)
       if (collectorsRes.success && collectorsRes.data) setCollectors(collectorsRes.data.data)
@@ -69,6 +92,17 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
         const a = accountRes.data
         setAccountNumber(a.accountNumber)
         setOriginalCategory(a.category ?? '')
+        setSummary({
+          customerName: a.customer?.name ?? '—',
+          listedCashPrice: Number(a.listedCashPrice),
+          downPayment: Number(a.downPayment),
+          termMonths: a.termMonths,
+          miFactor: Number(a.miFactor),
+          amountFinanced: Number(a.amountFinanced),
+          monthlyInstallment: Number(a.monthlyInstallment),
+          pnv: Number(a.pnv),
+          totalPrice: Number(a.totalPrice),
+        })
         setForm({
           branchId: a.branchId ?? '',
           collectorId: a.collectorId ?? '',
@@ -79,6 +113,14 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
           arrears: String(a.arrears ?? 0),
           penalty: String(a.penalty ?? 0),
         })
+
+        const suggestion = await installmentAccountsApi.suggestCollector(a.customerId)
+        if (cancelled) return
+        const suggestedId = suggestion.success ? (suggestion.data?.collectorId ?? null) : null
+        setSuggestedCollectorId(suggestedId)
+        if (suggestedId && !a.collectorId) {
+          setForm((f) => ({ ...f, collectorId: suggestedId }))
+        }
       } else {
         setServerError(accountRes.error ?? 'Installment account not found')
       }
@@ -151,9 +193,28 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
         Update branch/collector assignment, status, and collection tags.
       </p>
 
+      {summary && (
+        <div className="mt-6 max-w-2xl rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-6">
+          <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+            Account summary (set at creation, not editable here)
+          </h2>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+            <SummaryRow label="Customer" value={summary.customerName} />
+            <SummaryRow label="Term" value={`${summary.termMonths} months`} />
+            <SummaryRow label="MI factor" value={summary.miFactor.toString()} />
+            <SummaryRow label="Listed cash price" value={peso(summary.listedCashPrice)} />
+            <SummaryRow label="Down payment" value={peso(summary.downPayment)} />
+            <SummaryRow label="Amount financed" value={peso(summary.amountFinanced)} />
+            <SummaryRow label="Monthly installment" value={peso(summary.monthlyInstallment)} />
+            <SummaryRow label="PNV (total installments)" value={peso(summary.pnv)} />
+            <SummaryRow label="Total price" value={peso(summary.totalPrice)} />
+          </dl>
+        </div>
+      )}
+
       <form
         onSubmit={onSubmit}
-        className="mt-6 max-w-2xl space-y-5 rounded-xl border border-gray-200 bg-white p-4 sm:p-6"
+        className="mt-4 max-w-2xl space-y-5 rounded-xl border border-gray-200 bg-white p-4 sm:p-6"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -188,6 +249,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
               {collectors.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.stubNumber} — {c.name}
+                  {c.id === suggestedCollectorId ? ' — suggested' : ''}
                 </option>
               ))}
             </select>
@@ -326,6 +388,15 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-gray-500">{label}</dt>
+      <dd className="font-medium text-gray-900">{value}</dd>
     </div>
   )
 }

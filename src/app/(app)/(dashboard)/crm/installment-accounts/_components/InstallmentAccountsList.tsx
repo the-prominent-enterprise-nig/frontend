@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Plus, Search, Wallet, Calculator } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
@@ -71,6 +72,7 @@ function peso(amount: number | string): string {
 }
 
 export default function InstallmentAccountsList({ canCreate }: { canCreate: boolean }) {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
@@ -288,15 +290,12 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-gray-800">
                   {accounts.map((a) => (
-                    <tr key={a.id} className="transition-colors hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <Link
-                          href={`/crm/installment-accounts/${a.id}`}
-                          className="hover:text-prominent-orange-700 hover:underline"
-                        >
-                          {a.accountNumber}
-                        </Link>
-                      </td>
+                    <tr
+                      key={a.id}
+                      onClick={() => router.push(`/crm/installment-accounts/${a.id}`)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-900">{a.accountNumber}</td>
                       <td className="px-4 py-3 text-[13px] text-gray-700">
                         {a.customer ? a.customer.name : '—'}
                       </td>

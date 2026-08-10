@@ -43,6 +43,18 @@ export default function NewInstallmentAccountForm() {
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
+  // Scenario 24 Part 4 — area-based collector suggestion. Only pre-fills the
+  // Collector field once, right when a customer is picked — the effect below
+  // is keyed solely on customerId, so it never re-fires (and can't clobber a
+  // manual override) unless the customer itself changes again.
+  const [suggestedCollectorId, setSuggestedCollectorId] = useState<string | null>(null)
+  const [suggestionReason, setSuggestionReason] = useState<string | null>(null)
+
+  const setField = <K extends keyof CreateInstallmentAccountInput>(
+    key: K,
+    value: CreateInstallmentAccountInput[K]
+  ) => setForm((f) => ({ ...f, [key]: value }))
+
   useEffect(() => {
     getBranches().then((res) => {
       if (res.success && res.data) setBranches(res.data.data)
@@ -52,10 +64,24 @@ export default function NewInstallmentAccountForm() {
     })
   }, [])
 
-  const setField = <K extends keyof CreateInstallmentAccountInput>(
-    key: K,
-    value: CreateInstallmentAccountInput[K]
-  ) => setForm((f) => ({ ...f, [key]: value }))
+  useEffect(() => {
+    if (!form.customerId) {
+      setSuggestedCollectorId(null)
+      setSuggestionReason(null)
+      return
+    }
+    let cancelled = false
+    installmentAccountsApi.suggestCollector(form.customerId).then((res) => {
+      if (cancelled) return
+      const collectorId = res.success ? (res.data?.collectorId ?? null) : null
+      setSuggestedCollectorId(collectorId)
+      setSuggestionReason(res.success ? (res.data?.reason ?? null) : null)
+      if (collectorId) setField('collectorId', collectorId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [form.customerId])
 
   const preview = useMemo(() => {
     const lcp = Number(form.listedCashPrice) || 0
@@ -186,9 +212,20 @@ export default function NewInstallmentAccountForm() {
                 {collectors.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.stubNumber} — {c.name}
+                    {c.id === suggestedCollectorId ? ' — suggested' : ''}
                   </option>
                 ))}
               </select>
+              {suggestedCollectorId === null && suggestionReason === 'no_coverage_match' && (
+                <p className="mt-1 text-[12px] text-gray-500">
+                  No collector covers this customer&apos;s area — pick one manually.
+                </p>
+              )}
+              {suggestedCollectorId === null && suggestionReason === 'customer_has_no_barangay' && (
+                <p className="mt-1 text-[12px] text-gray-500">
+                  This customer has no address on file to match a collector by area.
+                </p>
+              )}
             </div>
           </div>
 

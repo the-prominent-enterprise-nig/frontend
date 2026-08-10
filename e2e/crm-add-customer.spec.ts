@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import {
   deleteCustomers,
   fillAllStable,
@@ -9,6 +9,36 @@ import {
 } from './utils'
 
 const NAME_PREFIX = 'E2E TestCustomer'
+
+// A real, stable Region → Province → City → Barangay chain from the
+// self-hosted PH address dataset (public/data/ph-address) — used to drive
+// PhilippineAddressPicker's cascading SearchableSelects end to end so the
+// test proves the actual brgy_code round-trips, not just the free-text
+// street line (which the original version of this test only covered).
+const PH_CHAIN = {
+  region: 'National Capital Region (NCR)',
+  province: 'Ncr, Second District',
+  city: 'Quezon City',
+  barangay: 'Alicia',
+  barangayCode: '137404001',
+}
+
+/** Drives PhilippineAddressPicker's SearchableSelect (type-ahead combobox,
+ * not a native <select>) — types the option's own label to narrow the list,
+ * then clicks the matching option button. Wrapped in toPass: selecting a
+ * parent level (e.g. Region) resets and reloads the next level's option
+ * list, so the child combobox isn't interactive until that settles. */
+async function pickAddressLevel(page: Page, fieldLabel: string, optionLabel: string) {
+  const combobox = page.getByPlaceholder(new RegExp(`Type to search ${fieldLabel}`, 'i'))
+  await expect(async () => {
+    await combobox.click()
+    await combobox.fill(optionLabel)
+    const option = page.getByRole('button', { name: optionLabel, exact: true })
+    await expect(option).toBeVisible({ timeout: 2_000 })
+    await option.click()
+    await expect(combobox).toHaveValue(optionLabel, { timeout: 2_000 })
+  }).toPass({ timeout: 15_000 })
+}
 
 // CRM — Add Customer (scenario step 1: "find or create the customer ... a
 // customer can exist without buying").
@@ -37,14 +67,24 @@ test.describe('CRM — Add Customer', () => {
       { locator: page.getByLabel('First name *'), value: firstName },
       { locator: page.getByLabel('Last name *'), value: lastName },
       { locator: page.getByLabel('Email'), value: `e2e.${uniqueSuffix}@example.com` },
-      // Only the free-text line is needed — PhilippineAddressPicker composes
-      // its output from whichever parts are non-empty, no need to drive the
-      // cascading Region/Province/City/Barangay selects for this.
       {
         locator: page.getByPlaceholder('e.g. Blk 3 Lot 12, Mabuhay St.'),
         value: streetAddress,
       },
     ])
+    // Scenario 24 Part 2: drive the cascading Region/Province/City/Barangay
+    // selects so the picker emits a real brgy_code, not just the free-text
+    // street line — proves the code actually round-trips end to end.
+    await pickAddressLevel(page, 'region', PH_CHAIN.region)
+    await pickAddressLevel(page, 'province', PH_CHAIN.province)
+    await pickAddressLevel(page, 'city', PH_CHAIN.city)
+    // Once a city is chosen but before a barangay is picked, the ambiguity
+    // warning shows — proves a typed street value can't be mistaken for an
+    // actual barangay pick (found live, 2026-08-10: a customer ended up with
+    // a complete-looking address but no barangayCode this exact way).
+    await expect(page.getByText('No barangay picked yet')).toBeVisible()
+    await pickAddressLevel(page, 'barangay', PH_CHAIN.barangay)
+    await expect(page.getByText(`Barangay selected: ${PH_CHAIN.barangay}`)).toBeVisible()
     // Phone is a PhoneInput (react-phone-number-input) — it reformats
     // whatever's typed, so it can't go through fillAllStable's exact-value
     // check and gets its own stable-fill helper instead.
@@ -73,15 +113,19 @@ test.describe('CRM — Add Customer', () => {
     }).toPass({ timeout: 20_000 })
     await expect(page.getByRole('heading', { name: fullName })).toBeVisible()
 
-    // Part 2 (scenario-02): billingAddress should mirror shippingAddress —
-    // Customer360 doesn't render billingAddress at all (it's an
-    // Accounting-side display concern), so check the API response directly.
+    // Scenario 24 Part 1: billingAddress/shippingAddress collapsed into one
+    // `address` column. Found live (2026-08-09): Customer360's Contact
+    // section never rendered it at all (even under the old field names) —
+    // fixed alongside the collapse, so check it shows on the profile, not
+    // just in the raw API response.
     const customerId = page.url().match(/\/crm\/customers\/([a-f0-9-]+)$/)?.[1]
     if (customerId) createdIds.push(customerId)
     const detailRes = await page.request.get(`/api/crm/customers/${customerId}`)
     const detail = await detailRes.json()
-    expect(detail.shippingAddress).toContain(streetAddress)
-    expect(detail.billingAddress).toBe(detail.shippingAddress)
+    expect(detail.address).toContain(streetAddress)
+    expect(detail.address).toContain(PH_CHAIN.barangay)
+    expect(detail.barangayCode).toBe(PH_CHAIN.barangayCode)
+    await expect(page.getByText(streetAddress, { exact: false })).toBeVisible()
 
     // Co-maker shows in the profile's read-only display.
     await expect(page.getByText('Co-maker (Guarantor)')).toBeVisible()
