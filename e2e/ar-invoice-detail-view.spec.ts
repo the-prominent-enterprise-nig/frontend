@@ -110,6 +110,9 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await page.request.patch(`/api/credit/applications/${application.id}/approve`)
 
   const cartSubtotal = item.sellingPrice
+  // Scenario 01 Gap 4 — installment sales require a down payment of at
+  // least 10% of the line's sale amount.
+  const downPayment = Math.round(cartSubtotal * 0.1 * 100) / 100
   const txRes = await page.request.post('/api/pos/transactions', {
     data: {
       sessionId,
@@ -117,7 +120,7 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
       invoiceType: 'installment',
       financingTermId: term.id,
       creditApplicationId: application.id,
-      downPayment: 0,
+      downPayment,
       subtotal: cartSubtotal,
       totalAmount: cartSubtotal,
       currency: 'PHP',
