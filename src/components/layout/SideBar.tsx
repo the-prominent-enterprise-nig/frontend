@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
+  ClipboardX,
   Coins,
   Contact,
   CreditCard,
@@ -389,6 +390,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
+        // Sidebar gate must match the page's own guard
+        // (POS_PERMISSIONS.TRANSACTIONS_OVERRIDE / getPending's backend
+        // check) — Cashier holds pos:sessions:read but not this, so the
+        // old 'pos:sessions:read' gate let them see the link and then get
+        // redirected/403'd once inside. Business Owner and Branch Manager
+        // both hold pos:transaction:override and keep access.
+        label: 'Cancellations',
+        href: '/pos/cancellation-requests',
+        icon: ClipboardX,
+        requiredPermission: 'pos:transaction:override',
+      },
+      {
         label: 'Void Requests',
         href: '/pos/void-requests',
         icon: ShieldCheck,
@@ -426,6 +439,32 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/branch-pricing',
         icon: HandCoins,
         requiredPermission: 'pos:branch-pricing:read',
+      },
+      {
+        label: 'Settings',
+        href: '/pos/settings',
+        icon: Key,
+        // The layout's actual guard (canManagePosSettings) is role-based —
+        // Business Owner or Branch Manager only — not permission-based, and
+        // Cashier holds pos:config:manage too (module-wildcard-minus-
+        // transaction:override grant), so gating on that let Cashier see
+        // the link and then get redirected to /403 once inside.
+        // pos:transaction:override is the one pos permission Cashier is
+        // deliberately denied, so it's the closest match to "Business
+        // Owner / Branch Manager only" the sidebar's permission model has.
+        requiredPermission: 'pos:transaction:override',
+        // Exact-match list, not a prefix check (see isActive below) — every
+        // /pos/settings/* sub-route needs its own explicit entry.
+        activeWhen: [
+          '/pos/settings',
+          '/pos/settings/general',
+          '/pos/settings/payment-methods',
+          '/pos/settings/terminals',
+          '/pos/settings/receipt-branding',
+          '/pos/settings/financing-terms',
+          '/pos/settings/queue-categories',
+          '/pos/settings/customer-display',
+        ],
       },
       {
         label: 'Cash-in-Transit',
