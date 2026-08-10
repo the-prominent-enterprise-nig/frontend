@@ -742,9 +742,9 @@ export default function CreateItemModal({
               from a legacy stock sheet. Leave blank to create the item with no stock.
             </div>
 
-            {/* Warehouse */}
+            {/* Branch */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
               <Controller
                 name="initialWarehouseId"
                 control={control}
@@ -757,7 +757,7 @@ export default function CreateItemModal({
                     <option value="">— None —</option>
                     {warehouses.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name}
+                        {w.branch?.name ?? w.name}
                       </option>
                     ))}
                   </select>

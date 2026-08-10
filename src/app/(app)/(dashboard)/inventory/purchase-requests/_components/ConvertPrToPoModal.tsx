@@ -148,10 +148,10 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Warehouse + Expected Delivery */}
+            {/* Branch + Expected Delivery */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
                 <Controller
                   name="warehouseId"
                   control={control}
@@ -161,10 +161,10 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                       value={field.value ?? ''}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     >
-                      <option value="">Select warehouse…</option>
+                      <option value="">Select branch…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.code} — {wh.name}
+                          {wh.branch?.name ?? wh.name}
                         </option>
                       ))}
                     </select>

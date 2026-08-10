@@ -129,10 +129,10 @@ export default function CreateReturnModal({
               )}
             </div>
 
-            {/* Warehouse */}
+            {/* Branch */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Return to Warehouse <span className="text-red-500">*</span>
+                Return to Branch <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="warehouseId"
@@ -142,10 +142,10 @@ export default function CreateReturnModal({
                     {...field}
                     className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   >
-                    <option value="">Select warehouse…</option>
+                    <option value="">Select branch…</option>
                     {warehouseOptions.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name}
+                        {w.branch?.name ?? w.name}
                       </option>
                     ))}
                   </select>

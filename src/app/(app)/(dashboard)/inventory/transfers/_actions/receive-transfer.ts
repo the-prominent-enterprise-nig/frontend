@@ -53,7 +53,7 @@ export async function receiveTransfer(
   const message =
     result.data?.status === 'partially_received'
       ? 'Transfer partially received — discrepancy recorded, stock added only for received quantities'
-      : 'Transfer received — stock added to destination warehouse'
+      : 'Transfer received — stock added to destination branch'
 
   return { success: true, data: { status: result.data?.status ?? 'received' }, message }
 }

@@ -112,6 +112,9 @@ const TransferWarehouseSchema = z.object({
   name: z.string(),
   code: z.string(),
   branchId: z.string().nullable().optional(),
+  // Each branch has exactly one warehouse — the UI displays this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const TransferLineSchema = z.object({

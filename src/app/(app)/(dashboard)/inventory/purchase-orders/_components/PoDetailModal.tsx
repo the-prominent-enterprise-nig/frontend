@@ -92,8 +92,10 @@ export function PoDetailModal({ po, onClose }: Props) {
 
           {/* Meta grid */}
           <div className="grid grid-cols-2 gap-3">
-            <InfoRow label="Branch" value={po.branch?.name ?? 'Tenant-wide'} />
-            <InfoRow label="Warehouse" value={po.warehouse?.name ?? '—'} />
+            <InfoRow
+              label="Branch"
+              value={po.branch?.name ?? po.warehouse?.name ?? 'Tenant-wide'}
+            />
             <InfoRow label="Order Date" value={fmtDate(po.orderDate)} />
             <InfoRow label="Expected Delivery" value={fmtDate(po.expectedDeliveryDate)} />
             <InfoRow
