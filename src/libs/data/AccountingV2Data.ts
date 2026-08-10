@@ -391,6 +391,18 @@ export const ARInvoices = {
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
+export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'
+export interface CreditMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  deductionAmount: number
+}
 export interface CreditMemo {
   id: string
   memoNumber: string
@@ -405,10 +417,19 @@ export interface CreditMemo {
     status: string
   } | null
   memoDate: string
+  type: CreditMemoType
   amount: number
+  lines: CreditMemoLine[]
   reason?: string | null
   status: CreditMemoStatus
   journalEntryId?: string | null
+}
+export interface CreateCreditMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  deductionAmount?: number
 }
 export const CreditMemos = {
   list: (params?: {
@@ -418,8 +439,13 @@ export const CreditMemos = {
     arInvoiceId?: string
   }) => api.get<{ items: CreditMemo[]; total: number }>('/credit-memos', params as any),
   get: (id: string) => api.get<CreditMemo>(`/credit-memos/${id}`),
-  issue: (body: { arInvoiceId: string; amount: number; reason?: string; memoDate?: string }) =>
-    api.post<CreditMemo>('/credit-memos', body),
+  issue: (body: {
+    arInvoiceId: string
+    type: CreditMemoType
+    lines: CreateCreditMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<CreditMemo>('/credit-memos', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
 }
 
