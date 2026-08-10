@@ -10,7 +10,8 @@ export interface CustomerExtraFieldsValues {
   businessCategory: string
   employeeNumber: string
   birthday: string
-  shippingAddress: string
+  address: string
+  barangayCode: string
   taxId: string
   isTaxExempt: boolean
   taxExemptionRef: string
@@ -171,13 +172,15 @@ export default function CustomerExtraFields({
       {/* Full width: address, with notes stacked underneath, smaller */}
       <div className="col-span-2">
         <label className="mb-1 block text-[13px] font-medium text-gray-700">Address</label>
-        {showAddressHint && values.shippingAddress && (
+        {showAddressHint && values.address && (
           <p className="mb-1.5 text-xs text-gray-500">
-            Current: <span className="text-gray-700">{values.shippingAddress}</span> — pick below to
-            replace it.
+            Current: <span className="text-gray-700">{values.address}</span> — pick below to replace
+            it.
           </p>
         )}
-        <PhilippineAddressPicker onChange={(v) => onChange({ shippingAddress: v })} />
+        <PhilippineAddressPicker
+          onChange={(v) => onChange({ address: v.address, barangayCode: v.barangayCode })}
+        />
 
         <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">Notes</label>
         <textarea

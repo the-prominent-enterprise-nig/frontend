@@ -25,6 +25,8 @@ import type {
   HandoverSessionInput,
   SessionReconciliation,
 } from '@/src/schema/pos'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 const statusColor: Record<string, string> = {
   open: 'bg-green-100 text-green-700',
@@ -45,6 +47,7 @@ type ModalState =
   | { type: 'reconciliation'; session: PosSession; data: SessionReconciliation }
 
 export default function SessionsPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.SESSIONS_READ)
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
   const { data, isLoading, isFetching, refetch } = useSessions(branchFilter)
@@ -54,6 +57,8 @@ export default function SessionsPage() {
 
   const [modal, setModal] = useState<ModalState>({ type: 'none' })
   const [error, setError] = useState('')
+
+  if (status !== 'authorized' || !session) return null
 
   const sessions: PosSession[] = data?.data ?? []
 

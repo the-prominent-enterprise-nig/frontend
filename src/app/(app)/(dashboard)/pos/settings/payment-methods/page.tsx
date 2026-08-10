@@ -21,6 +21,8 @@ import {
   CreditCard,
 } from 'lucide-react'
 import type { PaymentMethodConfig, CreateCustomPaymentMethodInput } from '@/src/schema/pos'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ function Toggle({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PaymentMethodsPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.CONFIG_READ)
   const { data, isLoading, isFetching, refetch } = usePaymentMethods()
   const updateMutation = useUpdatePaymentMethod()
   const deleteMutation = useDeletePaymentMethod()
@@ -90,6 +93,8 @@ export default function PaymentMethodsPage() {
 
   // Delete confirm
   const [deleteTarget, setDeleteTarget] = useState<PaymentMethodConfig | null>(null)
+
+  if (status !== 'authorized' || !session) return null
 
   // ─── Toggle ───────────────────────────────────────────────────────────────
 

@@ -79,9 +79,18 @@ export default function TransactionsList({ session }: Props) {
     status: '',
     dateFrom: '',
     dateTo: '',
-    transactionNumber: '',
   })
   const [applied, setApplied] = useState(filters)
+  // Scenario 23 Gap 3 — kept separate from filters/applied above: the
+  // Type/Status/Date filters still wait for an explicit Apply click (you're
+  // usually setting several before submitting), but a plain search box
+  // should just search as you stop typing, no button needed.
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400)
+    return () => clearTimeout(timer)
+  }, [search])
   const [detail, setDetail] = useState<DetailModal>({ type: 'none' })
   const [voidTarget, setVoidTarget] = useState<PosTransaction | null>(null)
   const [voidError, setVoidError] = useState('')
@@ -101,7 +110,11 @@ export default function TransactionsList({ session }: Props) {
 
   const { data, isLoading, isFetching, refetch } = useTransactions(
     Object.fromEntries(
-      Object.entries({ ...applied, branchId: branchId ?? '' }).filter(([, v]) => v !== '')
+      Object.entries({
+        ...applied,
+        transactionNumber: debouncedSearch,
+        branchId: branchId ?? '',
+      }).filter(([, v]) => v !== '')
     ) as Record<string, string>
   )
 
@@ -200,7 +213,13 @@ export default function TransactionsList({ session }: Props) {
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex-1 min-w-48">
-            <label className="mb-1 block text-xs font-semibold text-gray-600">Transaction #</label>
+            {/* Scenario 23 Gap 3 — unified search: matches the transaction
+                number OR any invoice number it produced, so staff starting
+                from either a receipt's transaction # or a bank memo's
+                invoice # can find the same transaction here. */}
+            <label className="mb-1 block text-xs font-semibold text-gray-600">
+              Transaction # or Invoice #
+            </label>
             <div className="relative">
               <Search
                 size={15}
@@ -210,8 +229,8 @@ export default function TransactionsList({ session }: Props) {
                 className="input"
                 style={{ paddingLeft: '2.25rem' }}
                 placeholder="Search…"
-                value={filters.transactionNumber}
-                onChange={(e) => setFilters((p) => ({ ...p, transactionNumber: e.target.value }))}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
               />
             </div>
           </div>
@@ -278,15 +297,11 @@ export default function TransactionsList({ session }: Props) {
           </button>
           <button
             onClick={() => {
-              const cleared = {
-                transactionType: '',
-                status: '',
-                dateFrom: '',
-                dateTo: '',
-                transactionNumber: '',
-              }
+              const cleared = { transactionType: '', status: '', dateFrom: '', dateTo: '' }
               setFilters(cleared)
               setApplied(cleared)
+              setSearch('')
+              setDebouncedSearch('')
             }}
             className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
           >
@@ -929,6 +944,39 @@ function TransactionDetail({
                 </div>
               )}
 
+              {/* Scenario 23 Gap 1 — invoice(s) this transaction produced,
+                  one row per invoice (developer-confirmed UI convention). A
+                  charge sale has exactly one; an installment sale has one
+                  per due date per financing term used. */}
+              {tx.invoices && tx.invoices.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Invoices</p>
+                  <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
+                    {tx.invoices.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <p className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</p>
+                          <p className="text-[11px] text-gray-400">
+                            {inv.source === 'charge'
+                              ? 'Charge invoice'
+                              : `Installment ${inv.lineNumber}/${inv.totalLines} · ${inv.termMonths} mo · due ${new Date(inv.dueDate).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">
+                            {formatCurrency(inv.totalAmount)}
+                          </span>
+                          <InvoiceStatusBadge status={inv.status} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {receiptMsg && (
                 <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
                   {receiptMsg}
@@ -1335,5 +1383,36 @@ function Row({
       <span>{label}</span>
       <span>{value}</span>
     </div>
+  )
+}
+
+// Scenario 23 Gap 1 — same status vocabulary/styling as Customer360's
+// InstallmentStatusBadge (crm/customers/[id]/_components/Customer360.tsx),
+// kept as a local copy rather than a cross-module import (POS importing
+// from a CRM page component would be the wrong dependency direction).
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  SENT: 'Due',
+  PARTIAL: 'Partially Paid',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  CANCELLED: 'Cancelled',
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    PAID: 'bg-green-100 text-green-700',
+    PARTIAL: 'bg-amber-100 text-amber-700',
+    OVERDUE: 'bg-red-100 text-red-700',
+    SENT: 'bg-gray-100 text-gray-600',
+    DRAFT: 'bg-gray-100 text-gray-500',
+    CANCELLED: 'bg-gray-100 text-gray-400',
+  }
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
+    >
+      {INVOICE_STATUS_LABELS[status] ?? status}
+    </span>
   )
 }

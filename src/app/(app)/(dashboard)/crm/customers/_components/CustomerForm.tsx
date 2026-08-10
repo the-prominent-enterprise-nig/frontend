@@ -37,7 +37,8 @@ type FormState = {
   taxExemptionRef: string
   email: string
   phone: string
-  shippingAddress: string
+  address: string
+  barangayCode: string
   creditLimit: string
   groupId: string
   sourceChannel: CustomerSourceChannel
@@ -63,7 +64,8 @@ const empty: FormState = {
   taxExemptionRef: '',
   email: '',
   phone: '',
-  shippingAddress: '',
+  address: '',
+  barangayCode: '',
   creditLimit: '',
   groupId: '',
   sourceChannel: 'pos_walkin',
@@ -130,7 +132,8 @@ export default function CustomerForm({ id }: { id?: string }) {
           taxExemptionRef: c.taxExemptionRef ?? '',
           email: c.email ?? '',
           phone: c.phone ?? '',
-          shippingAddress: c.shippingAddress ?? '',
+          address: c.address ?? '',
+          barangayCode: c.barangayCode ?? '',
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
           sourceChannel: c.sourceChannel,
@@ -221,12 +224,8 @@ export default function CustomerForm({ id }: { id?: string }) {
       taxExemptionRef: form.taxExemptionRef || undefined,
       email: form.email || undefined,
       phone: form.phone,
-      shippingAddress: form.shippingAddress || undefined,
-      // Only one address is captured today (no separate billing/shipping
-      // concept in this form) — mirror it into billingAddress too so it's
-      // not silently blank everywhere else the field is shown (e.g. the
-      // Accounting customers table), matching what Accounting/POS already do.
-      billingAddress: form.shippingAddress || undefined,
+      address: form.address || undefined,
+      barangayCode: form.barangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
       notes: form.notes || undefined,

@@ -17,6 +17,7 @@ export default async function CollectorDetailPage({ params }: { params: Promise<
       id={id}
       canEdit={can(session, CRM_PERMISSIONS.COLLECTORS_UPDATE)}
       canRemit={can(session, CRM_PERMISSIONS.COLLECTORS_REMIT)}
+      canDelete={can(session, CRM_PERMISSIONS.COLLECTORS_DELETE)}
     />
   )
 }

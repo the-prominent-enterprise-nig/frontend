@@ -234,6 +234,11 @@ export const installmentAccountsApi = {
   update: (id: string, body: UpdateInstallmentAccountInput) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`, body),
   remove: (id: string) => api.delete(`/crm/installment-accounts/${id}`),
+  suggestCollector: (customerId: string) =>
+    api.get<{ collectorId: string | null; reason: string }>(
+      '/crm/installment-accounts/suggest-collector',
+      { customerId }
+    ),
   earlyPayoff: (id: string, body: EarlyPayoffInput) =>
     api.post<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/early-payoff`, body),
   getEarlyPayoffQuote: (id: string) =>

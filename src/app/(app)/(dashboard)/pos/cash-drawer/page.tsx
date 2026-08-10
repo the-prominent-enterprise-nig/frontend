@@ -7,6 +7,8 @@ import type { CashDrawerEvent, CreateCashDrawerEventInput } from '@/src/schema/p
 import { PosDateTime, PosDateShort } from '../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
 const eventTypeLabel: Record<string, string> = {
   no_sale_open: 'No Sale / Open',
@@ -34,6 +36,7 @@ function formatCurrency(n?: number | null) {
 }
 
 export default function CashDrawerPage() {
+  const { session, status } = useRequirePermission(POS_PERMISSIONS.CASH_DRAWER_READ)
   const [activeSessionId, setActiveSessionId] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [error, setError] = useState('')
@@ -46,6 +49,8 @@ export default function CashDrawerPage() {
   } = useSessions(branchId ? { branchId } : undefined)
   const { data, isLoading, isFetching, refetch } = useCashDrawerEvents(activeSessionId)
   const createMutation = useCreateCashDrawerEvent()
+
+  if (status !== 'authorized' || !session) return null
 
   const sessions = sessionsData?.data ?? []
   const events: CashDrawerEvent[] = data?.data ?? []

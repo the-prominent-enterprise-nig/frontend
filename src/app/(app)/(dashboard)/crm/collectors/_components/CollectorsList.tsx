@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Plus, Search, HandCoins } from 'lucide-react'
 import { collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
@@ -25,6 +26,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
+  const router = useRouter()
   const [collectors, setCollectors] = useState<Collector[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [search, setSearch] = useState('')
@@ -174,15 +176,12 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-gray-800">
                   {collectors.map((c) => (
-                    <tr key={c.id} className="transition-colors hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        <Link
-                          href={`/crm/collectors/${c.id}`}
-                          className="hover:text-prominent-orange-700 hover:underline"
-                        >
-                          {c.stubNumber}
-                        </Link>
-                      </td>
+                    <tr
+                      key={c.id}
+                      onClick={() => router.push(`/crm/collectors/${c.id}`)}
+                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-900">{c.stubNumber}</td>
                       <td className="px-4 py-3">{c.name}</td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {branchName(c.branchId) ?? <span className="text-gray-400">—</span>}

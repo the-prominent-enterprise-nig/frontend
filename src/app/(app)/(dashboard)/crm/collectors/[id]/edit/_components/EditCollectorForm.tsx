@@ -8,12 +8,14 @@ import { collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../../../_actions/get-branches'
 import { updateCollectorSchema, type UpdateCollectorInput } from '@/src/schema/crm/collector'
 import type { CollectorStatus } from '@/src/schema/crm/types'
+import CollectorAreaPicker from '@/src/components/crm/CollectorAreaPicker'
 
 type FormState = {
   stubNumber: string
   name: string
   branchId: string
   status: CollectorStatus
+  areaBarangayCodes: string[]
 }
 
 const empty: FormState = {
@@ -21,6 +23,7 @@ const empty: FormState = {
   name: '',
   branchId: '',
   status: 'active',
+  areaBarangayCodes: [],
 }
 
 export default function EditCollectorForm({ id }: { id: string }) {
@@ -49,6 +52,7 @@ export default function EditCollectorForm({ id }: { id: string }) {
           name: c.name,
           branchId: c.branchId ?? '',
           status: c.status,
+          areaBarangayCodes: c.areas.map((a) => a.barangayCode),
         })
       } else {
         setServerError(collectorRes.error ?? 'Collector not found')
@@ -72,6 +76,7 @@ export default function EditCollectorForm({ id }: { id: string }) {
       name: form.name,
       branchId: form.branchId || undefined,
       status: form.status,
+      areaBarangayCodes: form.areaBarangayCodes,
     }
 
     const parsed = updateCollectorSchema.safeParse(payload)
@@ -167,6 +172,18 @@ export default function EditCollectorForm({ id }: { id: string }) {
               <option value="inactive">Inactive</option>
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-medium text-gray-700">Coverage areas</label>
+          <p className="mt-0.5 mb-2 text-[12px] text-gray-500">
+            Barangays this collector covers — used to auto-assign or filter collectors when creating
+            an installment account for a customer in one of these areas.
+          </p>
+          <CollectorAreaPicker
+            value={form.areaBarangayCodes}
+            onChange={(next) => setField('areaBarangayCodes', next)}
+          />
         </div>
 
         {serverError && (

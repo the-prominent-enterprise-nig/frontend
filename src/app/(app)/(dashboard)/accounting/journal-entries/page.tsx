@@ -1,5 +1,6 @@
-import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { requirePermission } from '@/src/libs/guards/require-permission'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import JournalEntriesList from './_components/JournalEntriesList'
 
 export const metadata = {
@@ -8,11 +9,11 @@ export const metadata = {
 
 export default async function JournalEntriesPage() {
   const session = await getSessionOrNull()
-  if (!session) redirect('/login')
+  const user = requirePermission(session, ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ)
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <JournalEntriesList session={session} />
+      <JournalEntriesList session={user} />
     </div>
   )
 }
