@@ -423,6 +423,9 @@ export interface CreditMemo {
   reason?: string | null
   status: CreditMemoStatus
   journalEntryId?: string | null
+  /** Set when this memo was auto-created from an approved POS return/refund
+   * (Scenario 13 Part 3) rather than issued by hand. */
+  sourceReturnRequestId?: string | null
 }
 export interface CreateCreditMemoLineInput {
   itemId: string

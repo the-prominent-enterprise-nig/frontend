@@ -231,6 +231,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
       },
       {
+        label: 'Credit Memos',
+        href: '/accounting/credit-memos',
+        icon: Undo2,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_READ,
+      },
+      {
         label: 'AP Bills',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
