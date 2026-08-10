@@ -452,6 +452,66 @@ export const CreditMemos = {
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
 }
 
+// ============ Debit Memos ============
+export type DebitMemoStatus = 'ISSUED' | 'VOID'
+export type DebitMemoType = 'unit_replacement' | 'billing_adjustment'
+export interface DebitMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  additionAmount: number
+}
+export interface DebitMemo {
+  id: string
+  memoNumber: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string } | null
+  arInvoiceId: string
+  arInvoice?: {
+    id: string
+    invoiceNumber: string
+    totalAmount: number
+    amountPaid: number
+    status: string
+  } | null
+  memoDate: string
+  type: DebitMemoType
+  amount: number
+  lines: DebitMemoLine[]
+  reason?: string | null
+  status: DebitMemoStatus
+  journalEntryId?: string | null
+}
+export interface CreateDebitMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  additionAmount?: number
+}
+export const DebitMemos = {
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    arInvoiceId?: string
+  }) => api.get<{ items: DebitMemo[]; total: number }>('/debit-memos', params as any),
+  get: (id: string) => api.get<DebitMemo>(`/debit-memos/${id}`),
+  issue: (body: {
+    arInvoiceId: string
+    type: DebitMemoType
+    lines: CreateDebitMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<DebitMemo>('/debit-memos', body),
+  void: (id: string) => api.post<DebitMemo>(`/debit-memos/${id}/void`, {}),
+}
+
 // ============ AP Bills ============
 export interface APBillPayment {
   id: string

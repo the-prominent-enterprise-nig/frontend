@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  FilePlus,
   FileSpreadsheet,
   ClipboardCheck,
   Funnel,
@@ -235,6 +236,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/credit-memos',
         icon: Undo2,
         requiredPermission: ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_READ,
+      },
+      {
+        label: 'Debit Memos',
+        href: '/accounting/debit-memos',
+        icon: FilePlus,
+        requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
       },
       {
         label: 'AP Bills',
