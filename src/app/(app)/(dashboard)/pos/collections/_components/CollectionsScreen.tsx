@@ -145,9 +145,13 @@ export default function CollectionsScreen() {
   const [query, setQuery] = useState('')
   const [branchId, setBranchId] = useState('')
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
-  const [collectingLine, setCollectingLine] = useState<InstallmentScheduleLineWithInvoice | null>(
-    null
-  )
+  const [collectingLine, setCollectingLine] = useState<{
+    line: InstallmentScheduleLineWithInvoice
+    // Suggested rebate (PPD) for this due — sourced from the parent
+    // schedule's linked InstallmentAccount, since the line itself doesn't
+    // carry it. Null when the schedule has no linked account.
+    suggestedRebate: number | null
+  } | null>(null)
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
@@ -273,66 +277,107 @@ export default function CollectionsScreen() {
                         {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
                       </span>
                     </div>
-                    <ul className="divide-y divide-zinc-100">
-                      {s.lines.map((line) => {
-                        // Fully paid dues can no longer be collected against
-                        // at all through this screen — no more overpayment
-                        // entry via a stray click here. A genuine correction
-                        // (e.g. reversing a bad payment) goes through
-                        // Accounting → AR Invoices instead.
-                        const isFullyPaid = line.arInvoice.status === 'PAID'
-                        const collectable =
-                          !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) && !isFullyPaid
-                        const collectedToday = paidToday(line)
-                        return (
-                          <li
-                            key={line.lineNumber}
-                            className="flex items-center justify-between gap-3 px-5 py-3"
-                          >
-                            <div className="min-w-0">
-                              <div className="text-[13px] text-zinc-800">
-                                Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                                {fmtDate(line.arInvoice.dueDate)}
-                              </div>
-                              <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                <StatusBadge status={line.arInvoice.status} />
-                                <span>
-                                  {fmtMoney(line.arInvoice.amountPaid)} of{' '}
-                                  {fmtMoney(line.arInvoice.totalAmount)} paid
-                                </span>
-                              </div>
-                            </div>
-                            {isFullyPaid && (
-                              <span
-                                title="This due is already fully paid — any additional amount would be an overpayment, and this screen no longer allows recording one. If a correction is needed (e.g. reversing a mistaken payment), use Accounting → AR Invoices."
-                                className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                    {(() => {
+                      // Dues are settled in order — the earliest line that
+                      // isn't PAID/CANCELLED yet is the only one collectible.
+                      // Backed by a matching hard block server-side
+                      // (ar-invoices.service.ts's recordPayment()), so this
+                      // is UI convenience, not the only guard.
+                      const nextDueLineNumber = s.lines.find(
+                        (l) => !['PAID', 'CANCELLED'].includes(l.arInvoice.status)
+                      )?.lineNumber
+                      return (
+                        <ul className="divide-y divide-zinc-100">
+                          {s.lines.map((line) => {
+                            // Fully paid dues can no longer be collected against
+                            // at all through this screen — no more overpayment
+                            // entry via a stray click here. A genuine correction
+                            // (e.g. reversing a bad payment) goes through
+                            // Accounting → AR Invoices instead.
+                            const isFullyPaid = line.arInvoice.status === 'PAID'
+                            const isNextDue = line.lineNumber === nextDueLineNumber
+                            const collectable =
+                              !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) &&
+                              !isFullyPaid &&
+                              isNextDue
+                            const collectedToday = paidToday(line)
+                            return (
+                              <li
+                                key={line.lineNumber}
+                                className="flex items-center justify-between gap-3 px-5 py-3"
                               >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Paid
-                              </span>
-                            )}
-                            {collectable && collectedToday && (
-                              <span
-                                title="A payment was already collected for this due today — try again tomorrow, or cancel it from Accounting → AR Invoices if it was a mistake."
-                                className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Collected today
-                              </span>
-                            )}
-                            {collectable && !collectedToday && (
-                              <button
-                                onClick={() => setCollectingLine(line)}
-                                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
-                              >
-                                <Banknote className="h-3.5 w-3.5" />
-                                Collect
-                              </button>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ul>
+                                <div className="min-w-0">
+                                  <div className="text-[13px] text-zinc-800">
+                                    Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                                    {fmtDate(line.arInvoice.dueDate)}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                                    <StatusBadge status={line.arInvoice.status} />
+                                    <span>
+                                      {fmtMoney(line.arInvoice.amountPaid)} of{' '}
+                                      {fmtMoney(line.arInvoice.totalAmount)} paid
+                                    </span>
+                                  </div>
+                                </div>
+                                {isFullyPaid && (
+                                  <span
+                                    title="This due is already fully paid — any additional amount would be an overpayment, and this screen no longer allows recording one. If a correction is needed (e.g. reversing a mistaken payment), use Accounting → AR Invoices."
+                                    className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    Paid
+                                  </span>
+                                )}
+                                {collectable && collectedToday && (
+                                  <span
+                                    title="A payment was already collected for this due today — try again tomorrow, or cancel it from Accounting → AR Invoices if it was a mistake."
+                                    className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    Collected today
+                                  </span>
+                                )}
+                                {collectable && !collectedToday && (
+                                  <button
+                                    onClick={() =>
+                                      setCollectingLine({
+                                        line,
+                                        // ppd comes over the wire as a string (Prisma Decimal JSON
+                                        // serialization) — coerce explicitly, same convention this
+                                        // codebase already uses for downPayment/floorPrice/minQty.
+                                        suggestedRebate:
+                                          s.installmentAccount?.ppd != null
+                                            ? Number(s.installmentAccount.ppd)
+                                            : null,
+                                      })
+                                    }
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
+                                  >
+                                    <Banknote className="h-3.5 w-3.5" />
+                                    Collect
+                                  </button>
+                                )}
+                                {!isFullyPaid &&
+                                  !isNextDue &&
+                                  !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) && (
+                                    <span
+                                      title={
+                                        nextDueLineNumber != null
+                                          ? `Payment ${nextDueLineNumber} must be collected first — dues are settled in order.`
+                                          : undefined
+                                      }
+                                      className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[12px] font-semibold text-zinc-400"
+                                    >
+                                      <Banknote className="h-3.5 w-3.5" />
+                                      Locked
+                                    </span>
+                                  )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )
+                    })()}
                   </div>
                 ))}
             </div>
@@ -342,7 +387,8 @@ export default function CollectionsScreen() {
 
       {collectingLine && (
         <CollectPaymentModal
-          line={collectingLine}
+          line={collectingLine.line}
+          suggestedRebate={collectingLine.suggestedRebate}
           customerName={customer?.name}
           defaultBranchId={branchId || undefined}
           onClose={() => setCollectingLine(null)}
@@ -364,12 +410,16 @@ export default function CollectionsScreen() {
 
 function CollectPaymentModal({
   line,
+  suggestedRebate,
   customerName,
   defaultBranchId,
   onClose,
   onCollected,
 }: {
   line: InstallmentScheduleLineWithInvoice
+  /** Suggested rebate (PPD) for this due, from the schedule's linked
+   * InstallmentAccount — null if there's no linked account. */
+  suggestedRebate: number | null
   customerName?: string
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
@@ -392,8 +442,11 @@ function CollectPaymentModal({
     // outstanding is always a valid non-negative number (Math.max(...) above),
     // so this never needs a `|| ''` fallback — that idiom would blank the
     // field out for a legitimately-zero outstanding balance (0 is falsy).
-    amount: String(outstanding),
+    // Nets out the suggested rebate so accepting both defaults as-is settles
+    // the due exactly, rather than over-collecting (cash + rebate > owed).
+    amount: String(Math.max(Math.round((outstanding - (suggestedRebate ?? 0)) * 100) / 100, 0)),
     withholdingAmount: '0',
+    rebateAmount: String(suggestedRebate ?? 0),
     paymentDate: todayIso(),
     method: 'CASH' as PaymentMethod,
     reference: '',
@@ -443,8 +496,12 @@ function CollectPaymentModal({
       })
   }, [form.branchId])
 
-  const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
+  const totalApplied =
+    (Number(form.amount) || 0) +
+    (Number(form.withholdingAmount) || 0) +
+    (Number(form.rebateAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01
+  const rebateExceedsCap = (Number(form.rebateAmount) || 0) > (suggestedRebate ?? 0) + 0.01
   const isBackdatedOrPostdated = !isToday(form.paymentDate)
   // Defense-in-depth against the exact-same scenario the list view already
   // hides "Collect" for (see paidToday() there) — but keyed off whichever
@@ -462,6 +519,7 @@ function CollectPaymentModal({
       ...form,
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
+      rebateAmount: Number(form.rebateAmount || 0),
       branchId: form.branchId || undefined,
       collectorId: form.collectorId || undefined,
     })
@@ -606,6 +664,30 @@ function CollectPaymentModal({
             )}
 
             <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Rebate (Prompt Payment Discount)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.rebateAmount}
+                onChange={(e) => setForm({ ...form, rebateAmount: e.target.value })}
+                className={fieldClass}
+              />
+              <p className="mt-1 text-[12px] text-zinc-400">
+                {suggestedRebate
+                  ? `Up to ${fmtMoney(suggestedRebate)} for this account.`
+                  : 'No rebate available on this due.'}
+              </p>
+              {rebateExceedsCap && (
+                <p className="mt-1 text-[12px] font-medium text-red-600">
+                  Rebate can&apos;t exceed {fmtMoney(suggestedRebate ?? 0)} for this account.
+                </p>
+              )}
+            </div>
+
+            <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
               <select
                 value={form.method}
@@ -673,7 +755,7 @@ function CollectPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || isFullyPaid || blockedForChosenDate}
+              disabled={submitting || isFullyPaid || blockedForChosenDate || rebateExceedsCap}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

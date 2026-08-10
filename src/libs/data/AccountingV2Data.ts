@@ -286,6 +286,7 @@ export interface ARPayment {
   arInvoiceId: string
   amount: number
   withholdingAmount: number
+  rebateAmount: number
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
@@ -308,6 +309,7 @@ export interface RecordArPaymentInput {
   reference?: string
   notes?: string
   withholdingAmount?: number
+  rebateAmount?: number
   bankAccountId?: string
   branchId?: string
   collectorId?: string

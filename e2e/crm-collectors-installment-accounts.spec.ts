@@ -672,13 +672,17 @@ test.describe('CRM — Installment Accounts', () => {
           { locator: page.getByLabel('Amount (₱) *'), value: '1800' },
           { locator: page.getByLabel('Due date *'), value: '2026-08-15' },
           { locator: page.getByLabel('Paid at *'), value: '2026-08-10' },
+          // This test is about on-time-payment scoring, not the rebate
+          // field — zero it explicitly, since it now defaults to this
+          // account's ppd (a nonzero suggestion) rather than 0.
+          { locator: page.getByLabel('Rebate (Prompt Payment Discount)'), value: '0' },
         ]),
       () => page.locator('form').getByRole('button', { name: 'Record payment' }).click(),
       () => expect(page.getByText(/on time, \+1 point earned/i)).toBeVisible({ timeout: 8_000 })
     )
     await page.getByRole('button', { name: 'Done' }).click()
 
-    // Balance decremented by the payment amount: 10800 - 1800 = 9000
+    // Balance decremented by the payment amount only: 10800 - 1800 = 9000
     await expect(page.getByText('₱9,000.00')).toBeVisible({ timeout: 10_000 })
 
     // Cleanup
