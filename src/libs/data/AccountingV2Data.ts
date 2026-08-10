@@ -313,6 +313,21 @@ export interface RecordArPaymentInput {
   collectorId?: string
 }
 
+export interface ARInvoiceInstallmentItem {
+  id: string
+  itemId: string
+  quantity: number | string
+  unitPrice: number | string
+  item: { id: string; name: string; brand: { name: string } | null } | null
+  lineTotal: number
+}
+
+export interface ARInvoiceInstallmentDetail {
+  termMonths: number | null
+  rebate: number | string | null
+  items: ARInvoiceInstallmentItem[]
+}
+
 export interface ARInvoice {
   id: string
   invoiceNumber: string
@@ -328,6 +343,9 @@ export interface ARInvoice {
   status: string
   costCenter?: string
   payments?: ARPayment[]
+  /** Scenario 25 — present only when this invoice is one due-date line of a
+   * POS installment schedule; null for charge-mode invoices. */
+  installmentDetail?: ARInvoiceInstallmentDetail | null
 }
 
 export interface RecordPaymentResult extends ARInvoice {
@@ -357,6 +375,10 @@ export const ARInvoices = {
   getCustomerById: (id: string) =>
     api.get<ARInvoiceCustomerResult[]>('/ar-invoices/customers/search', { id }),
   get: (id: string) => api.get<ARInvoice>(`/ar-invoices/${id}`),
+  // Scenario 25 — print-ready envelope for the per-invoice detail page's
+  // Print/Download action, same PrintDocumentEnvelope shape Purchase Orders
+  // already use with printInventoryDocument().
+  getDocument: (id: string) => api.get<unknown>(`/ar-invoices/${id}/document`),
   create: (body: any) => api.post<ARInvoice>('/ar-invoices', body),
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),

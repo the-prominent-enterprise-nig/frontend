@@ -2,6 +2,8 @@
 
 Source: `module-scenarios.md`, scenario "POS — a customer walks in and buys."
 
+Reopened 2026-08-10: developer-defined addition — installment sales need a minimum down payment floor, not previously in scope. See Closing Gap 4 below.
+
 ## Related ClickUp Tickets (Sprint 3-5)
 
 - [86d3d19gh](https://app.clickup.com/t/86d3d19gh) — "AA Cashier, ISBAT assign a specific serial number to each serialized unit added to a sale" — _Sprint 3, for qa_
@@ -31,7 +33,7 @@ A walk-in customer buys a phone on installment at a branch:
 2. Start the sale, pull the customer from CRM, tag the selling agent.
 3. Add the item by serial — blocked without a matching serial; split aircon needs indoor+outdoor; furniture set uses one serial across part-SKUs.
 4. Price, discount, 12% VAT (inclusive) shown.
-5. Cash or Credit — installment shows term options + MI (amount financed × factor), down payment kept separate.
+5. Cash or Credit — installment shows term options + MI (amount financed × factor), down payment kept separate, minimum 10% of the item's sale amount.
 6. Take payment — cash/GCash/card/bank, splittable across tenders, each mapped to a GL account.
 7. Release document — cash sale → digital RFD; credit sale → Application Form + RFD; manager approval where required.
 8. Post automatically — inventory by serial, journal (sale/VAT/COGS/payment), AR + installment schedule for a charge sale.
@@ -56,6 +58,7 @@ A walk-in customer buys a phone on installment at a branch:
 1. **RFD / Application Form has no printable document artifact.** `PosReleaseFormRequest` (`schema.prisma:1707`) computes a `requestType: 'RFD' | 'Application Form' | 'RFD + Application Form'` label (`backend/src/pos/release-form-requests.service.ts:256-270`) and drives the approvals UI (`pos/release-approvals/_components/ReleaseApprovalsList.tsx`) — but no PDF/print/export code exists anywhere in the POS frontend (no `@react-pdf`, no `window.print`, no PDF lib). It's a status-tracked approval record with a type label, not a document a branch can hand to a customer or file.
 2. **COGS posting is weighted-average-only and silently non-blocking.** `pos-posting.service.ts:76-87` and `transactions.service.ts:593-598` both explicitly flag FIFO/LIFO as a known, deferred follow-up. Worse: COGS posting skips silently on a mapping failure (`pos-posting.service.ts:160-161`) rather than failing the sale — a missing COGS/Inventory account mapping produces an unbalanced-looking P&L with no error surfaced to anyone.
 3. **Agent Commission ledger has no UI.** Backend fires correctly and records every commission (`transactions.service.ts:1708-1739`), but there is no frontend consumer anywhere — only a raw JSON endpoint (`GET /crm/agents/:id/commissions`). Not broken, just orphaned.
+4. **No minimum down payment enforcement — found 2026-08-10.** `transactions.service.ts:307-315` validates only that `downPayment` isn't negative and doesn't exceed the line's sale amount — there's no floor. A cashier can set an installment sale's down payment as low as ₱0 today. Developer-confirmed: down payment must be at least 10% of the item's (line's) sale amount. Note this doesn't conflict with Scenario 15's curated price-list DP figures, which already run well above 10% (~22% in the real rate card) — this floor mainly guards the cases outside curated data: a cashier manually lowering DP below the suggestion, or an item with no price-list entry where DP is entered freehand.
 
 ## Closing the gaps
 
@@ -75,6 +78,11 @@ Ordered by risk/value.
 
 **Problem**: a fully-working backend feature (rate config on `Agent`, ledger on every completed sale) has zero UI, so Sales Agents/Business Owners can't see what they've earned without hitting a raw JSON endpoint.
 **Fix**: add a simple commission ledger view — e.g. under CRM → Sales Agents → [agent] detail, a table sourced from the existing `GET /crm/agents/:id/commissions` endpoint (no new backend work needed). If commission isn't actually a near-term priority, note that explicitly rather than leaving it silently orphaned.
+
+### 4. Enforce a 10%-of-item minimum down payment
+
+**Problem**: no floor exists on `downPayment` today — only negative and exceeds-amount are rejected.
+**Fix**: add a third check alongside the existing two at `transactions.service.ts:307-315` — reject with a clear error (e.g. `"downPayment must be at least 10% of line {i+1}'s sale amount"`) when `downPayment < 0.10 * lineAmount`. Applies per line (per item), not per transaction total, matching how `downPayment` is already scoped in this validation block. Assumed default, not explicitly confirmed: a hard block at submit time, consistent with the existing negative/exceeds-amount checks in the same block, rather than a warning/override — flag if a manager-override path is wanted instead.
 
 ## Dead code / unused-feature flags
 

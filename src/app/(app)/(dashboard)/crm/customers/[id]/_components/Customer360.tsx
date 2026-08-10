@@ -638,24 +638,29 @@ function InstallmentScheduleDetailModal({
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Due Dates</p>
             <ul className="divide-y divide-gray-100">
               {schedule.lines.map((line) => (
-                <li
-                  key={line.lineNumber}
-                  className="flex items-center justify-between py-1.5 text-[13px]"
-                >
-                  <span className="text-gray-700">
-                    <span className="font-mono text-[11px] text-gray-400">
-                      {line.arInvoice.invoiceNumber}
+                <li key={line.lineNumber} className="py-1.5 text-[13px]">
+                  {/* Scenario 25 — each due date is its own real ARInvoice;
+                   * link straight into its per-invoice detail/print page
+                   * instead of only reaching it via the unfiltered ledger. */}
+                  <Link
+                    href={`/accounting/ar-invoices/${line.arInvoice.id}`}
+                    className="flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg -mx-1 px-1"
+                  >
+                    <span className="text-gray-700">
+                      <span className="font-mono text-[11px] text-gray-400">
+                        {line.arInvoice.invoiceNumber}
+                      </span>
+                      {' · '}
+                      Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
+                      {new Date(line.arInvoice.dueDate).toLocaleDateString()}
                     </span>
-                    {' · '}
-                    Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
-                    {new Date(line.arInvoice.dueDate).toLocaleDateString()}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-medium text-gray-800">
-                      {formatPeso(line.arInvoice.totalAmount)}
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium text-gray-800">
+                        {formatPeso(line.arInvoice.totalAmount)}
+                      </span>
+                      <InstallmentStatusBadge status={line.arInvoice.status} />
                     </span>
-                    <InstallmentStatusBadge status={line.arInvoice.status} />
-                  </span>
+                  </Link>
                 </li>
               ))}
             </ul>
