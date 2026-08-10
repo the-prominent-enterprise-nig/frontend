@@ -190,6 +190,8 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     error,
     page,
     setPage,
+    showInactive,
+    setShowInactive,
     currencies,
     branches,
     priceUseTypes,
@@ -248,6 +250,15 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-sm text-zinc-500">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-600"
+              />
+              <span className="hidden sm:inline">Show inactive/expired</span>
+            </label>
             <Link
               href="/inventory/price-use-types"
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
@@ -471,6 +482,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         currencies={currencies}
         branches={branches}
         priceUseTypes={priceUseTypes}
+        priceLists={priceLists}
         onCreatePriceUseType={createPriceUseType}
         isCreatingPriceUseType={isCreatingPriceUseType}
         initial={editingList}

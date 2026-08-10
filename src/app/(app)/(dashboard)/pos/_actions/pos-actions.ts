@@ -1803,6 +1803,9 @@ export interface ResolvedPosPrice {
   price: number
   floorPrice: number | null
   minQty: number | null
+  /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
+   * rate card, when one exists for this item's price list. */
+  downPayment: number | null
 }
 
 /** Bulk-resolves every itemId's price under one Price Use in a single call —

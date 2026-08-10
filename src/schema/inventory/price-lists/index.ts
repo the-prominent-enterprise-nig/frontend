@@ -55,6 +55,8 @@ export const PriceListItemSchema = z.object({
   price: z.union([z.string(), z.number()]),
   floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
   minQty: z.union([z.string(), z.number()]).optional().nullable(),
+  // Scenario 15, Part 5
+  downPayment: z.union([z.string(), z.number()]).optional().nullable(),
   item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
   variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
 })
@@ -71,6 +73,8 @@ export const UpsertPriceListItemFormSchema = z.object({
   price: z.number().min(0, 'Price must be 0 or more'),
   floorPrice: z.number().min(0).optional(),
   minQty: z.number().min(0).optional(),
+  // Scenario 15, Part 5
+  downPayment: z.number().min(0).optional(),
 })
 export type UpsertPriceListItemFormValues = z.infer<typeof UpsertPriceListItemFormSchema>
 

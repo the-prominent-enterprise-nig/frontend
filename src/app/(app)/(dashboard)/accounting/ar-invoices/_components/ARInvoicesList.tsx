@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus,
   RefreshCw,
@@ -10,6 +13,7 @@ import {
   Send,
   PhilippinePeso,
   ReceiptText,
+  FilePlus,
   History,
   AlertTriangle,
   KeyRound,
@@ -21,6 +25,7 @@ import {
 import {
   ARInvoices,
   CreditMemos,
+  DebitMemos,
   TaxRates,
   type ARInvoice,
   type ARInvoiceCustomerResult,
@@ -32,6 +37,27 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import {
+  buildCreateCreditMemoFormSchema,
+  type CreateCreditMemoFormValues,
+} from '@/src/schema/accounting/credit-memos'
+import {
+  CreateDebitMemoFormSchema,
+  type CreateDebitMemoFormValues,
+} from '@/src/schema/accounting/debit-memos'
+import { ItemSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_components/ItemSearchCombobox'
+import { SerialSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/transfers/_components/SerialSearchCombobox'
+import { getSerialNumbers } from '@/src/app/(app)/(dashboard)/inventory/serial-numbers/_actions/get-serial-numbers'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
+import Tooltip from '@/src/components/ui/Tooltip'
+
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+}
 
 export default function ARInvoicesList({
   initialCustomerId,
@@ -45,6 +71,7 @@ export default function ARInvoicesList({
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
   const [creditingFor, setCreditingFor] = useState<ARInvoice | null>(null)
+  const [debitingFor, setDebitingFor] = useState<ARInvoice | null>(null)
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
   const [deletingFor, setDeletingFor] = useState<ARInvoice | null>(null)
   const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
@@ -274,74 +301,110 @@ export default function ARInvoicesList({
                   onClick={() => router.push(`/accounting/ar-invoices/${i.id}`)}
                   className="cursor-pointer hover:bg-gray-50"
                 >
-                  <td className="px-3 py-2 font-mono text-xs text-purple-700">{i.invoiceNumber}</td>
-                  <td className="px-3 py-2">{i.customer?.name}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(i.invoiceDate)}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(i.dueDate)}</td>
+                  <td className="px-3 py-2 max-w-40">
+                    <span
+                      title={i.invoiceNumber}
+                      className="block truncate font-mono text-xs text-purple-700"
+                    >
+                      {i.invoiceNumber}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 max-w-40">
+                    <span title={i.customer?.name} className="block truncate">
+                      {i.customer?.name}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
                   <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-700">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
+                    >
                       {i.status}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-end gap-0.5">
+                      <div className="flex items-center gap-0.5">
                         {i.status === 'DRAFT' ? (
-                          <button
-                            onClick={() => send(i.id)}
-                            title="Send"
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-                        ) : (
-                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                          <Tooltip label="Send">
                             <button
-                              onClick={() => setPayingFor(i)}
-                              title="Record payment"
+                              onClick={() => send(i.id)}
+                              aria-label="Send"
                               className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
                             >
-                              <PhilippinePeso className="w-4 h-4" />
+                              <Send className="w-4 h-4" />
                             </button>
+                          </Tooltip>
+                        ) : (
+                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                            <Tooltip label="Record payment">
+                              <button
+                                onClick={() => setPayingFor(i)}
+                                aria-label="Record payment"
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                              >
+                                <PhilippinePeso className="w-4 h-4" />
+                              </button>
+                            </Tooltip>
                           )
                         )}
                         {(i.payments?.length ?? 0) > 0 && (
-                          <button
-                            onClick={() => setHistoryFor(i)}
-                            title="Payment history"
-                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-                          >
-                            <History className="w-4 h-4" />
-                          </button>
+                          <Tooltip label="Payment history">
+                            <button
+                              onClick={() => setHistoryFor(i)}
+                              aria-label="Payment history"
+                              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
                         )}
                         {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
-                          <button
-                            onClick={() => setCreditingFor(i)}
-                            title="Issue credit memo"
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                          >
-                            <ReceiptText className="w-4 h-4" />
-                          </button>
+                          <Tooltip label="Issue credit memo">
+                            <button
+                              onClick={() => setCreditingFor(i)}
+                              aria-label="Issue credit memo"
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                            >
+                              <ReceiptText className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
+                        )}
+                        {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+                          <Tooltip label="Issue debit memo">
+                            <button
+                              onClick={() => setDebitingFor(i)}
+                              aria-label="Issue debit memo"
+                              className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                            >
+                              <FilePlus className="w-4 h-4" />
+                            </button>
+                          </Tooltip>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditing(i)}
-                          title="Edit"
-                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setDeletingFor(i)}
-                          title="Delete"
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
+                        <Tooltip label="Edit">
+                          <button
+                            onClick={() => setEditing(i)}
+                            aria-label="Edit"
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete">
+                          <button
+                            onClick={() => setDeletingFor(i)}
+                            aria-label="Delete"
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   </td>
@@ -382,6 +445,16 @@ export default function ARInvoicesList({
           onClose={() => setCreditingFor(null)}
           onSaved={() => {
             setCreditingFor(null)
+            load()
+          }}
+        />
+      )}
+      {debitingFor && (
+        <DebitMemoDialog
+          invoice={debitingFor}
+          onClose={() => setDebitingFor(null)}
+          onSaved={() => {
+            setDebitingFor(null)
             load()
           }}
         />
@@ -505,6 +578,150 @@ function DeleteInvoiceDialog({
   )
 }
 
+const CREDIT_MEMO_TYPE_OPTIONS: { value: CreateCreditMemoFormValues['type']; label: string }[] = [
+  { value: 'sales_return', label: 'Sales Return' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+  { value: 'goodwill', label: 'Goodwill' },
+]
+
+function CreditMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateCreditMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  // Mirrors CreateTransferModal's TransferLineRow — the serial picker only
+  // makes sense once we know the item is serial-tracked at all.
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Not status-filtered to 'in_stock' — the whole point here is picking a
+  // unit that was already SOLD (and is now being returned/credited), the
+  // opposite of what a transfer's source-warehouse picker needs.
+  const serialsQuery = useQuery({
+    queryKey: ['credit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Deduction">
+          <Controller
+            name={`lines.${index}.deductionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific serial returned (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`credit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
 function CreditMemoDialog({
   invoice,
   onClose,
@@ -515,25 +732,50 @@ function CreditMemoDialog({
   onSaved: () => void
 }) {
   const outstanding = invoice.totalAmount - invoice.amountPaid
-  const [form, setForm] = useState({
-    amount: String(outstanding),
-    reason: '',
-    memoDate: new Date().toISOString().slice(0, 10),
-  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const amount = Number(form.amount) || 0
-  const remaining = outstanding - amount
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateCreditMemoFormValues>({
+    resolver: zodResolver(buildCreateCreditMemoFormSchema(outstanding)),
+    defaultValues: {
+      type: 'sales_return',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', deductionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) -
+      (Number(l?.deductionAmount) || 0),
+    0
+  )
+  const remaining = outstanding - total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateCreditMemoFormValues) {
     setSaving(true)
     setError(null)
     const res = await CreditMemos.issue({
       arInvoiceId: invoice.id,
-      amount,
-      reason: form.reason || undefined,
-      memoDate: form.memoDate,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        deductionAmount: l.deductionAmount || undefined,
+      })),
     })
     setSaving(false)
     if (!res.success) {
@@ -542,52 +784,109 @@ function CreditMemoDialog({
     }
     onSaved()
   }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
           <h3 className="text-lg font-semibold">Issue Credit Memo</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
           <div className="text-sm text-gray-600">
             Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Outstanding:{' '}
             <span className="font-semibold">{fmtMoney(outstanding)}</span>
           </div>
-          <Field label="Credit Amount *">
-            <input
-              required
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={outstanding}
-              value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {CREDIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             />
           </Field>
-          <div className="text-xs text-gray-500">
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    deductionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <CreditMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Credit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
             Remaining after credit: <span className="font-semibold">{fmtMoney(remaining)}</span>
           </div>
+
           <Field label="Reason">
-            <textarea
-              value={form.reason}
-              onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              placeholder="Returns, discount, billing adjustment..."
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Returns, discount, billing adjustment..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
             />
           </Field>
           <Field label="Memo Date *">
-            <input
-              required
-              type="date"
-              value={form.memoDate}
-              onChange={(e) => setForm({ ...form, memoDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
             />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -604,10 +903,343 @@ function CreditMemoDialog({
             </button>
             <button
               type="submit"
-              disabled={saving || amount <= 0 || amount > outstanding + 0.01}
+              disabled={saving}
               className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
             >
               {saving ? 'Issuing...' : 'Issue Credit Memo'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const DEBIT_MEMO_TYPE_OPTIONS: { value: CreateDebitMemoFormValues['type']; label: string }[] = [
+  { value: 'unit_replacement', label: 'Unit Replacement' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+]
+
+function DebitMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateDebitMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Status-filtered to 'in_stock', the opposite of CreditMemoLineRow's own
+  // choice — a debit memo's primary case is handing the customer a NEW
+  // replacement unit, not referencing one already sold.
+  const serialsQuery = useQuery({
+    queryKey: ['debit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'in_stock', limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Addition">
+          <Controller
+            name={`lines.${index}.additionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific replacement serial (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`debit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
+function DebitMemoDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateDebitMemoFormValues>({
+    resolver: zodResolver(CreateDebitMemoFormSchema),
+    defaultValues: {
+      type: 'unit_replacement',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', additionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) +
+      (Number(l?.additionAmount) || 0),
+    0
+  )
+  const newTotal = invoice.totalAmount + total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateDebitMemoFormValues) {
+    setSaving(true)
+    setError(null)
+    const res = await DebitMemos.issue({
+      arInvoiceId: invoice.id,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        additionAmount: l.additionAmount || undefined,
+      })),
+    })
+    setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to issue debit memo')
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
+          <h3 className="text-lg font-semibold">Issue Debit Memo</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Current total:{' '}
+            <span className="font-semibold">{fmtMoney(invoice.totalAmount)}</span>
+          </div>
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {DEBIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+          </Field>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    additionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <DebitMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Debit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
+            New invoice total: <span className="font-semibold">{fmtMoney(newTotal)}</span>
+          </div>
+
+          <Field label="Reason">
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Replacement unit, under-billed fee..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+          </Field>
+          <Field label="Memo Date *">
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
+          </Field>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-semibold bg-orange-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Issuing...' : 'Issue Debit Memo'}
             </button>
           </div>
         </form>
