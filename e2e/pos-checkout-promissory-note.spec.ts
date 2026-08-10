@@ -147,10 +147,31 @@ async function submitInstallmentSale(
   await expect(termSelect).toBeVisible({ timeout: 10_000 })
   await termSelect.selectOption({ index: 1 })
 
+  // Scenario 01 Gap 4 — installment sales now require a down payment of at
+  // least 10% of the line's sale amount, collected via a matching payment
+  // row (a 0 down payment, this helper's previous default, is rejected).
+  // Read the exact floor off the "Min ₱X (10% of sale amount)" hint rather
+  // than recomputing the item's price here, so this stays correct if the
+  // fixture price ever changes.
+  const minHintText = await page
+    .locator('p', { hasText: /^Min ₱/ })
+    .first()
+    .innerText()
+  const minDownPayment = minHintText.match(/[\d,]+\.\d{2}/)![0].replace(/,/g, '')
+  await fillStable(page.getByPlaceholder('Down payment'), minDownPayment)
   await clickStable(
-    page.getByRole('button', { name: /Create Installment Plan/ }),
-    page.getByText('Pending Approval', { exact: true })
+    page.getByRole('button', { name: 'Add payment method' }),
+    page.getByPlaceholder('0.00')
   )
+  await fillStable(page.getByPlaceholder('0.00'), minDownPayment)
+
+  // Not clickStable here — this click submits a real sale, and retrying it
+  // on a slow response would double-submit rather than just re-checking a
+  // client-side render.
+  await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+  await expect(page.getByText('Pending Approval', { exact: true })).toBeVisible({
+    timeout: 15_000,
+  })
 }
 
 test.describe('POS Checkout — Promissory Note', () => {

@@ -428,6 +428,9 @@ export default function CheckoutPage() {
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
+  const [installmentPreviewErrors, setInstallmentPreviewErrors] = useState<
+    Record<string, string | null>
+  >({})
   const [installmentPreviewLoading, setInstallmentPreviewLoading] = useState<
     Record<string, boolean>
   >({})
@@ -1042,6 +1045,7 @@ export default function CheckoutPage() {
       const financingTermId = line.financingTermId
       if (!financingTermId || lineAmount <= 0) {
         setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
+        setInstallmentPreviewErrors((prev) => ({ ...prev, [line.lineId]: null }))
         continue
       }
       if (installmentPreviewTimers.current[line.lineId]) {
@@ -1058,6 +1062,10 @@ export default function CheckoutPage() {
         setInstallmentPreviews((prev) => ({
           ...prev,
           [line.lineId]: res.success ? (res.data ?? null) : null,
+        }))
+        setInstallmentPreviewErrors((prev) => ({
+          ...prev,
+          [line.lineId]: res.success ? null : (res.error ?? null),
         }))
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: false }))
       }, 300)
@@ -1252,7 +1260,22 @@ export default function CheckoutPage() {
 
   function setLineFinancingTermId(lineIds: string | string[], financingTermId: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, financingTermId } : l)))
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        // Pre-fill the down payment at the 10% floor as soon as a term is
+        // picked (never overwriting a value the cashier already typed) —
+        // otherwise the cart sits at a blank/0 down payment that reads as
+        // "nothing to collect" but can't actually be submitted that way.
+        if (l.downPaymentInput) return { ...l, financingTermId }
+        const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
+        return {
+          ...l,
+          financingTermId,
+          downPaymentInput: (Math.round(lineAmount * 0.1 * 100) / 100).toFixed(2),
+        }
+      })
+    )
   }
 
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
@@ -1523,6 +1546,14 @@ export default function CheckoutPage() {
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
+        return
+      }
+      // 0.005 (half a centavo) tolerance absorbs float noise from the
+      // tax-inclusive/exclusive price conversion above — without it, typing
+      // the exact rounded-to-centavo value shown by the "Min" hint below
+      // can land a hair under the true unrounded floor and be rejected.
+      if (downPayment < 0.1 * lineAmount - 0.005) {
+        setError(`${l.itemName}'s down payment must be at least 10% of its sale amount.`)
         return
       }
     }
@@ -1897,6 +1928,7 @@ export default function CheckoutPage() {
     setSaleMode('sale')
     setChargeDueDays(30)
     setInstallmentPreviews({})
+    setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
     localStorage.removeItem(POS_FROM_TAB_KEY)
     setCancellationReqId(null)
@@ -3104,6 +3136,15 @@ export default function CheckoutPage() {
                               className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                             />
                           </div>
+                          <p className="text-[10px] text-gray-500">
+                            Min{' '}
+                            {fmt(
+                              0.1 *
+                                displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                line.quantity
+                            )}{' '}
+                            (10% of sale amount)
+                          </p>
                           {line.financingTermId && (
                             <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
                               {installmentPreviewLoading[line.lineId] ? (
@@ -3120,7 +3161,9 @@ export default function CheckoutPage() {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="opacity-70">Preview unavailable.</span>
+                                <span className="opacity-70">
+                                  {installmentPreviewErrors[line.lineId] ?? 'Preview unavailable.'}
+                                </span>
                               )}
                             </div>
                           )}
