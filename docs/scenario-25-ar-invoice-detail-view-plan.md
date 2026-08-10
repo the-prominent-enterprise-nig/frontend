@@ -64,3 +64,17 @@ Concrete pass/fail steps, to run after each closing-gap item lands. Current (202
 ### Whole-invoice collections
 
 - Record a payment against an invoice covering 2+ items on the same installment term (once Scenario 23's Closing Gap 5 ships) → the payment applies to the whole invoice; there is no UI or API path to pay for only one of the items on it. **Currently: N/A until Scenario 23's Closing Gap 5 lands — today those items are still separate invoices, so this can't yet be tested as intended.**
+
+## Implementation Log — 2026-08-10
+
+**For this scenario, I have done:**
+
+- **Closing Gap 1** (per-invoice detail view) — new `/accounting/ar-invoices/[id]` route, a real page (own URL) formatted as an actual printable document, mirroring the exact `printInventoryDocument()` shell Purchase Orders already use (not a new document pipeline). `ARInvoicesService.findOne()` now returns an `installmentDetail` field (product/brand/quantity/unit price/line total, plus the rebate and term) whenever the invoice is one due-date line of a POS installment schedule — `null` for charge-mode invoices, nothing to show, not an error. A new `GET /ar-invoices/:id/document` endpoint (mirroring `PurchaseOrderService.getDocument()`'s exact envelope shape) serves the print-ready payload; the Print/Download button opens it in a new tab via the browser's own Print → Save as PDF, same standard as Purchase Orders and POS receipts. Reachable from the AR Invoices list too — resolved Open Question 2 (developer confirmed: yes, include product/brand/rebate) by extending `findOne()`'s own query rather than calling the separately-permissioned `pos:collections:manage`-gated installment-schedules endpoint, so this stays under the single existing `accounting:ar-invoices:read` check with no permission conflict.
+- **Closing Gap 2** (reachable from CRM) — Customer360's Installment Plan modal now links each due-date row straight into its own invoice's detail page, instead of only offering the customer-filtered "View AR Ledger" list link (which stays as-is, unchanged — it's still the right destination when there's no specific invoice to jump to, e.g. a charge-only customer with no installment plans).
+- **Closing Gap 3** (verify whole-invoice collection holds) — no new code needed; confirmed via Phase 1 re-verification that Scenario 23's Closing Gap 5 (grouping same-term installment lines into one schedule) is live in `transactions.service.ts`, so the loophole this scenario's "whole invoice, not per item" rule depended on closing is in fact closed.
+- Developer-requested follow-up after live testing: the AR Invoices list's row is now fully clickable (not just the invoice number cell), matching the same convention already applied to Collectors/Installment Accounts/Customers lists — the 6 existing per-row action buttons (Send, Record payment, Payment history, Issue credit memo, Edit, Delete) are guarded with `stopPropagation()` so they still work without triggering navigation.
+
+**Worth flagging:**
+
+- Items 1 and 2 were implemented and confirmed together as one combined part (developer's call, given they're tightly coupled — there's nothing to click into from CRM until the detail page exists to link to).
+- No product/business decisions were deferred this run — the one open question (Open Question 2, product/brand/rebate scope) was resolved before implementation started.

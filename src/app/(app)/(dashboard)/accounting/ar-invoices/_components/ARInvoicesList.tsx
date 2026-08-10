@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   RefreshCw,
@@ -37,6 +38,7 @@ export default function ARInvoicesList({
 }: {
   initialCustomerId?: string
 } = {}) {
+  const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
@@ -267,8 +269,12 @@ export default function ARInvoicesList({
               </tr>
             ) : (
               items.map((i) => (
-                <tr key={i.id}>
-                  <td className="px-3 py-2 font-mono text-xs">{i.invoiceNumber}</td>
+                <tr
+                  key={i.id}
+                  onClick={() => router.push(`/accounting/ar-invoices/${i.id}`)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
+                  <td className="px-3 py-2 font-mono text-xs text-purple-700">{i.invoiceNumber}</td>
                   <td className="px-3 py-2">{i.customer?.name}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.invoiceDate)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(i.dueDate)}</td>
@@ -280,7 +286,7 @@ export default function ARInvoicesList({
                       {i.status}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
                         {i.status === 'DRAFT' ? (
