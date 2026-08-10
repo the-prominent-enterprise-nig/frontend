@@ -84,7 +84,9 @@ test.describe('POS Collections — same-day duplicate payment guard', () => {
         customerId,
         invoiceType: 'installment',
         financingTermId: shortestTerm.id,
-        downPayment: 0,
+        // Scenario 01 Gap 4 — installment sales require a down payment of
+        // at least 10% of the line's sale amount.
+        downPayment: Math.round(Number(item.sellingPrice) * 0.1 * 100) / 100,
         subtotal: item.sellingPrice,
         totalAmount: item.sellingPrice,
         currency: 'PHP',
