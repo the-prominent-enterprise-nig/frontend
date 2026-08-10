@@ -124,6 +124,10 @@ test('Customer360 shows invoice number, product/brand, and rebate for an install
   // twice, since what's under test is the multi-line breakdown UI, not
   // needing two distinct catalog products.
   const cartSubtotal = item.sellingPrice * 2
+  // Scenario 01 Gap 4 — installment sales require a down payment of at
+  // least 10% of each line's own sale amount; both lines share the same
+  // item price, so one top-level value (falling back per line) covers both.
+  const downPayment = Math.round(item.sellingPrice * 0.1 * 100) / 100
   const txRes = await page.request.post('/api/pos/transactions', {
     data: {
       sessionId,
@@ -131,7 +135,7 @@ test('Customer360 shows invoice number, product/brand, and rebate for an install
       invoiceType: 'installment',
       financingTermId: term.id,
       creditApplicationId: application.id,
-      downPayment: 0,
+      downPayment,
       subtotal: cartSubtotal,
       totalAmount: cartSubtotal,
       currency: 'PHP',
