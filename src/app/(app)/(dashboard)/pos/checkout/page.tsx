@@ -166,6 +166,10 @@ interface CartLine {
    * selected Price Use — null until resolved, stays null if manually
    * overridden instead. */
   priceListItemId?: string | null
+  /** Scenario 15, Part 5 — curated per-SKU down payment from the real NIG
+   * rate card, resolved alongside priceListItemId. Preferred over the
+   * generic 10%-floor auto-fill when set. */
+  priceListDownPayment?: number | null
   /** True once unitPrice reflects either a real Price Use resolution or a
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
@@ -498,7 +502,13 @@ export default function CheckoutPage() {
           // Order Summary total frozen on the stale price even though the
           // per-line cell correctly switched to "No price — Override".
           return line.priceResolved
-            ? { ...line, unitPrice: 0, priceResolved: false, priceListItemId: null }
+            ? {
+                ...line,
+                unitPrice: 0,
+                priceResolved: false,
+                priceListItemId: null,
+                priceListDownPayment: null,
+              }
             : line
         }
         if (line.priceListItemId === resolved.priceListItemId && line.priceResolved) return line
@@ -506,6 +516,7 @@ export default function CheckoutPage() {
           ...line,
           unitPrice: resolved.price,
           priceListItemId: resolved.priceListItemId,
+          priceListDownPayment: resolved.downPayment,
           priceResolved: true,
         }
       })
@@ -1263,17 +1274,25 @@ export default function CheckoutPage() {
     setCart((prev) =>
       prev.map((l) => {
         if (!ids.has(l.lineId)) return l
-        // Pre-fill the down payment at the 10% floor as soon as a term is
-        // picked (never overwriting a value the cashier already typed) —
-        // otherwise the cart sits at a blank/0 down payment that reads as
-        // "nothing to collect" but can't actually be submitted that way.
+        // Pre-fill the down payment as soon as a term is picked (never
+        // overwriting a value the cashier already typed) — otherwise the
+        // cart sits at a blank/0 down payment that reads as "nothing to
+        // collect" but can't actually be submitted that way. Scenario 15,
+        // Part 5 — a curated per-SKU down payment from the real NIG rate
+        // card wins over the generic 10%-floor fallback when one exists.
         if (l.downPaymentInput) return { ...l, financingTermId }
-        const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
-        return {
-          ...l,
-          financingTermId,
-          downPaymentInput: (Math.round(lineAmount * 0.1 * 100) / 100).toFixed(2),
-        }
+        const downPaymentInput =
+          l.priceListDownPayment != null
+            ? Number(l.priceListDownPayment).toFixed(2)
+            : (
+                Math.round(
+                  displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) *
+                    l.quantity *
+                    0.1 *
+                    100
+                ) / 100
+              ).toFixed(2)
+        return { ...l, financingTermId, downPaymentInput }
       })
     )
   }
@@ -1405,6 +1424,7 @@ export default function CheckoutPage() {
               priceOverrideApproverName: result.managerName,
               priceResolved: true,
               priceListItemId: null,
+              priceListDownPayment: null,
             }
           : l
       )

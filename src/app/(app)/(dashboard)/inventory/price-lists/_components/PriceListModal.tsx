@@ -28,6 +28,10 @@ type Props = {
   currencies: Currency[]
   branches: Branch[]
   priceUseTypes: PriceUseType[]
+  /** Scenario 15, Part 4 — every other price list, used to populate the
+   * "Supersedes" picker (filtered to the currently-selected Price Use
+   * Type, excluding this list itself when editing). */
+  priceLists: PriceList[]
   onCreatePriceUseType: (data: PriceUseTypeFormValues) => Promise<ApiResponse<unknown>>
   isCreatingPriceUseType: boolean
   initial?: PriceList
@@ -45,6 +49,7 @@ const EMPTY_VALUES: PriceListFormValues = {
   effectiveTo: '',
   priority: 0,
   allowedBranchIds: [],
+  supersedesId: '',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -78,6 +83,7 @@ function toFormValues(list?: PriceList): PriceListFormValues {
     effectiveTo: list.effectiveTo?.slice(0, 10) ?? '',
     priority: list.priority,
     allowedBranchIds: list.allowedBranchIds ?? [],
+    supersedesId: list.supersedesId ?? '',
   }
 }
 
@@ -89,6 +95,7 @@ export default function PriceListModal({
   currencies,
   branches,
   priceUseTypes,
+  priceLists,
   onCreatePriceUseType,
   isCreatingPriceUseType,
   initial,
@@ -100,11 +107,19 @@ export default function PriceListModal({
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<PriceListFormValues>({
     resolver: zodResolver(PriceListFormSchema),
     defaultValues: toFormValues(initial),
   })
+  // Only offer lists under the same Price Use Type as candidates to
+  // supersede — cross-type supersession isn't blocked server-side, but it's
+  // never what an admin actually means by "new version of this list".
+  const selectedPriceUseTypeId = watch('priceUseTypeId')
+  const supersedeCandidates = priceLists.filter(
+    (pl) => pl.priceUseTypeId === selectedPriceUseTypeId && pl.id !== initial?.id
+  )
   // Mirrors the Priority field's raw typed text — kept separate from the
   // committed number so the input can sit visually empty mid-edit (e.g.
   // clearing "0" to type "25") instead of a forced field.onChange(0)
@@ -120,10 +135,17 @@ export default function PriceListModal({
   if (!isOpen) return null
 
   async function handleFormSubmit(data: PriceListFormValues) {
+    // Guard against a stale supersedesId left over from before the Price
+    // Use Type was changed mid-edit — only ever submit it when it's still
+    // one of the currently-valid (same-type, non-self) candidates.
+    const supersedesId = supersedeCandidates.some((pl) => pl.id === data.supersedesId)
+      ? data.supersedesId
+      : undefined
     const result = await onSubmit({
       ...data,
       effectiveFrom: data.effectiveFrom || undefined,
       effectiveTo: data.effectiveTo || undefined,
+      supersedesId,
     })
     if (result.success) onClose()
   }
@@ -381,6 +403,38 @@ export default function PriceListModal({
                   </div>
                 )}
               />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Supersedes{' '}
+                <span className="ml-1 text-xs font-normal text-zinc-400">
+                  (optional — the prior version this replaces)
+                </span>
+              </label>
+              <Controller
+                name="supersedesId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    placeholder={
+                      selectedPriceUseTypeId
+                        ? 'None — this is a new list, not a replacement'
+                        : 'Pick a Price Use Type first'
+                    }
+                    options={supersedeCandidates.map((pl) => ({
+                      value: pl.id,
+                      label: pl.name,
+                    }))}
+                  />
+                )}
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                On approval, the superseded list auto-expires. Only lists under the same Price Use
+                Type are shown.
+              </p>
             </div>
           </div>
 

@@ -44,6 +44,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Tag,
+  Tags,
   Truck,
   Undo2,
   Users,
@@ -118,6 +119,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/catalog',
         icon: Tag,
         requiredPermission: INVENTORY_PERMISSIONS.ITEMS_READ,
+      },
+      {
+        label: 'Price Lists',
+        href: '/inventory/price-lists',
+        icon: Tags,
+        requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
       },
       {
         label: 'Operations',
