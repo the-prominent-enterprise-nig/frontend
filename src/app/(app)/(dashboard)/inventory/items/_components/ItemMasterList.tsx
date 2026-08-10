@@ -19,6 +19,13 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import CategorySelect from '@/src/components/ui/CategorySelect'
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
+  // Scenario 05 followup — unit cost restricted to Business Owner/
+  // Accountant. costPrice is actually optional at the backend DTO level
+  // (revised 2026-08-10 — the earlier "creation requires cost" premise
+  // broke Scenario 16's item-master-governance draft flow), so a caller
+  // without cost-view can still create an item/bundle — the Cost Price
+  // field is just hidden; a cost-view holder can set it later via edit.
+  const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.COST_VIEW)
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_DELETE)
@@ -294,6 +301,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           items={items}
           isLoading={isLoading}
           isFetching={isFetching}
+          canViewCost={canViewCost}
           canUpdate={canUpdate}
           canDelete={canDelete}
           canManageLifecycle={canManageLifecycle}
@@ -367,6 +375,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onClose={() => setIsCreateOpen(false)}
         onSubmit={(data) => createItem(data)}
         isSubmitting={isCreating}
+        canViewCost={canViewCost}
         categories={categories}
         uomOptions={uomOptions}
         brandOptions={brandOptions}
@@ -380,6 +389,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onClose={() => setEditTarget(null)}
         onSubmit={(data: UpdateItemFormValues) => updateItem(editTarget!.id, data)}
         isSubmitting={isUpdating}
+        canViewCost={canViewCost}
         categories={categories}
         uomOptions={uomOptions}
         onAttributeSubmit={(attrs) => updateItemAttributes(editTarget!.id, attrs)}
@@ -395,6 +405,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         onClose={() => setIsBundleCreateOpen(false)}
         onSubmit={createBundle}
         isSubmitting={isCreatingBundle}
+        canViewCost={canViewCost}
         itemOptions={itemOptions}
         categoryOptions={categories}
         uomOptions={uomOptions}

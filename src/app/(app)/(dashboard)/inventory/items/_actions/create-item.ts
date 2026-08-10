@@ -2,7 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { CreateItemFormSchema, CreateItemFormValues } from '@/src/schema/inventory/items'
+import {
+  CreateItemFormSchema,
+  CreateItemFormSchemaNoCost,
+  CreateItemFormValues,
+} from '@/src/schema/inventory/items'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -18,7 +22,13 @@ export async function createItem(input: unknown): Promise<ApiResponse<{ id: stri
     }
   }
 
-  const parsed = CreateItemFormSchema.safeParse(input)
+  // Scenario 05 followup — a caller without cost-view submits no costPrice
+  // at all (the field is hidden client-side); validate against the schema
+  // variant that matches, rather than the always-required one rejecting a
+  // legitimate no-cost submission.
+  const canViewCost = can(session, INVENTORY_PERMISSIONS.COST_VIEW)
+  const schema = canViewCost ? CreateItemFormSchema : CreateItemFormSchemaNoCost
+  const parsed = schema.safeParse(input)
   if (!parsed.success) {
     return {
       success: false,

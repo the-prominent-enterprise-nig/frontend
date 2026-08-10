@@ -31,10 +31,18 @@ import {
 
 // Scenario 10 (Purchasing & AP) Part 7 — print-ready PO document body,
 // mirroring APBillsList.tsx's renderApChequeBody pattern.
+//
+// Scenario 05 followup — per-line unitPrice/lineTotal come back null from
+// the backend for a caller without inventory:cost:view (purchase-order.
+// service.ts's stripLineCost); the Unit Price/Line Total columns are
+// dropped from the printed table entirely rather than showing a
+// misleading ₱0.00. The header Total line stays (developer-confirmed —
+// same "keep the total, hide the breakdown" rule as PoDetailModal).
 function renderPoBody(doc: PrintDocumentEnvelope): string {
   const po = doc.document as Record<string, unknown>
   const supplier = po.supplier as { name?: string } | undefined
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
+  const canViewCost = lines.some((l) => l.unitPrice != null)
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
@@ -42,19 +50,27 @@ function renderPoBody(doc: PrintDocumentEnvelope): string {
     .map((l) => {
       const item = l.item as { name?: string } | undefined
       const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const freebie = l.isFreebie ? ' (Freebie)' : ''
-      return `<tr><td>${item?.name ?? '—'}${freebie}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
+      const costCells = canViewCost
+        ? (() => {
+            const unitPrice = Number(l.unitPrice ?? 0)
+            const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
+            return `<td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td>`
+          })()
+        : ''
+      return `<tr><td>${item?.name ?? '—'}${freebie}</td><td style="text-align:right">${qty}</td>${costCells}</tr>`
     })
     .join('')
+  const costHeaderCells = canViewCost
+    ? '<th style="text-align:right">Unit Price</th><th style="text-align:right">Line Total</th>'
+    : ''
   return `<h2>Order Details</h2><div class="meta">
     <div><p class="label">Supplier</p><p>${supplier?.name ?? '—'}</p></div>
     <div><p class="label">Order Date</p><p>${fmtDate(po.orderDate)}</p></div>
     <div><p class="label">Expected Delivery</p><p>${fmtDate(po.expectedDeliveryDate)}</p></div>
     <div><p class="label">Payment Terms</p><p>${po.paymentTerms ?? '—'}</p></div>
   </div>
-  <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Line Total</th></tr></thead>
+  <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th>${costHeaderCells}</tr></thead>
   <tbody>${rows}</tbody></table>
   <p style="text-align:right;margin-top:12px;font-weight:600">Total: ${fmt(Number(po.totalAmount ?? 0))}</p>`
 }
@@ -754,7 +770,11 @@ export function PurchaseOrderList({
         isCancelling={isCancelling}
       />
 
-      <PoDetailModal po={detailsTarget} onClose={() => setDetailsTarget(null)} />
+      <PoDetailModal
+        po={detailsTarget}
+        onClose={() => setDetailsTarget(null)}
+        canViewCost={canViewCost}
+      />
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
 

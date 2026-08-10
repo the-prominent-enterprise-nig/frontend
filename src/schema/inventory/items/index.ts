@@ -113,7 +113,18 @@ const CreateItemFormBaseSchema = z.object({
   initialSerialNumber: z.string().optional(),
 })
 
-export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, ctx) => {
+function refineInitialStockFields(
+  data: {
+    initialWarehouseId?: string
+    initialDateIn?: string
+    initialRr?: string
+    initialOrigin?: string
+    initialPrice?: number
+    initialSerialNumber?: string
+    isSerialTracked: boolean
+  },
+  ctx: z.RefinementCtx
+): void {
   const hasAnyInitialStockField = !!(
     data.initialWarehouseId ||
     data.initialDateIn ||
@@ -159,7 +170,17 @@ export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, 
       message: 'Remove the serial number — this item is not serial-tracked',
     })
   }
-})
+}
+
+export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine(refineInitialStockFields)
+
+// Scenario 05 followup — for a caller without inventory:cost:view, the Cost
+// Price field is hidden entirely rather than blocking item creation
+// (costPrice is optional at the backend DTO level; a cost-view holder can
+// set it later via edit). Same field set otherwise.
+export const CreateItemFormSchemaNoCost = CreateItemFormBaseSchema.extend({
+  costPrice: z.number().min(0, 'Cost price must be 0 or greater').optional(),
+}).superRefine(refineInitialStockFields)
 
 export const UpdateItemFormSchema = z.object({
   name: z.string().min(1, 'Item name is required').max(120).optional(),
@@ -218,7 +239,11 @@ export const RejectItemFormSchema = z.object({
   reason: z.string().min(1, 'Reason is required').max(500, 'Reason must be 500 characters or less'),
 })
 
-export type CreateItemFormValues = z.infer<typeof CreateItemFormSchema>
+// Derived from the NoCost variant (costPrice optional) rather than
+// CreateItemFormSchema — CreateItemModal resolves against whichever schema
+// matches the caller's cost-view, and both output shapes must assign into
+// this one shared value type.
+export type CreateItemFormValues = z.infer<typeof CreateItemFormSchemaNoCost>
 export type UpdateItemFormValues = z.infer<typeof UpdateItemFormSchema>
 export type UpdateLifecycleFormValues = z.infer<typeof UpdateLifecycleFormSchema>
 export type ConfirmAccountingFormValues = z.infer<typeof ConfirmAccountingFormSchema>

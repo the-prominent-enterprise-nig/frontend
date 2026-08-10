@@ -45,7 +45,7 @@ export default async function PurchaseOrdersPage() {
   // Unit cost is sensitive pricing data — restricted to Business
   // Owner/Accountant (Scenario 05 followup), same gate as the standalone
   // Goods Receiving flow.
-  const canViewCost = can(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  const canViewCost = can(session, INVENTORY_PERMISSIONS.COST_VIEW)
 
   return (
     <div className="min-h-screen bg-zinc-50">

@@ -45,6 +45,7 @@ type Props = {
   onClose: () => void
   onSubmit: (data: UpdateItemFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
+  canViewCost?: boolean
   categories: CategorySelectOption[]
   uomOptions: UomOption[]
   onAttributeSubmit: (attributes: Record<string, string>) => Promise<ApiResponse<unknown>>
@@ -60,6 +61,7 @@ export default function EditItemModal({
   onClose,
   onSubmit,
   isSubmitting,
+  canViewCost = true,
   categories,
   uomOptions,
   onAttributeSubmit,
@@ -531,28 +533,30 @@ export default function EditItemModal({
             forceOpen={hasSubmitErrors && pricingErrors > 0}
           >
             {/* Cost Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Cost Price (₱) <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="costPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
+            {canViewCost && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Cost Price (₱) <span className="text-red-500">*</span>
+                </label>
+                <Controller
+                  name="costPrice"
+                  control={control}
+                  render={({ field }) => (
+                    <NumericInput
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      fieldRef={field.ref}
+                      placeholder="0.00"
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    />
+                  )}
+                />
+                {errors.costPrice && (
+                  <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
                 )}
-              />
-              {errors.costPrice && (
-                <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Tax Rate */}
             <div>

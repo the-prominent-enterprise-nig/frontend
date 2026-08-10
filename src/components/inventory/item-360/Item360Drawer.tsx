@@ -13,6 +13,9 @@ import type { ItemSubstitute, ItemChangeLog } from '@/src/schema/inventory/items
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { createPortal } from 'react-dom'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -48,6 +51,11 @@ function DrawerSkeleton() {
 function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const { item, stock, substitutes, history, serials } = useItem360(itemId, activeTab)
+  // Scenario 05 followup — this drawer is mounted globally (ShellProviders),
+  // not passed a server-fetched session prop like page-level components, so
+  // it fetches its own via useMe() to gate the Cost Price field.
+  const { data: session } = useMe()
+  const canViewCost = hasPermission(session ?? null, INVENTORY_PERMISSIONS.COST_VIEW)
 
   type BalanceList = { data: import('@/src/schema/inventory/goods-receiving').StockBalance[] }
   const itemData = item.data?.success ? item.data.data : null
@@ -159,7 +167,7 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         ) : !itemData ? (
           <div className="p-5 text-sm text-zinc-400">Failed to load item details.</div>
         ) : activeTab === 'overview' ? (
-          <OverviewTab item={itemData} serials={serialsData} />
+          <OverviewTab item={itemData} serials={serialsData} canViewCost={canViewCost} />
         ) : activeTab === 'stock' ? (
           <StockTab balances={stockData?.data ?? []} isLoading={stock.isLoading} />
         ) : activeTab === 'serials' ? (

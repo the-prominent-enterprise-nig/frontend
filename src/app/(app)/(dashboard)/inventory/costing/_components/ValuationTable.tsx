@@ -9,8 +9,13 @@ const METHOD_BADGE: Record<string, string> = {
   weighted_average: 'bg-green-100 text-green-700',
 }
 
-function fmt(n: number) {
-  return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Accepts null because ValuationItem's cost fields are nullable at the type
+// level (Scenario 05 followup, stripped for a caller without cost-view) —
+// in practice this table is only ever rendered when the caller has
+// cost-view (see CostingPageView's canViewCost gate), so n is never
+// actually null here, but fmt still needs to satisfy the wider type.
+function fmt(n: number | null) {
+  return (n ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 interface Props {

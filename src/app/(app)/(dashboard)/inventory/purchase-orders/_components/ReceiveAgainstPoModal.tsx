@@ -5,11 +5,16 @@ import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, PackageCheck } from 'lucide-react'
+import { X, Loader2, PackageCheck, Plus, Trash2 } from 'lucide-react'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { showToast } from '@/src/components/ui/toast'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -24,10 +29,15 @@ type Props = {
 // ─── Form schema ──────────────────────────────────────────────────────────────
 
 const ReceivePoLineSchema = z.object({
-  purchaseOrderLineId: z.string(),
-  itemId: z.string(),
+  // Optional — Scenario 05 followup (Part 5): an extra "freebie" line added
+  // via "Add Freebie Item" isn't tied to any PO line (a supplier-given free
+  // unit that was never on the original order), unlike every other line
+  // here which always ties back to one.
+  purchaseOrderLineId: z.string().optional(),
+  itemId: z.string().min(1, 'Item is required'),
   quantityReceived: z.number().positive('Must be greater than 0'),
   unitCost: z.number().min(0).optional(),
+  isFreebie: z.boolean().optional(),
   batchNumber: z.string().optional(),
   expiryDate: z.string().optional(),
   qualityHold: z.boolean(),
@@ -51,6 +61,22 @@ const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 const cellInputClass =
   'w-full rounded border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+
+// Scenario 05 followup (Part 5) — a supplier-given free unit that was never
+// on the original PO. No purchaseOrderLineId, forced isFreebie: true and
+// unitCost stays unset (receiveStock() forces freebie cost to 0 server-side
+// regardless, same as the standalone Receiving form).
+const emptyFreebieLine = (): ReceivePoFormValues['lines'][number] => ({
+  purchaseOrderLineId: undefined,
+  itemId: '',
+  quantityReceived: 1,
+  unitCost: undefined,
+  isFreebie: true,
+  batchNumber: '',
+  expiryDate: '',
+  qualityHold: false,
+  notes: '',
+})
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -86,6 +112,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     })
 
   const [selectedLines, setSelectedLines] = useState<boolean[]>([])
+  // Names for freebie items picked via live search this session — PO lines
+  // already carry their item's name off po.lines, but a freebie line's item
+  // is picked fresh and has no such source, so ItemSearchCombobox's onSelect
+  // populates this to resolve initialLabel.
+  const [pickedItems, setPickedItems] = useState<Record<string, { name: string } & ItemSearchMeta>>(
+    {}
+  )
 
   const {
     control,
@@ -104,7 +137,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     },
   })
 
-  const { fields } = useFieldArray({ control, name: 'lines' })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
   useEffect(() => {
     if (!po) return
@@ -122,10 +155,30 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
 
   if (!po) return null
 
-  const selectedCount = selectedLines.filter(Boolean).length
+  // A freebie line added via "Add Freebie Item" has no entry in
+  // selectedLines (only po.lines seeded it) — defaults to selected, same
+  // fallback isSelected already uses per-row below.
+  const isLineSelected = (idx: number) => selectedLines[idx] ?? true
+  const selectedCount = fields.filter((_, idx) => isLineSelected(idx)).length
 
   function toggleLine(idx: number) {
-    setSelectedLines((prev: boolean[]) => prev.map((v: boolean, i: number) => (i === idx ? !v : v)))
+    setSelectedLines((prev: boolean[]) => {
+      const next = [...prev]
+      next[idx] = !isLineSelected(idx)
+      return next
+    })
+  }
+
+  function handleFreebieItemSelect(option: SearchComboboxOption): void {
+    const meta = option.meta as ItemSearchMeta | undefined
+    setPickedItems((prev) => ({
+      ...prev,
+      [option.id]: {
+        name: option.primary,
+        costPrice: meta?.costPrice ?? null,
+        isSerialTracked: meta?.isSerialTracked ?? false,
+      },
+    }))
   }
 
   async function handleFormSubmit(data: ReceivePoFormValues) {
@@ -139,12 +192,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       supplierId: po.supplier.id,
       withholding: data.withholding,
       lines: data.lines
-        .filter((_, idx) => selectedLines[idx])
+        .filter((_, idx) => isLineSelected(idx))
         .map((l) => ({
           purchaseOrderLineId: l.purchaseOrderLineId,
           itemId: l.itemId,
           quantityReceived: l.quantityReceived,
           unitCost: l.unitCost,
+          isFreebie: l.isFreebie,
           batchNumber: l.batchNumber || undefined,
           expiryDate: l.expiryDate || undefined,
           qualityHold: l.qualityHold,
@@ -295,9 +349,19 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                     — check the lines being delivered
                   </span>
                 </p>
-                <span className="text-xs text-zinc-400">
-                  {selectedCount} of {fields.length} selected
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-zinc-400">
+                    {selectedCount} of {fields.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => append(emptyFreebieLine())}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Freebie Item
+                  </button>
+                </div>
               </div>
 
               {fields.length === 0 ? (
@@ -340,16 +404,18 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
                           QC Hold
                         </th>
+                        <th className="w-10 px-2 py-2.5" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50">
                       {fields.map((field, idx) => {
                         const poLine = po.lines[idx]
+                        const isExtraLine = !poLine
                         const alreadyReceived = Number(poLine?.receivedQuantity ?? 0)
                         const ordered = Number(poLine?.quantity ?? 0)
                         const remaining = Math.max(ordered - alreadyReceived, 0)
 
-                        const isSelected = selectedLines[idx] ?? true
+                        const isSelected = isLineSelected(idx)
 
                         return (
                           <tr
@@ -367,42 +433,77 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                             </td>
 
                             {/* Item */}
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-zinc-800 leading-tight">
-                                {poLine?.item?.name ?? poLine?.itemId}
-                              </p>
-                              {poLine?.item?.sku && (
-                                <p className="font-mono text-xs text-zinc-400">{poLine.item.sku}</p>
+                            <td className="px-4 py-3 min-w-56">
+                              {isExtraLine ? (
+                                <div>
+                                  <Controller
+                                    name={`lines.${idx}.itemId`}
+                                    control={control}
+                                    render={({ field: f }) => (
+                                      <ItemSearchCombobox
+                                        value={f.value}
+                                        onChange={f.onChange}
+                                        onSelect={handleFreebieItemSelect}
+                                        error={errors.lines?.[idx]?.itemId?.message}
+                                        initialLabel={pickedItems[f.value]?.name}
+                                      />
+                                    )}
+                                  />
+                                  <span className="mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">
+                                    Freebie
+                                  </span>
+                                </div>
+                              ) : (
+                                <>
+                                  <p className="font-medium text-zinc-800 leading-tight">
+                                    {poLine?.item?.name ?? poLine?.itemId}
+                                  </p>
+                                  {poLine?.item?.sku && (
+                                    <p className="font-mono text-xs text-zinc-400">
+                                      {poLine.item.sku}
+                                    </p>
+                                  )}
+                                </>
                               )}
                             </td>
 
                             {/* Ordered */}
-                            <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
+                            <td className="px-3 py-3 text-center text-zinc-500">
+                              {isExtraLine ? '—' : ordered}
+                            </td>
 
                             {/* Already received */}
                             <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  alreadyReceived > 0
-                                    ? 'font-medium text-zinc-800'
-                                    : 'text-zinc-300'
-                                }
-                              >
-                                {alreadyReceived > 0 ? alreadyReceived : '—'}
-                              </span>
+                              {isExtraLine ? (
+                                <span className="text-zinc-300">—</span>
+                              ) : (
+                                <span
+                                  className={
+                                    alreadyReceived > 0
+                                      ? 'font-medium text-zinc-800'
+                                      : 'text-zinc-300'
+                                  }
+                                >
+                                  {alreadyReceived > 0 ? alreadyReceived : '—'}
+                                </span>
+                              )}
                             </td>
 
                             {/* Remaining */}
                             <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  remaining === 0
-                                    ? 'text-green-600 font-medium'
-                                    : 'text-amber-600 font-medium'
-                                }
-                              >
-                                {remaining === 0 ? '✓' : remaining}
-                              </span>
+                              {isExtraLine ? (
+                                <span className="text-zinc-300">—</span>
+                              ) : (
+                                <span
+                                  className={
+                                    remaining === 0
+                                      ? 'text-green-600 font-medium'
+                                      : 'text-amber-600 font-medium'
+                                  }
+                                >
+                                  {remaining === 0 ? '✓' : remaining}
+                                </span>
+                              )}
                             </td>
 
                             {/* Qty to receive */}
@@ -431,23 +532,29 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                             {/* Unit cost */}
                             {canViewCost && (
                               <td className="px-3 py-3">
-                                <Controller
-                                  name={`lines.${idx}.unitCost`}
-                                  control={control}
-                                  render={({ field: f }) => (
-                                    <input
-                                      value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                      onChange={(e) =>
-                                        f.onChange(e.target.valueAsNumber || undefined)
-                                      }
-                                      onBlur={f.onBlur}
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      className={`${cellInputClass} text-right`}
-                                    />
-                                  )}
-                                />
+                                {isExtraLine ? (
+                                  <span className="inline-block w-full text-right text-zinc-400">
+                                    Free
+                                  </span>
+                                ) : (
+                                  <Controller
+                                    name={`lines.${idx}.unitCost`}
+                                    control={control}
+                                    render={({ field: f }) => (
+                                      <input
+                                        value={f.value == null || isNaN(f.value) ? '' : f.value}
+                                        onChange={(e) =>
+                                          f.onChange(e.target.valueAsNumber || undefined)
+                                        }
+                                        onBlur={f.onBlur}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className={`${cellInputClass} text-right`}
+                                      />
+                                    )}
+                                  />
+                                )}
                               </td>
                             )}
 
@@ -498,6 +605,20 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                   />
                                 )}
                               />
+                            </td>
+
+                            {/* Remove — only a freebie line can be removed outright; a real
+                                PO line stays in the table (deselect via the checkbox instead). */}
+                            <td className="px-2 py-3 text-center">
+                              {isExtraLine && (
+                                <button
+                                  type="button"
+                                  onClick={() => remove(idx)}
+                                  className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         )

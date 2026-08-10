@@ -21,8 +21,10 @@ export const RevaluationRecordSchema = z.object({
   id: z.string(),
   item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
   warehouse: z.object({ id: z.string(), name: z.string(), code: z.string() }).optional(),
-  oldCost: z.number().optional(),
-  newCost: z.number(),
+  oldCost: z.number().nullable().optional(),
+  // Nullable — Scenario 05 followup, stripped server-side for a caller
+  // without inventory:cost:view.
+  newCost: z.number().nullable(),
   reasonCode: z.string(),
   notes: z.string(),
   createdAt: z.string(),

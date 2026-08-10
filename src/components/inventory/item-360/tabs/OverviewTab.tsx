@@ -69,9 +69,11 @@ function summarizeDistinct(
 export default function OverviewTab({
   item,
   serials = [],
+  canViewCost = true,
 }: {
   item: ItemSummary
   serials?: SerialNumberSummary[]
+  canViewCost?: boolean
 }) {
   const serialCount = item._count?.serialNumbers ?? serials.length
   const serialValue =
@@ -200,7 +202,7 @@ export default function OverviewTab({
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Pricing</p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Cost Price" value={costPrice} />
+          {canViewCost && <Field label="Cost Price" value={costPrice} />}
           <Field label="Selling Price" value={sellingPrice} />
         </div>
       </div>

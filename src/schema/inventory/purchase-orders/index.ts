@@ -116,7 +116,10 @@ const PoLineSchema = z.object({
   item: PoItemSchema,
   description: z.string().optional().nullable(),
   quantity: z.coerce.number(),
-  unitPrice: z.coerce.number(),
+  // Nullable — Scenario 05 followup, stripped server-side for a caller
+  // without inventory:cost:view (subtotalAmount/totalAmount at the PO
+  // level stay intact regardless).
+  unitPrice: z.coerce.number().nullable(),
   receivedQuantity: z.coerce.number().optional().nullable(),
   lineTotal: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
