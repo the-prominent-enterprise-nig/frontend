@@ -6,15 +6,27 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import {
   CreateServiceDraftFormSchema,
+  SERVICE_CATEGORY_LABELS,
+  SERVICE_CATALOG,
+  AUTO_SUGGEST_MATERIAL_CATEGORIES,
   type CreateServiceDraftFormValues,
+  type ServiceCategory,
   type ServiceDraft,
 } from '@/src/schema/pos/service-drafts'
 import { MaterialItemSearchCombobox, type MaterialItemMeta } from './MaterialItemSearchCombobox'
 import { SerialNumberSearchCombobox } from './SerialNumberSearchCombobox'
 import { CustomerSearchCombobox } from './CustomerSearchCombobox'
+import { TransactionSearchCombobox } from './TransactionSearchCombobox'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 import { BranchSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_components/BranchSearchCombobox'
+import { Select } from '@/src/components/ui/Select'
+import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import { customerDisplayName } from './service-draft-utils'
+
+const SERVICE_CATEGORY_OPTIONS = Object.entries(SERVICE_CATEGORY_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}))
 
 type LockedBranch = { id: string; name: string } | null
 
@@ -52,6 +64,15 @@ function getDefaultValues(
         notes: line.notes ?? '',
         serialNumberId: line.serialNumberId ?? undefined,
       })),
+      // A job created before Closing Gap 6 existed has none on record —
+      // deliberately NOT defaulted to a placeholder row here, so opening an
+      // old job to tweak materials doesn't force adding a service type
+      // just to save.
+      serviceTypes: (draft.serviceTypes ?? []).map((st) => ({
+        category: st.category,
+        subType: st.subType,
+        quotedAmount: Number(st.quotedAmount),
+      })),
     }
   }
 
@@ -69,6 +90,14 @@ function getDefaultValues(
         serialNumberId: undefined,
       },
     ],
+    // Deliberately empty, NOT pre-added like Estimated Materials' one
+    // default line — a pre-added row's own category/subType/quotedAmount
+    // are each individually required once present, so defaulting to one
+    // empty row would silently block submission on every job that doesn't
+    // touch this section (found live: broke every pre-existing
+    // service-draft e2e spec, none of which know about this new section).
+    // "Add Service Type" is the only way a row appears now.
+    serviceTypes: [],
   }
 }
 
@@ -108,6 +137,22 @@ export function ServiceJobFormModal({
     name: 'lines',
   })
 
+  const {
+    fields: serviceTypeFields,
+    append: appendServiceType,
+    remove: removeServiceType,
+  } = useFieldArray({
+    control,
+    name: 'serviceTypes',
+  })
+
+  // Label shown for a materials line the auto-suggestion (below) just
+  // appended, keyed by that line's index — MaterialItemSearchCombobox only
+  // reads `initialLabel` once, on mount, so this only matters for a line
+  // that didn't exist a render ago (a fresh field.id from append() is a
+  // fresh mount either way).
+  const [suggestedMaterialLabels, setSuggestedMaterialLabels] = useState<Record<number, string>>({})
+
   // Whether each line's picked material is serial-tracked — not part of the
   // RHF/zod schema (derived from the item, not user input directly), drives
   // whether that line shows a serial-number field and locks estimatedQty to
@@ -123,9 +168,11 @@ export function ServiceJobFormModal({
       setSerialTracked(
         Object.fromEntries(draft.lines.map((line, i) => [i, !!line.item?.isSerialTracked]))
       )
+      setSuggestedMaterialLabels({})
     } else if (!open) {
       reset(getDefaultValues(null, lockedBranch))
       setSerialTracked({})
+      setSuggestedMaterialLabels({})
     }
   }, [open, draft, lockedBranch, reset])
 
@@ -141,10 +188,63 @@ export function ServiceJobFormModal({
     append({ itemId: '', estimatedQty: 1, notes: '', serialNumberId: undefined })
   }
 
+  function handleAddServiceType() {
+    appendServiceType({ category: '', subType: '', quotedAmount: 0 })
+  }
+
+  function handleRemoveServiceType(index: number) {
+    removeServiceType(index)
+  }
+
+  function handleServiceCategoryChange(index: number, category: string) {
+    setValue(`serviceTypes.${index}.category`, category)
+    // The previously-picked subType may not belong to the new category —
+    // clear it rather than silently leaving a now-invalid combination.
+    setValue(`serviceTypes.${index}.subType`, '')
+  }
+
+  // Materials auto-suggestion (Closing Gap 6, confirmed in scope): picking a
+  // sub-type under either "Replacement of ... Electrical Part(s)" category
+  // is literally named after a physical part, so pre-fill a matching
+  // Estimated Materials line for that same-named item. Only fires when a
+  // real, unambiguous, not-already-added match exists — the cashier can
+  // still adjust or remove the suggested line either way.
+  async function maybeSuggestMaterial(category: string, subType: string) {
+    if (!AUTO_SUGGEST_MATERIAL_CATEGORIES.includes(category as ServiceCategory)) return
+
+    const res = await getItems({ search: subType, limit: 5, lifecycle: 'active' })
+    const candidates = (res.data?.data ?? []).filter((item) => item.isService !== true)
+    const match = candidates.find((item) => item.name.toLowerCase() === subType.toLowerCase())
+    if (!match) return
+
+    const currentLines = watch('lines')
+    const alreadyLinked = currentLines.some((line) => line.itemId === match.id)
+    if (alreadyLinked) return
+
+    const newIndex = currentLines.length
+    append({ itemId: match.id, estimatedQty: 1, notes: '', serialNumberId: undefined })
+    setSuggestedMaterialLabels((prev) => ({ ...prev, [newIndex]: match.name }))
+    handleMaterialSelect(newIndex, { isSerialTracked: !!match.isSerialTracked })
+  }
+
+  function handleServiceSubTypeChange(index: number, category: string, subType: string) {
+    setValue(`serviceTypes.${index}.subType`, subType)
+    void maybeSuggestMaterial(category, subType)
+  }
+
   function handleRemoveLine(index: number) {
     remove(index)
     setSerialTracked((prev) => {
       const next: Record<number, boolean> = {}
+      Object.entries(prev).forEach(([key, val]) => {
+        const i = Number(key)
+        if (i < index) next[i] = val
+        else if (i > index) next[i - 1] = val
+      })
+      return next
+    })
+    setSuggestedMaterialLabels((prev) => {
+      const next: Record<number, string> = {}
       Object.entries(prev).forEach(([key, val]) => {
         const i = Number(key)
         if (i < index) next[i] = val
@@ -300,6 +400,26 @@ export function ServiceJobFormModal({
                 />
               </div>
 
+              {/* Linked Sale — the POS transaction/invoice this job's
+                  aircon + install service was originally sold on, if any.
+                  ServiceDraft.posTransactionId has existed since Closing Gap
+                  2; this is the first UI to actually set or show it. */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Linked Sale</label>
+                <Controller
+                  name="posTransactionId"
+                  control={control}
+                  render={({ field }) => (
+                    <TransactionSearchCombobox
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      error={errors.posTransactionId?.message}
+                      initialLabel={draft?.posTransaction?.transactionNumber}
+                    />
+                  )}
+                />
+              </div>
+
               {/* Notes */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
@@ -319,6 +439,141 @@ export function ServiceJobFormModal({
                 {errors.notes && (
                   <p className="mt-1 text-xs text-red-600">{errors.notes.message}</p>
                 )}
+              </div>
+
+              {/* Types of Service (Closing Gap 6) */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-sm font-medium text-zinc-700">Types of Service</label>
+                  <button
+                    type="button"
+                    onClick={handleAddServiceType}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add Service Type
+                  </button>
+                </div>
+
+                {serviceTypeFields.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2.5 text-xs text-zinc-400">
+                    No service type added yet — optional, but helps categorize this job against
+                    NIG&apos;s service catalog.
+                  </p>
+                )}
+
+                <div className="space-y-3">
+                  {serviceTypeFields.map((field, index) => {
+                    const watchedCategory = watch(`serviceTypes.${index}.category`)
+                    const subTypeOptions = watchedCategory
+                      ? (SERVICE_CATALOG[watchedCategory as ServiceCategory] ?? []).map((s) => ({
+                          value: s,
+                          label: s,
+                        }))
+                      : []
+                    return (
+                      <div
+                        key={field.id}
+                        className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
+                            Service {index + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveServiceType(index)}
+                            className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="col-span-2">
+                            <label className="mb-1 block text-xs font-medium text-zinc-600">
+                              Category <span className="text-red-500">*</span>
+                            </label>
+                            <Controller
+                              name={`serviceTypes.${index}.category`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <Select
+                                  value={f.value ?? ''}
+                                  onChange={(v) => handleServiceCategoryChange(index, v)}
+                                  options={SERVICE_CATEGORY_OPTIONS}
+                                  placeholder="Select category…"
+                                />
+                              )}
+                            />
+                            {errors.serviceTypes?.[index]?.category && (
+                              <p className="mt-1 text-xs text-red-500">
+                                {errors.serviceTypes[index]?.category?.message}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="col-span-2">
+                            <label className="mb-1 block text-xs font-medium text-zinc-600">
+                              Sub-type <span className="text-red-500">*</span>
+                            </label>
+                            <Controller
+                              name={`serviceTypes.${index}.subType`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <Select
+                                  value={f.value ?? ''}
+                                  onChange={(v) =>
+                                    handleServiceSubTypeChange(index, watchedCategory ?? '', v)
+                                  }
+                                  options={subTypeOptions}
+                                  placeholder={
+                                    watchedCategory ? 'Select sub-type…' : 'Pick a category first'
+                                  }
+                                />
+                              )}
+                            />
+                            {errors.serviceTypes?.[index]?.subType && (
+                              <p className="mt-1 text-xs text-red-500">
+                                {errors.serviceTypes[index]?.subType?.message}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="col-span-2">
+                            <label className="mb-1 block text-xs font-medium text-zinc-600">
+                              Quoted Amount <span className="text-red-500">*</span>
+                            </label>
+                            <Controller
+                              name={`serviceTypes.${index}.quotedAmount`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <NumericInput
+                                  value={f.value}
+                                  onChange={(v) => f.onChange(v ?? 0)}
+                                  onBlur={f.onBlur}
+                                  // Deliberately not "0.00" — the Estimated
+                                  // Materials section's Qty field already
+                                  // uses placeholder="0", and Playwright's
+                                  // getByPlaceholder('0') substring-matches
+                                  // "0.00" too, breaking every existing
+                                  // service-draft e2e spec that fills Qty.
+                                  placeholder="Amount"
+                                  className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.serviceTypes?.[index]?.quotedAmount ? 'border-red-400' : 'border-zinc-200'}`}
+                                />
+                              )}
+                            />
+                            {errors.serviceTypes?.[index]?.quotedAmount && (
+                              <p className="mt-1 text-xs text-red-500">
+                                {errors.serviceTypes[index]?.quotedAmount?.message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               {/* Estimated Material Lines */}
@@ -384,7 +639,10 @@ export function ServiceJobFormModal({
                                   onChange={f.onChange}
                                   onSelectItem={(meta) => handleMaterialSelect(index, meta)}
                                   error={errors.lines?.[index]?.itemId?.message}
-                                  initialLabel={draft?.lines[index]?.item?.name}
+                                  initialLabel={
+                                    draft?.lines[index]?.item?.name ??
+                                    suggestedMaterialLabels[index]
+                                  }
                                 />
                               )}
                             />

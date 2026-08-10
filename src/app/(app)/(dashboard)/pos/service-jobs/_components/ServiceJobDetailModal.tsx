@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X, Wrench, Loader2, PackageSearch } from 'lucide-react'
 import type { ServiceDraft, RecordActualsFormValues } from '@/src/schema/pos/service-drafts'
+import { SERVICE_CATEGORY_LABELS, type ServiceCategory } from '@/src/schema/pos/service-drafts'
 import { SERVICE_DRAFT_STATUS_STYLES } from './status-styles'
 import { customerDisplayName } from './service-draft-utils'
 
@@ -141,6 +142,16 @@ export function ServiceJobDetailModal({
                   </p>
                   <p className="mt-0.5 text-zinc-800">{draft.branch?.name ?? '—'}</p>
                 </div>
+                {draft.posTransaction && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Linked Sale
+                    </p>
+                    <p className="mt-0.5 font-mono text-zinc-800">
+                      {draft.posTransaction.transactionNumber}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                     Created
@@ -172,6 +183,61 @@ export function ServiceJobDetailModal({
                   <p className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-sm leading-relaxed text-zinc-700">
                     {draft.notes}
                   </p>
+                </div>
+              )}
+
+              {/* Types of Service (Closing Gap 6) */}
+              {!!draft.serviceTypes?.length && (
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    Types of Service
+                  </p>
+                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-zinc-200 bg-zinc-50">
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Category
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Sub-type
+                          </th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                            Quoted Amount
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {draft.serviceTypes.map((st) => (
+                          <tr key={st.id}>
+                            <td className="px-3 py-2 text-zinc-800">
+                              {SERVICE_CATEGORY_LABELS[st.category as ServiceCategory] ??
+                                st.category}
+                            </td>
+                            <td className="px-3 py-2 text-zinc-700">{st.subType}</td>
+                            <td className="px-3 py-2 text-right text-zinc-700">
+                              {Number(st.quotedAmount).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-zinc-200 bg-zinc-50">
+                          <td
+                            colSpan={2}
+                            className="px-3 py-2 text-right font-medium text-zinc-700"
+                          >
+                            Total Quoted
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-zinc-900">
+                            {draft.serviceTypes
+                              .reduce((sum, st) => sum + Number(st.quotedAmount), 0)
+                              .toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               )}
 
