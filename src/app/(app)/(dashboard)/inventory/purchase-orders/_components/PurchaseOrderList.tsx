@@ -277,6 +277,8 @@ export function PurchaseOrderList({
   canClose,
   canReceive,
   canViewCost,
+  currentUserBranchId,
+  currentUserBranchName,
 }: {
   canCreate: boolean
   canApprove: boolean
@@ -285,6 +287,11 @@ export function PurchaseOrderList({
   canClose: boolean
   canReceive: boolean
   canViewCost: boolean
+  /** null/undefined (head office / Business Owner) leaves the receiving
+   * modal's Destination Branch and the create modal's Branch fully open —
+   * same convention as the Stock Transfer request modal's "To Branch". */
+  currentUserBranchId?: string | null
+  currentUserBranchName?: string | null
 }) {
   const [activeSection, setActiveSection] = useState<Section>('orders')
 
@@ -741,6 +748,8 @@ export function PurchaseOrderList({
           await createPO(data)
         }}
         isSubmitting={isCreating}
+        currentUserBranchId={currentUserBranchId}
+        currentUserBranchName={currentUserBranchName}
       />
 
       <CancelPoModal
@@ -766,6 +775,7 @@ export function PurchaseOrderList({
           refetch()
         }}
         canViewCost={canViewCost}
+        currentUserBranchId={currentUserBranchId}
       />
     </div>
   )

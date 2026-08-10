@@ -19,6 +19,11 @@ type Props = {
    * Controller, restricted to Business Owner/Accountant (Scenario 05
    * followup). Server-side enforcement in receiveStock() is the real guard. */
   canViewCost: boolean
+  /** A branch-scoped receiver (Stock Controller/Branch Manager) is always
+   * receiving into their own branch — same convention as the Stock Transfer
+   * request modal's "To Branch" lock. null/undefined (head office /
+   * Business Owner) leaves Destination Branch fully open. */
+  currentUserBranchId?: string | null
 }
 
 // ─── Form schema ──────────────────────────────────────────────────────────────
@@ -32,6 +37,11 @@ const ReceivePoLineSchema = z.object({
   expiryDate: z.string().optional(),
   qualityHold: z.boolean(),
   notes: z.string().optional(),
+  // Serial-tracked items reject receiving unless one of serialNumbers/
+  // autoGenerateSerials is set (stock.service.ts). This form doesn't offer
+  // per-unit serial entry, so a serial-tracked line always auto-generates —
+  // set from the PO line's item.isSerialTracked, not user-editable.
+  autoGenerateSerials: z.boolean().optional(),
 })
 
 const ReceivePoFormSchema = z.object({
@@ -54,7 +64,13 @@ const cellInputClass =
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: Props) {
+export function ReceiveAgainstPoModal({
+  po,
+  onClose,
+  onSuccess,
+  canViewCost,
+  currentUserBranchId,
+}: Props) {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
@@ -63,6 +79,15 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
   })
 
   const warehouses = warehousesQuery.data?.data?.data ?? []
+
+  const ownBranchWarehouses = currentUserBranchId
+    ? warehouses.filter((wh) => wh.branchId === currentUserBranchId)
+    : []
+  // Only lock the field when it resolves to exactly one warehouse — if a
+  // branch ever has more than one, the receiver still needs to choose among
+  // their own rather than have an arbitrary one silently picked. Same
+  // convention as the Stock Transfer request modal's "To Branch".
+  const lockedWarehouseId = ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
 
   const defaultLineSelected = (l: PurchaseOrderSummary['lines'][number]) => {
     const remaining = Math.max(Number(l.quantity) - Number(l.receivedQuantity ?? 0), 0)
@@ -82,6 +107,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
         expiryDate: '',
         qualityHold: false,
         notes: '',
+        autoGenerateSerials: l.item?.isSerialTracked ?? false,
       }
     })
 
@@ -91,12 +117,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ReceivePoFormValues>({
     resolver: zodResolver(ReceivePoFormSchema),
     defaultValues: {
       code: '',
-      warehouseId: po?.warehouseId ?? '',
+      warehouseId: lockedWarehouseId ?? po?.warehouseId ?? '',
       receivedAt: '',
       notes: '',
       withholding: 'none',
@@ -111,7 +138,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     setSelectedLines(po.lines.map(defaultLineSelected))
     reset({
       code: '',
-      warehouseId: po.warehouseId ?? '',
+      warehouseId: lockedWarehouseId ?? po.warehouseId ?? '',
       receivedAt: '',
       notes: '',
       withholding: 'none',
@@ -119,6 +146,17 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po])
+
+  // `warehouses` (and therefore lockedWarehouseId) resolves asynchronously
+  // and can still be empty at the moment the effect above runs, so the
+  // locked value wouldn't otherwise reach the form state until the next
+  // open/close cycle. Mirrors the Stock Transfer request modal's own fix
+  // for this same race.
+  useEffect(() => {
+    if (po && lockedWarehouseId) {
+      setValue('warehouseId', lockedWarehouseId, { shouldValidate: true })
+    }
+  }, [po, lockedWarehouseId, setValue])
 
   if (!po) return null
 
@@ -149,6 +187,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
           expiryDate: l.expiryDate || undefined,
           qualityHold: l.qualityHold,
           notes: l.notes || undefined,
+          ...(l.autoGenerateSerials && { autoGenerateSerials: true }),
         })),
     })
 
@@ -198,17 +237,34 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                 <Controller
                   name="warehouseId"
                   control={control}
-                  render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select branch…</option>
-                      {warehouses.map((wh) => (
-                        <option key={wh.id} value={wh.id}>
-                          {wh.branch?.name ?? wh.name}
+                  render={({ field }) =>
+                    lockedWarehouseId ? (
+                      <select
+                        {...field}
+                        disabled
+                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
+                      >
+                        <option value={lockedWarehouseId}>
+                          {ownBranchWarehouses[0].branch?.name ?? ownBranchWarehouses[0].name}
                         </option>
-                      ))}
-                    </select>
-                  )}
+                      </select>
+                    ) : (
+                      <select {...field} className={`${fieldClass} bg-white`}>
+                        <option value="">Select branch…</option>
+                        {warehouses.map((wh) => (
+                          <option key={wh.id} value={wh.id}>
+                            {wh.branch?.name ?? wh.name}
+                          </option>
+                        ))}
+                      </select>
+                    )
+                  }
                 />
+                {lockedWarehouseId && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    You&apos;re receiving into your own branch.
+                  </p>
+                )}
                 {errors.warehouseId && (
                   <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
                 )}
@@ -373,6 +429,14 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                               </p>
                               {poLine?.item?.sku && (
                                 <p className="font-mono text-xs text-zinc-400">{poLine.item.sku}</p>
+                              )}
+                              {poLine?.item?.isSerialTracked && (
+                                <span
+                                  title="Each unit needs its own serial number — since this form doesn't collect them individually, they'll be auto-generated on receipt."
+                                  className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                                >
+                                  Serial-tracked · auto-generated
+                                </span>
                               )}
                             </td>
 

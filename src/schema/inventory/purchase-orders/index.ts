@@ -108,6 +108,7 @@ const PoItemSchema = z.object({
   id: z.string(),
   sku: z.string(),
   name: z.string(),
+  isSerialTracked: z.boolean().optional(),
 })
 
 const PoLineSchema = z.object({
