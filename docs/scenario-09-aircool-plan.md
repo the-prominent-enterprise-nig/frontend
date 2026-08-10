@@ -147,6 +147,21 @@ None — this scenario's building blocks (dual-serial capture, PR/PO, ParkedSale
 - Two new Prisma migrations added: `20260728032600_add_service_draft_invoice`, `20260728032837_service_draft_invoice_cascade_delete`. Both purely additive (new tables/constraint only).
 - Both repos are on a new branch `feat/aircool-issue-return-billing` (created off `development`) for this run's work. Nothing has been committed in either repo yet.
 
+## Implementation Log — 2026-08-10
+
+**For this scenario, I have done:**
+
+- **Closing Gap 6 (type of service at job creation):** new `ServiceCategory` enum + `ServiceDraftServiceType` child model (`category`, `subType`, `quotedAmount`), validated server-side against NIG's real 6-category "Services Offered" catalog (`SERVICE_CATALOG` in `src/pos/service-catalog.const.ts`, mirrored on the frontend). New "Types of Service" section on the New/Edit Service Job form — category picker → filtered sub-type picker → quoted amount, repeatable. Deliberately **not** pre-added by default the way Estimated Materials is (found live: a pre-added-but-empty row still fails its own required fields even though the array itself is optional, silently blocking submission on every pre-existing service-draft flow that never touches this section — caught and fixed before it shipped). Materials auto-suggestion: picking a sub-type under either "Replacement of ... Electrical Part(s)" category auto-adds a matching Estimated Materials line if a same-named item exists in the catalog. Shown on the detail view with a running total. `serviceTypes` is deliberately **optional at the API layer** — the doc's own Fix text implied "always tagged," but hard-requiring it would have broken all 38 existing POST/PATCH calls across this file's other test suites (Part 2/Sourcing/Install/Complete/Serial Tracking), a real breaking change to an already-shipped endpoint.
+- **New follow-up, not in the original 6-item plan** (developer-requested, 2026-08-10): link a service job to the POS transaction/invoice it was sold on. `ServiceDraft.posTransactionId` has existed since Closing Gap 2 (nullable, unique, tenant-scoped-validated backend) but had no UI at all — a dead scaffold. Added `TransactionSearchCombobox` (a new "Linked Sale" field on the form, searches by transaction number, reuses the same cross-resolve search Scenario 23 already built for POS Transactions ↔ AR Invoices) and a "Linked Sale" tile on the detail view. No backend changes needed — the field and its validation already existed, just unreachable.
+
+**Worth flagging:**
+
+- A real bug was found and fixed while building the Linked Sale picker: its search results crashed silently — `t.totalAmount.toFixed(2)` was called on a value that's actually a **string** over the API (Prisma Decimal serializes as a string, not a number), the exact same gotcha this doc's own 2026-07-28 log entry already flagged for `ServiceDraftInvoiceLine`'s `unitPrice`/`lineTotal`. Fixed with `Number(t.totalAmount).toFixed(2)`. Worth a broader sweep for any other numeric-display code touching a raw Decimal field with the same latent issue — it doesn't crash until the field is actually run through a number-only method.
+- Both closing-gap items in this run were manually tested and confirmed by the developer live (Types of Service + materials auto-suggestion; Linked Sale link/display/clear).
+- e2e-tested both sides: backend — 7 new tests for service types (`ServiceDraft — Service Types (Closing Gap 6) E2E`) + 6 new tests for the linked-sale field (`ServiceDraft — Linked Sale (posTransactionId) E2E`) in `test/aircool.e2e-spec.ts`; full 68-test suite re-run clean (3 pre-existing, unrelated Cashier-permission failures confirmed via `git stash` to exist independent of this work). Frontend — `pos-service-draft-service-type.spec.ts` (2 tests) and `pos-service-draft-linked-sale.spec.ts` (2 tests), plus the full `pos-service-draft-*` suite re-run to confirm no regressions to the pre-existing Sourcing/Install/Complete/Serial specs.
+- New migration: `20260810120000_add_service_draft_service_type` (purely additive — new enum + table).
+- Both repos are on branch `feat/aircool-service-type-and-invoice-link`, created off `development`.
+
 ## Implementation Log — 2026-08-05
 
 **For this scenario, I have done:**
