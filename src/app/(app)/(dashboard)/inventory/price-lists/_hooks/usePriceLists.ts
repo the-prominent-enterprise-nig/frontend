@@ -26,11 +26,12 @@ export function usePriceLists() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
+  const [showInactive, setShowInactive] = useState(false)
 
   const listQuery = useQuery({
-    queryKey: ['inventory-price-lists', { page, limit }],
+    queryKey: ['inventory-price-lists', { page, limit, showInactive }],
     queryFn: async () => {
-      const result = await getPriceLists({ page, limit })
+      const result = await getPriceLists({ page, limit, includeInactive: showInactive })
       if (!result.success) throw new Error(result.message ?? 'Failed to load price lists')
       return result
     },
@@ -191,6 +192,11 @@ export function usePriceLists() {
     error: listQuery.error,
     page,
     setPage,
+    showInactive,
+    setShowInactive: (value: boolean) => {
+      setShowInactive(value)
+      setPage(1)
+    },
     currencies: currenciesQuery.data ?? [],
     branches: branchesQuery.data ?? [],
     priceUseTypes: priceUseTypesQuery.data ?? [],
