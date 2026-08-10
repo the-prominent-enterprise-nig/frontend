@@ -11,6 +11,10 @@ export async function getWarehouses(params?: {
   limit?: number
   search?: string
   status?: 'active' | 'inactive'
+  // Bypasses branch-scoping — only honored server-side for callers holding
+  // inventory:transfers:create (see warehouses.controller.ts). Ignored for
+  // everyone else, so it's safe to pass from any caller.
+  allBranches?: boolean
 }): Promise<ApiResponse<WarehouseListResponse>> {
   try {
     const result = await api.get<WarehouseListResponse>(
