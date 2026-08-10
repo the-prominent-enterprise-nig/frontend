@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronUp,
   ClipboardList,
-  ClipboardX,
   Coins,
   Contact,
   CreditCard,
@@ -390,12 +389,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
       },
       {
-        label: 'Cancellations',
-        href: '/pos/cancellation-requests',
-        icon: ClipboardX,
-        requiredPermission: 'pos:sessions:read',
-      },
-      {
         label: 'Void Requests',
         href: '/pos/void-requests',
         icon: ShieldCheck,
@@ -433,27 +426,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/branch-pricing',
         icon: HandCoins,
         requiredPermission: 'pos:branch-pricing:read',
-      },
-      {
-        label: 'Settings',
-        href: '/pos/settings',
-        icon: Key,
-        // Business Owner / Branch Manager only — pos:transactions:read (what
-        // this used before) is also held by Cashier, which let them reach
-        // GL Mapping / POS Config / Queue Categories.
-        requiredPermission: 'pos:config:manage',
-        // Exact-match list, not a prefix check (see isActive below) — every
-        // /pos/settings/* sub-route needs its own explicit entry.
-        activeWhen: [
-          '/pos/settings',
-          '/pos/settings/general',
-          '/pos/settings/payment-methods',
-          '/pos/settings/terminals',
-          '/pos/settings/receipt-branding',
-          '/pos/settings/financing-terms',
-          '/pos/settings/queue-categories',
-          '/pos/settings/customer-display',
-        ],
       },
       {
         label: 'Cash-in-Transit',
