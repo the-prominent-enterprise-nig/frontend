@@ -8,7 +8,14 @@ import { ReorderRuleFormSchema, type ReorderRuleFormValues } from '@/src/schema/
 import type { ApiResponse } from '@/src/libs/api/client'
 
 type ItemOption = { id: string; name: string; sku: string }
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  // Each branch has exactly one warehouse — display this branch name rather
+  // than the warehouse's auto-generated "{branch} Warehouse" name.
+  branch?: { id: string; name: string } | null
+}
 
 type Props = {
   isOpen: boolean
@@ -100,7 +107,7 @@ export default function ReorderRuleModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Warehouse{' '}
+                Branch{' '}
                 <span className="ml-1 text-xs font-normal text-zinc-400">
                   (optional — applies globally if blank)
                 </span>
@@ -110,10 +117,10 @@ export default function ReorderRuleModal({
                 control={control}
                 render={({ field }) => (
                   <select {...field} value={field.value ?? ''} className={`${fieldClass} bg-white`}>
-                    <option value="">All Warehouses</option>
+                    <option value="">All Branches</option>
                     {warehouses.map((wh) => (
                       <option key={wh.id} value={wh.id}>
-                        {wh.code} — {wh.name}
+                        {wh.branch?.name ?? wh.name}
                       </option>
                     ))}
                   </select>

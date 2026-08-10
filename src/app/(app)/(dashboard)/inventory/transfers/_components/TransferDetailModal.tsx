@@ -94,6 +94,16 @@ function formatDateOnly(iso?: string | null) {
   })
 }
 
+// Each branch has exactly one warehouse, so a transfer's fromWarehouse/
+// toWarehouse is really a branch — display the branch's own name rather than
+// the warehouse's auto-generated "{branch} Warehouse" name.
+function branchLabel(
+  wh: { name: string; branch?: { name: string } | null } | null | undefined,
+  fallback = '—'
+): string {
+  return wh?.branch?.name ?? wh?.name ?? fallback
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -469,9 +479,8 @@ export default function TransferDetailModal({
                   From
                 </p>
                 <p className="mt-0.5 font-semibold text-zinc-900">
-                  {transfer.fromWarehouse?.name ?? '—'}
+                  {branchLabel(transfer.fromWarehouse)}
                 </p>
-                <p className="font-mono text-xs text-zinc-500">{transfer.fromWarehouse?.code}</p>
               </div>
               <ArrowRight className="h-5 w-5 shrink-0 text-zinc-400" />
               <div className="flex-1 min-w-0 text-right">
@@ -479,9 +488,8 @@ export default function TransferDetailModal({
                   To
                 </p>
                 <p className="mt-0.5 font-semibold text-zinc-900">
-                  {transfer.toWarehouse?.name ?? '—'}
+                  {branchLabel(transfer.toWarehouse)}
                 </p>
-                <p className="font-mono text-xs text-zinc-500">{transfer.toWarehouse?.code}</p>
               </div>
             </div>
 
@@ -782,7 +790,7 @@ export default function TransferDetailModal({
                 {(status === 'in_transit' || isReceivedStatus) && (
                   <LedgerEvent
                     icon={<Truck className="h-3.5 w-3.5" />}
-                    label={`Dispatched — stock deducted from ${transfer.fromWarehouse?.name ?? 'source'}`}
+                    label={`Dispatched — stock deducted from ${branchLabel(transfer.fromWarehouse, 'source')}`}
                     timestamp={transfer.dispatchedAt ?? transfer.transferDate}
                     color="text-blue-700 bg-blue-100"
                   />
@@ -790,7 +798,7 @@ export default function TransferDetailModal({
                 {status === 'received' && (
                   <LedgerEvent
                     icon={<CheckCircle className="h-3.5 w-3.5" />}
-                    label={`Received — stock added to ${transfer.toWarehouse?.name ?? 'destination'}`}
+                    label={`Received — stock added to ${branchLabel(transfer.toWarehouse, 'destination')}`}
                     timestamp={transfer.receivedAt}
                     color="text-green-700 bg-green-100"
                   />

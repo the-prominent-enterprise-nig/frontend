@@ -46,6 +46,9 @@ export const WarehouseSummarySchema = z.object({
   address: z.string().nullable().optional(),
   status: WarehouseStatusSchema.optional(),
   branchId: z.string().nullable().optional(),
+  // Each branch has exactly one warehouse — pickers display this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
   _count: z.object({ locations: z.number() }).optional(),
 })
 

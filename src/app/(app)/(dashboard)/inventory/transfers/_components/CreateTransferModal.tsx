@@ -23,10 +23,17 @@ type Props = {
   isSubmitting: boolean
   warehouses: WarehouseSummary[]
   // A Branch Manager is always requesting stock be sent TO their own branch
-  // — "To Warehouse" locks to it, "From Warehouse" stays their free choice of
-  // who to ask. null/undefined (head office / Business Owner) leaves both
-  // fully open, matching this project's role-hierarchy convention.
+  // — "To Branch" locks to it, "From Branch" stays their free choice of who
+  // to ask. null/undefined (head office / Business Owner) leaves both fully
+  // open, matching this project's role-hierarchy convention.
   currentUserBranchId?: string | null
+}
+
+// Each branch has exactly one warehouse, so this picker is really choosing a
+// branch — display the branch's own name rather than the warehouse's
+// auto-generated "{branch} Warehouse" name.
+function branchLabel(wh: WarehouseSummary): string {
+  return wh.branch?.name ?? wh.name
 }
 
 const fieldClass =
@@ -151,7 +158,7 @@ function TransferLineRow({
                 disabled={serialFieldDisabled}
                 placeholder={
                   !fromWarehouseId
-                    ? 'Please select a warehouse first'
+                    ? 'Please select a source branch first'
                     : serialsQuery.isLoading
                       ? 'Loading serials…'
                       : 'Search serial number…'
@@ -315,23 +322,23 @@ export default function CreateTransferModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {/* Warehouses */}
+            {/* Branches */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  From Warehouse <span className="text-red-500">*</span>
+                  From Branch <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="fromWarehouseId"
                   control={control}
                   render={({ field }) => (
                     <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select source…</option>
+                      <option value="">Select source branch…</option>
                       {warehouses
                         .filter((wh) => wh.id !== lockedToWarehouseId)
                         .map((wh) => (
                           <option key={wh.id} value={wh.id}>
-                            {wh.code} — {wh.name}
+                            {branchLabel(wh)}
                           </option>
                         ))}
                     </select>
@@ -344,7 +351,7 @@ export default function CreateTransferModal({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  To Warehouse <span className="text-red-500">*</span>
+                  To Branch <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="toWarehouseId"
@@ -357,17 +364,17 @@ export default function CreateTransferModal({
                         className={`${fieldClass} bg-zinc-50 text-zinc-500`}
                       >
                         <option value={lockedToWarehouseId}>
-                          {ownBranchWarehouses[0].code} — {ownBranchWarehouses[0].name}
+                          {branchLabel(ownBranchWarehouses[0])}
                         </option>
                       </select>
                     ) : (
                       <select {...field} className={`${fieldClass} bg-white`}>
-                        <option value="">Select destination…</option>
+                        <option value="">Select destination branch…</option>
                         {(currentUserBranchId ? ownBranchWarehouses : warehouses)
                           .filter((wh) => wh.id !== fromId)
                           .map((wh) => (
                             <option key={wh.id} value={wh.id}>
-                              {wh.code} — {wh.name}
+                              {branchLabel(wh)}
                             </option>
                           ))}
                       </select>

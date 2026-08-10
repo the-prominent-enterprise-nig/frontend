@@ -52,6 +52,15 @@ const STATUS_CONFIG: Record<
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-500', icon: XCircle },
 }
 
+// Each branch has exactly one warehouse, so a transfer's fromWarehouse/
+// toWarehouse is really a branch — display the branch's own name rather than
+// the warehouse's auto-generated "{branch} Warehouse" name.
+function branchLabel(
+  wh: { name: string; branch?: { name: string } | null } | null | undefined
+): string {
+  return wh?.branch?.name ?? wh?.name ?? '—'
+}
+
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   if (!lines || !lines.length) return <span className="text-zinc-300">—</span>
   const totalQty = lines.reduce((sum, l) => sum + Number(l.quantity), 0)
@@ -159,7 +168,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Transfers</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Move stock between warehouses with full ledger traceability.
+              Move stock between branches with full ledger traceability.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -225,7 +234,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
             <option value="">All Sources</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {branchLabel(wh)}
               </option>
             ))}
           </select>
@@ -238,7 +247,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
             <option value="">All Destinations</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {branchLabel(wh)}
               </option>
             ))}
           </select>
@@ -285,7 +294,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               <p className="text-sm font-medium text-zinc-500">No transfers found</p>
               {canCreate && (
                 <p className="mt-1 text-xs text-zinc-400">
-                  Create a transfer to move stock between warehouses.
+                  Create a transfer to move stock between branches.
                 </p>
               )}
             </div>
@@ -334,13 +343,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-zinc-700">
-                            <span className="font-medium">{tr.fromWarehouse?.code ?? '—'}</span>
+                            <span className="font-medium">{branchLabel(tr.fromWarehouse)}</span>
                             <ArrowRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                            <span className="font-medium">{tr.toWarehouse?.code ?? '—'}</span>
+                            <span className="font-medium">{branchLabel(tr.toWarehouse)}</span>
                           </div>
-                          <p className="mt-0.5 truncate text-xs text-zinc-400 max-w-[200px]">
-                            {tr.fromWarehouse?.name} → {tr.toWarehouse?.name}
-                          </p>
                         </td>
                         <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
                           {tr.transferDate

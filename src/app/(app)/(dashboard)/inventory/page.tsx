@@ -1175,7 +1175,8 @@ export default function InventoryPage() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs text-gray-900 truncate">
-                          {t.fromWarehouse?.name ?? '?'} → {t.toWarehouse?.name ?? '?'}
+                          {t.fromWarehouse?.branch?.name ?? t.fromWarehouse?.name ?? '?'} →{' '}
+                          {t.toWarehouse?.branch?.name ?? t.toWarehouse?.name ?? '?'}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {t._count?.lines ?? 0} line{t._count?.lines !== 1 ? 's' : ''} ·{' '}

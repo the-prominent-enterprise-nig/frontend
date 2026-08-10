@@ -96,6 +96,9 @@ export const ValuationItemSchema = z.object({
   warehouseId: z.string(),
   warehouseCode: z.string(),
   warehouseName: z.string(),
+  // Each branch has exactly one warehouse — the UI displays this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  warehouseBranchName: z.string().nullable().optional(),
   onHandQty: z.number(),
   totalCostValue: z.number(),
   avgUnitCost: z.number(),

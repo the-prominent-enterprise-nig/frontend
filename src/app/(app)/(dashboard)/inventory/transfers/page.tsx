@@ -6,7 +6,7 @@ import { TransferList } from './_components'
 
 export const metadata = {
   title: 'Stock Transfers | Prominent Enterprise',
-  description: 'Transfer stock between warehouses with full ledger traceability',
+  description: 'Transfer stock between branches with full ledger traceability',
 }
 
 export default async function TransfersPage() {

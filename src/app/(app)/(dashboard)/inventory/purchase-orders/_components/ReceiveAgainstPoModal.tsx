@@ -189,21 +189,21 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
         >
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            {/* Warehouse + Date */}
+            {/* Branch + Date */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Destination Warehouse <span className="text-red-500">*</span>
+                  Destination Branch <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="warehouseId"
                   control={control}
                   render={({ field }) => (
                     <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select warehouse…</option>
+                      <option value="">Select branch…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.code} — {wh.name}
+                          {wh.branch?.name ?? wh.name}
                         </option>
                       ))}
                     </select>
