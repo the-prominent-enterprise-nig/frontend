@@ -9,6 +9,7 @@ import {
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
+import Tooltip from '@/src/components/ui/Tooltip'
 
 const TYPE_LABELS: Record<CreditMemoType, string> = {
   sales_return: 'Sales Return',
@@ -160,17 +161,19 @@ export default function CreditMemosList() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       {m.status === 'ISSUED' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            voidMemo(m.id)
-                          }}
-                          disabled={voiding === m.id}
-                          title="Void credit memo"
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded disabled:opacity-50"
-                        >
-                          <Ban className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Void credit memo">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              voidMemo(m.id)
+                            }}
+                            disabled={voiding === m.id}
+                            aria-label="Void credit memo"
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded disabled:opacity-50"
+                          >
+                            <Ban className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                     </td>
                   </tr>

@@ -7,7 +7,12 @@ export const CreateCreditMemoLineSchema = z.object({
   quantity: z.number().positive('Quantity must be greater than 0'),
   unitPrice: z.number().positive('Unit price must be greater than 0'),
   serialNumberId: z.string().optional(),
-  deductionAmount: z.number().min(0, 'Cannot be negative').optional(),
+  // Accepts '' (not just number|undefined) so the field can hold '' while
+  // the user is actively clearing/retyping it (see CreditMemoLineRow's
+  // onChange) without Zod rejecting the keystroke. handleFormSubmit's own
+  // `deductionAmount: l.deductionAmount || undefined` mapping already
+  // normalizes a leftover '' to undefined before it reaches the API.
+  deductionAmount: z.union([z.number().min(0, 'Cannot be negative'), z.literal('')]).optional(),
 })
 
 // outstanding is a runtime prop (the invoice's remaining balance), not part
@@ -24,7 +29,7 @@ export function buildCreateCreditMemoFormSchema(outstanding: number) {
     .refine(
       (d) => {
         const total = d.lines.reduce(
-          (sum, l) => sum + l.quantity * l.unitPrice - (l.deductionAmount ?? 0),
+          (sum, l) => sum + l.quantity * l.unitPrice - (Number(l.deductionAmount) || 0),
           0
         )
         return total > 0
@@ -34,7 +39,7 @@ export function buildCreateCreditMemoFormSchema(outstanding: number) {
     .refine(
       (d) => {
         const total = d.lines.reduce(
-          (sum, l) => sum + l.quantity * l.unitPrice - (l.deductionAmount ?? 0),
+          (sum, l) => sum + l.quantity * l.unitPrice - (Number(l.deductionAmount) || 0),
           0
         )
         return total <= outstanding + 0.01

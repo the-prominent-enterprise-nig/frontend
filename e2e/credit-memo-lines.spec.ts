@@ -60,7 +60,7 @@ test('issuing a credit memo computes the amount from type + line items', async (
   const row = page.locator('table tbody tr', { has: page.getByText(invoice.invoiceNumber) })
   await expect(row).toBeVisible({ timeout: 10_000 })
 
-  await row.getByTitle('Issue credit memo').click()
+  await row.getByLabel('Issue credit memo').click()
   await expect(page.getByRole('heading', { name: 'Issue Credit Memo' })).toBeVisible({
     timeout: 10_000,
   })
@@ -120,7 +120,7 @@ test('cannot submit a credit memo with no line items', async ({ page }) => {
   await gotoReady(page, `/accounting/ar-invoices?customerId=${customer.id}`)
   const row = page.locator('table tbody tr', { has: page.getByText(invoice.invoiceNumber) })
   await expect(row).toBeVisible({ timeout: 10_000 })
-  await row.getByTitle('Issue credit memo').click()
+  await row.getByLabel('Issue credit memo').click()
   await expect(page.getByRole('heading', { name: 'Issue Credit Memo' })).toBeVisible({
     timeout: 10_000,
   })
@@ -135,4 +135,49 @@ test('cannot submit a credit memo with no line items', async ({ page }) => {
   await page.waitForTimeout(500)
   expect(sawPost).toBe(false)
   await expect(page.getByRole('heading', { name: 'Issue Credit Memo' })).toBeVisible()
+})
+
+test('the Deduction field starts at 0 but can be cleared and retyped', async ({ page }) => {
+  const customerName = `E2E Credit Memo Clear ${Date.now()}`
+  const customerRes = await page.request.post('/api/crm/customers', {
+    data: { name: customerName, customerType: 'individual', phone: '09170005600' },
+  })
+  const customer = await customerRes.json()
+  createdCustomerId = customer.id
+
+  const invoiceRes = await page.request.post('/api/ar-invoices', {
+    data: {
+      customerId: customer.id,
+      invoiceDate: new Date().toISOString().slice(0, 10),
+      dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      description: 'E2E credit memo clear-field fixture',
+      subtotal: 500,
+      taxAmount: 0,
+    },
+  })
+  const invoice = await invoiceRes.json()
+  await page.request.post(`/api/ar-invoices/${invoice.id}/send`)
+
+  await gotoReady(page, `/accounting/ar-invoices?customerId=${customer.id}`)
+  const row = page.locator('table tbody tr', { has: page.getByText(invoice.invoiceNumber) })
+  await row.getByLabel('Issue credit memo').click()
+  await expect(page.getByRole('heading', { name: 'Issue Credit Memo' })).toBeVisible({
+    timeout: 10_000,
+  })
+
+  const deductionInput = page.locator('input[type="number"]').nth(2)
+  await expect(deductionInput).toHaveValue('0')
+
+  // Home + Shift+End is the reliable cross-browser "select all" for a
+  // number input (Ctrl+A is flaky on number inputs specifically).
+  await deductionInput.click()
+  await deductionInput.press('Home')
+  await deductionInput.press('Shift+End')
+  await deductionInput.press('Backspace')
+  await expect(deductionInput).toHaveValue('')
+
+  // Typing into a genuinely-cleared field replaces, rather than appending
+  // onto a silently-lingering "0" (the regression this test guards).
+  await deductionInput.type('20')
+  await expect(deductionInput).toHaveValue('20')
 })
