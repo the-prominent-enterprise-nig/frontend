@@ -116,6 +116,10 @@ export const ACCOUNTING_PERMISSIONS = {
   CREDIT_MEMOS_CREATE: 'accounting:credit-memos:create',
   CREDIT_MEMOS_VOID: 'accounting:credit-memos:void',
 
+  DEBIT_MEMOS_READ: 'accounting:debit-memos:read',
+  DEBIT_MEMOS_CREATE: 'accounting:debit-memos:create',
+  DEBIT_MEMOS_VOID: 'accounting:debit-memos:void',
+
   CUSTOMER_ADVANCES_READ: 'accounting:customer-advances:read',
   CUSTOMER_ADVANCES_CREATE: 'accounting:customer-advances:create',
   CUSTOMER_ADVANCES_APPLY: 'accounting:customer-advances:apply',
@@ -247,6 +251,9 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:credit-memos:read': 'View credit memos',
   'accounting:credit-memos:create': 'Issue a credit memo against an open invoice',
   'accounting:credit-memos:void': 'Void a credit memo',
+  'accounting:debit-memos:read': 'View debit memos',
+  'accounting:debit-memos:create': 'Issue a debit memo against an invoice',
+  'accounting:debit-memos:void': 'Void a debit memo',
   'accounting:customer-advances:read': 'View customer advances',
   'accounting:customer-advances:create': 'Record a customer advance (e.g. a reservation deposit)',
   'accounting:customer-advances:apply': 'Apply a customer advance against an invoice',

@@ -24,7 +24,7 @@ type Props = {
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-const emptyForm = { itemId: '', price: '', floorPrice: '', minQty: '' }
+const emptyForm = { itemId: '', price: '', floorPrice: '', minQty: '', downPayment: '' }
 
 export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItemsChanged }: Props) {
   const [items, setItems] = useState<PriceListItem[]>([])
@@ -96,6 +96,7 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItems
       price: Number(form.price),
       floorPrice: form.floorPrice ? Number(form.floorPrice) : undefined,
       minQty: form.minQty ? Number(form.minQty) : undefined,
+      downPayment: form.downPayment ? Number(form.downPayment) : undefined,
     })
     setIsSaving(false)
     if (res.success) {
@@ -188,7 +189,7 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItems
                   onChange={(itemId) => setForm((f) => ({ ...f, itemId }))}
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
                     Price <span className="text-red-500">*</span>
@@ -213,6 +214,20 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItems
                     step="0.01"
                     value={form.floorPrice}
                     onChange={(e) => setForm((f) => ({ ...f, floorPrice: e.target.value }))}
+                    placeholder="0.00"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Down Payment <span className="font-normal text-zinc-400">(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.downPayment}
+                    onChange={(e) => setForm((f) => ({ ...f, downPayment: e.target.value }))}
                     placeholder="0.00"
                     className={fieldClass}
                   />
@@ -280,6 +295,7 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItems
                     <th className="px-4 py-2">Item</th>
                     <th className="px-4 py-2">Price</th>
                     <th className="px-4 py-2">Floor Price</th>
+                    <th className="px-4 py-2">Down Payment</th>
                     <th className="px-4 py-2">Min Qty</th>
                     {canEdit && <th className="px-4 py-2" />}
                   </tr>
@@ -298,6 +314,9 @@ export function PriceListItemsModal({ open, onClose, priceList, canEdit, onItems
                       </td>
                       <td className="px-4 py-2 text-zinc-600">
                         {i.floorPrice != null ? `₱${Number(i.floorPrice).toLocaleString()}` : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-zinc-600">
+                        {i.downPayment != null ? `₱${Number(i.downPayment).toLocaleString()}` : '—'}
                       </td>
                       <td className="px-4 py-2 text-zinc-600">{i.minQty ?? '—'}</td>
                       {canEdit && (

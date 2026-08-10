@@ -391,6 +391,18 @@ export const ARInvoices = {
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
+export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill'
+export interface CreditMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  deductionAmount: number
+}
 export interface CreditMemo {
   id: string
   memoNumber: string
@@ -405,10 +417,22 @@ export interface CreditMemo {
     status: string
   } | null
   memoDate: string
+  type: CreditMemoType
   amount: number
+  lines: CreditMemoLine[]
   reason?: string | null
   status: CreditMemoStatus
   journalEntryId?: string | null
+  /** Set when this memo was auto-created from an approved POS return/refund
+   * (Scenario 13 Part 3) rather than issued by hand. */
+  sourceReturnRequestId?: string | null
+}
+export interface CreateCreditMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  deductionAmount?: number
 }
 export const CreditMemos = {
   list: (params?: {
@@ -418,9 +442,74 @@ export const CreditMemos = {
     arInvoiceId?: string
   }) => api.get<{ items: CreditMemo[]; total: number }>('/credit-memos', params as any),
   get: (id: string) => api.get<CreditMemo>(`/credit-memos/${id}`),
-  issue: (body: { arInvoiceId: string; amount: number; reason?: string; memoDate?: string }) =>
-    api.post<CreditMemo>('/credit-memos', body),
+  issue: (body: {
+    arInvoiceId: string
+    type: CreditMemoType
+    lines: CreateCreditMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<CreditMemo>('/credit-memos', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/${id}/void`, {}),
+}
+
+// ============ Debit Memos ============
+export type DebitMemoStatus = 'ISSUED' | 'VOID'
+export type DebitMemoType = 'unit_replacement' | 'billing_adjustment'
+export interface DebitMemoLine {
+  id: string
+  itemId: string
+  itemName?: string | null
+  itemSku?: string | null
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  additionAmount: number
+}
+export interface DebitMemo {
+  id: string
+  memoNumber: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string } | null
+  arInvoiceId: string
+  arInvoice?: {
+    id: string
+    invoiceNumber: string
+    totalAmount: number
+    amountPaid: number
+    status: string
+  } | null
+  memoDate: string
+  type: DebitMemoType
+  amount: number
+  lines: DebitMemoLine[]
+  reason?: string | null
+  status: DebitMemoStatus
+  journalEntryId?: string | null
+}
+export interface CreateDebitMemoLineInput {
+  itemId: string
+  quantity: number
+  unitPrice: number
+  serialNumberId?: string
+  additionAmount?: number
+}
+export const DebitMemos = {
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    arInvoiceId?: string
+  }) => api.get<{ items: DebitMemo[]; total: number }>('/debit-memos', params as any),
+  get: (id: string) => api.get<DebitMemo>(`/debit-memos/${id}`),
+  issue: (body: {
+    arInvoiceId: string
+    type: DebitMemoType
+    lines: CreateDebitMemoLineInput[]
+    reason?: string
+    memoDate?: string
+  }) => api.post<DebitMemo>('/debit-memos', body),
+  void: (id: string) => api.post<DebitMemo>(`/debit-memos/${id}/void`, {}),
 }
 
 // ============ AP Bills ============

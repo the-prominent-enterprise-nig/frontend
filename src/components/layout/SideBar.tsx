@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  FilePlus,
   FileSpreadsheet,
   ClipboardCheck,
   Funnel,
@@ -44,6 +45,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Tag,
+  Tags,
   Truck,
   Undo2,
   Users,
@@ -118,6 +120,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/catalog',
         icon: Tag,
         requiredPermission: INVENTORY_PERMISSIONS.ITEMS_READ,
+      },
+      {
+        label: 'Price Lists',
+        href: '/inventory/price-lists',
+        icon: Tags,
+        requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
       },
       {
         label: 'Operations',
@@ -229,6 +237,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/ar-invoices',
         icon: Receipt,
         requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
+      },
+      {
+        label: 'Credit Memos',
+        href: '/accounting/credit-memos',
+        icon: Undo2,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_READ,
+      },
+      {
+        label: 'Debit Memos',
+        href: '/accounting/debit-memos',
+        icon: FilePlus,
+        requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
       },
       {
         label: 'AP Bills',
