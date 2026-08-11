@@ -192,7 +192,7 @@ export function CashInTransitList({
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           {view === 'history' ? (
             <>
@@ -242,7 +242,7 @@ export function CashInTransitList({
             </>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isUnrestricted && view !== 'history' && (
             <button
               onClick={view === 'monitor' ? () => setView('sessions') : openMonitor}
@@ -287,7 +287,7 @@ export function CashInTransitList({
       </div>
 
       {view === 'monitor' ? (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+        <div className="scroll-fade-x bg-white border border-gray-200 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs uppercase text-gray-600">
               <tr>
@@ -355,7 +355,7 @@ export function CashInTransitList({
               {historyError}
             </div>
           )}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+          <div className="scroll-fade-x bg-white border border-gray-200 rounded-lg overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
@@ -399,7 +399,7 @@ export function CashInTransitList({
           </div>
         </>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+        <div className="scroll-fade-x bg-white border border-gray-200 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs uppercase text-gray-600">
               <tr>

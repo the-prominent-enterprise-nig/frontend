@@ -136,7 +136,7 @@ export default function BranchPricingPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">

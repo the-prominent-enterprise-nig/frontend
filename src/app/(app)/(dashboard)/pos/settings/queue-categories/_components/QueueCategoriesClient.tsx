@@ -108,7 +108,7 @@ export default function QueueCategoriesClient() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="space-y-3 p-6">
               {[...Array(3)].map((_, i) => (

@@ -493,7 +493,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-              <div className="overflow-x-auto">
+              <div className="scroll-fade-x overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
@@ -577,7 +577,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
 
           {loading ? (
             <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-              <div className="overflow-x-auto">
+              <div className="scroll-fade-x overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
@@ -621,7 +621,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-              <div className="overflow-x-auto">
+              <div className="scroll-fade-x overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">

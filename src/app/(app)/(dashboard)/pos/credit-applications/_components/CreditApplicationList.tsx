@@ -129,7 +129,7 @@ export default function CreditApplicationList({ session }: { session: SessionUse
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="scroll-fade-x overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-200 bg-zinc-50">
