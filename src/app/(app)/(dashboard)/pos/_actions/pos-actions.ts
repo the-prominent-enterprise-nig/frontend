@@ -2872,3 +2872,28 @@ export async function getMissingCogsReport(): Promise<ApiResponse<MissingCogsRep
     return { success: false, error: 'Failed to fetch missing-COGS report' }
   }
 }
+
+export interface SalesByBranch {
+  branchId: string
+  branchName: string
+  totalSales: number
+  transactionCount: number
+}
+
+export async function getSalesByBranch(params?: {
+  dateFrom?: string
+  dateTo?: string
+}): Promise<ApiResponse<SalesByBranch[]>> {
+  try {
+    const result = await api.get<SalesByBranch[]>('/pos/transactions/reports/sales-by-branch', {
+      dateFrom: params?.dateFrom,
+      dateTo: params?.dateTo,
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch sales by branch' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch sales by branch' }
+  }
+}

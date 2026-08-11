@@ -1,11 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Users, Calculator, Package, ExternalLink } from 'lucide-react'
+import { Users, Calculator, Package, ShoppingCart, UsersRound, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
 import { api } from '@/src/libs/api/client'
+import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
+import { getReorderAlertsByWarehouse } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
+import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
+import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { leadsApi, customersApi } from '@/src/libs/api/crm'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 
 interface ModuleStat {
   label: string
@@ -30,17 +37,66 @@ function fmtMoneyShort(n: number): string {
   return `₱${Math.round(n)}`
 }
 
+/**
+ * "All Branches" uses the tenant-wide reorder-alerts/valuation endpoints as
+ * they were already called. A specific branch has no direct filter on
+ * either, so it's resolved to that branch's warehouse(s) first, then each
+ * is queried individually (via the other, warehouse-filterable reorder
+ * endpoint) and combined.
+ */
+async function loadInventoryStats(
+  branchId: string | null
+): Promise<{ lowStockCount: number; totalValue: number }> {
+  if (!branchId) {
+    const [reorderAlerts, valuation] = await Promise.all([
+      getReorderAlerts({ limit: 1 }),
+      getValuationReport(),
+    ])
+    const reorderData = reorderAlerts.data as { total?: number } | undefined
+    const valuationData = valuation.data as
+      | { summary?: { totalValue?: number }; grandTotal?: number }
+      | undefined
+    return {
+      lowStockCount: reorderData?.total ?? 0,
+      totalValue: valuationData?.summary?.totalValue ?? valuationData?.grandTotal ?? 0,
+    }
+  }
+
+  const warehouseIds = await resolveBranchWarehouseIds(branchId)
+  if (warehouseIds.length === 0) return { lowStockCount: 0, totalValue: 0 }
+
+  const perWarehouse = await Promise.all(
+    warehouseIds.map((id) =>
+      Promise.all([getReorderAlertsByWarehouse(id), getValuationReport({ warehouseId: id })])
+    )
+  )
+  let lowStockCount = 0
+  let totalValue = 0
+  for (const [alertsRes, valuationRes] of perWarehouse) {
+    lowStockCount += alertsRes.data?.length ?? 0
+    const valuationData = valuationRes.data as
+      | { summary?: { totalValue?: number }; grandTotal?: number }
+      | undefined
+    totalValue += valuationData?.summary?.totalValue ?? valuationData?.grandTotal ?? 0
+  }
+  return { lowStockCount, totalValue }
+}
+
 export default function ModulesWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs' || variant === 'sm'
-  const gridCols =
-    variant === 'lg' ? 'grid-cols-3' : variant === 'md' ? 'grid-cols-2' : 'grid-cols-1'
+  const gridCols = variant === 'xs' ? 'grid-cols-1' : 'grid-cols-2'
 
-  const [hrStats, setHrStats] = useState<ModuleStat[]>([
-    { label: 'Employees', value: '—' },
-    { label: 'On Leave', value: '—' },
-    { label: 'Pending', value: '—' },
-  ])
+  // Human Resources card is commented out below — there is no HR module on
+  // the backend (no employees/leave-management controllers at all), so
+  // /employees and /leave-management/summary 404 for every request. Restore
+  // this state + the fetch calls in the effect + the "Human Resources"
+  // entry in `modules` below once a real HR backend module exists.
+  // const [hrStats, setHrStats] = useState<ModuleStat[]>([
+  //   { label: 'Employees', value: '—' },
+  //   { label: 'On Leave', value: '—' },
+  //   { label: 'Pending', value: '—' },
+  // ])
   const [inventoryStats, setInventoryStats] = useState<ModuleStat[]>([
     { label: 'Products', value: '—' },
     { label: 'Low Stock', value: '—' },
@@ -51,33 +107,46 @@ export default function ModulesWidget() {
     { label: 'Outstanding', value: '—' },
     { label: 'Overdue', value: '—' },
   ])
+  const [posStats, setPosStats] = useState<ModuleStat[]>([
+    { label: 'Sales (MTD)', value: '—' },
+    { label: 'Transactions', value: '—' },
+    { label: 'Refunds', value: '—' },
+  ])
+  const [crmStats, setCrmStats] = useState<ModuleStat[]>([
+    { label: 'Customers', value: '—' },
+    { label: 'New This Month', value: '—' },
+    { label: 'Active Leads', value: '—' },
+  ])
+
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [employees, summary, items, ar] = await Promise.all([
-        api.get<{ meta?: { total?: number } }>('/employees', { limit: 1 }),
-        api.get<{
-          pending?: number
-          approved?: number
-          pendingRequests?: number
-          approvedRequests?: number
-        }>('/leave-management/summary'),
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      const [items, ar, inventoryStatsResult, txRes, customersRes, leadsRes] = await Promise.all([
+        // HR: see the commented-out hrStats state above — /employees and
+        // /leave-management/summary both 404, no HR backend module exists.
+        // api.get<{ meta?: { total?: number } }>('/employees', { limit: 1 }),
+        // api.get<{
+        //   pending?: number
+        //   approved?: number
+        //   pendingRequests?: number
+        //   approvedRequests?: number
+        // }>('/leave-management/summary'),
         api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
         ARInvoices.list(),
+        loadInventoryStats(branchId),
+        getTransactions({ dateFrom: monthStart.toISOString(), branchId: branchId ?? undefined }),
+        customersApi.list({ limit: 200 }),
+        leadsApi.list({ limit: 200 }),
       ])
       if (cancelled) return
 
-      setHrStats([
-        { label: 'Employees', value: employees.data?.meta?.total ?? 0 },
-        { label: 'On Leave', value: summary.data?.approved ?? summary.data?.approvedRequests ?? 0 },
-        { label: 'Pending', value: summary.data?.pending ?? summary.data?.pendingRequests ?? 0 },
-      ])
-
       setInventoryStats([
         { label: 'Products', value: items.data?.meta?.total ?? 0 },
-        { label: 'Low Stock', value: '—' },
-        { label: 'Value', value: '—' },
+        { label: 'Low Stock', value: inventoryStatsResult.lowStockCount },
+        { label: 'Value', value: fmtMoneyShort(inventoryStatsResult.totalValue) },
       ])
 
       const invoices = ar.data?.items ?? []
@@ -97,21 +166,61 @@ export default function ModulesWidget() {
         { label: 'Outstanding', value: fmtMoneyShort(outstanding) },
         { label: 'Overdue', value: overdue },
       ])
+
+      const txns = txRes.data ?? []
+      const sales = txns.filter((t) => t.transactionType === 'sale' && t.status !== 'voided')
+      const refunds = txns.filter((t) => t.transactionType === 'refund' && t.status !== 'voided')
+      const totalSales = sales.reduce((sum, t) => sum + Number(t.totalAmount ?? 0), 0)
+      setPosStats([
+        { label: 'Sales (MTD)', value: fmtMoneyShort(totalSales) },
+        { label: 'Transactions', value: sales.length },
+        { label: 'Refunds', value: refunds.length },
+      ])
+
+      const totalCustomers = customersRes.data?.meta?.total ?? 0
+      const newThisMonth = (customersRes.data?.data ?? []).filter(
+        (c) => new Date(c.createdAt).getTime() >= monthStart.getTime()
+      ).length
+      const activeLeads = (leadsRes.data?.data ?? []).filter((l) => l.status === 'active').length
+      setCrmStats([
+        { label: 'Customers', value: totalCustomers },
+        { label: 'New This Month', value: newThisMonth },
+        { label: 'Active Leads', value: activeLeads },
+      ])
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   const modules: Module[] = [
+    // Human Resources — see the commented-out hrStats state above.
+    // {
+    //   label: 'Human Resources',
+    //   description: 'Manage employees, attendance, payroll & leave',
+    //   icon: Users,
+    //   iconBg: 'bg-purple-100',
+    //   iconColor: 'text-purple-600',
+    //   href: '/human-resource',
+    //   stats: hrStats,
+    // },
     {
-      label: 'Human Resources',
-      description: 'Manage employees, attendance, payroll & leave',
-      icon: Users,
-      iconBg: 'bg-purple-100',
-      iconColor: 'text-purple-600',
-      href: '/human-resource',
-      stats: hrStats,
+      label: 'Point of Sale',
+      description: 'Sales, transactions, and checkout',
+      icon: ShoppingCart,
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-600',
+      href: '/pos',
+      stats: posStats,
+    },
+    {
+      label: 'Inventory',
+      description: 'Products, stock levels, and adjustments',
+      icon: Package,
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600',
+      href: '/inventory',
+      stats: inventoryStats,
     },
     {
       label: 'Accounting',
@@ -123,13 +232,13 @@ export default function ModulesWidget() {
       stats: accountingStats,
     },
     {
-      label: 'Inventory',
-      description: 'Products, stock levels, and adjustments',
-      icon: Package,
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
-      href: '/inventory',
-      stats: inventoryStats,
+      label: 'CRM',
+      description: 'Leads, customers, and pipeline',
+      icon: UsersRound,
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
+      href: '/crm',
+      stats: crmStats,
     },
   ]
 
