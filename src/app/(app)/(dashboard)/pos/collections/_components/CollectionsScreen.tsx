@@ -59,15 +59,9 @@ function isToday(dateIso: string): boolean {
   return dateIso.slice(0, 10) === todayIso()
 }
 
-function paidToday(line: InstallmentScheduleLineWithInvoice): boolean {
-  return line.arInvoice.payments.some((p) => isToday(p.paymentDate))
-}
-
-// The backend's same-day guard (ar-invoices.service.ts's recordPayment())
-// keys off whatever paymentDate is actually submitted, not literally "today"
-// — a backdated/postdated entry is only blocked against a payment already
-// recorded on THAT SAME chosen date. This mirrors that so the modal's own
-// pre-submit warning never disagrees with the guard it's warning about.
+// Used to show an informational (non-blocking) note when the chosen payment
+// date already has a payment recorded — the backend only actually rejects
+// this once the invoice is fully paid (isFullyPaid, handled separately).
 function hasPaymentOnDate(line: InstallmentScheduleLineWithInvoice, dateIso: string): boolean {
   return line.arInvoice.payments.some((p) => p.paymentDate.slice(0, 10) === dateIso.slice(0, 10))
 }
@@ -300,7 +294,6 @@ export default function CollectionsScreen() {
                               !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) &&
                               !isFullyPaid &&
                               isNextDue
-                            const collectedToday = paidToday(line)
                             return (
                               <li
                                 key={line.lineNumber}
@@ -328,16 +321,7 @@ export default function CollectionsScreen() {
                                     Paid
                                   </span>
                                 )}
-                                {collectable && collectedToday && (
-                                  <span
-                                    title="A payment was already collected for this due today — try again tomorrow, or cancel it from Accounting → AR Invoices if it was a mistake."
-                                    className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    Collected today
-                                  </span>
-                                )}
-                                {collectable && !collectedToday && (
+                                {collectable && (
                                   <button
                                     onClick={() =>
                                       setCollectingLine({
@@ -503,13 +487,12 @@ function CollectPaymentModal({
   const wouldOverpay = totalApplied > outstanding + 0.01
   const rebateExceedsCap = (Number(form.rebateAmount) || 0) > (suggestedRebate ?? 0) + 0.01
   const isBackdatedOrPostdated = !isToday(form.paymentDate)
-  // Defense-in-depth against the exact-same scenario the list view already
-  // hides "Collect" for (see paidToday() there) — but keyed off whichever
-  // date is actually chosen here, not hardcoded to today, since the backend
-  // guard itself is per-chosen-date, not per-literal-today. Without this,
-  // switching the date field to a day that's already blocked would only
-  // surface as a submit-time server error.
-  const blockedForChosenDate = hasPaymentOnDate(line, form.paymentDate)
+  // Informational only, not blocking — the backend only rejects a repeat
+  // same-date payment once the invoice is already fully paid (isFullyPaid,
+  // handled separately above). A due that's still open can be topped up
+  // again on a date that already has a payment, so this just tells the
+  // cashier that's what's about to happen.
+  const alreadyPaidOnChosenDate = hasPaymentOnDate(line, form.paymentDate)
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -606,15 +589,14 @@ function CollectPaymentModal({
                 reversing a mistaken payment), use Accounting → AR Invoices.
               </div>
             )}
-            {!isFullyPaid && blockedForChosenDate && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
+            {!isFullyPaid && alreadyPaidOnChosenDate && (
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />A payment was already collected
-                for this due on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}. A
-                second payment dated the same day can&apos;t be recorded — cancel the existing one
-                from Accounting → AR Invoices first if it was a mistake, or pick a different date.
+                for this due on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}.
+                This will be recorded as an additional payment toward the remaining balance.
               </div>
             )}
-            {!isFullyPaid && !blockedForChosenDate && isBackdatedOrPostdated && (
+            {!isFullyPaid && !alreadyPaidOnChosenDate && isBackdatedOrPostdated && (
               <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
@@ -755,7 +737,7 @@ function CollectPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || isFullyPaid || blockedForChosenDate || rebateExceedsCap}
+              disabled={submitting || isFullyPaid || rebateExceedsCap}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
