@@ -59,7 +59,7 @@ export function ServiceJobSourcingModal({
             </div>
           ) : (
             <>
-              <div className="overflow-hidden rounded-lg border border-zinc-200">
+              <div className="scroll-fade-x overflow-x-auto rounded-lg border border-zinc-200">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-200 bg-zinc-50">

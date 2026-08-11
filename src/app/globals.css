@@ -149,6 +149,25 @@
   }
 }
 
+/* Wrap an `overflow-x-auto` table container in this (on a white-bg card) to
+   hint there's more to scroll to on narrow screens, where a data table's
+   extra columns would otherwise just end abruptly at the card edge with no
+   visual cue. Static, not scroll-position-aware — stays simple/robust
+   rather than tracking scrollLeft per table instance. */
+.scroll-fade-x {
+  position: relative;
+}
+.scroll-fade-x::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  background: linear-gradient(to right, transparent, white);
+  pointer-events: none;
+}
+
 /* ── React Grid Layout overrides ──────────────────────────────────────────── */
 .react-grid-item > .react-resizable-handle::after {
   border-right-color: #a855f7;
