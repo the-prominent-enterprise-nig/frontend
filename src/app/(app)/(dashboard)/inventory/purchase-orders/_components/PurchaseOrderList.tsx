@@ -278,7 +278,6 @@ export function PurchaseOrderList({
   canReceive,
   canViewCost,
   currentUserBranchId,
-  currentUserBranchName,
 }: {
   canCreate: boolean
   canApprove: boolean
@@ -287,11 +286,11 @@ export function PurchaseOrderList({
   canClose: boolean
   canReceive: boolean
   canViewCost: boolean
-  /** null/undefined (head office / Business Owner) leaves the receiving
-   * modal's Destination Branch and the create modal's Branch fully open —
-   * same convention as the Stock Transfer request modal's "To Branch". */
+  /** Sent as branchId attribution on a created PO — the create modal has no
+   * visible branch field anymore (Scenario 27: destination is the
+   * Warehouse field), this just flows through to the backend's own
+   * server-side force for a branch-scoped creator. */
   currentUserBranchId?: string | null
-  currentUserBranchName?: string | null
 }) {
   const [activeSection, setActiveSection] = useState<Section>('orders')
 
@@ -749,7 +748,6 @@ export function PurchaseOrderList({
         }}
         isSubmitting={isCreating}
         currentUserBranchId={currentUserBranchId}
-        currentUserBranchName={currentUserBranchName}
       />
 
       <CancelPoModal
@@ -775,7 +773,6 @@ export function PurchaseOrderList({
           refetch()
         }}
         canViewCost={canViewCost}
-        currentUserBranchId={currentUserBranchId}
       />
     </div>
   )

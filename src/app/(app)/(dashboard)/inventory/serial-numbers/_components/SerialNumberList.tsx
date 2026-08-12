@@ -215,10 +215,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
               className="w-56 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Warehouses</option>
+              <option value="">All Branches</option>
               {warehouseOptions.map((wh) => (
                 <option key={wh.id} value={wh.id}>
-                  {wh.code} — {wh.name}
+                  {wh.branch?.name ?? wh.name}
                 </option>
               ))}
             </select>
@@ -426,7 +426,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                             {serial.serialNumber}
                           </td>
                           <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                            {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
+                            {(() => {
+                              const wh = serial.warehouse ?? serial.currentWarehouse
+                              return wh?.branch?.name ?? wh?.name ?? '—'
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
                             <div>{displayClassificationLabel(serial.item?.brand?.name) ?? '—'}</div>

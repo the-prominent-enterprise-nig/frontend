@@ -31,6 +31,9 @@ test.describe('Inventory — Purchase Order freebies', () => {
     })
 
     await pickFirstOption(page, 'Search supplier by name or code…')
+    // Warehouse — required since Scenario 27 (a PO must always specify its
+    // real destination warehouse now, not an editable-later "Branch" field).
+    await page.locator('select').first().selectOption({ index: 1 })
     await pickFirstOption(page, 'Search item by name or SKU…')
 
     const numberInputs = page.locator('input[type="number"]')

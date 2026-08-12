@@ -1516,6 +1516,8 @@ function PaymentDialog({
     // field out for a legitimately-zero outstanding balance (0 is falsy).
     amount: String(outstanding),
     withholdingAmount: '0',
+    withholdingCertificateNo: '',
+    withholdingCertificateStatus: '' as '' | 'pending' | 'received',
     paymentDate: new Date().toISOString().slice(0, 10),
     method: 'CASH' as PaymentMethod,
     reference: '',
@@ -1538,6 +1540,8 @@ function PaymentDialog({
       ...form,
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
+      withholdingCertificateNo: form.withholdingCertificateNo || undefined,
+      withholdingCertificateStatus: form.withholdingCertificateStatus || undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -1621,6 +1625,34 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
+          {Number(form.withholdingAmount) > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="2307 Certificate No.">
+                <input
+                  type="text"
+                  value={form.withholdingCertificateNo}
+                  onChange={(e) => setForm({ ...form, withholdingCertificateNo: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              <Field label="Certificate Status">
+                <select
+                  value={form.withholdingCertificateStatus}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      withholdingCertificateStatus: e.target.value as '' | 'pending' | 'received',
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  <option value="">— Not tracked —</option>
+                  <option value="pending">Pending</option>
+                  <option value="received">Received</option>
+                </select>
+              </Field>
+            </div>
+          )}
           <div className="text-xs text-gray-500">
             Total applied to AR: <span className="font-semibold">{fmtMoney(totalApplied)}</span>
           </div>

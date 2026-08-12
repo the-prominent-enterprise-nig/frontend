@@ -46,6 +46,17 @@ export function useGoodsReceiving() {
     staleTime: STALE.LOOKUP,
   })
 
+  // Scenario 27 — a manual receipt's *destination* is always one of the 2
+  // real warehouses now, never a branch's own local stock. Kept separate
+  // from warehousesQuery above, which still needs every branch-local
+  // warehouse too (it backs the history filter dropdown, which legitimately
+  // filters past receipts by any location).
+  const destinationWarehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup', 'standalone'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
+    staleTime: STALE.LOOKUP,
+  })
+
   const itemsQuery = useQuery({
     queryKey: ['inventory-items-lookup'],
     queryFn: () => getItems({ limit: 500, lifecycle: 'active' }),
@@ -117,6 +128,7 @@ export function useGoodsReceiving() {
     setLedgerItemId,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
+    destinationWarehouseOptions: destinationWarehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
 
     receiveStock: receiveMutation.mutateAsync,

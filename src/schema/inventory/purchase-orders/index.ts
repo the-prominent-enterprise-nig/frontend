@@ -25,7 +25,7 @@ export const CreatePoLineSchema = z.object({
 export const CreatePoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
   branchId: z.string().optional(),
-  warehouseId: z.string().optional(),
+  warehouseId: z.string().min(1, 'Warehouse is required'),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
@@ -74,7 +74,7 @@ export const ConvertPrToPoLineSchema = z.object({
 
 export const ConvertPrToPoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
-  warehouseId: z.string().optional(),
+  warehouseId: z.string().min(1, 'Warehouse is required'),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),

@@ -3,25 +3,26 @@
 import { useEffect } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, Plus, Trash2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
-import { BranchSearchCombobox } from '../../purchase-requests/_components/BranchSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 
 type Props = {
   open: boolean
   onClose: () => void
   onSubmit: (data: CreatePoFormValues) => Promise<void>
   isSubmitting?: boolean
-  /** A branch-scoped creator (Stock Controller/Branch Manager) always gets
-   * this PO tied to their own branch — the backend already forces this
-   * server-side (user.branchId ?? dto.branchId) regardless of what's
-   * submitted, so leaving the field as free-choice for them is actively
-   * misleading. null/undefined (head office / Business Owner) leaves it
-   * open, since their POs can be enterprise-wide. */
+  /** Sent as branchId attribution ("requested by this branch") — no longer
+   * a visible form field (Scenario 27: the PO's destination is now the
+   * Warehouse field, not a branch), but the backend still forces this
+   * server-side (user.branchId ?? dto.branchId) for a branch-scoped
+   * creator regardless of what's submitted. null/undefined (Head Office /
+   * Business Owner) leaves it unattributed, since their POs can be
+   * enterprise-wide. */
   currentUserBranchId?: string | null
-  currentUserBranchName?: string | null
 }
 
 export function CreatePoModal({
@@ -30,8 +31,18 @@ export function CreatePoModal({
   onSubmit,
   isSubmitting,
   currentUserBranchId,
-  currentUserBranchName,
 }: Props) {
+  // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
+  // decided once here at creation and carried through unedited to receiving
+  // (see ReceiveAgainstPoModal, which locks the field once this is set).
+  const warehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup', 'standalone'],
+    queryFn: () => getWarehouses({ limit: 10, status: 'active', standaloneOnly: true }),
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  })
+  const warehouses = warehousesQuery.data?.data?.data ?? []
+
   const {
     register,
     control,
@@ -44,8 +55,12 @@ export function CreatePoModal({
     resolver: zodResolver(CreatePoFormSchema),
     defaultValues: {
       supplierId: '',
+      // branchId is no longer a form field the user picks — it's still
+      // sent as attribution ("requested by this branch"), implicitly, the
+      // same way it was already forced server-side for a branch-scoped
+      // creator regardless of what used to be submitted here.
       branchId: currentUserBranchId ?? undefined,
-      warehouseId: undefined,
+      warehouseId: '',
       expectedDeliveryDate: undefined,
       deliveryInstructions: undefined,
       paymentTerms: undefined,
@@ -138,33 +153,30 @@ export function CreatePoModal({
               )}
             </div>
 
-            {/* Branch */}
+            {/* Warehouse */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
-              {currentUserBranchId ? (
-                <>
-                  <div className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500">
-                    {currentUserBranchName ?? 'Your branch'}
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Purchase orders you create always belong to your own branch.
-                  </p>
-                </>
-              ) : (
-                <Controller
-                  name="branchId"
-                  control={control}
-                  render={({ field }) => (
-                    <BranchSearchCombobox
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      error={errors.branchId?.message}
-                    />
-                  )}
-                />
-              )}
-              {errors.branchId && (
-                <p className="mt-1 text-xs text-red-500">{errors.branchId.message}</p>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Warehouse <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="warehouseId"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">Select warehouse…</option>
+                    {warehouses.map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+              {errors.warehouseId && (
+                <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
               )}
             </div>
 

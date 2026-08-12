@@ -281,11 +281,15 @@ export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] =
   { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
 ]
 
+export type WithholdingCertificateStatus = 'pending' | 'received'
+
 export interface ARPayment {
   id: string
   arInvoiceId: string
   amount: number
   withholdingAmount: number
+  withholdingCertificateNo?: string | null
+  withholdingCertificateStatus?: WithholdingCertificateStatus | null
   rebateAmount: number
   paymentDate: string
   method?: PaymentMethod | null
@@ -309,6 +313,8 @@ export interface RecordArPaymentInput {
   reference?: string
   notes?: string
   withholdingAmount?: number
+  withholdingCertificateNo?: string
+  withholdingCertificateStatus?: WithholdingCertificateStatus
   rebateAmount?: number
   bankAccountId?: string
   branchId?: string
@@ -748,6 +754,8 @@ export interface BankAccount {
   currencyCode: string
   currentBalance: number
   isActive: boolean
+  /** GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping. */
+  glAccountId?: string | null
 }
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),

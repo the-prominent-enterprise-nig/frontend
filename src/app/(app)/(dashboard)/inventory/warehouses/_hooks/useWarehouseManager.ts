@@ -24,8 +24,17 @@ export function useWarehouseManager() {
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | undefined>(undefined)
   const [selectedWarehouse, setSelectedWarehouse] = useState<WarehouseSummary | null>(null)
 
+  // Scenario 27 — this admin page manages only the 2 real warehouses
+  // (PANAY, NEGROS); the 41 per-branch stock locations aren't "warehouses"
+  // from a user's perspective and never appear here.
   const queryParams = useMemo(
-    () => ({ page, limit, search: search || undefined, status: statusFilter }),
+    () => ({
+      page,
+      limit,
+      search: search || undefined,
+      status: statusFilter,
+      standaloneOnly: true,
+    }),
     [page, limit, search, statusFilter]
   )
 

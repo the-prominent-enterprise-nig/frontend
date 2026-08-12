@@ -15,6 +15,9 @@ export async function getWarehouses(params?: {
   // inventory:transfers:create (see warehouses.controller.ts). Ignored for
   // everyone else, so it's safe to pass from any caller.
   allBranches?: boolean
+  // Scenario 27 — only the 2 real warehouses (branchId: null), excluding
+  // the 41 per-branch stock locations.
+  standaloneOnly?: boolean
 }): Promise<ApiResponse<WarehouseListResponse>> {
   try {
     const result = await api.get<WarehouseListResponse>(

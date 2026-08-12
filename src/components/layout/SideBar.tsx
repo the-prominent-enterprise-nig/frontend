@@ -187,6 +187,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
       },
       {
+        label: 'Warehouse Requests',
+        href: '/inventory/warehouse-requests',
+        icon: PackageCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSE_REQUESTS_READ,
+      },
+      {
         label: 'Unit Documents',
         href: '/inventory/uds',
         icon: ClipboardCheck,

@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Vendor, VendorType } from '@/src/libs/data/AccountingData'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 interface Props {
   vendor: Vendor | null
@@ -26,9 +27,20 @@ export default function VendorFormDialog({ vendor, types, onClose, onSave }: Pro
       businessType: '',
       bankAccount: '',
       visibility: true,
+      defaultPayableAccountId: null,
+      defaultExpenseAccountId: null,
     }
   )
   const [saving, setSaving] = useState(false)
+  const [accounts, setAccounts] = useState<Account[]>([])
+  useEffect(() => {
+    getAccounts({ limit: 500 }).then((res) => {
+      const data = res.data as any
+      setAccounts((data?.items ?? data ?? []) as Account[])
+    })
+  }, [])
+  const payableAccounts = accounts.filter((a) => String(a.type).toUpperCase() === 'LIABILITY')
+  const expenseAccounts = accounts.filter((a) => String(a.type).toUpperCase() === 'EXPENSE')
 
   const set = <K extends keyof Vendor>(k: K, v: Vendor[K]) => setForm((p) => ({ ...p, [k]: v }))
 
@@ -144,6 +156,45 @@ export default function VendorFormDialog({ vendor, types, onClose, onSave }: Pro
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
           </Field>
+
+          <details className="rounded-lg border border-zinc-200 bg-zinc-50/40">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+              Accounting (optional)
+              <span className="ml-2 text-xs font-normal text-zinc-500">
+                — override default AP / expense accounts for this vendor
+              </span>
+            </summary>
+            <div className="grid grid-cols-1 gap-4 p-3 md:grid-cols-2">
+              <Field label="AP Payable Account">
+                <select
+                  value={form.defaultPayableAccountId ?? ''}
+                  onChange={(e) => set('defaultPayableAccountId', e.target.value || null)}
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                >
+                  <option value="">— Use default mapping —</option>
+                  {payableAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.number ?? a.code} — {a.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Default Expense Account">
+                <select
+                  value={form.defaultExpenseAccountId ?? ''}
+                  onChange={(e) => set('defaultExpenseAccountId', e.target.value || null)}
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                >
+                  <option value="">— Use default mapping —</option>
+                  {expenseAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.number ?? a.code} — {a.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </details>
 
           <div className="flex justify-end gap-2 pt-2">
             <button

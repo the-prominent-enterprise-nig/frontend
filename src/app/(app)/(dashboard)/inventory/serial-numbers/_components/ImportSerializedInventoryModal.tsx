@@ -8,7 +8,12 @@ import { showToast } from '@/src/components/ui/toast'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SerializedImportResult } from '@/src/schema/inventory/serial-numbers/bulk-import'
 
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  branch?: { id: string; name: string } | null
+}
 
 type Props = {
   isOpen: boolean
@@ -230,7 +235,7 @@ export default function ImportSerializedInventoryModal({ isOpen, onClose, wareho
                   <option value="">Select warehouse…</option>
                   {warehouses.map((wh) => (
                     <option key={wh.id} value={wh.id}>
-                      {wh.code} — {wh.name}
+                      {wh.branch?.name ?? wh.name}
                     </option>
                   ))}
                 </select>

@@ -58,7 +58,6 @@ export default async function PurchaseOrdersPage() {
         canReceive={canReceive}
         canViewCost={canViewCost}
         currentUserBranchId={session.branchId}
-        currentUserBranchName={session.branchName}
       />
     </div>
   )

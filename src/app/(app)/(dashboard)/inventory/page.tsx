@@ -940,7 +940,8 @@ export default function InventoryPage() {
                               </p>
                             </button>
                             <p className="text-[11px] text-gray-500 truncate">
-                              {alert.item?.sku} · {alert.warehouse?.name ?? '—'}
+                              {alert.item?.sku} ·{' '}
+                              {alert.warehouse?.branch?.name ?? alert.warehouse?.name ?? '—'}
                             </p>
                           </div>
                         }
@@ -1015,7 +1016,8 @@ export default function InventoryPage() {
                             </p>
                           </button>
                           <p className="text-[11px] text-gray-500">
-                            {alert.item?.sku} · {alert.warehouse?.name ?? '—'}
+                            {alert.item?.sku} ·{' '}
+                            {alert.warehouse?.branch?.name ?? alert.warehouse?.name ?? '—'}
                           </p>
                           <div className="mt-1.5 h-1 rounded-full bg-amber-200 overflow-hidden">
                             <div
@@ -1338,6 +1340,11 @@ export default function InventoryPage() {
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
                 { label: 'Price Use Types', href: '/inventory/price-use-types', icon: Tags },
+                {
+                  label: 'Warehouse Requests',
+                  href: '/inventory/warehouse-requests',
+                  icon: Warehouse,
+                },
               ] as const
             ).map(({ label, href, icon: Icon }, i) => (
               <Link

@@ -16,6 +16,7 @@ import {
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
@@ -27,6 +28,7 @@ import {
   normalizeTagList,
   NumericInput,
   FormSection,
+  AccountField,
 } from './item-form-shared'
 import { formatClassificationLabel } from '@/src/libs/format/text'
 
@@ -69,6 +71,7 @@ export default function EditItemModal({
   typeOptions,
 }: Props) {
   const [taxRates, setTaxRates] = useState<TaxRate[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [attrValues, setAttrValues] = useState<Record<string, string>>({})
   const [selectedTags, setSelectedTags] = useState<ItemTagLabel[]>([])
   const [confirmingClose, setConfirmingClose] = useState(false)
@@ -78,6 +81,16 @@ export default function EditItemModal({
       if (res.success && res.data) setTaxRates(res.data as TaxRate[])
     })
   }, [])
+
+  // ACC-21: lazy-load accounts for the revenue/COGS/inventory overrides
+  // when the modal opens — same pattern as CreateItemModal.
+  useEffect(() => {
+    if (!isOpen) return
+    getAccounts({ limit: 500 }).then((res) => {
+      const data = res.data as any
+      setAccounts((data?.items ?? data ?? []) as Account[])
+    })
+  }, [isOpen])
 
   const {
     control,
@@ -105,6 +118,9 @@ export default function EditItemModal({
       hasVariants: false,
       isService: false,
       taxRateId: undefined,
+      revenueAccountId: undefined,
+      cogsAccountId: undefined,
+      inventoryAccountId: undefined,
       lengthCm: undefined,
       widthCm: undefined,
       heightCm: undefined,
@@ -134,6 +150,9 @@ export default function EditItemModal({
         hasVariants: item.hasVariants ?? false,
         isService: item.isService ?? false,
         taxRateId: item.taxRateId ?? undefined,
+        revenueAccountId: item.revenueAccountId ?? undefined,
+        cogsAccountId: item.cogsAccountId ?? undefined,
+        inventoryAccountId: item.inventoryAccountId ?? undefined,
         lengthCm: item.lengthCm != null ? Number(item.lengthCm) : undefined,
         widthCm: item.widthCm != null ? Number(item.widthCm) : undefined,
         heightCm: item.heightCm != null ? Number(item.heightCm) : undefined,
@@ -805,6 +824,41 @@ export default function EditItemModal({
               ))}
             </FormSection>
           )}
+
+          {/* ACC-21: Accounting overrides (optional) — outside sections, inside form */}
+          <div className="px-6 pb-4 pt-2">
+            <details className="rounded-lg border border-zinc-200 bg-zinc-50/40">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                Accounting (optional)
+                <span className="ml-2 text-xs font-normal text-zinc-500">
+                  — override default revenue/COGS/inventory accounts
+                </span>
+              </summary>
+              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
+                <AccountField
+                  label="Revenue Account"
+                  name="revenueAccountId"
+                  control={control}
+                  accounts={accounts}
+                  filter="REVENUE"
+                />
+                <AccountField
+                  label="COGS Account"
+                  name="cogsAccountId"
+                  control={control}
+                  accounts={accounts}
+                  filter="EXPENSE"
+                />
+                <AccountField
+                  label="Inventory Account"
+                  name="inventoryAccountId"
+                  control={control}
+                  accounts={accounts}
+                  filter="ASSET"
+                />
+              </div>
+            </details>
+          </div>
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">

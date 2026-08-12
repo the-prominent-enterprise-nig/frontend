@@ -13,13 +13,8 @@ const ReceiveStockLineSchema = z
     batchNumber: z.string().optional(),
     expiryDate: z.string().optional(),
     qualityHold: z.boolean().optional(),
-    autoGenerateSerials: z.boolean().optional(),
     serialNumbers: z.array(z.string().min(1)).optional(),
     notes: z.string().optional(),
-  })
-  .refine((line) => !(line.autoGenerateSerials && (line.serialNumbers?.length ?? 0) > 0), {
-    message: 'Choose either auto-generated or manually entered serials, not both',
-    path: ['serialNumbers'],
   })
   .refine(
     (line) =>

@@ -28,9 +28,12 @@ function defaultShippingAddress(pr: PurchaseRequestSummary | null): string {
 }
 
 export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting }: Props) {
+  // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
+  // decided once here at creation and carried through unedited to receiving
+  // (see ReceiveAgainstPoModal, which locks the field once this is set).
   const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    queryKey: ['inventory-warehouses-lookup', 'standalone'],
+    queryFn: () => getWarehouses({ limit: 10, status: 'active', standaloneOnly: true }),
     enabled: !!pr,
     staleTime: 5 * 60 * 1000,
   })
@@ -148,10 +151,12 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Branch + Expected Delivery */}
+            {/* Warehouse + Expected Delivery */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Warehouse <span className="text-red-500">*</span>
+                </label>
                 <Controller
                   name="warehouseId"
                   control={control}
@@ -161,15 +166,18 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                       value={field.value ?? ''}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     >
-                      <option value="">Select branch…</option>
+                      <option value="">Select warehouse…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.branch?.name ?? wh.name}
+                          {wh.name}
                         </option>
                       ))}
                     </select>
                   )}
                 />
+                {errors.warehouseId && (
+                  <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, PackageCheck } from 'lucide-react'
+import { X, Loader2, PackageCheck, ScanBarcode, ChevronUp } from 'lucide-react'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { showToast } from '@/src/components/ui/toast'
@@ -19,30 +19,51 @@ type Props = {
    * Controller, restricted to Business Owner/Accountant (Scenario 05
    * followup). Server-side enforcement in receiveStock() is the real guard. */
   canViewCost: boolean
-  /** A branch-scoped receiver (Stock Controller/Branch Manager) is always
-   * receiving into their own branch — same convention as the Stock Transfer
-   * request modal's "To Branch" lock. null/undefined (head office /
-   * Business Owner) leaves Destination Branch fully open. */
-  currentUserBranchId?: string | null
 }
 
 // ─── Form schema ──────────────────────────────────────────────────────────────
 
-const ReceivePoLineSchema = z.object({
-  purchaseOrderLineId: z.string(),
-  itemId: z.string(),
-  quantityReceived: z.number().positive('Must be greater than 0'),
-  unitCost: z.number().min(0).optional(),
-  batchNumber: z.string().optional(),
-  expiryDate: z.string().optional(),
-  qualityHold: z.boolean(),
-  notes: z.string().optional(),
-  // Serial-tracked items reject receiving unless one of serialNumbers/
-  // autoGenerateSerials is set (stock.service.ts). This form doesn't offer
-  // per-unit serial entry, so a serial-tracked line always auto-generates —
-  // set from the PO line's item.isSerialTracked, not user-editable.
-  autoGenerateSerials: z.boolean().optional(),
-})
+const ReceivePoLineSchema = z
+  .object({
+    purchaseOrderLineId: z.string(),
+    itemId: z.string(),
+    quantityReceived: z.number().positive('Must be greater than 0'),
+    unitCost: z.number().min(0).optional(),
+    batchNumber: z.string().optional(),
+    expiryDate: z.string().optional(),
+    qualityHold: z.boolean(),
+    notes: z.string().optional(),
+    // Not sent to the server — carried on the line purely so the refine()
+    // below can enforce "every selected serial-tracked line needs a serial
+    // per unit" without reaching into component state.
+    selected: z.boolean(),
+    isSerialTracked: z.boolean().optional(),
+    // Serial-tracked items reject receiving unless serialNumbers is set
+    // (stock.service.ts) — one supplier-provided serial per unit, typed in
+    // by whoever is physically receiving the delivery.
+    serialNumbers: z.array(z.string().min(1, 'Required')).optional(),
+  })
+  .refine(
+    (line) => {
+      if (!line.selected) return true
+      if (line.isSerialTracked) {
+        return (
+          !!line.serialNumbers &&
+          line.serialNumbers.length === line.quantityReceived &&
+          line.serialNumbers.every((s) => s.trim().length > 0)
+        )
+      }
+      return (
+        !line.serialNumbers ||
+        line.serialNumbers.length === 0 ||
+        line.serialNumbers.length === line.quantityReceived
+      )
+    },
+    {
+      message: 'A serial number is required for every unit',
+      path: ['serialNumbers'],
+    }
+  )
 
 const ReceivePoFormSchema = z.object({
   code: z.string().optional(),
@@ -64,30 +85,20 @@ const cellInputClass =
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function ReceiveAgainstPoModal({
-  po,
-  onClose,
-  onSuccess,
-  canViewCost,
-  currentUserBranchId,
-}: Props) {
+export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: Props) {
+  // Scenario 27 — goods are always received into one of the 2 real
+  // warehouses now, never a branch's own local stock, so this is
+  // unconditionally the standalone-only list (no branch-scoping/locking —
+  // every receiver picks between the same 2 real warehouses regardless of
+  // their own branch).
   const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    queryKey: ['inventory-warehouses-lookup', 'standalone'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
     enabled: !!po,
     staleTime: 5 * 60 * 1000,
   })
 
   const warehouses = warehousesQuery.data?.data?.data ?? []
-
-  const ownBranchWarehouses = currentUserBranchId
-    ? warehouses.filter((wh) => wh.branchId === currentUserBranchId)
-    : []
-  // Only lock the field when it resolves to exactly one warehouse — if a
-  // branch ever has more than one, the receiver still needs to choose among
-  // their own rather than have an arbitrary one silently picked. Same
-  // convention as the Stock Transfer request modal's "To Branch".
-  const lockedWarehouseId = ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
 
   const defaultLineSelected = (l: PurchaseOrderSummary['lines'][number]) => {
     const remaining = Math.max(Number(l.quantity) - Number(l.receivedQuantity ?? 0), 0)
@@ -107,23 +118,31 @@ export function ReceiveAgainstPoModal({
         expiryDate: '',
         qualityHold: false,
         notes: '',
-        autoGenerateSerials: l.item?.isSerialTracked ?? false,
+        selected: defaultLineSelected(l),
+        isSerialTracked: !!l.item?.isSerialTracked,
       }
     })
 
   const [selectedLines, setSelectedLines] = useState<boolean[]>([])
+  // Every PO line is fixed/known upfront (no combobox to wait on, unlike
+  // the standalone Goods Receiving form), so serial-tracked lines start
+  // expanded — staff shouldn't have to hunt for a hidden control to enter
+  // the supplier's serials. Keyed by line index since this modal's line
+  // count never changes (no add/remove row).
+  const [expandedSerialRows, setExpandedSerialRows] = useState<Set<number>>(new Set())
 
   const {
     control,
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ReceivePoFormValues>({
     resolver: zodResolver(ReceivePoFormSchema),
     defaultValues: {
       code: '',
-      warehouseId: lockedWarehouseId ?? po?.warehouseId ?? '',
+      warehouseId: po?.warehouseId ?? '',
       receivedAt: '',
       notes: '',
       withholding: 'none',
@@ -132,38 +151,55 @@ export function ReceiveAgainstPoModal({
   })
 
   const { fields } = useFieldArray({ control, name: 'lines' })
+  const watchedLines = watch('lines')
 
   useEffect(() => {
     if (!po) return
     setSelectedLines(po.lines.map(defaultLineSelected))
     reset({
       code: '',
-      warehouseId: lockedWarehouseId ?? po.warehouseId ?? '',
+      warehouseId: po.warehouseId ?? '',
       receivedAt: '',
       notes: '',
       withholding: 'none',
       lines: defaultLines(),
     })
+    setExpandedSerialRows(new Set(po.lines.flatMap((l, i) => (l.item?.isSerialTracked ? [i] : []))))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po])
-
-  // `warehouses` (and therefore lockedWarehouseId) resolves asynchronously
-  // and can still be empty at the moment the effect above runs, so the
-  // locked value wouldn't otherwise reach the form state until the next
-  // open/close cycle. Mirrors the Stock Transfer request modal's own fix
-  // for this same race.
-  useEffect(() => {
-    if (po && lockedWarehouseId) {
-      setValue('warehouseId', lockedWarehouseId, { shouldValidate: true })
-    }
-  }, [po, lockedWarehouseId, setValue])
 
   if (!po) return null
 
   const selectedCount = selectedLines.filter(Boolean).length
 
   function toggleLine(idx: number) {
-    setSelectedLines((prev: boolean[]) => prev.map((v: boolean, i: number) => (i === idx ? !v : v)))
+    const nextValue = !(selectedLines[idx] ?? true)
+    setSelectedLines((prev: boolean[]) =>
+      prev.map((v: boolean, i: number) => (i === idx ? nextValue : v))
+    )
+    setValue(`lines.${idx}.selected`, nextValue, { shouldValidate: true })
+  }
+
+  function toggleSerialEntry(idx: number): void {
+    setExpandedSerialRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(idx)) {
+        next.delete(idx)
+      } else {
+        next.add(idx)
+      }
+      return next
+    })
+  }
+
+  // One box per physical unit rather than a shared multi-serial textarea —
+  // easier to scan/verify against a delivery of individually-labeled units
+  // than typing/pasting a comma- or newline-separated list.
+  function handleUnitSerialChange(lineIdx: number, unitIdx: number, value: string): void {
+    const qty = Math.max(0, Math.floor(Number(watchedLines?.[lineIdx]?.quantityReceived) || 0))
+    const current = watchedLines?.[lineIdx]?.serialNumbers ?? []
+    const next = Array.from({ length: qty }, (_, i) => (i === unitIdx ? value : (current[i] ?? '')))
+    setValue(`lines.${lineIdx}.serialNumbers`, next, { shouldValidate: true })
   }
 
   async function handleFormSubmit(data: ReceivePoFormValues) {
@@ -187,7 +223,7 @@ export function ReceiveAgainstPoModal({
           expiryDate: l.expiryDate || undefined,
           qualityHold: l.qualityHold,
           notes: l.notes || undefined,
-          ...(l.autoGenerateSerials && { autoGenerateSerials: true }),
+          ...(l.serialNumbers && l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers }),
         })),
     })
 
@@ -228,45 +264,44 @@ export function ReceiveAgainstPoModal({
         >
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            {/* Branch + Date */}
+            {/* Warehouse + Date */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Destination Branch <span className="text-red-500">*</span>
+                  Destination Warehouse <span className="text-red-500">*</span>
                 </label>
-                <Controller
-                  name="warehouseId"
-                  control={control}
-                  render={({ field }) =>
-                    lockedWarehouseId ? (
-                      <select
-                        {...field}
-                        disabled
-                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
-                      >
-                        <option value={lockedWarehouseId}>
-                          {ownBranchWarehouses[0].branch?.name ?? ownBranchWarehouses[0].name}
-                        </option>
-                      </select>
-                    ) : (
-                      <select {...field} className={`${fieldClass} bg-white`}>
-                        <option value="">Select branch…</option>
-                        {warehouses.map((wh) => (
-                          <option key={wh.id} value={wh.id}>
-                            {wh.branch?.name ?? wh.name}
-                          </option>
-                        ))}
-                      </select>
-                    )
-                  }
-                />
-                {lockedWarehouseId && (
-                  <p className="mt-1 text-xs text-zinc-400">
-                    You&apos;re receiving into your own branch.
-                  </p>
-                )}
-                {errors.warehouseId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+                {po.warehouseId ? (
+                  <>
+                    <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+                      {po.warehouse?.name ?? 'Warehouse'}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Set when this PO was created — stock always lands where it was ordered for.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    {/* Fallback for a PO created before the destination warehouse
+                        became required at PO-creation time — still restricted to
+                        the 2 real warehouses, just editable here instead of locked. */}
+                    <Controller
+                      name="warehouseId"
+                      control={control}
+                      render={({ field }) => (
+                        <select {...field} className={`${fieldClass} bg-white`}>
+                          <option value="">Select warehouse…</option>
+                          {warehouses.map((wh) => (
+                            <option key={wh.id} value={wh.id}>
+                              {wh.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    />
+                    {errors.warehouseId && (
+                      <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+                    )}
+                  </>
                 )}
               </div>
               <div>
@@ -396,6 +431,9 @@ export function ReceiveAgainstPoModal({
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
                           QC Hold
                         </th>
+                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
+                          Serials <span className="text-red-400">*</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50">
@@ -406,164 +444,255 @@ export function ReceiveAgainstPoModal({
                         const remaining = Math.max(ordered - alreadyReceived, 0)
 
                         const isSelected = selectedLines[idx] ?? true
+                        const isSerialTracked = !!poLine?.item?.isSerialTracked
 
                         return (
-                          <tr
-                            key={field.id}
-                            className={`transition-colors ${isSelected ? 'hover:bg-zinc-50/50' : 'bg-zinc-50/40 opacity-50'}`}
-                          >
-                            {/* Select checkbox */}
-                            <td className="px-3 py-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleLine(idx)}
-                                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500 cursor-pointer"
-                              />
-                            </td>
+                          <Fragment key={field.id}>
+                            <tr
+                              className={`transition-colors ${isSelected ? 'hover:bg-zinc-50/50' : 'bg-zinc-50/40 opacity-50'}`}
+                            >
+                              {/* Select checkbox */}
+                              <td className="px-3 py-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleLine(idx)}
+                                  className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500 cursor-pointer"
+                                />
+                              </td>
 
-                            {/* Item */}
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-zinc-800 leading-tight">
-                                {poLine?.item?.name ?? poLine?.itemId}
-                              </p>
-                              {poLine?.item?.sku && (
-                                <p className="font-mono text-xs text-zinc-400">{poLine.item.sku}</p>
-                              )}
-                              {poLine?.item?.isSerialTracked && (
-                                <span
-                                  title="Each unit needs its own serial number — since this form doesn't collect them individually, they'll be auto-generated on receipt."
-                                  className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
-                                >
-                                  Serial-tracked · auto-generated
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Ordered */}
-                            <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
-
-                            {/* Already received */}
-                            <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  alreadyReceived > 0
-                                    ? 'font-medium text-zinc-800'
-                                    : 'text-zinc-300'
-                                }
-                              >
-                                {alreadyReceived > 0 ? alreadyReceived : '—'}
-                              </span>
-                            </td>
-
-                            {/* Remaining */}
-                            <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  remaining === 0
-                                    ? 'text-green-600 font-medium'
-                                    : 'text-amber-600 font-medium'
-                                }
-                              >
-                                {remaining === 0 ? '✓' : remaining}
-                              </span>
-                            </td>
-
-                            {/* Qty to receive */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.quantityReceived`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    value={isNaN(f.value) ? '' : f.value}
-                                    onChange={(e) => f.onChange(e.target.valueAsNumber)}
-                                    onBlur={f.onBlur}
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    className={`${cellInputClass} text-center ${
-                                      errors.lines?.[idx]?.quantityReceived
-                                        ? 'border-red-400 ring-1 ring-red-400'
-                                        : ''
-                                    }`}
-                                  />
+                              {/* Item */}
+                              <td className="px-4 py-3">
+                                <p className="font-medium text-zinc-800 leading-tight">
+                                  {poLine?.item?.name ?? poLine?.itemId}
+                                </p>
+                                {poLine?.item?.sku && (
+                                  <p className="font-mono text-xs text-zinc-400">
+                                    {poLine.item.sku}
+                                  </p>
                                 )}
-                              />
-                            </td>
+                                {isSerialTracked && (
+                                  <span
+                                    title="Each unit needs its own supplier-provided serial number — enter them in the Serials column."
+                                    className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                                  >
+                                    Serial-tracked
+                                  </span>
+                                )}
+                              </td>
 
-                            {/* Unit cost */}
-                            {canViewCost && (
+                              {/* Ordered */}
+                              <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
+
+                              {/* Already received */}
+                              <td className="px-3 py-3 text-center">
+                                <span
+                                  className={
+                                    alreadyReceived > 0
+                                      ? 'font-medium text-zinc-800'
+                                      : 'text-zinc-300'
+                                  }
+                                >
+                                  {alreadyReceived > 0 ? alreadyReceived : '—'}
+                                </span>
+                              </td>
+
+                              {/* Remaining */}
+                              <td className="px-3 py-3 text-center">
+                                <span
+                                  className={
+                                    remaining === 0
+                                      ? 'text-green-600 font-medium'
+                                      : 'text-amber-600 font-medium'
+                                  }
+                                >
+                                  {remaining === 0 ? '✓' : remaining}
+                                </span>
+                              </td>
+
+                              {/* Qty to receive */}
                               <td className="px-3 py-3">
                                 <Controller
-                                  name={`lines.${idx}.unitCost`}
+                                  name={`lines.${idx}.quantityReceived`}
                                   control={control}
                                   render={({ field: f }) => (
                                     <input
-                                      value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                      onChange={(e) =>
-                                        f.onChange(e.target.valueAsNumber || undefined)
-                                      }
+                                      value={isNaN(f.value) ? '' : f.value}
+                                      onChange={(e) => f.onChange(e.target.valueAsNumber)}
                                       onBlur={f.onBlur}
                                       type="number"
                                       min="0"
-                                      step="0.01"
-                                      className={`${cellInputClass} text-right`}
+                                      step="1"
+                                      className={`${cellInputClass} text-center ${
+                                        errors.lines?.[idx]?.quantityReceived
+                                          ? 'border-red-400 ring-1 ring-red-400'
+                                          : ''
+                                      }`}
                                     />
                                   )}
                                 />
                               </td>
+
+                              {/* Unit cost */}
+                              {canViewCost && (
+                                <td className="px-3 py-3">
+                                  <Controller
+                                    name={`lines.${idx}.unitCost`}
+                                    control={control}
+                                    render={({ field: f }) => (
+                                      <input
+                                        value={f.value == null || isNaN(f.value) ? '' : f.value}
+                                        onChange={(e) =>
+                                          f.onChange(e.target.valueAsNumber || undefined)
+                                        }
+                                        onBlur={f.onBlur}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className={`${cellInputClass} text-right`}
+                                      />
+                                    )}
+                                  />
+                                </td>
+                              )}
+
+                              {/* Batch */}
+                              <td className="px-3 py-3">
+                                <Controller
+                                  name={`lines.${idx}.batchNumber`}
+                                  control={control}
+                                  render={({ field: f }) => (
+                                    <input
+                                      {...f}
+                                      value={f.value ?? ''}
+                                      type="text"
+                                      placeholder="Optional"
+                                      className={cellInputClass}
+                                    />
+                                  )}
+                                />
+                              </td>
+
+                              {/* Expiry */}
+                              <td className="px-3 py-3">
+                                <Controller
+                                  name={`lines.${idx}.expiryDate`}
+                                  control={control}
+                                  render={({ field: f }) => (
+                                    <input
+                                      {...f}
+                                      value={f.value ?? ''}
+                                      type="date"
+                                      className={cellInputClass}
+                                    />
+                                  )}
+                                />
+                              </td>
+
+                              {/* QC Hold */}
+                              <td className="px-3 py-3 text-center">
+                                <Controller
+                                  name={`lines.${idx}.qualityHold`}
+                                  control={control}
+                                  render={({ field: f }) => (
+                                    <input
+                                      type="checkbox"
+                                      checked={f.value}
+                                      onChange={f.onChange}
+                                      className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                                    />
+                                  )}
+                                />
+                              </td>
+
+                              {/* Serials */}
+                              <td className="px-3 py-3">
+                                {isSerialTracked ? (
+                                  <div className="flex justify-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSerialEntry(idx)}
+                                      className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                                    >
+                                      {expandedSerialRows.has(idx) ? (
+                                        <ChevronUp className="h-3 w-3" />
+                                      ) : (
+                                        <ScanBarcode className="h-3 w-3" />
+                                      )}
+                                      {(watchedLines?.[idx]?.serialNumbers?.filter(Boolean)
+                                        .length ?? 0) > 0
+                                        ? `${watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
+                                        : 'Enter serials'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="block text-center text-xs text-zinc-300">—</span>
+                                )}
+                              </td>
+                            </tr>
+
+                            {isSerialTracked && expandedSerialRows.has(idx) && (
+                              <tr className="bg-zinc-50">
+                                <td colSpan={canViewCost ? 11 : 10} className="px-4 py-3">
+                                  <p className="mb-2 text-xs font-medium text-zinc-600">
+                                    Enter the serial number for each unit —{' '}
+                                    {Math.max(
+                                      0,
+                                      Math.floor(Number(watchedLines?.[idx]?.quantityReceived) || 0)
+                                    )}{' '}
+                                    unit(s) to receive
+                                  </p>
+                                  <div className="space-y-2">
+                                    {Array.from({
+                                      length: Math.max(
+                                        0,
+                                        Math.floor(
+                                          Number(watchedLines?.[idx]?.quantityReceived) || 0
+                                        )
+                                      ),
+                                    }).map((_, unitIdx) => {
+                                      const value =
+                                        watchedLines?.[idx]?.serialNumbers?.[unitIdx] ?? ''
+                                      const unitError =
+                                        errors.lines?.[idx]?.serialNumbers?.[unitIdx]?.message ??
+                                        (unitIdx === 0
+                                          ? errors.lines?.[idx]?.serialNumbers?.message
+                                          : undefined)
+                                      return (
+                                        <div key={unitIdx} className="flex items-center gap-2">
+                                          <span className="w-16 shrink-0 text-xs text-zinc-500">
+                                            Unit {unitIdx + 1} of{' '}
+                                            {Math.max(
+                                              0,
+                                              Math.floor(
+                                                Number(watchedLines?.[idx]?.quantityReceived) || 0
+                                              )
+                                            )}
+                                          </span>
+                                          <input
+                                            value={value}
+                                            onChange={(e) =>
+                                              handleUnitSerialChange(idx, unitIdx, e.target.value)
+                                            }
+                                            type="text"
+                                            placeholder={`SN-00${unitIdx + 1}`}
+                                            className={`${cellInputClass} font-mono text-xs ${
+                                              unitError ? 'border-red-400 ring-1 ring-red-400' : ''
+                                            }`}
+                                          />
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                  {errors.lines?.[idx]?.serialNumbers?.message && (
+                                    <p className="mt-1 text-xs text-red-600">
+                                      {errors.lines[idx]?.serialNumbers?.message}
+                                    </p>
+                                  )}
+                                </td>
+                              </tr>
                             )}
-
-                            {/* Batch */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.batchNumber`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    value={f.value ?? ''}
-                                    type="text"
-                                    placeholder="Optional"
-                                    className={cellInputClass}
-                                  />
-                                )}
-                              />
-                            </td>
-
-                            {/* Expiry */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.expiryDate`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    value={f.value ?? ''}
-                                    type="date"
-                                    className={cellInputClass}
-                                  />
-                                )}
-                              />
-                            </td>
-
-                            {/* QC Hold */}
-                            <td className="px-3 py-3 text-center">
-                              <Controller
-                                name={`lines.${idx}.qualityHold`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    type="checkbox"
-                                    checked={f.value}
-                                    onChange={f.onChange}
-                                    className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
-                                  />
-                                )}
-                              />
-                            </td>
-                          </tr>
+                          </Fragment>
                         )
                       })}
                     </tbody>

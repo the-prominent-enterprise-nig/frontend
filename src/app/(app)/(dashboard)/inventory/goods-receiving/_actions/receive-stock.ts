@@ -51,16 +51,13 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
       ? { purchaseOrderNumber: purchaseOrderNumber.trim() }
       : {}),
     ...(purchaseOrderDate && purchaseOrderDate.trim() ? { poDate: purchaseOrderDate.trim() } : {}),
-    lines: lines.map(
-      ({ itemId, expiryDate, batchNumber, autoGenerateSerials, serialNumbers, ...lineRest }) => ({
-        ...lineRest,
-        itemId,
-        ...(expiryDate ? { expiryDate } : {}),
-        ...(batchNumber ? { batchNumber } : {}),
-        ...(autoGenerateSerials ? { autoGenerateSerials: true } : {}),
-        ...(serialNumbers && serialNumbers.length > 0 ? { serialNumbers } : {}),
-      })
-    ),
+    lines: lines.map(({ itemId, expiryDate, batchNumber, serialNumbers, ...lineRest }) => ({
+      ...lineRest,
+      itemId,
+      ...(expiryDate ? { expiryDate } : {}),
+      ...(batchNumber ? { batchNumber } : {}),
+      ...(serialNumbers && serialNumbers.length > 0 ? { serialNumbers } : {}),
+    })),
   }
 
   const result = await api.post<{ id: string }>('/inventory/stock/receive', backendPayload)

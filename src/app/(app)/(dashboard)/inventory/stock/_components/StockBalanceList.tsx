@@ -36,7 +36,7 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Balance</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Real-time view of on-hand, reserved, and available quantities across all warehouses.
+              Real-time view of on-hand, reserved, and available quantities across all branches.
             </p>
           </div>
           <button
@@ -70,10 +70,10 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
-            <option value="">All Warehouses</option>
+            <option value="">All Branches</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {wh.branch?.name ?? wh.name}
               </option>
             ))}
           </select>
