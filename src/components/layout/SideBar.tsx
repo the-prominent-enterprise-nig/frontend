@@ -157,6 +157,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/inventory/purchase-orders'],
       },
       {
+        label: 'Warehouse Requests',
+        href: '/inventory/warehouse-requests',
+        icon: PackageCheck,
+        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSE_REQUESTS_READ,
+      },
+      {
         label: 'Suppliers',
         href: '/inventory/suppliers',
         icon: Truck,
@@ -185,12 +191,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/warehouses',
         icon: Warehouse,
         requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSES_READ,
-      },
-      {
-        label: 'Warehouse Requests',
-        href: '/inventory/warehouse-requests',
-        icon: PackageCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSE_REQUESTS_READ,
       },
       {
         label: 'Unit Documents',
