@@ -27,6 +27,13 @@ export function useCreditApplications() {
     queryFn: () => getCreditApplications(queryParams),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
+    // Scenario 26 — this queue is a maker-checker handoff between three
+    // different people's browser tabs (Cashier submits, Investigator
+    // records, Branch Manager decides); staleTime alone only ever refetches
+    // on this tab's own refocus/remount, so another actor's transition
+    // could sit stale here indefinitely. Matches
+    // ReleaseApprovalsList.tsx's own 10s poll for the same reason.
+    refetchInterval: 10 * 1000,
   })
 
   const createMutation = useMutation({
