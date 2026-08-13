@@ -23,12 +23,29 @@ export const ValuationReportItemSchema = z.object({
   costingMethod: z.string().optional().nullable(),
 })
 
+export const ValuationCategoryBreakdownSchema = z.object({
+  category: z.string(),
+  totalValue: z.number(),
+  totalQty: z.number(),
+  itemCount: z.number(),
+})
+
+export const ValuationWarehouseBreakdownSchema = z.object({
+  warehouseId: z.string(),
+  warehouseName: z.string(),
+  totalValue: z.number(),
+  totalQty: z.number(),
+  itemCount: z.number(),
+})
+
 export const ValuationReportResponseSchema = z.object({
   data: z.array(ValuationReportItemSchema),
   summary: z.object({
     totalItems: z.number(),
     totalQty: z.number(),
     totalValue: z.number(),
+    byCategory: z.array(ValuationCategoryBreakdownSchema).optional(),
+    byWarehouse: z.array(ValuationWarehouseBreakdownSchema).optional(),
   }),
   meta: ReportPaginationMetaSchema.optional(),
   generatedAt: z.string().optional(),
@@ -76,3 +93,39 @@ export const TurnoverReportResponseSchema = z.object({
 
 export type TurnoverReportItem = z.infer<typeof TurnoverReportItemSchema>
 export type TurnoverReportResponse = z.infer<typeof TurnoverReportResponseSchema>
+
+// ── Aging Report (real lastMovementAt-based aging, distinct from Turnover's
+// projected days-of-supply) ─────────────────────────────────────────────────
+export const AgingEntrySchema = z.object({
+  itemId: z.string(),
+  sku: z.string(),
+  name: z.string(),
+  warehouseId: z.string(),
+  warehouseName: z.string(),
+  onHandQty: z.number(),
+  daysSinceLastMovement: z.number(),
+  estimatedValue: z.number(),
+})
+
+const AgingBucketSummarySchema = z.object({
+  count: z.number(),
+  totalValue: z.number(),
+})
+
+export const AgingReportResponseSchema = z.object({
+  buckets: z.object({
+    '0_30': z.array(AgingEntrySchema),
+    '31_60': z.array(AgingEntrySchema),
+    '61_90': z.array(AgingEntrySchema),
+    '90_plus': z.array(AgingEntrySchema),
+  }),
+  summary: z.object({
+    '0_30': AgingBucketSummarySchema,
+    '31_60': AgingBucketSummarySchema,
+    '61_90': AgingBucketSummarySchema,
+    '90_plus': AgingBucketSummarySchema,
+  }),
+})
+
+export type AgingEntry = z.infer<typeof AgingEntrySchema>
+export type AgingReportResponse = z.infer<typeof AgingReportResponseSchema>

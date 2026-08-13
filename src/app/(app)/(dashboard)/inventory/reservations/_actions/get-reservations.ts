@@ -31,15 +31,22 @@ export async function getReservations(
 
     const raw = result.data
 
-    // API returns a plain array — normalize to paginated shape
+    // API returns a plain array — normalize to paginated shape. It also
+    // ignores page/limit entirely (always returns everything), so the
+    // summary below is computed from the full set before we slice down to
+    // whatever page size the caller actually asked for.
     if (Array.isArray(raw)) {
       const page = params.page ?? 1
       const limit = params.limit ?? (raw.length || 20)
       const start = (page - 1) * limit
       const sliced = raw.slice(start, start + limit)
+      const totalReservedQty = raw.reduce(
+        (sum: number, r: { reservedQty?: number }) => sum + Number(r.reservedQty ?? 0),
+        0
+      )
       return {
         success: true,
-        data: { data: sliced, total: raw.length, page, limit },
+        data: { data: sliced, total: raw.length, page, limit, summary: { totalReservedQty } },
       }
     }
 

@@ -1,7 +1,10 @@
 'use server'
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import type { NegativeStockViolationListResponse } from '@/src/schema/inventory/negative-stock'
+import {
+  NegativeStockViolationListResponseSchema,
+  type NegativeStockViolationListResponse,
+} from '@/src/schema/inventory/negative-stock'
 
 type Params = {
   page?: number
@@ -26,23 +29,26 @@ export async function getNegativeStockViolations(
     const page = params.page ?? 1
     const limit = params.limit ?? 100
 
-    if (Array.isArray(raw)) {
-      const start = (page - 1) * limit
+    const normalized = Array.isArray(raw)
+      ? {
+          data: raw.slice((page - 1) * limit, (page - 1) * limit + limit),
+          total: raw.length,
+          page,
+          limit,
+        }
+      : raw
+
+    const parsed = NegativeStockViolationListResponseSchema.safeParse(normalized)
+    if (!parsed.success) {
+      console.error('Negative stock violations response shape mismatch:', parsed.error.flatten())
       return {
-        success: true,
-        data: { data: raw.slice(start, start + limit), total: raw.length, page, limit },
+        success: false,
+        error: 'Unexpected response shape',
+        message: 'Failed to parse violations response',
       }
     }
 
-    if (raw && Array.isArray((raw as NegativeStockViolationListResponse).data)) {
-      return { success: true, data: raw as NegativeStockViolationListResponse }
-    }
-
-    return {
-      success: false,
-      error: 'Unexpected response shape',
-      message: 'Failed to parse violations response',
-    }
+    return { success: true, data: parsed.data }
   } catch (error) {
     console.error('Error fetching negative stock violations:', error)
     return {

@@ -1,7 +1,10 @@
 'use server'
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import type { StockoutAlertListResponse } from '@/src/schema/inventory/projection'
+import {
+  StockoutAlertListResponseSchema,
+  type StockoutAlertListResponse,
+} from '@/src/schema/inventory/projection'
 
 type Params = {
   days?: number
@@ -25,21 +28,24 @@ export async function getStockoutAlerts(
       }
     }
 
-    const raw = result.data
-
-    if (Array.isArray(raw)) {
-      return { success: true, data: { data: raw, total: raw.length } }
+    // Backend shape (ProjectionService.getStockoutAlerts): { alertWindowDays, alerts: [...] }
+    const raw = result.data as { alerts?: unknown } | null
+    const normalized = {
+      data: raw?.alerts ?? [],
+      total: Array.isArray(raw?.alerts) ? raw.alerts.length : 0,
     }
 
-    if (raw && Array.isArray((raw as StockoutAlertListResponse).data)) {
-      return { success: true, data: raw as StockoutAlertListResponse }
+    const parsed = StockoutAlertListResponseSchema.safeParse(normalized)
+    if (!parsed.success) {
+      console.error('Stockout alerts response shape mismatch:', parsed.error.flatten())
+      return {
+        success: false,
+        error: 'Unexpected response shape',
+        message: 'Failed to parse stockout alerts response',
+      }
     }
 
-    return {
-      success: false,
-      error: 'Unexpected response shape',
-      message: 'Failed to parse stockout alerts response',
-    }
+    return { success: true, data: parsed.data }
   } catch (error) {
     console.error('Error fetching stockout alerts:', error)
     return {

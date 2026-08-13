@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import {
@@ -31,6 +32,7 @@ import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/g
 import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
+import { getAgingReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-report'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import { getProjection } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-projection'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
@@ -41,6 +43,9 @@ import { getReservations } from '@/src/app/(app)/(dashboard)/inventory/reservati
 import { getNegativeStockViolations } from '@/src/app/(app)/(dashboard)/inventory/negative-stock/_actions/get-negative-stock-violations'
 import { getBackorders } from '@/src/app/(app)/(dashboard)/inventory/backorders/_actions/get-backorders'
 import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actions/get-returns'
+import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
+import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
+import { getAdjustments } from '@/src/app/(app)/(dashboard)/inventory/adjustments/_actions/get-adjustments'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -306,49 +311,56 @@ const INIT = {
   outOfStockCount: 0,
   expiringSoonCount: 0,
   projectedStockouts: 0,
+  trendingTowardReorderCount: 0,
   slowMovingCount: 0,
   deadStockCount: 0,
   inTransitCount: 0,
   activeBackorders: 0,
   negativeViolations: 0,
   returnsCount: 0,
+  openPrCount: 0,
+  openPoCount: 0,
   valuationByCategory: [] as { label: string; value: number; color: string }[],
   valuationByWarehouse: [] as { label: string; value: number; color: string; badge?: string }[],
   agingBreakdown: [] as { label: string; value: number; color: string }[],
   abcSegments: [] as { label: string; value: number; color: string }[],
   reorderAlertsList: [] as any[],
   stockoutAlertsList: [] as any[],
+  trendingTowardReorderList: [] as any[],
   expiringBatchesList: [] as any[],
   recentTransfersList: [] as any[],
+  transferStatusCounts: {} as Record<string, number>,
   negativeViolationsList: [] as any[],
   backordersList: [] as any[],
+  purchasingActivityList: [] as any[],
+  pendingAdjustmentsList: [] as any[],
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-  const [s, setS] = useState(INIT)
-  const [spinning, setSpinning] = useState(false)
   const { pushPanel } = useUIShell()
 
   const load = useCallback(async () => {
-    setSpinning(true)
-
     const settled = await Promise.allSettled([
       getItems({ limit: 1 }), // 0
       getReorderAlerts({ limit: 200 }), // 1
-      getValuationReport(), // 2
+      getValuationReport({ limit: 1 }), // 2 — only the pre-aggregated `summary` is used, not `data`
       getTurnoverReport({ periodDays: 90 }), // 3
       getTransfers({ limit: 20 }), // 4
       getProjection({ days: 30 }), // 5
       getStockoutAlerts({ days: 30 }), // 6
       getExpiringBatches({ days: 30, limit: 20 }), // 7
-      getStockBalances({ limit: 500 }), // 8
+      getStockBalances({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
       getWarehouses({ status: 'active', limit: 50 }), // 9
-      getReservations({ limit: 500 }), // 10
+      getReservations({ limit: 1 }), // 10 — only the pre-aggregated `summary` is used, not `data`
       getNegativeStockViolations({ limit: 50 }), // 11
       getBackorders({ limit: 50 }), // 12
       getReturns({ limit: 20 }), // 13
+      getAgingReport(), // 14
+      getPurchaseRequests({ limit: 50 }), // 15
+      getPurchaseOrders({ limit: 50 }), // 16
+      getAdjustments({ limit: 50 }), // 17
     ])
 
     function pick(i: number): any {
@@ -382,33 +394,28 @@ export default function InventoryPage() {
     // Reorder alerts
     const alertList = arr(1)
     const lowStockCount = total(1)
-    const outOfStockCount = alertList.filter((a) => a.currentQty === 0).length
+    const outOfStockCount = alertList.filter((a) => a.currentAvailableQty === 0).length
 
-    // Valuation
+    // Valuation — category/warehouse breakdown now comes pre-aggregated from
+    // the backend (reports.service.ts's groupValuationRows), so this no
+    // longer needs to fetch every row just to reduce it client-side.
     const valuationRaw = pick(2)
-    const valuationItems = valuationRaw?.data ?? []
     const totalValue = valuationRaw?.summary?.totalValue ?? valuationRaw?.grandTotal ?? 0
 
-    const byCat: Record<string, number> = {}
-    const byWh: Record<string, number> = {}
-    valuationItems.forEach((item: any) => {
-      const cat = item.category ?? 'Uncategorized'
-      byCat[cat] = (byCat[cat] ?? 0) + (item.totalValue ?? 0)
-      const wh = item.warehouseName ?? 'No Warehouse'
-      byWh[wh] = (byWh[wh] ?? 0) + (item.totalValue ?? 0)
-    })
-    const valuationByCategory = Object.entries(byCat)
-      .sort((a, b) => b[1] - a[1])
+    const valuationByCategory = ((valuationRaw?.summary?.byCategory ?? []) as any[])
+      .slice()
+      .sort((a, b) => b.totalValue - a.totalValue)
       .slice(0, 8)
-      .map(([label, value], i) => ({ label, value, color: COLORS[i % COLORS.length] }))
-    const valuationByWarehouse = Object.entries(byWh)
-      .sort((a, b) => b[1] - a[1])
+      .map((c, i) => ({ label: c.category, value: c.totalValue, color: COLORS[i % COLORS.length] }))
+    const valuationByWarehouse = ((valuationRaw?.summary?.byWarehouse ?? []) as any[])
+      .slice()
+      .sort((a, b) => b.totalValue - a.totalValue)
       .slice(0, 8)
-      .map(([label, value], i) => ({
-        label,
-        value,
+      .map((w, i) => ({
+        label: w.warehouseName,
+        value: w.totalValue,
         color: COLORS[(i + 2) % COLORS.length],
-        badge: fmtMoney(value),
+        badge: fmtMoney(w.totalValue),
       }))
 
     // Turnover / ABC classification
@@ -421,12 +428,15 @@ export default function InventoryPage() {
       turnoverRaw?.summary?.deadStock ??
       turnoverItems.filter((t: any) => t.status === 'dead_stock').length
     const healthyCount = turnoverItems.filter((t: any) => t.status === 'healthy').length
-    const agingRaw = turnoverRaw?.summary?.agingBreakdown ?? {}
+
+    // Real days-since-last-movement aging (distinct from Turnover's
+    // projected days-of-supply, which was being mislabeled as this before).
+    const agingRaw = pick(14)?.summary ?? {}
     const agingBreakdown = [
-      { label: '0–30 days', value: agingRaw['0-30'] ?? 0, color: '#10b981' },
-      { label: '31–60 days', value: agingRaw['31-60'] ?? 0, color: '#f59e0b' },
-      { label: '61–90 days', value: agingRaw['61-90'] ?? 0, color: '#f97316' },
-      { label: '90+ days', value: agingRaw['90+'] ?? 0, color: '#ef4444' },
+      { label: '0–30 days', value: agingRaw['0_30']?.count ?? 0, color: '#10b981' },
+      { label: '31–60 days', value: agingRaw['31_60']?.count ?? 0, color: '#f59e0b' },
+      { label: '61–90 days', value: agingRaw['61_90']?.count ?? 0, color: '#f97316' },
+      { label: '90+ days', value: agingRaw['90_plus']?.count ?? 0, color: '#ef4444' },
     ]
     const abcSegments = [
       { label: 'Healthy', value: healthyCount, color: '#10b981' },
@@ -434,37 +444,55 @@ export default function InventoryPage() {
       { label: 'Dead Stock', value: deadStockCount, color: '#ef4444' },
     ]
 
-    // Transfers
+    // Transfers — counted from the full fetched list, not the sliced
+    // "recent 8" used for the list below, so the pill strip covers every
+    // transfer regardless of how many are shown underneath.
     const transferList = arr(4)
     const inTransitCount = transferList.filter((t) => t.status === 'in_transit').length
+    const transferStatusCounts: Record<string, number> = {}
+    transferList.forEach((t) => {
+      transferStatusCounts[t.status] = (transferStatusCounts[t.status] ?? 0) + 1
+    })
 
     // Stockouts
     const stockoutList = arr(6)
     const projectedStockouts = total(6)
 
+    // Trending toward reorder — the full forward projection (distinct from
+    // both Low Stock Items, which flags items already below their reorder
+    // point today, and Projected Stockouts above, which flags items headed
+    // to zero). This flags items projected to cross their reorder point
+    // within the window but not already stocked out — an earlier warning
+    // tier that was previously computed and simply never surfaced anywhere.
+    const projectionRaw = pick(5)
+    const projectionItems = (projectionRaw?.items ?? []) as any[]
+    const trendingTowardReorderList = projectionItems.filter(
+      (i) => i.atReorderLevel && !i.projectedStockout
+    )
+    const trendingTowardReorderCount = trendingTowardReorderList.length
+
     // Expiry
     const expiryList = arr(7)
     const expiringSoonCount = total(7)
 
-    // Stock balances
-    const balanceList = arr(8)
-    const totalOnHand = balanceList.reduce((sum, b) => sum + (b.onHandQty ?? 0), 0)
-    const totalAvailableQty = balanceList.reduce((sum, b) => sum + (b.availableQty ?? 0), 0)
+    // Stock balances — totals now come pre-aggregated from the backend
+    // (stock.service.ts's getBalances `summary` block), computed from the
+    // full filtered set before pagination, so this no longer needs to fetch
+    // every row just to sum them client-side.
+    const balanceRaw = pick(8)
+    const totalOnHand = balanceRaw?.summary?.totalOnHandQty ?? 0
+    const totalAvailableQty = balanceRaw?.summary?.totalAvailableQty ?? 0
 
     // Warehouses
     const warehouseList = arr(9)
     const activeWarehouses = total(9) || warehouseList.length
 
-    // Reservations — primary source for reserved qty (stock balance field is often unpopulated)
-    const reservationList = arr(10)
-    const reservedFromReservations = reservationList.reduce(
-      (sum, r) => sum + (Number(r.reservedQty ?? r.reserved_qty) || 0),
-      0
-    )
-    const reservedFromBalances = balanceList.reduce(
-      (sum, b) => sum + (Number(b.reservedQty ?? b.reserved_qty) || 0),
-      0
-    )
+    // Reservations — primary source for reserved qty (stock balance field is
+    // often unpopulated). Backend ignores pagination and always returns
+    // every reservation, so the summary (computed from the full set in
+    // get-reservations.ts) is used instead of fetching+summing rows here.
+    const reservedFromReservations = pick(10)?.summary?.totalReservedQty ?? 0
+    const reservedFromBalances = balanceRaw?.summary?.totalReservedQty ?? 0
     const reservedQty = reservedFromReservations || reservedFromBalances || total(10)
 
     // Negative stock
@@ -478,7 +506,46 @@ export default function InventoryPage() {
     // Returns
     const returnsCount = total(13)
 
-    setS({
+    // Purchasing — open PRs (awaiting approval or approved-but-not-yet-
+    // converted) and open POs (not yet fully received/closed/cancelled).
+    // Real volume is small (single digits today), so a plain fetch + client
+    // filter is fine here — no need for a backend aggregate at this scale.
+    const prList = arr(15)
+    const openPrList = prList.filter((pr) => ['submitted', 'approved'].includes(pr.status))
+    const poList = arr(16)
+    const openPoList = poList.filter(
+      (po) => !['fully_received', 'closed', 'cancelled'].includes(po.status)
+    )
+    const purchasingActivityList = [
+      ...openPrList.map((pr) => ({
+        type: 'PR' as const,
+        id: pr.id,
+        code: pr.code,
+        status: pr.status,
+        date: pr.submittedAt ?? pr.createdAt,
+        amount: null as number | null,
+      })),
+      ...openPoList.map((po) => ({
+        type: 'PO' as const,
+        id: po.id,
+        code: po.code,
+        status: po.status,
+        date: po.orderDate ?? po.createdAt,
+        amount: Number(po.totalAmount ?? 0),
+      })),
+    ]
+      .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime())
+      .slice(0, 6)
+
+    // Stock Adjustments awaiting resolution — a real approve/reject/
+    // investigate workflow (Scenario 19) that had zero dashboard visibility.
+    // "Pending" = anywhere before the terminal approved/rejected states.
+    const adjustmentList = arr(17)
+    const pendingAdjustmentsList = adjustmentList.filter((a) =>
+      ['submitted', 'confirmed', 'investigating'].includes(a.status)
+    )
+
+    return {
       loaded: true,
       lastUpdated: new Date(),
       totalValue,
@@ -491,39 +558,44 @@ export default function InventoryPage() {
       outOfStockCount,
       expiringSoonCount,
       projectedStockouts,
+      trendingTowardReorderCount,
       slowMovingCount,
       deadStockCount,
       inTransitCount,
       activeBackorders,
       negativeViolations,
       returnsCount,
+      openPrCount: openPrList.length,
+      openPoCount: openPoList.length,
       valuationByCategory,
       valuationByWarehouse,
       agingBreakdown,
       abcSegments,
       reorderAlertsList: alertList.slice(0, 10),
       stockoutAlertsList: stockoutList.slice(0, 8),
+      trendingTowardReorderList: trendingTowardReorderList.slice(0, 8),
       expiringBatchesList: expiryList.slice(0, 8),
       recentTransfersList: transferList.slice(0, 8),
+      transferStatusCounts,
       negativeViolationsList: negativeList.slice(0, 6),
       backordersList: backorderList.slice(0, 8),
-    })
-    setSpinning(false)
+      purchasingActivityList,
+      pendingAdjustmentsList: pendingAdjustmentsList.slice(0, 8),
+    }
   }, [])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ['inventory-dashboard'],
+    queryFn: load,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    // Just under the poll interval — avoids an extra full refetch if the
+    // user navigates away and back to this page within a normal 30s cycle.
+    staleTime: 20_000,
+  })
+  const s = data ?? INIT
 
   const loading = !s.loaded
-
-  const txStats = useMemo(() => {
-    const r: Record<string, number> = {}
-    s.recentTransfersList.forEach((t) => {
-      r[t.status] = (r[t.status] ?? 0) + 1
-    })
-    return r
-  }, [s.recentTransfersList])
 
   return (
     <div className="min-h-full bg-zinc-50">
@@ -554,11 +626,11 @@ export default function InventoryPage() {
               All Items
             </Link>
             <button
-              onClick={load}
-              disabled={spinning}
+              onClick={() => refetch()}
+              disabled={isFetching}
               className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60 transition-colors"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${spinning ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
@@ -890,7 +962,7 @@ export default function InventoryPage() {
             <ShieldAlert className="h-4 w-4 text-red-500" />
             <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -915,7 +987,11 @@ export default function InventoryPage() {
               ) : (
                 <div className="space-y-2">
                   {s.stockoutAlertsList.map((alert, i) => {
-                    const days = alert.daysUntilStockout
+                    const days = alert.stockoutDate
+                      ? Math.ceil(
+                          (new Date(alert.stockoutDate).getTime() - Date.now()) / 86_400_000
+                        )
+                      : null
                     const critical = days != null && days <= 7
                     return (
                       <AlertRow
@@ -926,21 +1002,21 @@ export default function InventoryPage() {
                             <button
                               type="button"
                               onClick={() =>
-                                alert.item?.id &&
+                                alert.itemId &&
                                 pushPanel({
                                   type: 'item360',
-                                  itemId: alert.item.id,
-                                  itemName: alert.item.name,
+                                  itemId: alert.itemId,
+                                  itemName: alert.name,
                                 })
                               }
                               className="block w-full text-left"
                             >
                               <p className="text-xs font-semibold text-gray-900 truncate hover:text-red-700 hover:underline">
-                                {alert.item?.name ?? 'Unknown'}
+                                {alert.name ?? 'Unknown'}
                               </p>
                             </button>
                             <p className="text-[11px] text-gray-500 truncate">
-                              {alert.item?.sku} · {alert.warehouse?.name ?? '—'}
+                              {alert.sku} · {alert.warehouseName ?? '—'}
                             </p>
                           </div>
                         }
@@ -951,9 +1027,7 @@ export default function InventoryPage() {
                             >
                               {days != null ? `${days}d` : '—'}
                             </span>
-                            <p className="text-[10px] text-gray-400">
-                              {alert.currentOnHand} on hand
-                            </p>
+                            <p className="text-[10px] text-gray-400">{alert.currentQty} on hand</p>
                             <Link
                               href="/inventory/operations?tab=receiving"
                               className="inline-flex items-center gap-0.5 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 hover:bg-red-200"
@@ -965,6 +1039,70 @@ export default function InventoryPage() {
                       />
                     )
                   })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-yellow-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-yellow-500" />
+                  Trending Toward Reorder
+                </h3>
+                <Link
+                  href="/inventory/projection"
+                  className="text-xs text-yellow-700 hover:underline tabular-nums"
+                >
+                  {loading ? '…' : s.trendingTowardReorderCount} total
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.trendingTowardReorderList.length === 0 ? (
+                <EmptyState message="No items trending toward reorder" />
+              ) : (
+                <div className="space-y-2">
+                  {s.trendingTowardReorderList.map((item, i) => (
+                    <AlertRow
+                      key={i}
+                      urgency="warning"
+                      left={
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              item.itemId &&
+                              pushPanel({
+                                type: 'item360',
+                                itemId: item.itemId,
+                                itemName: item.name,
+                              })
+                            }
+                            className="block w-full text-left"
+                          >
+                            <p className="text-xs font-semibold text-gray-900 truncate hover:text-yellow-700 hover:underline">
+                              {item.name ?? 'Unknown'}
+                            </p>
+                          </button>
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {item.sku} · {item.warehouseName ?? '—'}
+                          </p>
+                        </div>
+                      }
+                      right={
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-sm font-bold text-yellow-700">
+                            {item.projectedMinBalance}
+                          </span>
+                          <p className="text-[10px] text-gray-400">min projected bal.</p>
+                        </div>
+                      }
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -995,7 +1133,7 @@ export default function InventoryPage() {
                   {s.reorderAlertsList.map((alert, i) => (
                     <AlertRow
                       key={i}
-                      urgency={alert.currentQty === 0 ? 'critical' : 'warning'}
+                      urgency={alert.currentAvailableQty === 0 ? 'critical' : 'warning'}
                       left={
                         <div className="min-w-0 flex-1">
                           <button
@@ -1021,7 +1159,7 @@ export default function InventoryPage() {
                             <div
                               className="h-full rounded-full bg-amber-500"
                               style={{
-                                width: `${Math.min((alert.currentQty / Math.max(alert.reorderPoint, 1)) * 100, 100)}%`,
+                                width: `${Math.min((alert.currentAvailableQty / Math.max(alert.reorderPoint, 1)) * 100, 100)}%`,
                               }}
                             />
                           </div>
@@ -1030,9 +1168,9 @@ export default function InventoryPage() {
                       right={
                         <div className="flex flex-col items-end gap-1">
                           <span
-                            className={`text-sm font-bold ${alert.currentQty === 0 ? 'text-red-600' : 'text-amber-700'}`}
+                            className={`text-sm font-bold ${alert.currentAvailableQty === 0 ? 'text-red-600' : 'text-amber-700'}`}
                           >
-                            {alert.currentQty}
+                            {alert.currentAvailableQty}
                           </span>
                           <p className="text-[10px] text-gray-400">reorder: {alert.reorderPoint}</p>
                           <Link
@@ -1127,25 +1265,55 @@ export default function InventoryPage() {
                 </Link>
               </div>
               <div className="flex gap-1.5 mb-3 flex-wrap">
-                {(
-                  [
-                    {
-                      key: 'in_transit',
-                      label: 'In Transit',
-                      cls: 'bg-indigo-100 text-indigo-700',
-                    },
-                    { key: 'draft', label: 'Draft', cls: 'bg-gray-100 text-gray-600' },
-                    { key: 'received', label: 'Received', cls: 'bg-green-100 text-green-700' },
-                    { key: 'cancelled', label: 'Cancelled', cls: 'bg-red-100 text-red-600' },
-                  ] as const
-                ).map(({ key, label, cls }) => (
-                  <span
-                    key={key}
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${cls}`}
-                  >
-                    {loading ? '—' : (txStats[key] ?? 0)} {label}
-                  </span>
-                ))}
+                {loading ? (
+                  <>
+                    <Sk className="h-5 w-20 rounded-full" />
+                    <Sk className="h-5 w-20 rounded-full" />
+                    <Sk className="h-5 w-20 rounded-full" />
+                  </>
+                ) : (
+                  (
+                    [
+                      {
+                        key: 'pending_manager_approval',
+                        label: 'Mgr Approval',
+                        cls: 'bg-amber-100 text-amber-700',
+                      },
+                      { key: 'requested', label: 'Requested', cls: 'bg-blue-100 text-blue-700' },
+                      {
+                        key: 'pending_hq_approval',
+                        label: 'HQ Approval',
+                        cls: 'bg-orange-100 text-orange-700',
+                      },
+                      { key: 'rejected', label: 'Rejected', cls: 'bg-rose-100 text-rose-700' },
+                      { key: 'draft', label: 'Draft', cls: 'bg-gray-100 text-gray-600' },
+                      {
+                        key: 'in_transit',
+                        label: 'In Transit',
+                        cls: 'bg-indigo-100 text-indigo-700',
+                      },
+                      {
+                        key: 'partially_received',
+                        label: 'Partial',
+                        cls: 'bg-teal-100 text-teal-700',
+                      },
+                      { key: 'received', label: 'Received', cls: 'bg-green-100 text-green-700' },
+                      { key: 'cancelled', label: 'Cancelled', cls: 'bg-red-100 text-red-600' },
+                    ] as const
+                  )
+                    // Only show statuses that actually have transfers right
+                    // now — with 9 possible statuses, always rendering all
+                    // of them (mostly at 0) reads as cluttered.
+                    .filter(({ key }) => (s.transferStatusCounts[key] ?? 0) > 0)
+                    .map(({ key, label, cls }) => (
+                      <span
+                        key={key}
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${cls}`}
+                      >
+                        {s.transferStatusCounts[key]} {label}
+                      </span>
+                    ))
+                )}
               </div>
               {loading ? (
                 <div className="space-y-2">
@@ -1200,11 +1368,80 @@ export default function InventoryPage() {
                 </div>
               )}
             </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-violet-500" />
+                  Purchasing
+                </h3>
+              </div>
+              <div className="flex gap-1.5 mb-3">
+                <Link
+                  href="/inventory/purchase-requests"
+                  className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-200"
+                >
+                  {loading ? '—' : s.openPrCount} Open PR{s.openPrCount === 1 ? '' : 's'}
+                </Link>
+                <Link
+                  href="/inventory/purchase-orders"
+                  className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
+                >
+                  {loading ? '—' : s.openPoCount} Open PO{s.openPoCount === 1 ? '' : 's'}
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-11 w-full" />
+                  ))}
+                </div>
+              ) : s.purchasingActivityList.length === 0 ? (
+                <div className="py-5 text-center text-xs text-gray-400">
+                  No open purchase requests or orders
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {s.purchasingActivityList.map((p, i) => (
+                    <Link
+                      key={i}
+                      href={
+                        p.type === 'PR'
+                          ? '/inventory/purchase-requests'
+                          : '/inventory/purchase-orders'
+                      }
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    >
+                      <span
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          p.type === 'PR'
+                            ? 'bg-violet-100 text-violet-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {p.type}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-gray-900 truncate">{p.code}</p>
+                        <p className="text-[11px] text-gray-400 capitalize">
+                          {String(p.status).replace('_', ' ')} · {fmtDate(p.date)}
+                        </p>
+                      </div>
+                      {p.amount != null && (
+                        <span className="shrink-0 text-xs font-semibold text-gray-700">
+                          {fmtMoney(p.amount)}
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Planning */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -1301,11 +1538,60 @@ export default function InventoryPage() {
                           {v.itemName ?? 'Unknown'}
                         </p>
                         <p className="text-[11px] text-gray-500">
-                          {v.warehouseName ?? '—'} · {v.itemSku ?? ''}
+                          {v.warehouseName ?? '—'} · {v.sku ?? ''}
                         </p>
                       </div>
                     }
-                    right={<span className="text-sm font-bold text-red-600">{v.quantity}</span>}
+                    right={<span className="text-sm font-bold text-red-600">{v.onHandQty}</span>}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-teal-500" />
+                Adjustments Pending Investigation
+              </h3>
+              <Link
+                href="/inventory/counting"
+                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+              >
+                View all <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </div>
+            {loading ? (
+              <div className="space-y-2">
+                {[...Array(4)].map((_, i) => (
+                  <Sk key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : s.pendingAdjustmentsList.length === 0 ? (
+              <EmptyState message="No adjustments pending investigation" />
+            ) : (
+              <div className="space-y-2">
+                {s.pendingAdjustmentsList.map((a, i) => (
+                  <AlertRow
+                    key={i}
+                    urgency={a.status === 'submitted' ? 'warning' : 'critical'}
+                    left={
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-gray-900 truncate">
+                          {a.adjustmentNumber ?? 'Unknown'}
+                        </p>
+                        <p className="text-[11px] text-gray-500 truncate">
+                          {a.warehouse?.name ?? '—'} ·{' '}
+                          {String(a.reasonCode ?? '').replace('_', ' ')}
+                        </p>
+                      </div>
+                    }
+                    right={
+                      <span className="text-[11px] font-medium capitalize text-teal-700">
+                        {a.status}
+                      </span>
+                    }
                   />
                 ))}
               </div>

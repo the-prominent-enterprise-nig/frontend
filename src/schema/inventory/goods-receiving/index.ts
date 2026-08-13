@@ -85,20 +85,28 @@ export const StockBalanceSchema = z.object({
 // ItemListResponseSchema/SerialNumberListResponseSchema. Parsing the real
 // shape and transforming it back to a flat one keeps every existing
 // consumer (useStockBalance's `pagination`) unchanged.
+const StockBalanceSummarySchema = z.object({
+  totalOnHandQty: z.number(),
+  totalAvailableQty: z.number(),
+  totalReservedQty: z.number(),
+})
+
 export const StockBalanceListResponseSchema = z
   .object({
     data: z.array(StockBalanceSchema),
+    summary: StockBalanceSummarySchema.optional(),
     meta: z.object({
       total: z.number(),
       page: z.number(),
       limit: z.number(),
     }),
   })
-  .transform(({ data, meta }) => ({
+  .transform(({ data, meta, summary }) => ({
     data,
     total: meta.total,
     page: meta.page,
     limit: meta.limit,
+    summary,
   }))
 
 export type StockBalance = z.infer<typeof StockBalanceSchema>
