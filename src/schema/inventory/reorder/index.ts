@@ -51,21 +51,23 @@ export type ReorderRule = z.infer<typeof ReorderRuleSchema>
 export type ReorderRuleListResponse = z.infer<typeof ReorderRuleListResponseSchema>
 
 export const ReorderAlertSchema = z.object({
-  itemId: z.string(),
+  ruleId: z.string(),
   item: ReorderItemSchema.optional().nullable(),
-  warehouseId: z.string().optional().nullable(),
   warehouse: ReorderWarehouseSchema.optional().nullable(),
-  currentQty: z.number(),
   reorderPoint: z.number(),
   reorderQuantity: z.number(),
-  hasActivePr: z.boolean().optional(),
+  currentAvailableQty: z.number(),
+  currentOnHandQty: z.number(),
+  shortfall: z.number(),
+  autoCreatePr: z.boolean().optional(),
+  preferredSupplierId: z.string().optional().nullable(),
 })
 
 export const ReorderAlertListResponseSchema = z.object({
   data: z.array(ReorderAlertSchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
+  total: z.number().optional(),
+  page: z.number().optional(),
+  limit: z.number().optional(),
 })
 
 export type ReorderAlert = z.infer<typeof ReorderAlertSchema>

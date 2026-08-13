@@ -33,7 +33,7 @@ export function useProjection() {
     staleTime: 60 * 1000,
   })
 
-  const projectionItems = projectionQuery.data?.data?.data ?? []
+  const projectionItems = projectionQuery.data?.data?.items ?? []
   const stockoutAlerts = alertsQuery.data?.data?.data ?? []
 
   return {

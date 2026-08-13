@@ -15,21 +15,20 @@ export const NegativeStockPolicySchema = z.object({
 })
 
 export const NegativeStockViolationSchema = z.object({
-  id: z.string(),
   itemId: z.string().optional().nullable(),
   itemName: z.string().optional().nullable(),
-  itemSku: z.string().optional().nullable(),
+  sku: z.string().optional().nullable(),
   warehouseId: z.string().optional().nullable(),
   warehouseName: z.string().optional().nullable(),
-  quantity: z.number(),
-  createdAt: z.string().optional(),
+  onHandQty: z.number(),
+  availableQty: z.number().optional(),
 })
 
 export const NegativeStockViolationListResponseSchema = z.object({
   data: z.array(NegativeStockViolationSchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
+  total: z.number().optional(),
+  page: z.number().optional(),
+  limit: z.number().optional(),
 })
 
 export type NegativeStockPolicyData = z.infer<typeof NegativeStockPolicySchema>

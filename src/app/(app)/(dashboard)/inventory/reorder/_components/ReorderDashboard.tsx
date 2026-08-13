@@ -169,13 +169,13 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                         Reorder Qty
                       </th>
                       <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                        PR Status
+                        Auto-PR
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
                     {alerts.map((alert, i) => (
-                      <tr key={`${alert.itemId}-${i}`} className="hover:bg-zinc-50">
+                      <tr key={`${alert.ruleId}-${i}`} className="hover:bg-zinc-50">
                         <td className="px-4 py-3">
                           <p className="font-medium text-zinc-900">{alert.item?.name ?? '—'}</p>
                           {alert.item?.sku && (
@@ -189,9 +189,9 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span
-                            className={`font-semibold ${alert.currentQty <= 0 ? 'text-red-600' : 'text-amber-600'}`}
+                            className={`font-semibold ${alert.currentAvailableQty <= 0 ? 'text-red-600' : 'text-amber-600'}`}
                           >
-                            {alert.currentQty}
+                            {alert.currentAvailableQty}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-600">
@@ -201,13 +201,13 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                           {alert.reorderQuantity}
                         </td>
                         <td className="px-4 py-3 text-center hidden md:table-cell">
-                          {alert.hasActivePr ? (
+                          {alert.autoCreatePr ? (
                             <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                              Active PR
+                              Auto-PR
                             </span>
                           ) : (
-                            <span className="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-600">
-                              No PR
+                            <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-500">
+                              Manual
                             </span>
                           )}
                         </td>
