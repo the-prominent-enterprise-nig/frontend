@@ -32,7 +32,10 @@ const reorderHref = (): string => '/inventory/reorder'
 const arInvoiceHref = (entityId: string): string => `/accounting/ar-invoices/${entityId}`
 const creditApplicationHref = (entityId: string): string => `/pos/credit-applications/${entityId}`
 const itemMasterHref = (): string => '/inventory/items'
-const stockAdjustmentHref = (): string => '/inventory/adjustments'
+// Found live manually testing Scenario 26 Part 9 — /inventory/adjustments
+// has no page of its own (AdjustmentList only ever renders as a tab inside
+// CountingHub); the old href 404'd on every click-through.
+const stockAdjustmentHref = (): string => '/inventory/counting?tab=adjustments'
 
 // Status drives both the avatar tint and a small corner badge icon (see
 // STATUS_STYLE below / NotificationListItem.tsx) — the entity icon alone
@@ -146,7 +149,13 @@ export function getNotificationHref(notification: {
 }): string {
   const meta = NOTIFICATION_TYPE_META[notification.eventType]
   const base = meta.getHref(notification.entityId)
-  return meta.status === 'resolved' ? `${base}?tab=history` : base
+  if (meta.status !== 'resolved') return base
+  // stockAdjustmentHref already carries its own `?tab=adjustments` — a bare
+  // `?tab=history` suffix would produce a second, malformed `?` in the URL.
+  // `&` is always correct once a query string already exists; a repeated
+  // `tab` key is harmless (URLSearchParams.get() returns the first match,
+  // so the real tab value still wins over the appended one).
+  return base.includes('?') ? `${base}&tab=history` : `${base}?tab=history`
 }
 
 /**
