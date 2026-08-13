@@ -10,6 +10,11 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Ban,
+  Tags,
+  ShieldAlert,
+  FileText,
+  Truck,
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { NotificationItem, NotificationType } from '@/src/schema/notifications/notification'
@@ -36,6 +41,13 @@ const itemMasterHref = (): string => '/inventory/items'
 // has no page of its own (AdjustmentList only ever renders as a tab inside
 // CountingHub); the old href 404'd on every click-through.
 const stockAdjustmentHref = (): string => '/inventory/counting?tab=adjustments'
+// Scenario 26 same-day follow-up — SKU Reservation cancellation lives under
+// /pos/reservations (not /inventory/reservations, a different list).
+const skuReservationHref = (): string => '/pos/reservations'
+const priceListHref = (): string => '/inventory/price-lists'
+const batchHoldHref = (): string => '/inventory/batches'
+const purchaseRequestHref = (): string => '/inventory/purchase-requests'
+const purchaseOrderHref = (): string => '/inventory/purchase-orders'
 
 // Status drives both the avatar tint and a small corner badge icon (see
 // STATUS_STYLE below / NotificationListItem.tsx) — the entity icon alone
@@ -133,6 +145,56 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
     icon: ClipboardList,
     status: 'resolved',
     getHref: stockAdjustmentHref,
+  },
+  sku_reservation_cancel_approval_needed: {
+    icon: Ban,
+    status: 'needs-action',
+    getHref: skuReservationHref,
+  },
+  sku_reservation_cancel_resolved: {
+    icon: Ban,
+    status: 'resolved',
+    getHref: skuReservationHref,
+  },
+  price_list_approval_needed: {
+    icon: Tags,
+    status: 'needs-action',
+    getHref: priceListHref,
+  },
+  price_list_resolved: {
+    icon: Tags,
+    status: 'resolved',
+    getHref: priceListHref,
+  },
+  batch_hold_placed: {
+    icon: ShieldAlert,
+    status: 'alert',
+    getHref: batchHoldHref,
+  },
+  batch_hold_resolved: {
+    icon: ShieldAlert,
+    status: 'resolved',
+    getHref: batchHoldHref,
+  },
+  purchase_request_approval_needed: {
+    icon: FileText,
+    status: 'needs-action',
+    getHref: purchaseRequestHref,
+  },
+  purchase_request_resolved: {
+    icon: FileText,
+    status: 'resolved',
+    getHref: purchaseRequestHref,
+  },
+  purchase_order_approval_needed: {
+    icon: Truck,
+    status: 'needs-action',
+    getHref: purchaseOrderHref,
+  },
+  purchase_order_resolved: {
+    icon: Truck,
+    status: 'resolved',
+    getHref: purchaseOrderHref,
   },
 }
 

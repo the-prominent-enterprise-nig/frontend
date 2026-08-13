@@ -15,6 +15,16 @@ export type NotificationType =
   | 'stock_adjustment_investigate_needed'
   | 'stock_adjustment_approval_needed'
   | 'stock_adjustment_resolved'
+  | 'sku_reservation_cancel_approval_needed'
+  | 'sku_reservation_cancel_resolved'
+  | 'price_list_approval_needed'
+  | 'price_list_resolved'
+  | 'batch_hold_placed'
+  | 'batch_hold_resolved'
+  | 'purchase_request_approval_needed'
+  | 'purchase_request_resolved'
+  | 'purchase_order_approval_needed'
+  | 'purchase_order_resolved'
 
 export interface NotificationItem {
   id: string
