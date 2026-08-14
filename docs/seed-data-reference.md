@@ -2,7 +2,7 @@
 
 Living reference doc for manually testing against the current dev database. Not committed (matches `pos-installment-plan.md`'s treatment) — regenerate/update this by hand if the seed changes.
 
-Single tenant seeded: **TechNova Systems Inc.** (`technova`), 3 branches.
+Single tenant seeded: **TechNova Systems Inc.** (`technova`) — **39 real operational branches** (type `office`, split across the `negros` and `panay` regions) plus **2 real warehouses** (`Negros Warehouse` / `WH-NEGROS`, `Panay Warehouse` / `WH-PANAY`). Every one of these 41 branches has its own full set of seeded human test accounts — see "Accounts" below.
 
 ## Logging in
 
@@ -19,12 +19,21 @@ Cashier PIN (for cashier-PIN-gated actions like manager overrides/approvals): **
 
 ## Accounts (users)
 
-> **Note (2026-08-08):** this table's "3 branches / 16 accounts" framing is
-> stale — the live dev DB actually has 42 real branches for this tenant
-> (Bago, Guimbal, Murcia, and 39 more), not just Manila HQ/Cebu/Davao, and
-> the b1/b2/b3 accounts below only cover 3 of them. Found while verifying
-> Head Office role variants (below); a full regeneration of this table
-> against current DB state is a separate follow-up, not done here.
+> **Note (2026-08-08, corrected 2026-08-14, corrected again same day):** this
+> table used to show 3 placeholder branches (**Manila HQ / Cebu Office / Davao
+> Branch**) that don't exist anymore — the live dev DB has 41 real branches
+> (39 real operational + 2 real warehouses). A first pass fixed the branch
+> _names_ (Manila HQ → Bago, Cebu Office → Binalbagan, Davao Branch → Candoni)
+> but still wrongly claimed only those 3 of the 41 branches have seeded
+> accounts. A full DB query found that's wrong too: **every one of the 41
+> branches has its own complete 7-role account set** — this was already true
+> all along, the doc just never reflected it. See the full `bN` → branch
+> mapping below.
+>
+> **Name values are Faker-generated per seed run and effectively random** —
+> don't rely on them for anything (a prior version of this table had Name/Role
+> pairings that had drifted from what the live DB actually has attached to
+> each email). Only email, role, and branch are meaningful and stable.
 >
 > **Note (2026-08-08, merge from development, resolved):** development
 > independently seeded a role literally named `Inventory` (b1/b2/b3.
@@ -42,32 +51,99 @@ Cashier PIN (for cashier-PIN-gated actions like manager overrides/approvals): **
 > investigator@test.com — merged into the role/permission model, but not
 > yet seeded as real users here.
 
-One Business Owner (no branch, sees everything) + 7 roles per branch × 3 branches = 22 accounts total.
+**Pattern:** every branch-scoped account is `technova.b{N}.{role}@test.com`,
+where `N` is 1–41 (see mapping below) and `role` is one of `manager`,
+`accounting`, `stock`, `approver`, `investigator`, `cashier`, `crm`. That's
+41 branches × 7 roles = 287 branch-scoped accounts, plus 4 branchless Head
+Office role accounts + 1 Business Owner = **292 accounts total**.
 
-| Email                               | Name                    | Role                 | Branch             |
-| ----------------------------------- | ----------------------- | -------------------- | ------------------ |
-| `technova.owner@test.com`           | Darrin Kassulke         | **Business Owner**   | — (all branches)   |
-| `technova.b1.manager@test.com`      | Jasper Rempel           | Branch Manager       | Manila HQ (MNL)    |
-| `technova.b1.accounting@test.com`   | Fred Murray             | Accountant           | Manila HQ (MNL)    |
-| `technova.b1.stock@test.com`        | Jenna Hahn              | Stock Controller     | Manila HQ (MNL)    |
-| `technova.b1.approver@test.com`     | Shelia Yost             | Master Data Approver | Manila HQ (MNL)    |
-| `technova.b1.investigator@test.com` | Alessandra Buenaventura | Credit Investigator  | Manila HQ (MNL)    |
-| `technova.b1.cashier@test.com`      | Tyrell Buckridge        | Cashier              | Manila HQ (MNL)    |
-| `technova.b1.crm@test.com`          | Shelia Yost             | Marketing Manager    | Manila HQ (MNL)    |
-| `technova.b2.manager@test.com`      | Irma Daniel             | Branch Manager       | Cebu Office (CBU)  |
-| `technova.b2.accounting@test.com`   | Bette Little            | Accountant           | Cebu Office (CBU)  |
-| `technova.b2.stock@test.com`        | Janis Langosh           | Stock Controller     | Cebu Office (CBU)  |
-| `technova.b2.approver@test.com`     | Emmalee Howell          | Master Data Approver | Cebu Office (CBU)  |
-| `technova.b2.investigator@test.com` | Marcus Villaruel        | Credit Investigator  | Cebu Office (CBU)  |
-| `technova.b2.cashier@test.com`      | Lexus Boehm             | Cashier              | Cebu Office (CBU)  |
-| `technova.b2.crm@test.com`          | Corey Torp              | Marketing Manager    | Cebu Office (CBU)  |
-| `technova.b3.manager@test.com`      | Malcolm Moore           | Branch Manager       | Davao Branch (DVO) |
-| `technova.b3.accounting@test.com`   | Adriana Cronin          | Accountant           | Davao Branch (DVO) |
-| `technova.b3.stock@test.com`        | Emmalee Howell          | Stock Controller     | Davao Branch (DVO) |
-| `technova.b3.approver@test.com`     | Lois Yundt              | Master Data Approver | Davao Branch (DVO) |
-| `technova.b3.investigator@test.com` | Priya Ocampo            | Credit Investigator  | Davao Branch (DVO) |
-| `technova.b3.cashier@test.com`      | Flo Jacobi              | Cashier              | Davao Branch (DVO) |
-| `technova.b3.crm@test.com`          | Flavio Pouros           | Marketing Manager    | Davao Branch (DVO) |
+### `bN` → real branch mapping
+
+| bN  | Branch                | Region | Type          |
+| --- | --------------------- | ------ | ------------- |
+| b1  | Bago                  | negros | office        |
+| b2  | Binalbagan            | negros | office        |
+| b3  | Candoni               | negros | office        |
+| b4  | Canlaon               | negros | office        |
+| b5  | Cauayan               | negros | office        |
+| b6  | Don Salvador          | negros | office        |
+| b7  | Guihulngan            | negros | office        |
+| b8  | Hinobaan              | negros | office        |
+| b9  | Kabankalan            | negros | office        |
+| b10 | Mabinay               | negros | office        |
+| b11 | Murcia                | negros | office        |
+| b12 | Sagay                 | negros | office        |
+| b13 | San Carlos            | negros | office        |
+| b14 | San Sebastian         | negros | office        |
+| b15 | Sipalay               | negros | office        |
+| b16 | Talisay               | negros | office        |
+| b17 | Tanjay                | negros | office        |
+| b18 | Victorias             | negros | office        |
+| b19 | NWHSE                 | negros | **warehouse** |
+| b20 | Ajuy                  | panay  | office        |
+| b21 | Alimodian             | panay  | office        |
+| b22 | Antique               | panay  | office        |
+| b23 | Balasan               | panay  | office        |
+| b24 | Banate                | panay  | office        |
+| b25 | Barotac Nuevo         | panay  | office        |
+| b26 | Caticlan              | panay  | office        |
+| b27 | Culasi                | panay  | office        |
+| b28 | GT                    | panay  | office        |
+| b29 | Guimaras - Buenavista | panay  | office        |
+| b30 | Guimaras - Jordan     | panay  | office        |
+| b31 | Guimbal               | panay  | office        |
+| b32 | Kalibo                | panay  | office        |
+| b33 | Lambunao              | panay  | office        |
+| b34 | Mabini                | panay  | office        |
+| b35 | Miag-ao               | panay  | office        |
+| b36 | Pandan                | panay  | office        |
+| b37 | Passi                 | panay  | office        |
+| b38 | Pototan               | panay  | office        |
+| b39 | Roxas                 | panay  | office        |
+| b40 | San Rafael            | panay  | office        |
+| b41 | PWHSE                 | panay  | **warehouse** |
+
+`b19`/`b41` (NWHSE/PWHSE) are the tenant's 2 real standalone warehouses — they
+still carry a full 7-role account set as a legacy artifact from before the
+"warehouse tier correction" project split Warehouse from Branch; nothing in
+the app currently expects a Branch Manager/Cashier/etc. at a warehouse, so
+these specific accounts are unlikely to be useful for real testing, but they
+do exist and will log in.
+
+### Worked example: `b1`/`b2`/`b3` (the branches most other docs/tests reference)
+
+One Business Owner (no branch, sees everything) + 7 roles × 3 branches shown
+here + 4 branchless Head Office roles (below) + 280 more branch accounts
+following the same pattern for `b4`–`b41` = 292 accounts total.
+
+| Email                               | Name               | Role                 | Branch           | Region |
+| ----------------------------------- | ------------------ | -------------------- | ---------------- | ------ |
+| `technova.owner@test.com`           | Darrin Kassulke    | **Business Owner**   | — (all branches) | —      |
+| `technova.b1.manager@test.com`      | Jenna Hahn         | Branch Manager       | Bago             | negros |
+| `technova.b1.accounting@test.com`   | Alayna Champlin    | Accountant           | Bago             | negros |
+| `technova.b1.stock@test.com`        | Nicolas Quitzon    | Stock Controller     | Bago             | negros |
+| `technova.b1.approver@test.com`     | Shane Cormier      | Master Data Approver | Bago             | negros |
+| `technova.b1.investigator@test.com` | Ronaldo Armstrong  | Credit Investigator  | Bago             | negros |
+| `technova.b1.cashier@test.com`      | Bernard Hettinger  | Cashier              | Bago             | negros |
+| `technova.b1.crm@test.com`          | Darren Gusikowski  | Marketing Manager    | Bago             | negros |
+| `technova.b2.manager@test.com`      | Tyrell Buckridge   | Branch Manager       | Binalbagan       | negros |
+| `technova.b2.accounting@test.com`   | Terri Lynch        | Accountant           | Binalbagan       | negros |
+| `technova.b2.stock@test.com`        | Jay Bechtelar      | Stock Controller     | Binalbagan       | negros |
+| `technova.b2.approver@test.com`     | Shari Parker       | Master Data Approver | Binalbagan       | negros |
+| `technova.b2.investigator@test.com` | Quentin Hudson     | Credit Investigator  | Binalbagan       | negros |
+| `technova.b2.cashier@test.com`      | Dennis Heidenreich | Cashier              | Binalbagan       | negros |
+| `technova.b2.crm@test.com`          | Dallas Tillman     | Marketing Manager    | Binalbagan       | negros |
+| `technova.b3.manager@test.com`      | Shelia Yost        | Branch Manager       | Candoni          | negros |
+| `technova.b3.accounting@test.com`   | Vernie Carroll     | Accountant           | Candoni          | negros |
+| `technova.b3.stock@test.com`        | Bethany Mann       | Stock Controller     | Candoni          | negros |
+| `technova.b3.approver@test.com`     | Cristian MacGyver  | Master Data Approver | Candoni          | negros |
+| `technova.b3.investigator@test.com` | Meredith Feest     | Credit Investigator  | Candoni          | negros |
+| `technova.b3.cashier@test.com`      | Coby Satterfield   | Cashier              | Candoni          | negros |
+| `technova.b3.crm@test.com`          | Valerie Pfeffer    | Marketing Manager    | Candoni          | negros |
+
+Need a specific account for `b4`–`b41`? Same pattern, same 7 roles — query
+`User.email` starting with `technova.b{N}.` or just log in directly, you don't
+need the Name/table entry to do that (see "Logging in" above).
 
 ### Head Office accounts (added 2026-08-08)
 
@@ -77,12 +153,12 @@ Branch-scoping treats a branchless caller as "no filter," so these see every
 branch's data within their one module, e.g. Head Office Accountant sees
 every branch's journal entries but nothing outside Accounting.
 
-| Email                          | Role              | Sees                                 |
-| ------------------------------ | ----------------- | ------------------------------------ |
-| `technova.accounting@test.com` | Accountant        | All branches, Accounting module only |
-| `technova.stock@test.com`      | Stock Controller  | All branches, Inventory module only  |
-| `technova.cashier@test.com`    | Cashier           | All branches, POS module only        |
-| `technova.crm@test.com`        | Marketing Manager | All branches, CRM module only        |
+| Email                          | Name          | Role              | Sees                                 |
+| ------------------------------ | ------------- | ----------------- | ------------------------------------ |
+| `technova.accounting@test.com` | Jasper Rempel | Accountant        | All branches, Accounting module only |
+| `technova.stock@test.com`      | Irma Daniel   | Stock Controller  | All branches, Inventory module only  |
+| `technova.cashier@test.com`    | Malcolm Moore | Cashier           | All branches, POS module only        |
+| `technova.crm@test.com`        | Fred Murray   | Marketing Manager | All branches, CRM module only        |
 
 **Business Owner bypasses every permission check** (`hasPrivilegedRole` short-circuit) — use it for anything without worrying about role gates.
 
@@ -90,11 +166,13 @@ There's also a platform-level super admin, `dev@prominent.com` — unrelated to 
 
 ## Branches / Warehouses / Terminals
 
-| Branch       | Code | Warehouse | POS Terminal |
-| ------------ | ---- | --------- | ------------ |
-| Manila HQ    | MNL  | WH-01     | TN-B1-01     |
-| Cebu Office  | CBU  | WH-02     | TN-B2-01     |
-| Davao Branch | DVO  | WH-03     | TN-B3-01     |
+| Branch     | Code | Warehouse | POS Terminal |
+| ---------- | ---- | --------- | ------------ |
+| Bago       | MNL  | WH-01     | TN-B1-01     |
+| Binalbagan | CBU  | WH-02     | TN-B2-01     |
+| Candoni    | DVO  | WH-03     | TN-B3-01     |
+
+(Branch names above updated to match the corrected account table — same `b1`/`b2`/`b3` accounts, same `WH-01`/`WH-02`/`WH-03` + `TN-B1-01`/`TN-B2-01`/`TN-B3-01` identifiers the Serial numbers section below still references. Note the tenant's real warehouse structure is now regional — 2 warehouses total, `WH-NEGROS`/`WH-PANAY` — not one per branch; this `WH-01`/`WH-02`/`WH-03` mapping is legacy Phase 1/2 demo-data scaffolding kept as-is here since the sections below still key off these specific codes.)
 
 One warehouse per branch, resolved automatically by branch when opening a POS session — you don't need to pick a warehouse manually.
 
@@ -118,7 +196,7 @@ One warehouse per branch, resolved automatically by branch when opening a POS se
 | `FURNSET-WH-03-001` | in_stock | WH-03     | DVO    |
 | `FURNSET-WH-03-002` | in_stock | WH-03     | DVO    |
 
-If you want to test the **branch-scoped serial rejection** (Phase 2b), you now have real cross-branch data to try it with: open a session on, say, Manila's terminal (`TN-B1-01`), and if you register/move a serial into WH-02 or WH-03 instead, it should be rejected as "in stock at a different branch."
+If you want to test the **branch-scoped serial rejection** (Phase 2b), you now have real cross-branch data to try it with: open a session on, say, Bago's terminal (`TN-B1-01`), and if you register/move a serial into WH-02 or WH-03 instead, it should be rejected as "in stock at a different branch."
 
 ### Aircon dual-serial pairs (`TN-AC-SPLIT-1_5HP`)
 

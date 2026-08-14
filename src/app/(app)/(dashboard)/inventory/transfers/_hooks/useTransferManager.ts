@@ -16,6 +16,7 @@ import { rejectTransfer } from '../_actions/reject-transfer'
 import { approveManagerTransfer } from '../_actions/approve-manager-transfer'
 import { rejectManagerTransfer } from '../_actions/reject-manager-transfer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { getBranches } from '../_actions/get-branches'
 import type {
   CreateTransferFormValues,
   DispatchTransferFormValues,
@@ -72,6 +73,14 @@ export function useTransferManager() {
     // for callers who can actually create transfers (see
     // warehouses.controller.ts), silently ignoring it otherwise.
     queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Warehouse-leg support (region-based warehouse-side auth for a transfer
+  // touching a real standalone warehouse) needs the caller's own region.
+  const branchesQuery = useQuery({
+    queryKey: ['inventory-branches-lookup'],
+    queryFn: () => getBranches(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -290,6 +299,7 @@ export function useTransferManager() {
   }
 
   const warehouseOptions = warehousesQuery.data?.data?.data ?? []
+  const branchOptions = branchesQuery.data?.data?.data ?? []
 
   return {
     transfers,
@@ -335,6 +345,7 @@ export function useTransferManager() {
     isLoadingDetail: transferDetailQuery.isLoading,
 
     warehouseOptions,
+    branchOptions,
 
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

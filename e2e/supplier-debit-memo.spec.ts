@@ -87,11 +87,11 @@ test.describe('Accounting — AP Bills supplier debit memo (return)', () => {
     await expect(itemOption).toBeVisible({ timeout: 10_000 })
     await itemOption.click()
 
-    // "Manila HQ Warehouse" is where TN-REF-001 actually has stock seeded —
+    // "Bago Warehouse" is where TN-REF-001 actually has stock seeded —
     // an arbitrary warehouse (e.g. "index 1") may have zero on hand for
     // this item and trip the insufficient-stock validation.
     const warehouseSelect = page.getByLabel('Warehouse *')
-    await warehouseSelect.selectOption({ label: 'Manila HQ Warehouse' })
+    await warehouseSelect.selectOption({ label: 'Bago Warehouse' })
 
     await fillStable(page.getByLabel('Quantity Returned *'), '1')
     await fillStable(page.getByLabel('Debit Amount *'), '250')
