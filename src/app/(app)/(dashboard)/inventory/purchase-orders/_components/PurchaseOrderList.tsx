@@ -277,6 +277,7 @@ export function PurchaseOrderList({
   canClose,
   canReceive,
   canViewCost,
+  currentUserBranchId,
 }: {
   canCreate: boolean
   canApprove: boolean
@@ -285,6 +286,11 @@ export function PurchaseOrderList({
   canClose: boolean
   canReceive: boolean
   canViewCost: boolean
+  /** Sent as branchId attribution on a created PO — the create modal has no
+   * visible branch field anymore (Scenario 27: destination is the
+   * Warehouse field), this just flows through to the backend's own
+   * server-side force for a branch-scoped creator. */
+  currentUserBranchId?: string | null
 }) {
   const [activeSection, setActiveSection] = useState<Section>('orders')
 
@@ -741,6 +747,7 @@ export function PurchaseOrderList({
           await createPO(data)
         }}
         isSubmitting={isCreating}
+        currentUserBranchId={currentUserBranchId}
       />
 
       <CancelPoModal

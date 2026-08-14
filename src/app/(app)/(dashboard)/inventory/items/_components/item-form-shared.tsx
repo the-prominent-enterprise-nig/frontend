@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { Controller } from 'react-hook-form'
 import type { ItemTagLabel } from '@/src/schema/inventory/items'
+import type { Account } from '@/src/libs/data/AccountingData'
 
 export const ALL_TAGS: { value: ItemTagLabel; label: string }[] = [
   { value: 'best_seller', label: 'Best Seller' },
@@ -107,6 +109,50 @@ export function FormSection({
         </div>
       </button>
       {isOpen && <div className="grid gap-4 px-6 pb-5 pt-1 sm:grid-cols-2">{children}</div>}
+    </div>
+  )
+}
+
+// ACC-21: dropdown of accounts filtered by type, controlled by react-hook-form.
+// Shared between CreateItemModal and EditItemModal so both expose the same
+// revenue/COGS/inventory account overrides.
+export function AccountField({
+  label,
+  name,
+  control,
+  accounts,
+  filter,
+}: {
+  label: string
+  name: 'revenueAccountId' | 'cogsAccountId' | 'inventoryAccountId'
+  control: any
+  accounts: Account[]
+  filter?: string
+}): React.ReactElement {
+  const filtered = filter
+    ? accounts.filter((a) => String((a as any).type).toUpperCase() === filter)
+    : accounts
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-zinc-700">{label}</label>
+      <Controller
+        name={name}
+        control={control}
+        render={({ field }) => (
+          <select
+            {...field}
+            value={field.value != null ? String(field.value) : ''}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+          >
+            <option value="">— Use default mapping —</option>
+            {filtered.map((a) => (
+              <option key={a.id} value={a.id}>
+                {(a as any).number ?? a.code} — {a.name}
+              </option>
+            ))}
+          </select>
+        )}
+      />
     </div>
   )
 }

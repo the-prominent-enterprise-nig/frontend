@@ -187,6 +187,63 @@ export async function ensureItemStock(
 }
 
 /**
+ * Scenario 27 Part 4 variant of ensureItemStock — credits stock directly
+ * into one of the 2 real (standalone, branchId: null) warehouses rather than
+ * a branch's own local warehouse, since that's what a warehouse request's
+ * hard-cap check reads from.
+ */
+export async function ensureWarehouseStock(
+  page: Page,
+  opts: { warehouseCode: string; itemQuery: string; quantity: number }
+): Promise<void> {
+  const warehousesRes = await page.request.get(
+    '/api/inventory/warehouses?standaloneOnly=true&limit=10'
+  )
+  const warehouses = ((await warehousesRes.json()).data ?? []) as {
+    id: string
+    code: string
+  }[]
+  const warehouse = warehouses.find((w) => w.code === opts.warehouseCode)
+  if (!warehouse)
+    throw new Error(`ensureWarehouseStock: warehouse "${opts.warehouseCode}" not found`)
+
+  const itemsRes = await page.request.get(
+    `/api/inventory/items?search=${encodeURIComponent(opts.itemQuery)}&limit=5`
+  )
+  const items = ((await itemsRes.json()).data ?? []) as { id: string; name: string }[]
+  const item = items.find((i) => i.name.includes(opts.itemQuery))
+  if (!item) throw new Error(`ensureWarehouseStock: item matching "${opts.itemQuery}" not found`)
+
+  const adjustRes = await page.request.post('/api/inventory/adjustments', {
+    data: {
+      warehouseId: warehouse.id,
+      adjustmentDate: new Date().toISOString().slice(0, 10),
+      reasonCode: 'found',
+      notes: 'E2E fixture stock top-up',
+      lines: [{ itemId: item.id, expectedQty: 0, actualQty: opts.quantity }],
+    },
+  })
+  if (!adjustRes.ok()) {
+    throw new Error(
+      `ensureWarehouseStock: adjustment failed (${adjustRes.status()}): ${await adjustRes.text()}`
+    )
+  }
+
+  // See ensureItemStock's own comment — an adjustment sits 'submitted' until
+  // driven through the full confirm -> investigate -> approve chain before
+  // it actually posts to stock.
+  const { id: adjustmentId } = await adjustRes.json()
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await page.request.patch(`/api/inventory/adjustments/${adjustmentId}/${step}`)
+    if (!stepRes.ok()) {
+      throw new Error(
+        `ensureWarehouseStock: ${step} failed (${stepRes.status()}): ${await stepRes.text()}`
+      )
+    }
+  }
+}
+
+/**
  * Deletes CRM customers by id, ignoring individual failures — one already-
  * deleted or unreachable id shouldn't stop the rest of a cleanup batch from
  * running. Use in `test.afterEach` for whatever a test created, so cleanup
@@ -338,6 +395,66 @@ export async function sweepE2EStockTransfers(
   )
   for (const t of matches) {
     await cancelStockTransfer(request, t.id)
+  }
+}
+
+/**
+ * Finds the id of a just-created Warehouse Request by its exact notes text.
+ * Creation goes through a Next.js Server Action ('use server') — see
+ * findServiceDraftIdByTitle's docstring for why that rules out intercepting
+ * the creation request itself.
+ */
+export async function findWarehouseRequestIdByNotes(
+  request: APIRequestContext,
+  notes: string
+): Promise<string> {
+  const res = await request.get('/api/inventory/warehouse-requests?limit=20')
+  const body = await res.json()
+  const match = ((body.data ?? []) as { id: string; notes: string | null }[]).find(
+    (r) => r.notes === notes
+  )
+  if (!match)
+    throw new Error(`findWarehouseRequestIdByNotes: no request found with notes "${notes}"`)
+  return match.id
+}
+
+const CANCELLABLE_WAREHOUSE_REQUEST_STATUSES = ['requested', 'ready']
+
+/**
+ * Best-effort: cancels a Warehouse Request if it's still in a cancellable
+ * state (requested/ready). One driven all the way to in_transit/received is
+ * a real stock movement, not something to unwind here — same rationale as
+ * cancelStockTransfer. Ignores the 400 the backend returns for a
+ * non-cancellable request.
+ */
+export async function cancelWarehouseRequestApi(
+  request: APIRequestContext,
+  id: string
+): Promise<void> {
+  await request.patch(`/api/inventory/warehouse-requests/${id}/cancel`).catch(() => {})
+}
+
+/**
+ * Self-heal sweep: cancels any leftover, still-cancellable Warehouse Request
+ * whose notes start with `notesPrefix` — same rationale as
+ * sweepE2EStockTransfers. No search filter on `notes` exists on this
+ * endpoint's DTO, so this fetches a page of requests and filters client-side.
+ */
+export async function sweepE2EWarehouseRequests(
+  request: APIRequestContext,
+  notesPrefix: string
+): Promise<void> {
+  const res = await request.get('/api/inventory/warehouse-requests?limit=100')
+  if (!res.ok()) return
+  const body = await res.json()
+  const matches = (
+    (body.data ?? []) as { id: string; notes: string | null; status: string }[]
+  ).filter(
+    (r) =>
+      r.notes?.startsWith(notesPrefix) && CANCELLABLE_WAREHOUSE_REQUEST_STATUSES.includes(r.status)
+  )
+  for (const r of matches) {
+    await cancelWarehouseRequestApi(request, r.id)
   }
 }
 

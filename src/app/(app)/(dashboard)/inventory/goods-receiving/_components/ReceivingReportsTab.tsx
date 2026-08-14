@@ -110,7 +110,7 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
             <DiscrepancyBadge report={report} />
           </div>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {report.warehouse?.name ?? '—'} ·{' '}
+            {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'} ·{' '}
             {new Date(report.receivedAt).toLocaleDateString('en-PH', {
               month: 'short',
               day: 'numeric',
@@ -379,9 +379,6 @@ export default function ReceivingReportsTab() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
                     Warehouse
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                    Branch
-                  </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                     Lines
                   </th>
@@ -407,10 +404,7 @@ export default function ReceivingReportsTab() {
                           {report.code}
                         </td>
                         <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {report.warehouse?.code ?? '—'}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600 hidden lg:table-cell">
-                          {report.warehouse?.branch?.name ?? '—'}
+                          {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
                           {report.lines.length}

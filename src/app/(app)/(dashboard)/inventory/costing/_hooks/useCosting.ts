@@ -93,7 +93,16 @@ export function useCosting() {
     const arr = Array.isArray(d)
       ? d
       : Array.isArray((d as { data?: unknown }).data)
-        ? (d as { data: { id: string; code: string; name: string }[] }).data
+        ? (
+            d as {
+              data: {
+                id: string
+                code: string
+                name: string
+                branch?: { id: string; name: string } | null
+              }[]
+            }
+          ).data
         : []
     return arr
   })()

@@ -3,20 +3,46 @@
 import { useEffect } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, Plus, Trash2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
-import { BranchSearchCombobox } from '../../purchase-requests/_components/BranchSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 
 type Props = {
   open: boolean
   onClose: () => void
   onSubmit: (data: CreatePoFormValues) => Promise<void>
   isSubmitting?: boolean
+  /** Sent as branchId attribution ("requested by this branch") — no longer
+   * a visible form field (Scenario 27: the PO's destination is now the
+   * Warehouse field, not a branch), but the backend still forces this
+   * server-side (user.branchId ?? dto.branchId) for a branch-scoped
+   * creator regardless of what's submitted. null/undefined (Head Office /
+   * Business Owner) leaves it unattributed, since their POs can be
+   * enterprise-wide. */
+  currentUserBranchId?: string | null
 }
 
-export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) {
+export function CreatePoModal({
+  open,
+  onClose,
+  onSubmit,
+  isSubmitting,
+  currentUserBranchId,
+}: Props) {
+  // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
+  // decided once here at creation and carried through unedited to receiving
+  // (see ReceiveAgainstPoModal, which locks the field once this is set).
+  const warehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup', 'standalone'],
+    queryFn: () => getWarehouses({ limit: 10, status: 'active', standaloneOnly: true }),
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  })
+  const warehouses = warehousesQuery.data?.data?.data ?? []
+
   const {
     register,
     control,
@@ -24,16 +50,20 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
     reset,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
     defaultValues: {
       supplierId: '',
-      branchId: undefined,
-      warehouseId: undefined,
+      // branchId is no longer a form field the user picks — it's still
+      // sent as attribution ("requested by this branch"), implicitly, the
+      // same way it was already forced server-side for a branch-scoped
+      // creator regardless of what used to be submitted here.
+      branchId: currentUserBranchId ?? undefined,
+      warehouseId: '',
       expectedDeliveryDate: undefined,
       deliveryInstructions: undefined,
-      paymentTerms: undefined,
       shippingAddress: undefined,
       notes: undefined,
       lines: [
@@ -76,6 +106,18 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
 
   const fmtAmount = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+
+  // Unit Price defaults to the SRP-minus-discount cost, but stays a normal
+  // editable input — this only fires off SRP/discount changes, never off
+  // Unit Price itself, so a manual override isn't immediately overwritten.
+  function recomputeUnitPrice(index: number) {
+    const line = getValues(`lines.${index}`)
+    const srp = Number(line?.srp)
+    const discVal = Number(line?.discountValue)
+    if (!line?.srp || !line.discountType || line.discountValue == null || isNaN(discVal)) return
+    const computed = line.discountType === 'percentage' ? srp * (1 - discVal / 100) : srp - discVal
+    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -123,51 +165,43 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
               )}
             </div>
 
-            {/* Branch */}
+            {/* Warehouse */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Warehouse <span className="text-red-500">*</span>
+              </label>
               <Controller
-                name="branchId"
+                name="warehouseId"
                 control={control}
                 render={({ field }) => (
-                  <BranchSearchCombobox
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    error={errors.branchId?.message}
-                  />
+                  <select
+                    {...field}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">Select warehouse…</option>
+                    {warehouses.map((wh) => (
+                      <option key={wh.id} value={wh.id}>
+                        {wh.name}
+                      </option>
+                    ))}
+                  </select>
                 )}
               />
-              {errors.branchId && (
-                <p className="mt-1 text-xs text-red-500">{errors.branchId.message}</p>
+              {errors.warehouseId && (
+                <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
               )}
             </div>
 
-            {/* Optional fields row 1 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Expected Delivery Date
-                </label>
-                <input
-                  type="date"
-                  {...register('expectedDeliveryDate')}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Payment Terms
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Net 30"
-                  {...register('paymentTerms')}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                />
-                {errors.paymentTerms && (
-                  <p className="mt-1 text-xs text-red-500">{errors.paymentTerms.message}</p>
-                )}
-              </div>
+            {/* Expected Delivery Date */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Expected Delivery Date
+              </label>
+              <input
+                type="date"
+                {...register('expectedDeliveryDate')}
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+              />
             </div>
 
             {/* Delivery Instructions */}
@@ -235,35 +269,48 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
                     className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Item <span className="text-red-500">*</span>
-                        </label>
-                        <Controller
-                          name={`lines.${index}.itemId`}
-                          control={control}
-                          render={({ field: f }) => (
-                            <ItemSearchCombobox
-                              value={f.value}
-                              onChange={f.onChange}
-                              error={errors.lines?.[index]?.itemId?.message}
-                            />
-                          )}
+                      {/* Freebie (Scenario 10 Part 8) */}
+                      <label className="flex items-center gap-2 text-xs text-zinc-600">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(lines[index]?.isFreebie)}
+                          onChange={(e) => {
+                            setValue(`lines.${index}.isFreebie`, e.target.checked)
+                            if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
+                          }}
                         />
-                        {errors.lines?.[index]?.itemId && (
-                          <p className="mt-1 text-xs text-red-500">
-                            {errors.lines[index]?.itemId?.message}
-                          </p>
-                        )}
-                      </div>
+                        Freebie (supplier-given free unit — no cost)
+                      </label>
                       {fields.length > 1 && (
                         <button
                           type="button"
                           onClick={() => remove(index)}
-                          className="mt-5 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+                          className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-zinc-600">
+                        Item <span className="text-red-500">*</span>
+                      </label>
+                      <Controller
+                        name={`lines.${index}.itemId`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <ItemSearchCombobox
+                            value={f.value}
+                            onChange={f.onChange}
+                            error={errors.lines?.[index]?.itemId?.message}
+                          />
+                        )}
+                      />
+                      {errors.lines?.[index]?.itemId && (
+                        <p className="mt-1 text-xs text-red-500">
+                          {errors.lines[index]?.itemId?.message}
+                        </p>
                       )}
                     </div>
 
@@ -288,6 +335,83 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-medium text-zinc-600">
+                          Supplier SRP
+                        </label>
+                        {(() => {
+                          const { onChange, ...rest } = register(`lines.${index}.srp`, {
+                            setValueAs: (v) => (v === '' ? undefined : Number(v)),
+                          })
+                          return (
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder="0.00"
+                              {...rest}
+                              onChange={(e) => {
+                                onChange(e)
+                                recomputeUnitPrice(index)
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Supplier discount pricing (Scenario 10 Part 6) — Unit
+                        Price comes last since it's computed from these. */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-600">
+                          Discount Type
+                        </label>
+                        {(() => {
+                          const { onChange, ...rest } = register(`lines.${index}.discountType`, {
+                            setValueAs: (v) => (v === '' ? undefined : v),
+                          })
+                          return (
+                            <select
+                              {...rest}
+                              onChange={(e) => {
+                                onChange(e)
+                                recomputeUnitPrice(index)
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                            >
+                              <option value="">— No discount —</option>
+                              <option value="percentage">Percentage</option>
+                              <option value="amount">Flat amount</option>
+                            </select>
+                          )
+                        })()}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-600">
+                          Discount {lines[index]?.discountType === 'amount' ? 'Amount' : '%'}
+                        </label>
+                        {(() => {
+                          const { onChange, ...rest } = register(`lines.${index}.discountValue`, {
+                            setValueAs: (v) => (v === '' ? undefined : Number(v)),
+                          })
+                          return (
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder="0"
+                              {...rest}
+                              onChange={(e) => {
+                                onChange(e)
+                                recomputeUnitPrice(index)
+                              }}
+                              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )
+                        })()}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-zinc-600">
                           Unit Price <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -307,73 +431,6 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
                       </div>
                     </div>
 
-                    {/* Supplier discount pricing (Scenario 10 Part 6) */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Supplier SRP
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          placeholder="0.00"
-                          {...register(`lines.${index}.srp`, {
-                            setValueAs: (v) => (v === '' ? undefined : Number(v)),
-                          })}
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Discount Type
-                        </label>
-                        <select
-                          {...register(`lines.${index}.discountType`, {
-                            setValueAs: (v) => (v === '' ? undefined : v),
-                          })}
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                        >
-                          <option value="">— No discount —</option>
-                          <option value="percentage">Percentage</option>
-                          <option value="amount">Flat amount</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-zinc-600">
-                          Discount {lines[index]?.discountType === 'amount' ? 'Amount' : '%'}
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          placeholder="0"
-                          {...register(`lines.${index}.discountValue`, {
-                            setValueAs: (v) => (v === '' ? undefined : Number(v)),
-                          })}
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                        />
-                      </div>
-                    </div>
-
-                    {(() => {
-                      const line = lines[index]
-                      const srp = Number(line?.srp)
-                      const discVal = Number(line?.discountValue)
-                      if (!line?.srp || !line.discountType || line.discountValue == null)
-                        return null
-                      const discountedCost =
-                        line.discountType === 'percentage'
-                          ? srp * (1 - discVal / 100)
-                          : srp - discVal
-                      return (
-                        <div className="text-xs bg-emerald-50 text-emerald-700 rounded-lg px-3 py-1.5">
-                          Discounted cost:{' '}
-                          <span className="font-semibold">{fmtAmount(discountedCost)}</span>
-                        </div>
-                      )
-                    })()}
-
                     <div>
                       <label className="mb-1 block text-xs font-medium text-zinc-600">
                         Description
@@ -385,19 +442,6 @@ export function CreatePoModal({ open, onClose, onSubmit, isSubmitting }: Props) 
                         className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     </div>
-
-                    {/* Freebie (Scenario 10 Part 8) */}
-                    <label className="flex items-center gap-2 text-xs text-zinc-600">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(lines[index]?.isFreebie)}
-                        onChange={(e) => {
-                          setValue(`lines.${index}.isFreebie`, e.target.checked)
-                          if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
-                        }}
-                      />
-                      Freebie (supplier-given free unit — no cost)
-                    </label>
 
                     {/* Running line total */}
                     <div className="text-right text-xs text-zinc-500">

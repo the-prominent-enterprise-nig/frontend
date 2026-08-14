@@ -57,7 +57,7 @@ export function useRevaluation() {
 
   const warehouseOptions = (warehousesQuery.data?.data?.data ?? []).map((wh) => ({
     value: wh.id,
-    label: `${wh.name} (${wh.code})`,
+    label: wh.branch?.name ?? wh.name,
   }))
 
   return {
