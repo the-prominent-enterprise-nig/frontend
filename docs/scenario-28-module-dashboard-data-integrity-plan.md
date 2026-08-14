@@ -1,4 +1,4 @@
-# Scenario 27 — Module Dashboard Data Integrity — Gap Analysis & Closing Plan
+# Scenario 28 — Module Dashboard Data Integrity — Gap Analysis & Closing Plan
 
 Source: not from either client PDF (`NIG-TPE-Module-Scenarios.pdf` or the Draft 2 map) — new scenario, added the same way Scenarios 22-25 were: as a real gap that surfaced live during development rather than from a specific audit row. It falls out of the dashboard data-wiring initiative (`feat/dashboard-data-wiring`, frontend PR #132 / backend PR #124) — once the main dashboard's widgets were being wired to real data widget-by-widget, the natural next question was whether the three module-level "Intelligence" dashboards (Accounting, Inventory, CRM) that already existed independently of that effort could actually be trusted the same way.
 
@@ -193,4 +193,4 @@ If tackling one module at a time (per this project's usual bounded-work preferen
 - **Deliberately deferred** (developer-confirmed, Part 8): the Purchasing tile's open-PR/PO counts are accurate only up to 50 total PRs/POs each (all statuses, not just open ones) — same undercount class as Closing Gap 3, just not yet fixed, since today's real volume (7 PRs, 5 POs) is nowhere close. Revisit if that volume grows.
 - **Not attempted this run**: Accounting and CRM's closing gaps (this doc's other two module sections) remain fully open — this was a single-module pass by design.
 - Every part's test coverage was verified against **live dev-DB data**, not assumptions — several widgets (Projected Stockouts, Trending Toward Reorder, Purchasing's open-PR count) currently show real empty/zero states because the underlying dev data genuinely has none right now (0 backorders/reservations feeding stockout projections, 0 items at reorder level, 0 open PRs). Tests assert correctly on whichever state is real rather than assuming population.
-- No commits made to `development` in either repo — all work sits on `feat/scenario-27-inventory-dashboard-integrity` in both repos, uncommitted until this point.
+- No commits made to `development` in either repo — all work sits on `feat/scenario-28-inventory-dashboard-integrity` in both repos, uncommitted until this point.
