@@ -9,7 +9,7 @@ type Props = {
 }
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
-  draft: { bg: 'bg-zinc-100', text: 'text-zinc-600', label: 'Draft' },
+  draft: { bg: 'bg-orange-100', text: 'text-orange-700', label: 'Pending' },
   approved: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Approved' },
   sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Sent' },
   partially_received: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Partial' },

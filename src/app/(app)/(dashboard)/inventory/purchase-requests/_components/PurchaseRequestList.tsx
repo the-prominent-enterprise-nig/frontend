@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Plus, Loader2 } from 'lucide-react'
 import { usePurchaseRequests } from '../_hooks/usePurchaseRequests'
 import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrders'
-import { CreatePurchaseRequestModal } from './CreatePurchaseRequestModal'
+import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
 import { ApprovePrModal } from './ApprovePrModal'
 import { RejectPrModal } from './RejectPrModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
@@ -39,6 +39,21 @@ function StatusBadge({ status }: { status: PurchaseRequestSummary['status'] }) {
       {status}
     </span>
   )
+}
+
+const fmtPHP = (n: number) =>
+  n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+
+// Same freebie-excluding qty*unitPrice sum CreatePoModal/PurchaseOrderFormFields
+// use for the create-form subtotal — a PR now carries firm per-line pricing,
+// same as a PO would.
+function prTotal(pr: PurchaseRequestSummary): number {
+  return pr.lines.reduce((sum, line) => {
+    if (line.isFreebie) return sum
+    const qty = Number(line.quantity) || 0
+    const price = Number(line.unitPrice) || 0
+    return sum + qty * price
+  }, 0)
 }
 
 function ApprovalTierBadges({ pr }: { pr: PurchaseRequestSummary }) {
@@ -76,10 +91,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
   const canReject = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_REJECT)
   const canCancel = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CANCEL)
   const canConvert = hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE)
-
-  const lockedBranch = session.branchId
-    ? { id: session.branchId, name: session.branchName ?? 'Your branch' }
-    : null
 
   const {
     items,
@@ -129,7 +140,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
           >
             <Plus className="h-4 w-4" />
-            New Purchase Request
+            New Purchase
           </button>
         )}
       </div>
@@ -171,6 +182,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                     Code
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Supplier
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
@@ -178,6 +192,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Lines
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Total
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
                     Created
@@ -200,6 +217,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                         <p className="mt-0.5 text-xs text-zinc-400 line-clamp-1">{pr.reason}</p>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-zinc-600">
+                      {pr.supplier?.name ?? <span className="text-zinc-400">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={pr.status} />
                       <ApprovalTierBadges pr={pr} />
@@ -208,6 +228,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       {pr.branch?.name ?? <span className="text-zinc-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-zinc-600">{pr.lines.length}</td>
+                    <td className="px-4 py-3 text-right font-medium text-zinc-800">
+                      {fmtPHP(prTotal(pr))}
+                    </td>
                     <td className="px-4 py-3 text-zinc-500">
                       {new Date(pr.createdAt).toLocaleDateString()}
                     </td>
@@ -333,7 +356,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
       )}
 
       {/* Modals */}
-      <CreatePurchaseRequestModal
+      <CreatePoModal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onCreate={async (data) => {
@@ -341,10 +364,10 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
           setShowCreateModal(false)
         }}
         isCreating={isCreating}
-        lockedBranch={lockedBranch}
+        currentUserBranchId={session.branchId}
       />
 
-      <CreatePurchaseRequestModal
+      <CreatePoModal
         open={!!editingPr}
         onClose={() => setEditingPr(null)}
         pr={editingPr}
@@ -353,7 +376,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
           setEditingPr(null)
         }}
         isSaving={isUpdating}
-        lockedBranch={lockedBranch}
+        currentUserBranchId={session.branchId}
       />
 
       <ApprovePrModal

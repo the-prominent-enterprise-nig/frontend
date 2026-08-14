@@ -17,6 +17,7 @@ import {
   Download,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
+import { usePurchaseRequests } from '../../purchase-requests/_hooks/usePurchaseRequests'
 import { CancelPoModal } from './CancelPoModal'
 import { CreatePoModal } from './CreatePoModal'
 import { PoDetailModal } from './PoDetailModal'
@@ -59,11 +60,6 @@ function renderPoBody(doc: PrintDocumentEnvelope): string {
   <p style="text-align:right;margin-top:12px;font-weight:600">Total: ${fmt(Number(po.totalAmount ?? 0))}</p>`
 }
 
-// ─── Section tabs ─────────────────────────────────────────────────────────────
-
-const SECTION_TABS = [{ label: 'Purchase Orders', value: 'orders' }] as const
-type Section = (typeof SECTION_TABS)[number]['value']
-
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<
@@ -71,11 +67,11 @@ const STATUS_CONFIG: Record<
   { dot: string; bg: string; border: string; text: string; label: string }
 > = {
   draft: {
-    dot: 'bg-zinc-400',
-    bg: 'bg-zinc-50',
-    border: 'border-zinc-200',
-    text: 'text-zinc-600',
-    label: 'Draft',
+    dot: 'bg-orange-500',
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    text: 'text-orange-700',
+    label: 'Pending',
   },
   approved: {
     dot: 'bg-emerald-500',
@@ -123,7 +119,6 @@ const STATUS_CONFIG: Record<
 
 const STATUS_FILTERS = [
   { label: 'All', value: undefined },
-  { label: 'Draft', value: 'draft' },
   { label: 'Approved', value: 'approved' },
   { label: 'Sent', value: 'sent' },
   { label: 'Partial', value: 'partially_received' },
@@ -279,6 +274,9 @@ export function PurchaseOrderList({
   canViewCost,
   currentUserBranchId,
 }: {
+  /** Gates the "+ New Purchase" button — creating always drafts a Purchase
+   * Request (pending approval) now, so this reflects PR_CREATE, not
+   * PO_CREATE. A PO only exists once that PR is approved and converted. */
   canCreate: boolean
   canApprove: boolean
   canSend: boolean
@@ -286,14 +284,12 @@ export function PurchaseOrderList({
   canClose: boolean
   canReceive: boolean
   canViewCost: boolean
-  /** Sent as branchId attribution on a created PO — the create modal has no
-   * visible branch field anymore (Scenario 27: destination is the
-   * Warehouse field), this just flows through to the backend's own
-   * server-side force for a branch-scoped creator. */
+  /** Sent as branchId attribution on a created PR — the create modal has no
+   * visible branch field (Scenario 27: destination is the Warehouse
+   * field), this just flows through to the backend's own server-side
+   * force for a branch-scoped creator. */
   currentUserBranchId?: string | null
 }) {
-  const [activeSection, setActiveSection] = useState<Section>('orders')
-
   const {
     items,
     pagination,
@@ -304,8 +300,6 @@ export function PurchaseOrderList({
     setSearch,
     page,
     setPage,
-    createPO,
-    isCreating,
     approvePO,
     isApproving,
     sendPO,
@@ -316,6 +310,8 @@ export function PurchaseOrderList({
     isCancelling,
     refetch,
   } = usePurchaseOrders()
+
+  const { createPR, isCreating } = usePurchaseRequests()
 
   const [showCreatePo, setShowCreatePo] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<PurchaseOrderSummary | null>(null)
@@ -350,403 +346,378 @@ export function PurchaseOrderList({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {activeSection === 'orders' && canCreate && (
+          {canCreate && (
             <button
               type="button"
               onClick={() => setShowCreatePo(true)}
               className="flex items-center gap-2 rounded-xl bg-prominent-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-prominent-purple-700 active:scale-95 transition-all"
             >
               <Plus className="h-4 w-4" />
-              New Purchase Order
+              New Purchase
             </button>
           )}
         </div>
       </div>
 
-      {/* ── Section tabs ─────────────────────────────────────────────────────── */}
-      <div className="mb-6 flex gap-0 border-b border-zinc-200">
-        {SECTION_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() => setActiveSection(tab.value)}
-            className={`border-b-2 px-5 py-2.5 text-sm font-medium -mb-px transition-colors ${
-              activeSection === tab.value
-                ? 'border-prominent-purple-600 text-prominent-purple-700'
-                : 'border-transparent text-zinc-500 hover:text-zinc-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          PURCHASE ORDERS TAB
-      ══════════════════════════════════════════════════════════════════════ */}
-      {activeSection === 'orders' && (
-        <div className="space-y-4">
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search purchase orders, items, supplier"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-9 w-64 rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm placeholder:text-zinc-400 focus:border-prominent-purple-400 focus:outline-none focus:ring-2 focus:ring-prominent-purple-100"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {STATUS_FILTERS.map((f) => (
-                <button
-                  key={String(f.value)}
-                  type="button"
-                  onClick={() => setStatusFilter(f.value)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                    statusFilter === f.value
-                      ? 'bg-prominent-purple-600 text-white shadow-sm'
-                      : 'bg-white border border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+      <div className="space-y-4">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Search purchase orders, items, supplier"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 w-64 rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm placeholder:text-zinc-400 focus:border-prominent-purple-400 focus:outline-none focus:ring-2 focus:ring-prominent-purple-100"
+            />
           </div>
 
-          {/* Table card */}
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 bg-zinc-50">
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Code
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Supplier
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Status
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Exp. Delivery
-                    </th>
-                    <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Total
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Source
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Progress
-                    </th>
-                    <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                      Created
-                    </th>
-                    <th className="px-4 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {isLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-                  ) : items.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-24 text-center">
-                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100">
-                          <ShoppingBag className="h-7 w-7 text-zinc-400" />
-                        </div>
-                        <p className="text-sm font-semibold text-zinc-600">
-                          No purchase orders found
-                        </p>
-                        <p className="mt-1 text-xs text-zinc-400">
-                          {search || statusFilter
-                            ? 'Try adjusting your filters'
-                            : 'Create one directly or convert an approved purchase request'}
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((po) => (
-                      <tr
-                        key={po.id}
-                        onClick={() => setDetailsTarget(po)}
-                        className="group relative cursor-pointer transition-colors hover:bg-prominent-purple-50/30"
-                      >
-                        {/* Code */}
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-prominent-purple-400 opacity-0 transition-opacity group-hover:opacity-100" />
-                            <span className="font-mono text-sm font-bold text-prominent-purple-700">
-                              {po.code}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Supplier */}
-                        <td className="px-4 py-4 max-w-[180px]">
-                          <div className="flex items-center gap-2.5">
-                            <SupplierAvatar name={po.supplier.name} />
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-zinc-800">
-                                {po.supplier.name}
-                              </p>
-                              {po.supplier.taxId && (
-                                <p className="truncate font-mono text-xs text-zinc-400">
-                                  TIN {po.supplier.taxId}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-4">
-                          <PoStatusBadge status={po.status} />
-                        </td>
-
-                        {/* Exp. delivery */}
-                        <td className="px-4 py-4 text-sm">
-                          {po.expectedDeliveryDate ? (
-                            <span className="text-zinc-600">
-                              {new Date(po.expectedDeliveryDate).toLocaleDateString('en-PH', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-300">—</span>
-                          )}
-                        </td>
-
-                        {/* Total */}
-                        <td className="px-4 py-4 text-right">
-                          <span className="font-semibold text-zinc-900">
-                            {fmtPHP(Number(po.totalAmount))}
-                          </span>
-                        </td>
-
-                        {/* Source */}
-                        <td className="px-4 py-4">
-                          {po.fromPr ? (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-prominent-purple-100 bg-prominent-purple-50 px-2 py-0.5 font-mono text-xs font-semibold text-prominent-purple-700">
-                              <FileText className="h-3 w-3" />
-                              {po.fromPr.code}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-md border border-zinc-100 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-400">
-                              Direct
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Receipt progress */}
-                        <td className="px-4 py-4">
-                          <ReceiptProgress lines={po.lines} />
-                        </td>
-
-                        {/* Created */}
-                        <td className="px-4 py-4 text-xs text-zinc-400">
-                          {new Date(po.createdAt).toLocaleDateString('en-PH', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <IconBtn
-                              title="Download PDF"
-                              onClick={() => downloadPdf(po)}
-                              disabled={downloadingId === po.id}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </IconBtn>
-                            {po.status === 'draft' && (
-                              <>
-                                {canApprove && (
-                                  <button
-                                    type="button"
-                                    onClick={() => approvePO(po.id)}
-                                    disabled={isActing}
-                                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                                  >
-                                    Approve
-                                  </button>
-                                )}
-                                {canCancel && (
-                                  <IconBtn
-                                    title="Cancel PO"
-                                    onClick={() => setCancelTarget(po)}
-                                    disabled={isActing}
-                                    variant="danger"
-                                  >
-                                    <Ban className="h-3.5 w-3.5" />
-                                  </IconBtn>
-                                )}
-                              </>
-                            )}
-
-                            {po.status === 'approved' && (
-                              <>
-                                {canReceive && (
-                                  <IconBtn
-                                    title="Receive stock"
-                                    onClick={() => setReceiveTarget(po)}
-                                    variant="purple"
-                                  >
-                                    <PackagePlus className="h-3.5 w-3.5" />
-                                  </IconBtn>
-                                )}
-                                {canSend && (
-                                  <IconBtn
-                                    title="Send to supplier"
-                                    onClick={() => sendPO(po.id)}
-                                    disabled={isActing}
-                                  >
-                                    <Send className="h-3.5 w-3.5" />
-                                  </IconBtn>
-                                )}
-                                {canCancel && (
-                                  <IconBtn
-                                    title="Cancel PO"
-                                    onClick={() => setCancelTarget(po)}
-                                    disabled={isActing}
-                                    variant="danger"
-                                  >
-                                    <Ban className="h-3.5 w-3.5" />
-                                  </IconBtn>
-                                )}
-                              </>
-                            )}
-
-                            {po.status === 'sent' && canReceive && (
-                              <IconBtn
-                                title="Receive stock"
-                                onClick={() => setReceiveTarget(po)}
-                                variant="purple"
-                              >
-                                <PackagePlus className="h-3.5 w-3.5" />
-                              </IconBtn>
-                            )}
-
-                            {po.status === 'partially_received' && (
-                              <>
-                                {canReceive && (
-                                  <IconBtn
-                                    title="Receive more stock"
-                                    onClick={() => setReceiveTarget(po)}
-                                    variant="purple"
-                                  >
-                                    <PackagePlus className="h-3.5 w-3.5" />
-                                  </IconBtn>
-                                )}
-                                {canClose && (
-                                  <IconBtn
-                                    title="Close"
-                                    onClick={() => closePO(po.id)}
-                                    disabled={isActing}
-                                    variant="default"
-                                  >
-                                    {isClosing ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Archive className="h-3.5 w-3.5" />
-                                    )}
-                                  </IconBtn>
-                                )}
-                              </>
-                            )}
-
-                            {po.status === 'fully_received' && canClose && (
-                              <button
-                                type="button"
-                                onClick={() => closePO(po.id)}
-                                disabled={isActing}
-                                className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-900 disabled:opacity-50 transition-colors"
-                              >
-                                {isClosing ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Archive className="h-3.5 w-3.5" />
-                                )}
-                                Close
-                              </button>
-                            )}
-
-                            {(po.status === 'partially_received' ||
-                              po.status === 'fully_received' ||
-                              po.status === 'closed') && (
-                              <IconBtn
-                                title="View delivery receipts"
-                                onClick={() => setReceiptsTarget(po)}
-                                variant="purple"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                              </IconBtn>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {!isLoading && pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-zinc-100 px-5 py-3.5">
-                <p className="text-xs text-zinc-400">
-                  Showing{' '}
-                  <span className="font-medium text-zinc-600">
-                    {(page - 1) * pagination.limit + 1}–
-                    {Math.min(page * pagination.limit, pagination.total)}
-                  </span>{' '}
-                  of <span className="font-medium text-zinc-600">{pagination.total}</span> orders
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(page - 1)}
-                    disabled={page <= 1}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="px-2 text-xs font-medium text-zinc-600">
-                    {page} / {pagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(page + 1)}
-                    disabled={page >= pagination.totalPages}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={String(f.value)}
+                type="button"
+                onClick={() => setStatusFilter(f.value)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                  statusFilter === f.value
+                    ? 'bg-prominent-purple-600 text-white shadow-sm'
+                    : 'bg-white border border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+
+        {/* Table card */}
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50">
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Code
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Supplier
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Status
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Exp. Delivery
+                  </th>
+                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Total
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Source
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Progress
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Created
+                  </th>
+                  <th className="px-4 py-3.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-24 text-center">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100">
+                        <ShoppingBag className="h-7 w-7 text-zinc-400" />
+                      </div>
+                      <p className="text-sm font-semibold text-zinc-600">
+                        No purchase orders found
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-400">
+                        {search || statusFilter
+                          ? 'Try adjusting your filters'
+                          : 'Create one directly or convert an approved purchase request'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((po) => (
+                    <tr
+                      key={po.id}
+                      onClick={() => setDetailsTarget(po)}
+                      className="group relative cursor-pointer transition-colors hover:bg-prominent-purple-50/30"
+                    >
+                      {/* Code */}
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-prominent-purple-400 opacity-0 transition-opacity group-hover:opacity-100" />
+                          <span className="font-mono text-sm font-bold text-prominent-purple-700">
+                            {po.code}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Supplier */}
+                      <td className="px-4 py-4 max-w-[180px]">
+                        <div className="flex items-center gap-2.5">
+                          <SupplierAvatar name={po.supplier.name} />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-zinc-800">{po.supplier.name}</p>
+                            {po.supplier.taxId && (
+                              <p className="truncate font-mono text-xs text-zinc-400">
+                                TIN {po.supplier.taxId}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-4">
+                        <PoStatusBadge status={po.status} />
+                      </td>
+
+                      {/* Exp. delivery */}
+                      <td className="px-4 py-4 text-sm">
+                        {po.expectedDeliveryDate ? (
+                          <span className="text-zinc-600">
+                            {new Date(po.expectedDeliveryDate).toLocaleDateString('en-PH', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Total */}
+                      <td className="px-4 py-4 text-right">
+                        <span className="font-semibold text-zinc-900">
+                          {fmtPHP(Number(po.totalAmount))}
+                        </span>
+                      </td>
+
+                      {/* Source */}
+                      <td className="px-4 py-4">
+                        {po.fromPr ? (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-prominent-purple-100 bg-prominent-purple-50 px-2 py-0.5 font-mono text-xs font-semibold text-prominent-purple-700">
+                            <FileText className="h-3 w-3" />
+                            {po.fromPr.code}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-md border border-zinc-100 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                            Direct
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Receipt progress */}
+                      <td className="px-4 py-4">
+                        <ReceiptProgress lines={po.lines} />
+                      </td>
+
+                      {/* Created */}
+                      <td className="px-4 py-4 text-xs text-zinc-400">
+                        {new Date(po.createdAt).toLocaleDateString('en-PH', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <IconBtn
+                            title="Download PDF"
+                            onClick={() => downloadPdf(po)}
+                            disabled={downloadingId === po.id}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </IconBtn>
+                          {po.status === 'draft' && (
+                            <>
+                              {canApprove && (
+                                <button
+                                  type="button"
+                                  onClick={() => approvePO(po.id)}
+                                  disabled={isActing}
+                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                                >
+                                  Approve
+                                </button>
+                              )}
+                              {canCancel && (
+                                <IconBtn
+                                  title="Cancel PO"
+                                  onClick={() => setCancelTarget(po)}
+                                  disabled={isActing}
+                                  variant="danger"
+                                >
+                                  <Ban className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                            </>
+                          )}
+
+                          {po.status === 'approved' && (
+                            <>
+                              {canReceive && (
+                                <IconBtn
+                                  title="Receive stock"
+                                  onClick={() => setReceiveTarget(po)}
+                                  variant="purple"
+                                >
+                                  <PackagePlus className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                              {canSend && (
+                                <IconBtn
+                                  title="Send to supplier"
+                                  onClick={() => sendPO(po.id)}
+                                  disabled={isActing}
+                                >
+                                  <Send className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                              {canCancel && (
+                                <IconBtn
+                                  title="Cancel PO"
+                                  onClick={() => setCancelTarget(po)}
+                                  disabled={isActing}
+                                  variant="danger"
+                                >
+                                  <Ban className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                            </>
+                          )}
+
+                          {po.status === 'sent' && canReceive && (
+                            <IconBtn
+                              title="Receive stock"
+                              onClick={() => setReceiveTarget(po)}
+                              variant="purple"
+                            >
+                              <PackagePlus className="h-3.5 w-3.5" />
+                            </IconBtn>
+                          )}
+
+                          {po.status === 'partially_received' && (
+                            <>
+                              {canReceive && (
+                                <IconBtn
+                                  title="Receive more stock"
+                                  onClick={() => setReceiveTarget(po)}
+                                  variant="purple"
+                                >
+                                  <PackagePlus className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                              {canClose && (
+                                <IconBtn
+                                  title="Close"
+                                  onClick={() => closePO(po.id)}
+                                  disabled={isActing}
+                                  variant="default"
+                                >
+                                  {isClosing ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3.5 w-3.5" />
+                                  )}
+                                </IconBtn>
+                              )}
+                            </>
+                          )}
+
+                          {po.status === 'fully_received' && canClose && (
+                            <button
+                              type="button"
+                              onClick={() => closePO(po.id)}
+                              disabled={isActing}
+                              className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-900 disabled:opacity-50 transition-colors"
+                            >
+                              {isClosing ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Archive className="h-3.5 w-3.5" />
+                              )}
+                              Close
+                            </button>
+                          )}
+
+                          {(po.status === 'partially_received' ||
+                            po.status === 'fully_received' ||
+                            po.status === 'closed') && (
+                            <IconBtn
+                              title="View delivery receipts"
+                              onClick={() => setReceiptsTarget(po)}
+                              variant="purple"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                            </IconBtn>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {!isLoading && pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-zinc-100 px-5 py-3.5">
+              <p className="text-xs text-zinc-400">
+                Showing{' '}
+                <span className="font-medium text-zinc-600">
+                  {(page - 1) * pagination.limit + 1}–
+                  {Math.min(page * pagination.limit, pagination.total)}
+                </span>{' '}
+                of <span className="font-medium text-zinc-600">{pagination.total}</span> orders
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(page - 1)}
+                  disabled={page <= 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="px-2 text-xs font-medium text-zinc-600">
+                  {page} / {pagination.totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage(page + 1)}
+                  disabled={page >= pagination.totalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Modals & panels ──────────────────────────────────────────────────── */}
 
       <CreatePoModal
         open={showCreatePo}
         onClose={() => setShowCreatePo(false)}
-        onSubmit={async (data) => {
-          await createPO(data)
+        onCreate={async (data) => {
+          await createPR(data)
         }}
-        isSubmitting={isCreating}
+        isCreating={isCreating}
         currentUserBranchId={currentUserBranchId}
       />
 

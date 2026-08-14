@@ -128,7 +128,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
       },
       {
-        label: 'Operations',
+        label: 'Purchase Orders',
+        href: '/inventory/purchase-orders',
+        icon: ShoppingCart,
+        requiredPermission: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
+        activeWhen: ['/inventory/purchase-orders'],
+      },
+      {
+        label: 'Stock Transfers',
         href: '/inventory/operations',
         icon: ArrowLeftRight,
         requiredPermission: [
@@ -142,19 +149,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
           INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_INVESTIGATE,
           INVENTORY_PERMISSIONS.STOCK_ADJUSTMENT_APPROVE,
         ],
-      },
-      {
-        label: 'Purchase Requests',
-        href: '/inventory/purchase-requests',
-        icon: ClipboardList,
-        requiredPermission: PROCUREMENT_PERMISSIONS.PR_READ,
-      },
-      {
-        label: 'Purchase Orders',
-        href: '/inventory/purchase-orders',
-        icon: ShoppingCart,
-        requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
-        activeWhen: ['/inventory/purchase-orders'],
       },
       {
         label: 'Suppliers',

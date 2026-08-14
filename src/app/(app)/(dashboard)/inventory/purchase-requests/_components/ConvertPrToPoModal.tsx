@@ -66,20 +66,25 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
 
   useEffect(() => {
     if (open && pr) {
+      // A manually-created PR now already carries the same commitment a PO
+      // would (supplier, warehouse, firm pricing) — pre-fill from it rather
+      // than starting blank, so approving+converting needs little to no
+      // re-entry. Auto-raised PRs (from a ServiceDraft shortfall) still
+      // lack all of this, so they fall back to blank exactly as before.
       reset({
-        supplierId: '',
-        warehouseId: '',
-        expectedDeliveryDate: '',
-        deliveryInstructions: '',
-        paymentTerms: '',
-        shippingAddress: defaultShippingAddress(pr),
-        notes: '',
+        supplierId: pr.supplierId ?? '',
+        warehouseId: pr.warehouseId ?? '',
+        expectedDeliveryDate: pr.expectedDeliveryDate ? pr.expectedDeliveryDate.slice(0, 10) : '',
+        deliveryInstructions: pr.deliveryInstructions ?? '',
+        paymentTerms: pr.paymentTerms ?? '',
+        shippingAddress: pr.shippingAddress || defaultShippingAddress(pr),
+        notes: pr.notes ?? '',
         lines: pr.lines.map((line) => ({
           prLineId: line.id,
           quantity: Number(line.quantity),
-          unitPrice: Number(line.estimatedUnitPrice ?? 0),
-          description: '',
-          notes: '',
+          unitPrice: Number(line.unitPrice ?? 0),
+          description: line.description ?? '',
+          notes: line.notes ?? '',
         })),
       })
     } else if (!open) {
@@ -286,8 +291,8 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                           {prLine && (
                             <p className="text-xs text-zinc-500">
                               SKU: {prLine.item.sku} &middot; Requested qty: {prLine.quantity}
-                              {prLine.estimatedUnitPrice
-                                ? ` · Est. price: ₱${Number(prLine.estimatedUnitPrice).toLocaleString()}`
+                              {prLine.unitPrice
+                                ? ` · PR price: ₱${Number(prLine.unitPrice).toLocaleString()}`
                                 : null}
                             </p>
                           )}
