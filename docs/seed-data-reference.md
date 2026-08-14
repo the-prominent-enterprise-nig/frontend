@@ -1,8 +1,8 @@
-# Seed Data Reference — TechNova (dev database)
+# Seed Data Reference — NIG (dev database)
 
 Living reference doc for manually testing against the current dev database. Not committed (matches `pos-installment-plan.md`'s treatment) — regenerate/update this by hand if the seed changes.
 
-Single tenant seeded: **TechNova Systems Inc.** (`technova`) — **39 real operational branches** (type `office`, split across the `negros` and `panay` regions) plus **2 real warehouses** (`Negros Warehouse` / `WH-NEGROS`, `Panay Warehouse` / `WH-PANAY`). Every one of these 41 branches has its own full set of seeded human test accounts — see "Accounts" below.
+Single tenant seeded: **NIG MARKETING CORPORATION** (`technova`) — **39 real operational branches** (type `office`, split across the `negros` and `panay` regions) plus **2 real warehouses** (`Negros Warehouse` / `WH-NEGROS`, `Panay Warehouse` / `WH-PANAY`). Every one of these 41 branches has its own full set of seeded human test accounts — see "Accounts" below.
 
 ## Logging in
 
