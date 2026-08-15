@@ -8,6 +8,7 @@ import {
   Monitor,
   Palette,
   HandCoins,
+  Landmark,
   LayoutList,
   Tv2,
   type LucideIcon,
@@ -28,6 +29,7 @@ const GROUPS: TabGroup[] = [
   {
     items: [
       { label: 'Financing Terms', href: '/pos/settings/financing-terms', icon: HandCoins },
+      { label: 'TPF Providers', href: '/pos/settings/tpf-providers', icon: Landmark },
       { label: 'Queue Categories', href: '/pos/settings/queue-categories', icon: LayoutList },
       { label: 'Customer Display', href: '/pos/settings/customer-display', icon: Tv2 },
     ],
