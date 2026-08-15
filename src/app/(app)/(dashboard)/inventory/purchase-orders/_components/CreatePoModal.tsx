@@ -54,7 +54,10 @@ function getDefaultValues(
         description: line.description ?? undefined,
         notes: line.notes ?? undefined,
         srp: line.srp != null ? Number(line.srp) : undefined,
-        discounts: line.discounts ?? [],
+        discounts:
+          line.discounts && line.discounts.length > 0
+            ? line.discounts
+            : [{ type: 'percentage', value: 0 }],
         isFreebie: line.isFreebie ?? false,
       })),
     }
@@ -77,7 +80,7 @@ function getDefaultValues(
         description: undefined,
         notes: undefined,
         srp: undefined,
-        discounts: [],
+        discounts: [{ type: 'percentage', value: 0 }],
         isFreebie: false,
       },
     ],

@@ -108,6 +108,7 @@ const PoSupplierSchema = z.object({
 const PoWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
+  address: z.string().optional().nullable(),
 })
 
 const PoItemSchema = z.object({

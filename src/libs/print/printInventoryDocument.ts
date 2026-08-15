@@ -77,6 +77,7 @@ export function printPurchaseOrderDocument(
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
   const supplier = po.supplier as { name?: string; address?: string; taxId?: string } | undefined
+  const warehouse = po.warehouse as { name?: string; address?: string } | undefined
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
   const enterprise = doc.enterprise
 
@@ -148,6 +149,7 @@ export function printPurchaseOrderDocument(
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
     .delivery-note { font-weight: 700; margin: 0 0 16px; }
+    .destination { margin-top: 24px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -217,6 +219,12 @@ export function printPurchaseOrderDocument(
       <table>
         <tr><td class="label">Total</td><td class="value">${fmt(Number(po.totalAmount ?? 0))}</td></tr>
       </table>
+    </div>
+
+    <div class="destination">
+      <p class="meta-label">Deliver to</p>
+      <p class="party-name">${esc(warehouse?.name) || '—'}</p>
+      <p class="party-address">${esc(warehouse?.address) || '—'}</p>
     </div>
 
     <div class="signatures">

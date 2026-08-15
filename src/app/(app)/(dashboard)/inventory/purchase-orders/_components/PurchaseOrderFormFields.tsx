@@ -191,7 +191,7 @@ export function PurchaseOrderFormFields({
               description: undefined,
               notes: undefined,
               srp: undefined,
-              discounts: [],
+              discounts: [{ type: 'percentage', value: 0 }],
               isFreebie: false,
             })
           }
@@ -348,31 +348,33 @@ function PurchaseOrderLineCard({
           })
           return (
             <div key={discountField.id} className="flex items-center gap-2">
-              <select
-                {...typeField}
-                onChange={(e) => {
-                  typeField.onChange(e)
-                  recomputeUnitPrice(index)
-                }}
-                className="w-32 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-              >
-                <option value="percentage">Percentage</option>
-                <option value="amount">Flat amount</option>
-              </select>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder={
-                  line?.discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'
-                }
-                {...valueField}
-                onChange={(e) => {
-                  valueField.onChange(e)
-                  recomputeUnitPrice(index)
-                }}
-                className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-              />
+              <div className="grid flex-1 grid-cols-2 gap-2">
+                <select
+                  {...typeField}
+                  onChange={(e) => {
+                    typeField.onChange(e)
+                    recomputeUnitPrice(index)
+                  }}
+                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="percentage">Percentage</option>
+                  <option value="amount">Flat amount</option>
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder={
+                    line?.discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'
+                  }
+                  {...valueField}
+                  onChange={(e) => {
+                    valueField.onChange(e)
+                    recomputeUnitPrice(index)
+                  }}
+                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => {
