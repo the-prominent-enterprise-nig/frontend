@@ -40,6 +40,11 @@ export const ReceiveStockFormSchema = z
     nndpCost: z.number().positive().optional(),
     receivedAt: z.string().optional(),
     notes: z.string().max(1000).optional(),
+    // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
+    // -> this Receiving Report. Both are the supplier's own paperwork,
+    // typed in by whoever is physically receiving the delivery.
+    deliveryReceiptNumber: z.string().optional(),
+    supplierInvoiceNumber: z.string().optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
   .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
@@ -149,12 +154,20 @@ const DiscrepancySchema = z.object({
   hasConditionIssue: z.boolean(),
 })
 
+const ReceivingReportPoLineSchema = z.object({
+  id: z.string(),
+  quantity: z.number(),
+  purchaseOrderId: z.string(),
+  purchaseOrder: z.object({ code: z.string() }).optional().nullable(),
+})
+
 const ReceivingReportLineSchema = z.object({
   id: z.string(),
   goodsReceiptId: z.string(),
   itemId: z.string(),
   item: StockBalanceItemSchema.optional().nullable(),
   purchaseOrderLineId: z.string().optional().nullable(),
+  purchaseOrderLine: ReceivingReportPoLineSchema.optional().nullable(),
   quantityReceived: z.number(),
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
@@ -190,6 +203,8 @@ export const ReceivingReportSchema = z.object({
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
+  deliveryReceiptNumber: z.string().optional().nullable(),
+  supplierInvoiceNumber: z.string().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),
   withholding: z.enum(['none', 'pct_1']).optional(),
   withheldAmount: z.number().optional().nullable(),
