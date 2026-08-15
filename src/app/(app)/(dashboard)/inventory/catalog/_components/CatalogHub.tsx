@@ -7,16 +7,12 @@ import CategoryManager from '../../categories/_components/CategoryManager'
 import AttributesPageView from '../../attributes/_components/AttributesPageView'
 import UomList from '../../uom/_components/UomList'
 import BarcodesPageView from '../../barcodes/_components/BarcodesPageView'
-import { SerialNumberList } from '../../serial-numbers/_components'
 import { BrandsPageView } from '../../brands/_components'
 import { TypesPageView } from '../../types/_components'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
-// Serial Numbers is genuinely operational data (physical units, not product
-// definitions), but it kept getting missed when it only lived under Stock/
-// Counting — this is now its single canonical home (removed from both of
-// those, same cleanup StockHub already did) rather than being cross-listed
-// with no one obvious place to look.
+// Serial Numbers moved to Stock (StockHub) — it's operational data (physical
+// units on hand), not a product definition like the rest of this hub's tabs.
 const TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
@@ -25,7 +21,6 @@ const TABS = [
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
   { id: 'barcodes', label: 'Barcodes' },
-  { id: 'serials', label: 'Serial Numbers' },
 ]
 
 export function CatalogHub({ session }: { session: SessionUser }) {
@@ -47,8 +42,6 @@ export function CatalogHub({ session }: { session: SessionUser }) {
         <UomList session={session} />
       ) : tab === 'barcodes' ? (
         <BarcodesPageView session={session} />
-      ) : tab === 'serials' ? (
-        <SerialNumberList session={session} />
       ) : (
         <ItemMasterList session={session} />
       )}
