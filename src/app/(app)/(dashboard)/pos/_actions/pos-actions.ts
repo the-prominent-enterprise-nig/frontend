@@ -1355,6 +1355,7 @@ export async function cancelParkedSale(id: string): Promise<ApiResponse<ParkedSa
 export interface Branch {
   id: string
   name: string
+  isMainBranch?: boolean
 }
 
 export async function getBranches(): Promise<ApiResponse<Branch[]>> {

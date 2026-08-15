@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { showToast } from '@/src/components/ui/toast'
 import { getCreditApplication } from '../_actions/get-application'
 import { getCreditApplicationDocuments } from '../_actions/get-documents'
+import { updateCreditApplication } from '../_actions/update-application'
 import { submitCreditApplication } from '../_actions/submit-application'
 import { cancelCreditApplication } from '../_actions/cancel-application'
 import { attachCreditApplicationDocument } from '../_actions/attach-document'
@@ -18,6 +19,7 @@ import type {
   CancelCreditApplicationFormValues,
   RecordCreditInvestigationFormValues,
   DeclineCreditApplicationFormValues,
+  UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
 export function useCreditApplication(id: string) {
@@ -41,6 +43,18 @@ export function useCreditApplication(id: string) {
     queryClient.invalidateQueries({ queryKey: ['credit-application-documents', id] })
     queryClient.invalidateQueries({ queryKey: ['credit-applications'] })
   }
+
+  const updateMutation = useMutation({
+    mutationFn: (data: UpdateCreditApplicationFormValues) => updateCreditApplication(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Updated', description: result.message, status: 'success' })
+        invalidate()
+      } else {
+        showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
 
   const submitMutation = useMutation({
     mutationFn: () => submitCreditApplication(id),
@@ -151,6 +165,9 @@ export function useCreditApplication(id: string) {
     application: applicationQuery.data?.data,
     isLoading: applicationQuery.isLoading,
     error: applicationQuery.error,
+
+    update: updateMutation.mutateAsync,
+    isUpdating: updateMutation.isPending,
 
     documents: documentsQuery.data?.data ?? [],
     isDocumentsLoading: documentsQuery.isLoading,

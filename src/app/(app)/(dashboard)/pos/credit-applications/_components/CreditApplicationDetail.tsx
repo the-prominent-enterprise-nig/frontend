@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, FileText, Loader2, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
+import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -20,9 +21,11 @@ import {
   CancelCreditApplicationFormSchema,
   RecordCreditInvestigationFormSchema,
   DeclineCreditApplicationFormSchema,
+  UpdateCreditApplicationFormSchema,
   type CancelCreditApplicationFormValues,
   type RecordCreditInvestigationFormValues,
   type DeclineCreditApplicationFormValues,
+  type UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
 const fieldClass =
@@ -50,6 +53,8 @@ export default function CreditApplicationDetail({
   const {
     application,
     isLoading,
+    update,
+    isUpdating,
     documents,
     isDocumentsLoading,
     submit,
@@ -76,6 +81,8 @@ export default function CreditApplicationDetail({
   const [uploadError, setUploadError] = useState<string | undefined>(undefined)
   const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [isDeclineOpen, setIsDeclineOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editError, setEditError] = useState<string | undefined>(undefined)
 
   const {
     control,
@@ -105,6 +112,37 @@ export default function CreditApplicationDetail({
     resolver: zodResolver(RecordCreditInvestigationFormSchema),
     defaultValues: { affordabilityOutcome: 'recommend_approve', notes: '' },
   })
+
+  const {
+    control: editControl,
+    handleSubmit: handleEditSubmit,
+    setValue: editSetValue,
+    reset: resetEditForm,
+    formState: { errors: editErrors },
+  } = useForm<UpdateCreditApplicationFormValues>({
+    resolver: zodResolver(UpdateCreditApplicationFormSchema),
+  })
+
+  useEffect(() => {
+    if (!isEditOpen || !application) return
+    resetEditForm({
+      items: application.items.map((i) => ({
+        itemId: i.itemId,
+        variantId: i.variantId ?? undefined,
+      })),
+      itemDescription: application.itemDescription ?? '',
+    })
+  }, [isEditOpen, application, resetEditForm])
+
+  async function handleEditFormSubmit(data: UpdateCreditApplicationFormValues) {
+    setEditError(undefined)
+    const result = await update(data)
+    if (result.success) {
+      setIsEditOpen(false)
+    } else {
+      setEditError(result.message)
+    }
+  }
 
   if (isLoading) {
     return <div className="p-8 text-sm text-zinc-500">Loading…</div>
@@ -271,18 +309,54 @@ export default function CreditApplicationDetail({
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold text-zinc-700">Financing Request</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-700">Financing Request</h2>
+            {isDraft && canUpdate && (
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-medium text-prominent-purple-700 hover:underline"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )}
+          </div>
           <dl className="grid gap-3 sm:grid-cols-2 text-sm">
+            <div className="sm:col-span-2">
+              <dt className="text-zinc-500">Items / Models</dt>
+              <dd className="mt-1 space-y-1">
+                {application.items.length === 0 ? (
+                  <span className="text-zinc-400">—</span>
+                ) : (
+                  application.items.map((i) => (
+                    <div key={i.id} className="flex items-center justify-between">
+                      <span className="font-medium text-zinc-900">
+                        {i.item?.name ?? '—'}
+                        {i.variant && (
+                          <span className="text-zinc-500"> ({i.variant.variantSku})</span>
+                        )}
+                      </span>
+                      <span className="text-zinc-500">
+                        ₱{i.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </dd>
+            </div>
             <div>
               <dt className="text-zinc-500">Requested Amount</dt>
               <dd className="mt-0.5 text-lg font-semibold text-zinc-900">
                 ₱{application.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
               </dd>
             </div>
-            <div>
-              <dt className="text-zinc-500">Item / Purpose</dt>
-              <dd className="mt-0.5 text-zinc-900">{application.itemDescription ?? '—'}</dd>
-            </div>
+            {application.itemDescription && (
+              <div className="sm:col-span-2">
+                <dt className="text-zinc-500">Notes</dt>
+                <dd className="mt-0.5 text-zinc-900">{application.itemDescription}</dd>
+              </div>
+            )}
           </dl>
         </div>
 
@@ -555,6 +629,79 @@ export default function CreditApplicationDetail({
                 >
                   {isDeclining && <Loader2 className="h-4 w-4 animate-spin" />}
                   Confirm Decline
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-zinc-900">Edit Financing Request</h2>
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit(handleEditFormSubmit)} noValidate>
+              <div className="space-y-5 px-6 py-5">
+                <CreditApplicationItemFields
+                  control={editControl}
+                  setValue={editSetValue}
+                  errors={editErrors}
+                  initialItems={application.items.map((i) => ({
+                    itemId: i.itemId,
+                    variantId: i.variantId,
+                    itemLabel: i.item?.name ?? '',
+                    itemMeta: {
+                      hasVariants: i.item?.hasVariants ?? false,
+                      sellingPrice: i.item?.sellingPrice ?? null,
+                      modelNumber: i.item?.modelNumber ?? null,
+                    },
+                  }))}
+                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Notes (optional)
+                  </label>
+                  <Controller
+                    name="itemDescription"
+                    control={editControl}
+                    render={({ field }) => (
+                      <textarea
+                        {...field}
+                        value={field.value ?? ''}
+                        rows={2}
+                        placeholder="e.g. with installation, specific color preference"
+                        className={fieldClass}
+                      />
+                    )}
+                  />
+                </div>
+                {editError && <p className="text-sm text-red-600">{editError}</p>}
+              </div>
+              <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setIsEditOpen(false)}
+                  disabled={isUpdating}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                >
+                  {isUpdating && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save Changes
                 </button>
               </div>
             </form>

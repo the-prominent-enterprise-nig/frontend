@@ -441,9 +441,17 @@ export default function CheckoutPage() {
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
-  // not-yet-used CreditApplication for the selected customer.
+  // not-yet-used CreditApplication for the selected customer. Corrected
+  // 2026-08-15, second pass — applications can cover a bundle of models;
+  // checkout requires an exact match against the sale's installment lines
+  // (enforced server-side in TransactionsService.validateAndPrepare).
   const [approvedCreditApplications, setApprovedCreditApplications] = useState<
-    { id: string; applicationNumber: string; requestedAmount: number }[]
+    {
+      id: string
+      applicationNumber: string
+      requestedAmount: number
+      items: { itemName: string; variantLabel: string | null }[]
+    }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
@@ -1041,6 +1049,10 @@ export default function CheckoutPage() {
             id: a.id,
             applicationNumber: a.applicationNumber,
             requestedAmount: a.requestedAmount,
+            items: (a.items ?? []).map((i) => ({
+              itemName: i.item?.name ?? '—',
+              variantLabel: i.variant?.variantSku ?? null,
+            })),
           }))
         )
       })
@@ -3259,7 +3271,15 @@ export default function CheckoutPage() {
                             </option>
                             {approvedCreditApplications.map((a) => (
                               <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · ₱
+                                {a.applicationNumber} ·{' '}
+                                {a.items
+                                  .map((i) =>
+                                    i.variantLabel
+                                      ? `${i.itemName} (${i.variantLabel})`
+                                      : i.itemName
+                                  )
+                                  .join(', ')}{' '}
+                                · ₱
                                 {a.requestedAmount.toLocaleString('en-PH', {
                                   minimumFractionDigits: 2,
                                 })}
