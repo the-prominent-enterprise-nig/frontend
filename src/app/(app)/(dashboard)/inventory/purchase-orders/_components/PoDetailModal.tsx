@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { X, ShoppingCart, FileText } from 'lucide-react'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -41,6 +43,36 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export function PoDetailModal({ po, onClose }: Props) {
+  // Serial numbers only need fetching once a PO is closed — that's the point
+  // at which receiving is done and there's a final list to show, per line,
+  // instead of a partial/in-progress one.
+  const [serialsByLine, setSerialsByLine] = useState<Record<string, string[]>>({})
+
+  useEffect(() => {
+    if (!po || po.status !== 'closed') {
+      setSerialsByLine({})
+      return
+    }
+    let cancelled = false
+    getPurchaseOrderReceipts(po.id).then((res) => {
+      if (cancelled || !res.success) return
+      const byLine: Record<string, string[]> = {}
+      for (const receipt of res.data?.data ?? []) {
+        for (const line of receipt.lines) {
+          if (!line.purchaseOrderLineId || !line.serialNumbers?.length) continue
+          byLine[line.purchaseOrderLineId] = [
+            ...(byLine[line.purchaseOrderLineId] ?? []),
+            ...line.serialNumbers,
+          ]
+        }
+      }
+      setSerialsByLine(byLine)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [po?.id, po?.status])
+
   if (!po) return null
 
   const statusCfg = STATUS_CONFIG[po.status] ?? STATUS_CONFIG.draft
@@ -181,6 +213,23 @@ export function PoDetailModal({ po, onClose }: Props) {
                               </>
                             )}
                           </p>
+                        )}
+                        {(serialsByLine[line.id] ?? []).length > 0 && (
+                          <div className="mt-1.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                              Serial Numbers ({serialsByLine[line.id].length})
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {serialsByLine[line.id].map((sn) => (
+                                <span
+                                  key={sn}
+                                  className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600"
+                                >
+                                  {sn}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-700">{line.quantity}</td>

@@ -25,40 +25,8 @@ import { PoReceiptsPanel } from './PoReceiptsPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
-import {
-  printInventoryDocument,
-  type PrintDocumentEnvelope,
-} from '@/src/libs/print/printInventoryDocument'
-
-// Scenario 10 (Purchasing & AP) Part 7 — print-ready PO document body,
-// mirroring APBillsList.tsx's renderApChequeBody pattern.
-function renderPoBody(doc: PrintDocumentEnvelope): string {
-  const po = doc.document as Record<string, unknown>
-  const supplier = po.supplier as { name?: string } | undefined
-  const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
-  const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
-  const rows = lines
-    .map((l) => {
-      const item = l.item as { name?: string } | undefined
-      const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
-      const freebie = l.isFreebie ? ' (Freebie)' : ''
-      return `<tr><td>${item?.name ?? '—'}${freebie}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
-    })
-    .join('')
-  return `<h2>Order Details</h2><div class="meta">
-    <div><p class="label">Supplier</p><p>${supplier?.name ?? '—'}</p></div>
-    <div><p class="label">Order Date</p><p>${fmtDate(po.orderDate)}</p></div>
-    <div><p class="label">Expected Delivery</p><p>${fmtDate(po.expectedDeliveryDate)}</p></div>
-    <div><p class="label">Payment Terms</p><p>${po.paymentTerms ?? '—'}</p></div>
-  </div>
-  <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Line Total</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <p style="text-align:right;margin-top:12px;font-weight:600">Total: ${fmt(Number(po.totalAmount ?? 0))}</p>`
-}
+import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
+import { printPurchaseOrderDocument } from '@/src/libs/print/printInventoryDocument'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -325,8 +293,27 @@ export function PurchaseOrderList({
   const downloadPdf = async (po: PurchaseOrderSummary) => {
     setDownloadingId(po.id)
     try {
-      const res = await getPurchaseOrderDocument(po.id)
-      if (res.success && res.data) printInventoryDocument(res.data, 'Purchase Order', renderPoBody)
+      // Serial numbers only exist to show once a PO is closed — receiving
+      // is done at that point, so there's a final per-line list, not a
+      // partial/in-progress one worth printing.
+      const [docRes, receiptsRes] = await Promise.all([
+        getPurchaseOrderDocument(po.id),
+        po.status === 'closed' ? getPurchaseOrderReceipts(po.id) : Promise.resolve(null),
+      ])
+      if (!docRes.success || !docRes.data) return
+
+      const serialsByLineId: Record<string, string[]> = {}
+      for (const receipt of receiptsRes?.success ? (receiptsRes.data?.data ?? []) : []) {
+        for (const line of receipt.lines) {
+          if (!line.purchaseOrderLineId || !line.serialNumbers?.length) continue
+          serialsByLineId[line.purchaseOrderLineId] = [
+            ...(serialsByLineId[line.purchaseOrderLineId] ?? []),
+            ...line.serialNumbers,
+          ]
+        }
+      }
+
+      printPurchaseOrderDocument(docRes.data, serialsByLineId)
     } finally {
       setDownloadingId(null)
     }
