@@ -43,6 +43,7 @@ export const CRM_PERMISSIONS = {
   INCENTIVES_UPDATE: 'crm:collection-incentives:update',
   INCENTIVES_DELETE: 'crm:collection-incentives:delete',
   INCENTIVES_APPROVE: 'crm:collection-incentives:approve',
+  COLLECTIONS_CALENDAR_READ: 'crm:collections-calendar:read',
   WILDCARD: 'crm:*',
 } as const
 

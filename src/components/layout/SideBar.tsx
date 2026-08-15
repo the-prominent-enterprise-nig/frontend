@@ -523,6 +523,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
       },
       {
+        label: 'Collections Calendar',
+        href: '/crm/collections-calendar',
+        icon: CalendarDays,
+        requiredPermission: CRM_PERMISSIONS.COLLECTIONS_CALENDAR_READ,
+      },
+      {
         label: 'Collection Incentives',
         href: '/crm/collection-incentives',
         icon: Coins,

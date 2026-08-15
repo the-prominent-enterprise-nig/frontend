@@ -361,6 +361,31 @@ export interface RecordPaymentResult extends ARInvoice {
   overpayment: { paymentId: string; overpaidAmount: number; wasClosedAccount: boolean } | null
 }
 
+// POS Collections bulk/early-payment ("Pay Selected") — settles several of a
+// customer's own upcoming installment dues in one shot, with one shared
+// (required) reference number across the whole batch.
+export interface BulkPayInstallmentLineInput {
+  invoiceId: string
+  amount: number
+  rebateAmount?: number
+}
+
+export interface BulkRecordArPaymentInput {
+  lines: BulkPayInstallmentLineInput[]
+  paymentDate: string
+  method?: PaymentMethod
+  reference: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+
+export interface BulkRecordPaymentResult {
+  payments: RecordPaymentResult[]
+  totalCollected: number
+  invoiceCount: number
+}
+
 export interface ARInvoiceCustomerResult {
   id: string
   name: string
@@ -392,6 +417,8 @@ export const ARInvoices = {
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
   recordPayment: (id: string, body: RecordArPaymentInput) =>
     api.post<RecordPaymentResult>(`/ar-invoices/${id}/payments`, body),
+  recordBulkPayment: (body: BulkRecordArPaymentInput) =>
+    api.post<BulkRecordPaymentResult>('/ar-invoices/bulk-payments', body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
