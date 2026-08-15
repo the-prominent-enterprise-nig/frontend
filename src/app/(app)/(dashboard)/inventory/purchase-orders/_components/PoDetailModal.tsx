@@ -201,12 +201,14 @@ export function PoDetailModal({ po, onClose }: Props) {
                         {line.srp != null && (
                           <p className="mt-0.5 text-xs text-zinc-500">
                             SRP {fmtPHP(Number(line.srp))}
-                            {line.discountType && line.discountValue != null && (
+                            {line.discounts && line.discounts.length > 0 && (
                               <>
                                 {' · '}
-                                {line.discountType === 'percentage'
-                                  ? `${Number(line.discountValue)}%`
-                                  : fmtPHP(Number(line.discountValue))}{' '}
+                                {line.discounts
+                                  .map((d) =>
+                                    d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
+                                  )
+                                  .join(' → ')}{' '}
                                 off
                                 {line.discountedCost != null &&
                                   ` → ${fmtPHP(Number(line.discountedCost))}`}

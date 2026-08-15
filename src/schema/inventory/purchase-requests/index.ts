@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   CreatePoLineSchema,
   CreatePoFormSchema,
-  POLineDiscountTypeSchema,
+  LineDiscountSchema,
 } from '@/src/schema/inventory/purchase-orders'
 
 // A Purchase Request is created with the exact same commitment as a
@@ -52,9 +52,9 @@ const PrWarehouseSchema = z.object({
 })
 
 // Same input-field shape as PoLineSchema (unitPrice/description/srp/
-// discountType/discountValue/isFreebie) — PO-computed-only fields
-// (discountedCost, lastPriceOverridden, lineTotal) aren't mirrored here,
-// see the plan's "computed line fields" decision.
+// discounts/isFreebie) — PO-computed-only fields (discountedCost,
+// lastPriceOverridden, lineTotal) aren't mirrored here, see the plan's
+// "computed line fields" decision.
 const PrLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
@@ -63,8 +63,7 @@ const PrLineSchema = z.object({
   unitPrice: z.coerce.number().optional().nullable(),
   description: z.string().optional().nullable(),
   srp: z.coerce.number().optional().nullable(),
-  discountType: POLineDiscountTypeSchema.optional().nullable(),
-  discountValue: z.coerce.number().optional().nullable(),
+  discounts: z.array(LineDiscountSchema).optional().nullable(),
   isFreebie: z.boolean().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
