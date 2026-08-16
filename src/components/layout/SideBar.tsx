@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
 import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
@@ -50,6 +51,7 @@ import {
   Undo2,
   Users,
   UsersRound,
+  UserPlus,
   Wallet,
   Warehouse,
   Wrench,
@@ -803,6 +805,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     href: '/settings/users',
     icon: UsersRound,
   },
+  {
+    section: 'My Workspace',
+    label: 'Pending Invites',
+    href: '/settings/pending-invites',
+    icon: UserPlus,
+  },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
   {
@@ -910,6 +918,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [pendingInviteCount, setPendingInviteCount] = useState(0)
 
   const segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
 
@@ -920,6 +929,27 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   const isBranchManager = session?.primaryRole === 'Branch Manager'
 
+  // Refresh-on-navigation, not live — re-fetched whenever the route
+  // changes rather than polled, matching how the rest of this app's nav
+  // already behaves (Scenario 28, Part 2).
+  useEffect(() => {
+    if (!isOwner) return
+    getPendingInviteCount().then((result) => {
+      if (result.success && result.data) setPendingInviteCount(result.data.count)
+    })
+  }, [isOwner, pathname])
+
+  const ownerWorkspaceItems: NavItem[] = isOwner
+    ? OWNER_WORKSPACE_ITEMS.map((item) =>
+        item.href === '/settings/pending-invites' && pendingInviteCount > 0
+          ? {
+              ...item,
+              badge: { text: String(pendingInviteCount), variant: 'count', color: 'bg-red-500' },
+            }
+          : item
+      )
+    : OWNER_WORKSPACE_ITEMS
+
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
   const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
 
@@ -928,12 +958,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   let mainItems: NavItem[]
   if (isOwner) {
     if (resolvedSegment === 'Business Owner') {
-      mainItems = OWNER_WORKSPACE_ITEMS
+      mainItems = ownerWorkspaceItems
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...labeledModuleItems, ...OWNER_WORKSPACE_ITEMS]
+      mainItems = [...labeledModuleItems, ...ownerWorkspaceItems]
     }
   } else if (isBranchManager) {
     if (resolvedSegment === 'Business Owner') {

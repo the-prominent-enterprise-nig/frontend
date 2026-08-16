@@ -57,6 +57,13 @@ export const UserBranchSchema = z.object({
   branch: SessionBranchSchema,
 })
 
+// Latest BusinessInvite for a user (used to tell Pending apart from Expired)
+export const LatestInviteSchema = z.object({
+  expiresAt: z.string(),
+  usedAt: z.string().nullable(),
+  createdAt: z.string(),
+})
+
 // User Schema (matches API response from backend)
 export const UserSchema = z.object({
   id: z.string(),
@@ -66,11 +73,13 @@ export const UserSchema = z.object({
   firstName: z.string().nullable().optional(),
   lastName: z.string().nullable().optional(),
   isActive: z.boolean(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING_SETUP']).optional().default('ACTIVE'),
   isFounder: z.boolean().optional().default(false),
   employeeId: z.string().nullable(),
   employee: SessionEmployeeSchema.nullable(),
   userBranches: z.array(UserBranchSchema),
   userRoles: z.array(UserRoleSchema),
+  businessInvites: z.array(LatestInviteSchema).optional().default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -128,6 +137,7 @@ export type User = z.infer<typeof UserSchema>
 export type SessionEmployee = z.infer<typeof SessionEmployeeSchema>
 export type SessionBranch = z.infer<typeof SessionBranchSchema>
 export type UserBranch = z.infer<typeof UserBranchSchema>
+export type LatestInvite = z.infer<typeof LatestInviteSchema>
 export type UserListResponse = z.infer<typeof UserListResponseSchema>
 export type PermissionListResponse = z.infer<typeof PermissionListResponseSchema>
 export type RoleListResponse = z.infer<typeof RoleListResponseSchema>
