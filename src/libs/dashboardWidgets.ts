@@ -503,10 +503,11 @@ export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
   admin: [
     'calendar',
     'module-stats',
-    'sales-by-branch',
+    'cogs-gaps',
     'pending-approvals',
-    'recent-leads',
+    'outstanding-invoices',
     'recent-activity',
+    'sales-by-branch',
   ],
   hr: ['stats', 'recent-activity', 'employee-birthdays', 'calendar'],
   accounting: ['stats', 'outstanding-invoices', 'pending-approvals', 'recent-activity'],
@@ -528,10 +529,11 @@ export const defaultLayoutsByRole: Record<DashboardRole, LayoutItem[]> = {
   admin: [
     { i: 'calendar', x: 0, y: 0, w: 12, h: 5, minW: 4, minH: 3 },
     { i: 'module-stats', x: 0, y: 7, w: 12, h: 4, minW: 6, minH: 3 },
-    { i: 'sales-by-branch', x: 0, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'cogs-gaps', x: 0, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
     { i: 'pending-approvals', x: 6, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'recent-leads', x: 0, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'outstanding-invoices', x: 0, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
     { i: 'recent-activity', x: 6, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'sales-by-branch', x: 0, y: 19, w: 6, h: 3, minW: 3, minH: 3 },
   ],
   hr: [
     { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },

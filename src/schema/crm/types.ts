@@ -84,6 +84,7 @@ export interface Lead {
   stageId: string
   estimatedValue?: number | string | null
   assignedTo?: string | null
+  branchId?: string | null
   convertedToCustomerId?: string | null
   notes?: string | null
   status: LeadStatus

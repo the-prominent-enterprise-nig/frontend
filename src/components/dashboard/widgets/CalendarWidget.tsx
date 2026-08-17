@@ -9,6 +9,7 @@ import {
   getCalendarEvents,
   createCalendarEvent,
 } from '@/src/app/(app)/(dashboard)/_actions/calendar-events-actions'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 type EmployeeBirthday = {
   id: string
@@ -77,6 +78,7 @@ export default function CalendarWidget() {
 
   const today = now.getDate()
   const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     api.get<EmployeeBirthday[]>('/users/birthdays').then((res) => {
@@ -84,17 +86,19 @@ export default function CalendarWidget() {
     })
   }, [])
 
-  // Re-fetch real calendar events whenever the displayed month/year changes.
+  // Re-fetch real calendar events whenever the displayed month/year changes,
+  // or the dashboard's branch filter changes — branch-scoped events only
+  // show while that branch is selected; enterprise-wide ones always show.
   useEffect(() => {
     let cancelled = false
-    getCalendarEvents(year, month + 1).then((res) => {
+    getCalendarEvents(year, month + 1, branchId ?? undefined).then((res) => {
       if (cancelled) return
       if (res.success && res.data) setEvents(groupEventsByDate(res.data))
     })
     return () => {
       cancelled = true
     }
-  }, [year, month])
+  }, [year, month, branchId])
 
   // Birthday events for the currently displayed month/year (re-derived on navigation)
   const birthdayEvents: Record<string, CalendarEvent[]> = {}
@@ -177,7 +181,7 @@ export default function CalendarWidget() {
   }
 
   async function handleAddEvent(ev: Omit<CalendarEvent, 'id'>) {
-    const res = await createCalendarEvent(ev)
+    const res = await createCalendarEvent({ ...ev, branchId: branchId ?? undefined })
     if (!res.success || !res.data) return
     const created = res.data
     setEvents((prev) => ({
