@@ -34,6 +34,11 @@ export function usePurchaseOrders() {
     queryFn: () => getPurchaseOrders(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
+    // Scenario 26 — same gap found live in purchase requests and every
+    // other maker-checker list this scenario touched: staleTime alone only
+    // refetches on THIS tab's own refocus/remount, not when someone else's
+    // approval changes the record in a different browser tab/session.
+    refetchInterval: 10 * 1000,
   })
 
   const createMutation = useMutation({

@@ -1,3 +1,27 @@
+const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+const RELATIVE_TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 365 * 24 * 60 * 60],
+  ['month', 30 * 24 * 60 * 60],
+  ['week', 7 * 24 * 60 * 60],
+  ['day', 24 * 60 * 60],
+  ['hour', 60 * 60],
+  ['minute', 60],
+]
+
+/** "2 hours ago" / "in 3 days" style relative timestamp, falling back to "just now" under a minute. */
+export function formatRelativeTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+
+  const diffSeconds = (date.getTime() - Date.now()) / 1000
+  for (const [unit, secondsInUnit] of RELATIVE_TIME_UNITS) {
+    if (Math.abs(diffSeconds) >= secondsInUnit) {
+      return RELATIVE_TIME_FORMATTER.format(Math.round(diffSeconds / secondsInUnit), unit)
+    }
+  }
+  return 'just now'
+}
+
 export function formatShortDate(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return '—'

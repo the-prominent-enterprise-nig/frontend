@@ -28,6 +28,12 @@ export function useCreditApplication(id: string) {
     queryKey: ['credit-application', id],
     queryFn: () => getCreditApplication(id),
     staleTime: 15 * 1000,
+    // Scenario 26 — same reasoning as useCreditApplications.ts's poll: this
+    // page is exactly where a resolution notification's click-through
+    // lands, so a stale status here (e.g. still showing
+    // under_investigation after the Branch Manager already approved it in
+    // another tab) directly undercuts the point of the notification.
+    refetchInterval: 10 * 1000,
   })
 
   const documentsQuery = useQuery({
