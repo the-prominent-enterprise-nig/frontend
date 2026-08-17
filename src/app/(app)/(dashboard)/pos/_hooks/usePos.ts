@@ -70,6 +70,10 @@ import {
   createFinancingTerm,
   updateFinancingTerm,
   deleteFinancingTerm,
+  getTpfProviders,
+  createTpfProvider,
+  updateTpfProvider,
+  deleteTpfProvider,
   previewInstallment,
   getCustomerInstallmentSchedules,
   listCollectionsCustomers,
@@ -98,6 +102,8 @@ import type {
   ReviewVoidRequestInput,
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
+  CreateTpfProviderInput,
+  UpdateTpfProviderInput,
   ComputeInstallmentPreviewInput,
   SkuReservationFilters,
   FulfilSkuReservationInput,
@@ -498,6 +504,41 @@ export function useDeleteFinancingTerm() {
   return useMutation({
     mutationFn: (id: string) => deleteFinancingTerm(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-financing-terms'] }),
+  })
+}
+
+// ─── TPF (third-party financing) Providers ─────────────────────────────────
+
+export function useTpfProviders() {
+  return useQuery({
+    queryKey: ['pos-tpf-providers'],
+    queryFn: getTpfProviders,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function useCreateTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateTpfProviderInput) => createTpfProvider(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
+  })
+}
+
+export function useUpdateTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateTpfProviderInput }) =>
+      updateTpfProvider(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
+  })
+}
+
+export function useDeleteTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteTpfProvider(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
   })
 }
 

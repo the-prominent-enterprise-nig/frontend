@@ -99,7 +99,7 @@ function SkeletonCard() {
   )
 }
 
-// ─── GRN card ─────────────────────────────────────────────────────────────────
+// ─── Receiving report card ───────────────────────────────────────────────────
 
 function GrnCard({ grn, index }: { grn: PoReceipt; index: number }) {
   const [expanded, setExpanded] = useState(true)
@@ -141,6 +141,12 @@ function GrnCard({ grn, index }: { grn: PoReceipt; index: number }) {
                 <Hash className="h-3 w-3" />
                 {grn.lines.length} line{grn.lines.length !== 1 ? 's' : ''} · {totalReceived} units
               </span>
+              {grn.deliveryReceiptNumber && (
+                <span className="flex items-center gap-1">DR: {grn.deliveryReceiptNumber}</span>
+              )}
+              {grn.supplierInvoiceNumber && (
+                <span className="flex items-center gap-1">SI: {grn.supplierInvoiceNumber}</span>
+              )}
             </div>
           </div>
         </div>
@@ -225,7 +231,21 @@ function GrnCard({ grn, index }: { grn: PoReceipt; index: number }) {
                     </p>
                   ) : null}
                   {(line.serialNumbers ?? []).length > 0 && (
-                    <p className="text-xs text-zinc-400">{(line.serialNumbers ?? []).length} S/N</p>
+                    <div className="max-w-[220px]">
+                      <p className="text-xs text-zinc-400">
+                        {(line.serialNumbers ?? []).length} S/N
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {(line.serialNumbers ?? []).map((sn) => (
+                          <span
+                            key={sn}
+                            className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600"
+                          >
+                            {sn}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
                   {!line.batchNumber && !line.expiryDate && !(line.serialNumbers ?? []).length && (
                     <span className="text-zinc-300">—</span>

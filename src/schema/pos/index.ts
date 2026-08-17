@@ -118,6 +118,9 @@ export interface CreateCustomPaymentMethodInput {
 // POS Transaction
 export type PosTransactionType = 'sale' | 'refund' | 'exchange'
 export type PosTransactionStatus = 'completed' | 'voided'
+// 'charge' is no longer selectable from checkout (dropped in favor of Pay
+// Now/Installment) — kept in the type only because historical transactions
+// still carry it.
 export type PosInvoiceType = 'cash' | 'charge' | 'installment'
 export type PosPaymentMethod =
   | 'cash'
@@ -128,7 +131,17 @@ export type PosPaymentMethod =
   | 'store_credit'
   | 'loyalty_points'
   | 'bank_transfer'
+  | 'tpf'
   | 'custom'
+
+// Which financing an installment line runs on: NIG's own underwriting
+// (inhouse, the default) or an outside financing company that pays NIG in
+// full at time of sale (tpf) — no local CreditApplication/PromissoryNote.
+export type InstallmentProvider = 'inhouse' | 'tpf'
+
+// Cosmetic sub-choice under a 'cash'-mode line — how the customer intends
+// to pay, for receipt/reporting only. Never affects the PAYMENT section.
+export type PayNowMethod = 'cash' | 'credit_card'
 
 export interface BranchPaymentMethod extends PaymentMethodConfig {
   isOverridden: boolean
@@ -164,6 +177,9 @@ export interface PosTransactionLine {
   lineTotal: number
   notes?: string | null
   serialNumber?: string | null
+  invoiceType?: PosInvoiceType
+  installmentProvider?: InstallmentProvider | null
+  payNowMethod?: PayNowMethod | null
 }
 
 export interface PosPayment {
@@ -209,6 +225,9 @@ export interface PosTransaction {
   payments?: PosPayment[]
   session?: PosSession
   invoices?: PosTransactionInvoice[]
+  tpfProviderId?: string | null
+  tpfReferenceNumber?: string | null
+  tpfApprovedAmount?: number | null
 }
 
 // Scenario 23 Gap 1 — every invoice a transaction produced (the charge
@@ -248,12 +267,18 @@ export interface CreateTransactionLineInput {
   /** True when unitPrice was manually set by a PIN-approved manager
    * override rather than resolved from priceListItemId. */
   priceOverride?: boolean
-  /** Per-line payment mode — lets one cart mix cash/charge/installment
-   * lines. Falls back to the transaction-level invoiceType when omitted. */
+  /** Per-line payment mode — lets one cart mix cash/installment lines.
+   * Falls back to the transaction-level invoiceType when omitted. */
   invoiceType?: PosInvoiceType
-  /** This line's own financing term (installment lines only). */
+  /** Which financing this installment line runs on — only meaningful when
+   * invoiceType is 'installment'. Omit for inhouse (the default). */
+  installmentProvider?: InstallmentProvider
+  /** Cosmetic sub-choice for a 'cash'-mode line — how the customer intends
+   * to pay, for receipt/reporting only. */
+  payNowMethod?: PayNowMethod
+  /** This line's own financing term (inhouse installment lines only). */
   financingTermId?: string
-  /** This line's own down payment (installment lines only) — each
+  /** This line's own down payment (inhouse installment lines only) — each
    * installment line carries its own down payment rather than one pooled
    * across the cart. */
   downPayment?: number
@@ -270,11 +295,19 @@ export interface CreateTransactionInput {
   chargeDueDays?: number
   /** installment invoices only */
   financingTermId?: string
-  /** Scenario 17 Part 6 — installment invoices only, required. The
+  /** Scenario 17 Part 6 — inhouse installment invoices only, required. The
    * customer's approved, not-yet-used CreditApplication this sale fulfills. */
   creditApplicationId?: string
-  /** installment invoices only — amount collected up front. Defaults to 0. */
+  /** inhouse installment invoices only — amount collected up front. Defaults to 0. */
   downPayment?: number
+  /** TPF financing company backing this sale's TPF-mode line(s) — required
+   * whenever any line has installmentProvider: 'tpf'. */
+  tpfProviderId?: string
+  /** This financier's own application/reference number — required
+   * alongside tpfProviderId. */
+  tpfReferenceNumber?: string
+  /** The amount this financier approved, for audit/reconciliation only. */
+  tpfApprovedAmount?: number
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -819,6 +852,25 @@ export interface UpdateFinancingTermInput {
   factorRate?: number
   isActive?: boolean
   notes?: string
+}
+
+// TPF (third-party financing) Providers
+export interface TpfProvider {
+  id: string
+  tenantId: string
+  name: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateTpfProviderInput {
+  name: string
+}
+
+export interface UpdateTpfProviderInput {
+  name?: string
+  isActive?: boolean
 }
 
 export interface InstallmentPreviewLine {

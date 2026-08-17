@@ -47,6 +47,9 @@ import type {
   FinancingTerm,
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
+  TpfProvider,
+  CreateTpfProviderInput,
+  UpdateTpfProviderInput,
   ComputeInstallmentPreviewInput,
   InstallmentPreview,
   InstallmentSchedule,
@@ -100,6 +103,7 @@ const TAGS = {
   cashDrawer: (sessionId: string) => `pos-cash-drawer-${sessionId}`,
   branchPricing: 'pos-branch-pricing',
   financingTerms: 'pos-financing-terms',
+  tpfProviders: 'pos-tpf-providers',
   parkedSales: 'pos-parked-sales',
   posConfig: 'pos-config',
   receiptBranding: 'pos-receipt-branding',
@@ -1091,6 +1095,78 @@ export async function deleteFinancingTerm(id: string): Promise<ApiResponse<void>
   }
 }
 
+// ─── TPF (third-party financing) Providers ─────────────────────────────────
+
+export async function getTpfProviders(): Promise<ApiResponse<TpfProvider[]>> {
+  try {
+    const result = await api.get<TpfProvider[]>('/pos/tpf-providers', undefined, {
+      tags: [TAGS.tpfProviders],
+    })
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch TPF providers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch TPF providers' }
+  }
+}
+
+export async function getActiveTpfProviders(): Promise<ApiResponse<TpfProvider[]>> {
+  try {
+    const result = await api.get<TpfProvider[]>('/pos/tpf-providers/active')
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch active TPF providers' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch active TPF providers' }
+  }
+}
+
+export async function createTpfProvider(
+  input: CreateTpfProviderInput
+): Promise<ApiResponse<TpfProvider>> {
+  try {
+    const result = await api.post<TpfProvider>('/pos/tpf-providers', input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create TPF provider' }
+    }
+    revalidateTag(TAGS.tpfProviders, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to create TPF provider' }
+  }
+}
+
+export async function updateTpfProvider(
+  id: string,
+  input: UpdateTpfProviderInput
+): Promise<ApiResponse<TpfProvider>> {
+  try {
+    const result = await api.patch<TpfProvider>(`/pos/tpf-providers/${id}`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update TPF provider' }
+    }
+    revalidateTag(TAGS.tpfProviders, 'max')
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to update TPF provider' }
+  }
+}
+
+export async function deleteTpfProvider(id: string): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/tpf-providers/${id}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete TPF provider' }
+    }
+    revalidateTag(TAGS.tpfProviders, 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete TPF provider' }
+  }
+}
+
 export async function previewInstallment(
   input: ComputeInstallmentPreviewInput
 ): Promise<ApiResponse<InstallmentPreview>> {
@@ -1355,6 +1431,7 @@ export async function cancelParkedSale(id: string): Promise<ApiResponse<ParkedSa
 export interface Branch {
   id: string
   name: string
+  isMainBranch?: boolean
 }
 
 export async function getBranches(): Promise<ApiResponse<Branch[]>> {

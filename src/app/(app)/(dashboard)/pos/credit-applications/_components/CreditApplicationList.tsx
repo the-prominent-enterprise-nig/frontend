@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
 import { X, CreditCard } from 'lucide-react'
 import { useCreditApplications } from '../_hooks/useCreditApplications'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -14,7 +13,6 @@ import {
   CreditApplicationStatusSchema,
   type CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
-import { getBranches } from '../../_actions/pos-actions'
 import CreateCreditApplicationModal from './CreateCreditApplicationModal'
 
 export default function CreditApplicationList({ session }: { session: SessionUser }) {
@@ -35,13 +33,6 @@ export default function CreditApplicationList({ session }: { session: SessionUse
     createApplication,
     isCreating,
   } = useCreditApplications()
-
-  const branchesQuery = useQuery({
-    queryKey: ['branches-lookup'],
-    queryFn: () => getBranches(),
-    staleTime: 5 * 60 * 1000,
-    enabled: !session.branchId,
-  })
 
   const statusOptions = CreditApplicationStatusSchema.options
 
@@ -227,7 +218,6 @@ export default function CreditApplicationList({ session }: { session: SessionUse
         onSubmit={createApplication}
         isSubmitting={isCreating}
         sessionBranchId={session.branchId}
-        branchOptions={branchesQuery.data?.data ?? []}
       />
     </div>
   )

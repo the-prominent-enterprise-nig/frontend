@@ -86,13 +86,32 @@ export interface CreditInvestigation {
 }
 
 export const CreateCreditApplicationFormSchema = z.object({
-  branchId: z.string().min(1, 'Branch is required'),
+  // Audit-only — not shown as a form field. Sent when the actor is
+  // branch-locked; otherwise omitted and the backend defaults it to the
+  // enterprise's main branch (see CreditApplicationService.create()).
+  branchId: z.string().optional(),
   applicantCustomerId: z.string().min(1, 'Applicant is required'),
   coMakerId: z.string().min(1, 'Co-maker is required'),
-  requestedAmount: z.number().positive('Requested amount must be greater than 0'),
+  // An application can cover a bundle of models (2026-08-15, second pass) —
+  // checkout enforces an exact match against the sale's installment lines.
+  items: z
+    .array(
+      z.object({
+        itemId: z.string().min(1, 'Item is required'),
+        variantId: z.string().optional(),
+      })
+    )
+    .min(1, 'At least one item is required'),
   itemDescription: z.string().max(500).optional(),
 })
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationFormSchema>
+
+// Editing a draft only ever touches item/variant/notes today (see
+// CreditApplicationDetail's "Edit" action) — applicant/co-maker/branch
+// aren't exposed for edit, but the backend's PATCH accepts any subset via
+// PartialType(CreateCreditApplicationDto), so this stays a full .partial().
+export const UpdateCreditApplicationFormSchema = CreateCreditApplicationFormSchema.partial()
+export type UpdateCreditApplicationFormValues = z.infer<typeof UpdateCreditApplicationFormSchema>
 
 export const CancelCreditApplicationFormSchema = z.object({
   reason: z.string().min(1, 'Reason is required').max(500),
@@ -134,6 +153,31 @@ export interface CreditApplicationBranchLite {
   code?: string | null
 }
 
+export interface CreditApplicationItemLite {
+  id: string
+  name: string
+  sku?: string | null
+  modelNumber?: string | null
+  hasVariants?: boolean
+  sellingPrice?: number | null
+}
+
+export interface CreditApplicationVariantLite {
+  id: string
+  variantSku: string
+  attributes?: Record<string, string> | null
+  priceOverride?: number | null
+}
+
+export interface CreditApplicationItemLine {
+  id: string
+  itemId: string
+  item?: CreditApplicationItemLite | null
+  variantId?: string | null
+  variant?: CreditApplicationVariantLite | null
+  requestedAmount: number
+}
+
 export interface CreditApplication {
   id: string
   tenantId: string
@@ -144,6 +188,7 @@ export interface CreditApplication {
   applicantCustomer: CreditApplicationCustomerLite
   coMakerId: string
   coMaker: CreditApplicationCoMakerLite
+  items: CreditApplicationItemLine[]
   requestedAmount: number
   itemDescription?: string | null
   status: CreditApplicationStatus

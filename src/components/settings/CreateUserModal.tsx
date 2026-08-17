@@ -141,9 +141,26 @@ export default function CreateUserModal({
       return
     }
 
+    const inviteEmailSent = (result.data as { inviteEmailSent?: boolean } | undefined)
+      ?.inviteEmailSent
+
+    if (inviteEmailSent === false) {
+      showToast({
+        title: 'User added — invite email failed',
+        description: `${data.email} was added, but the invite email couldn't be sent. Use Resend Invite from their row to try again.`,
+        status: 'error',
+      })
+      reset()
+      setSelectedRoles([])
+      setStep(0)
+      onClose()
+      onSuccess?.()
+      return
+    }
+
     showToast({
-      title: 'User created',
-      description: `${data.email} has been added with an employee profile.`,
+      title: 'Invite sent',
+      description: `An invite email was sent to ${data.email} to set up their account.`,
       status: 'success',
     })
 
@@ -545,7 +562,7 @@ export default function CreateUserModal({
               onClick={handleSubmit(onSubmit)}
               className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSubmitting ? 'Creating...' : 'Create User'}
+              {isSubmitting ? 'Sending Invite...' : 'Send Invite'}
             </button>
           )}
         </div>
