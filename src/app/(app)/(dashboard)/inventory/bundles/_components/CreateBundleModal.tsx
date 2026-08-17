@@ -4,7 +4,11 @@ import { useEffect } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Plus, Trash2, Package } from 'lucide-react'
-import { CreateBundleFormSchema, CreateBundleFormValues } from '@/src/schema/inventory/bundles'
+import {
+  CreateBundleFormSchema,
+  CreateBundleFormSchemaNoCost,
+  CreateBundleFormValues,
+} from '@/src/schema/inventory/bundles'
 import type { ItemSummary, CategoryOption, UomOption } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 
@@ -13,6 +17,7 @@ type Props = {
   onClose: () => void
   onSubmit: (data: CreateBundleFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
+  canViewCost?: boolean
   itemOptions: ItemSummary[]
   categoryOptions: CategoryOption[]
   uomOptions: UomOption[]
@@ -23,6 +28,7 @@ export default function CreateBundleModal({
   onClose,
   onSubmit,
   isSubmitting,
+  canViewCost = true,
   itemOptions,
   categoryOptions,
   uomOptions,
@@ -33,7 +39,7 @@ export default function CreateBundleModal({
     reset,
     formState: { errors },
   } = useForm<CreateBundleFormValues>({
-    resolver: zodResolver(CreateBundleFormSchema),
+    resolver: zodResolver(canViewCost ? CreateBundleFormSchema : CreateBundleFormSchemaNoCost),
     defaultValues: {
       costPrice: 0,
       isSerialTracked: false,
@@ -170,31 +176,33 @@ export default function CreateBundleModal({
 
             {/* Cost + Selling Price */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Cost Price <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="costPrice"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0.00"
-                      className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      onChange={(e) =>
-                        field.onChange(e.target.value === '' ? '' : Number(e.target.value))
-                      }
-                    />
+              {canViewCost && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Cost Price <span className="text-red-500">*</span>
+                  </label>
+                  <Controller
+                    name="costPrice"
+                    control={control}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="0.00"
+                        className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                        onChange={(e) =>
+                          field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                      />
+                    )}
+                  />
+                  {errors.costPrice && (
+                    <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
                   )}
-                />
-                {errors.costPrice && (
-                  <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">

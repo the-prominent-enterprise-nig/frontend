@@ -221,21 +221,30 @@ export default function IssueStockModal({
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 COGS Estimate — {COSTING_METHOD_LABELS[preview.costingMethod]}
               </p>
-              <div className="grid grid-cols-3 gap-3 text-center">
+              {/* unitCost/cogsAmount are null for a caller without cost-view
+                  (Scenario 05 followup) — Qty still previews fine on its own,
+                  and confirming/submitting doesn't depend on seeing cost. */}
+              <div
+                className={`grid gap-3 text-center ${preview.unitCost != null ? 'grid-cols-3' : 'grid-cols-1'}`}
+              >
                 <div>
                   <p className="text-xs text-zinc-500">Qty</p>
                   <p className="text-lg font-bold text-zinc-900">{preview.quantity}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-zinc-500">Unit Cost</p>
-                  <p className="text-lg font-bold text-zinc-900">₱{fmt(preview.unitCost)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-500">Total COGS</p>
-                  <p className="text-lg font-bold text-prominent-purple-700">
-                    ₱{fmt(preview.cogsAmount)}
-                  </p>
-                </div>
+                {preview.unitCost != null && (
+                  <div>
+                    <p className="text-xs text-zinc-500">Unit Cost</p>
+                    <p className="text-lg font-bold text-zinc-900">₱{fmt(preview.unitCost)}</p>
+                  </div>
+                )}
+                {preview.cogsAmount != null && (
+                  <div>
+                    <p className="text-xs text-zinc-500">Total COGS</p>
+                    <p className="text-lg font-bold text-prominent-purple-700">
+                      ₱{fmt(preview.cogsAmount)}
+                    </p>
+                  </div>
+                )}
               </div>
               <label className="flex cursor-pointer items-center gap-2 pt-1">
                 <input

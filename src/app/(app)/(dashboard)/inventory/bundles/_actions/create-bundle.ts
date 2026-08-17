@@ -2,10 +2,23 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { CreateBundleFormSchema } from '@/src/schema/inventory/bundles'
+import {
+  CreateBundleFormSchema,
+  CreateBundleFormSchemaNoCost,
+} from '@/src/schema/inventory/bundles'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 export async function createBundle(input: unknown): Promise<ApiResponse<{ id: string }>> {
-  const parsed = CreateBundleFormSchema.safeParse(input)
+  // Scenario 05 followup — a caller without cost-view submits no costPrice
+  // at all (the field is hidden client-side); validate against the schema
+  // variant that matches, rather than the always-required one rejecting a
+  // legitimate no-cost submission.
+  const session = await getSessionOrNull()
+  const canViewCost = !!session && can(session, INVENTORY_PERMISSIONS.COST_VIEW)
+  const schema = canViewCost ? CreateBundleFormSchema : CreateBundleFormSchemaNoCost
+  const parsed = schema.safeParse(input)
   if (!parsed.success) {
     return {
       success: false,

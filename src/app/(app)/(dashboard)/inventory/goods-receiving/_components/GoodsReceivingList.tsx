@@ -44,7 +44,7 @@ const TX_LABELS: Record<string, string> = {
 
 export default function GoodsReceivingList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
-  const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.COST_VIEW)
   const [isReceiveOpen, setIsReceiveOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('balances')
   const { pushPanel } = useUIShell()

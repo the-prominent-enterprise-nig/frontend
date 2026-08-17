@@ -8,6 +8,7 @@ import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipt
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
+  canViewCost?: boolean
 }
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
@@ -42,7 +43,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function PoDetailModal({ po, onClose }: Props) {
+export function PoDetailModal({ po, onClose, canViewCost = true }: Props) {
   // Serial numbers only need fetching once a PO is closed — that's the point
   // at which receiving is done and there's a final list to show, per line,
   // instead of a partial/in-progress one.
@@ -76,7 +77,8 @@ export function PoDetailModal({ po, onClose }: Props) {
   if (!po) return null
 
   const statusCfg = STATUS_CONFIG[po.status] ?? STATUS_CONFIG.draft
-  const subtotal = po.subtotalAmount ?? po.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0)
+  const subtotal =
+    po.subtotalAmount ?? po.lines.reduce((s, l) => s + l.quantity * (l.unitPrice ?? 0), 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -180,12 +182,16 @@ export function PoDetailModal({ po, onClose }: Props) {
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Received
                     </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Unit Price
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Line Total
-                    </th>
+                    {canViewCost && (
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Unit Price
+                      </th>
+                    )}
+                    {canViewCost && (
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Line Total
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -204,7 +210,7 @@ export function PoDetailModal({ po, onClose }: Props) {
                         {line.description && (
                           <p className="mt-0.5 text-xs text-zinc-500">{line.description}</p>
                         )}
-                        {line.srp != null && (
+                        {canViewCost && line.srp != null && (
                           <p className="mt-0.5 text-xs text-zinc-500">
                             SRP {fmtPHP(Number(line.srp))}
                             {line.discounts && line.discounts.length > 0 && (
@@ -254,12 +260,16 @@ export function PoDetailModal({ po, onClose }: Props) {
                           {line.receivedQuantity ?? 0}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right text-zinc-700">
-                        {fmtPHP(line.unitPrice)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium text-zinc-900">
-                        {fmtPHP(line.lineTotal ?? line.quantity * line.unitPrice)}
-                      </td>
+                      {canViewCost && (
+                        <td className="px-3 py-2 text-right text-zinc-700">
+                          {fmtPHP(line.unitPrice ?? 0)}
+                        </td>
+                      )}
+                      {canViewCost && (
+                        <td className="px-3 py-2 text-right font-medium text-zinc-900">
+                          {fmtPHP(line.lineTotal ?? line.quantity * (line.unitPrice ?? 0))}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

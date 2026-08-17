@@ -58,20 +58,23 @@ export const IssueStockFormSchema = z.object({
 })
 export type IssueStockFormValues = z.infer<typeof IssueStockFormSchema>
 
+// unitCost/cogsAmount/totalCostValue/avgUnitCost/grandTotal are nullable —
+// Scenario 05 followup, stripped server-side for a caller without
+// inventory:cost:view.
 export const IssueStockResultSchema = z.object({
   ledgerId: z.string(),
   costingMethod: CostingMethodSchema,
   quantityIssued: z.number(),
-  unitCost: z.number(),
-  cogsAmount: z.number(),
+  unitCost: z.number().nullable(),
+  cogsAmount: z.number().nullable(),
 })
 export type IssueStockResult = z.infer<typeof IssueStockResultSchema>
 
 // ─── COGS preview ─────────────────────────────────────────────────────────────
 
 export const CogsPreviewSchema = z.object({
-  cogsAmount: z.number(),
-  unitCost: z.number(),
+  cogsAmount: z.number().nullable(),
+  unitCost: z.number().nullable(),
   costingMethod: CostingMethodSchema,
   quantity: z.number(),
   layers: z
@@ -79,7 +82,7 @@ export const CogsPreviewSchema = z.object({
       z.object({
         layerId: z.string(),
         qty: z.number(),
-        unitCost: z.number(),
+        unitCost: z.number().nullable(),
       })
     )
     .optional(),
@@ -100,14 +103,14 @@ export const ValuationItemSchema = z.object({
   // rather than the warehouse's own "{branch} Warehouse" name.
   warehouseBranchName: z.string().nullable().optional(),
   onHandQty: z.number(),
-  totalCostValue: z.number(),
-  avgUnitCost: z.number(),
+  totalCostValue: z.number().nullable(),
+  avgUnitCost: z.number().nullable(),
 })
 export type ValuationItem = z.infer<typeof ValuationItemSchema>
 
 export const ValuationResponseSchema = z.object({
   items: z.array(ValuationItemSchema),
-  grandTotal: z.number(),
+  grandTotal: z.number().nullable(),
   note: z.string().optional(),
 })
 export type ValuationResponse = z.infer<typeof ValuationResponseSchema>

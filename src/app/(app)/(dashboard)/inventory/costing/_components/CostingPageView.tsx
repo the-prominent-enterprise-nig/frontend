@@ -13,7 +13,13 @@ type Tab = 'valuation' | 'issue'
 
 export default function CostingPageView({ session }: { session: SessionUser }) {
   const canConfigure = hasPermission(session, INVENTORY_PERMISSIONS.COSTING_CONFIGURE)
+  // Scenario 05 followup — the valuation report is almost entirely cost
+  // data (totalCostValue/avgUnitCost/grandTotal), so it's gated behind
+  // cost-view in addition to the existing costing:read permission, reusing
+  // the same "permission notice" pattern below rather than showing a
+  // near-empty table.
   const canRead = hasPermission(session, INVENTORY_PERMISSIONS.COSTING_READ)
+  const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.COST_VIEW)
   const canIssue = hasPermission(session, INVENTORY_PERMISSIONS.STOCKS_CREATE)
 
   const [tab, setTab] = useState<Tab>('valuation')
@@ -93,7 +99,7 @@ export default function CostingPageView({ session }: { session: SessionUser }) {
         )}
 
         {/* Valuation tab */}
-        {(tab === 'valuation' || tabs.length === 1) && canRead && (
+        {(tab === 'valuation' || tabs.length === 1) && canRead && canViewCost && (
           <ValuationTable
             valuation={valuation}
             isLoading={isLoadingValuation}
@@ -106,7 +112,7 @@ export default function CostingPageView({ session }: { session: SessionUser }) {
         )}
 
         {/* Permission notice */}
-        {!canRead && (
+        {(!canRead || !canViewCost) && (
           <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center">
             <p className="text-sm text-zinc-500">
               You don&apos;t have permission to view costing data. Contact a Finance Manager.

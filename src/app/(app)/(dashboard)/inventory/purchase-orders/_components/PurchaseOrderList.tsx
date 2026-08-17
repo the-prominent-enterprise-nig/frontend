@@ -28,6 +28,11 @@ import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-documen
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 import { printPurchaseOrderDocument } from '@/src/libs/print/printInventoryDocument'
 
+// ─── Section tabs ─────────────────────────────────────────────────────────────
+
+const SECTION_TABS = [{ label: 'Purchase Orders', value: 'orders' }] as const
+type Section = (typeof SECTION_TABS)[number]['value']
+
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<
@@ -719,7 +724,11 @@ export function PurchaseOrderList({
         isCancelling={isCancelling}
       />
 
-      <PoDetailModal po={detailsTarget} onClose={() => setDetailsTarget(null)} />
+      <PoDetailModal
+        po={detailsTarget}
+        onClose={() => setDetailsTarget(null)}
+        canViewCost={canViewCost}
+      />
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
 

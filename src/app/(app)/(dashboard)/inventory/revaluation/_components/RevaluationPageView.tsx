@@ -9,7 +9,7 @@ import { useRevaluation } from '../_hooks/useRevaluation'
 import { REASON_CODE_LABELS, REASON_CODES } from '@/src/schema/inventory/revaluation'
 import type { CreateRevaluationFormValues } from '@/src/schema/inventory/revaluation'
 
-function formatCurrency(value?: number): string {
+function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
   return value.toLocaleString('en-US', {
     style: 'currency',
@@ -43,7 +43,13 @@ const INITIAL_FORM: CreateRevaluationFormValues = {
 }
 
 export default function RevaluationPageView({ session }: { session: SessionUser }) {
-  const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.REVALUATION_CREATE)
+  // Scenario 05 followup — newCost is a required field on this action, so
+  // creating a revaluation without cost-view is blocked outright (same
+  // pattern as Item Master create); the history table's Old/New Cost and
+  // Change columns are stripped rather than the whole table, since Date/
+  // Item/Warehouse/Reason/Notes stay genuinely useful without cost.
+  const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.COST_VIEW)
+  const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.REVALUATION_CREATE) && canViewCost
 
   const {
     records,
@@ -159,15 +165,21 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
                       Warehouse
                     </th>
-                    <th className="hidden px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
-                      Old Cost
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      New Cost
-                    </th>
-                    <th className="hidden px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 lg:table-cell">
-                      Change
-                    </th>
+                    {canViewCost && (
+                      <th className="hidden px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
+                        Old Cost
+                      </th>
+                    )}
+                    {canViewCost && (
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        New Cost
+                      </th>
+                    )}
+                    {canViewCost && (
+                      <th className="hidden px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 lg:table-cell">
+                        Change
+                      </th>
+                    )}
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 lg:table-cell">
                       Reason
                     </th>
@@ -178,7 +190,10 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {records.map((record) => {
-                    const change = record.oldCost != null ? record.newCost - record.oldCost : null
+                    const change =
+                      record.oldCost != null && record.newCost != null
+                        ? record.newCost - record.oldCost
+                        : null
                     const changePositive = change != null && change >= 0
                     const notesPreview =
                       record.notes.length > 40 ? record.notes.slice(0, 40) + '…' : record.notes
@@ -199,24 +214,30 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                         <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
                           {record.warehouse?.name ?? '—'}
                         </td>
-                        <td className="hidden px-4 py-3 text-right text-zinc-600 md:table-cell">
-                          {formatCurrency(record.oldCost)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium text-zinc-900">
-                          {formatCurrency(record.newCost)}
-                        </td>
-                        <td className="hidden px-4 py-3 text-right lg:table-cell">
-                          {change != null ? (
-                            <span
-                              className={`font-medium ${changePositive ? 'text-green-600' : 'text-red-600'}`}
-                            >
-                              {changePositive ? '+' : ''}
-                              {formatCurrency(change)}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-400">—</span>
-                          )}
-                        </td>
+                        {canViewCost && (
+                          <td className="hidden px-4 py-3 text-right text-zinc-600 md:table-cell">
+                            {formatCurrency(record.oldCost)}
+                          </td>
+                        )}
+                        {canViewCost && (
+                          <td className="px-4 py-3 text-right font-medium text-zinc-900">
+                            {formatCurrency(record.newCost)}
+                          </td>
+                        )}
+                        {canViewCost && (
+                          <td className="hidden px-4 py-3 text-right lg:table-cell">
+                            {change != null ? (
+                              <span
+                                className={`font-medium ${changePositive ? 'text-green-600' : 'text-red-600'}`}
+                              >
+                                {changePositive ? '+' : ''}
+                                {formatCurrency(change)}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-400">—</span>
+                            )}
+                          </td>
+                        )}
                         <td className="hidden px-4 py-3 text-zinc-600 lg:table-cell">
                           {reasonLabel(record.reasonCode)}
                         </td>

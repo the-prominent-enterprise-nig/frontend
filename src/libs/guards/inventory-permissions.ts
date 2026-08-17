@@ -54,10 +54,13 @@ export const INVENTORY_PERMISSIONS = {
   // ── Receive (Stock Controller) ─────────────────────────────────────────────
   RECEIVE_READ: 'inventory:receive:read',
   RECEIVE_CREATE: 'inventory:receive:create',
+
   // Unit cost is sensitive pricing data — restricted to Business
-  // Owner/Accountant (Scenario 05 followup), separate from the base
-  // receive-create permission Stock Controller/Branch Manager also hold.
-  RECEIVE_COST_VIEW: 'inventory:receive:cost-view',
+  // Owner/Accountant (Scenario 05 followup). Originally Receiving-only
+  // (was inventory:receive:cost-view); renamed to a neutral key since it
+  // now also gates Item Master, Costing/Valuation, Bundles, and Purchase
+  // Order screens.
+  COST_VIEW: 'inventory:cost:view',
 
   // ── Stock Adjustment approval chain (Scenario 19) ───────────────────────────
   STOCK_ADJUSTMENT_CONFIRM: 'inventory:stock-adjustment:confirm',
@@ -216,7 +219,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:reports:turnover': 'View stock turnover and aging reports',
   'inventory:receive:read': 'View goods receiving records',
   'inventory:receive:create': 'Record goods received against a PO',
-  'inventory:receive:cost-view': 'View and enter unit cost on goods receipts',
+  'inventory:cost:view':
+    'View unit cost across Receiving, Item Master, Costing/Valuation, Bundles, and Purchase Orders',
   'inventory:stock-count:read': 'View stock count sheets',
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',

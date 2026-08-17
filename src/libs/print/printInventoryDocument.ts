@@ -87,20 +87,32 @@ export function printPurchaseOrderDocument(
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Per-line unitPrice/lineTotal come back null from the backend for a
+  // caller without inventory:cost:view (purchase-order.service.ts's
+  // stripLineCost) — drop the Unit price/Total columns from the printed
+  // table entirely rather than showing a misleading ₱0.00 (the header
+  // Total line stays, same "keep the total, hide the breakdown" rule as
+  // PoDetailModal).
+  const canViewCost = lines.some((l) => l.unitPrice != null)
+
   const rows = lines
     .map((l, i) => {
       const item = l.item as { name?: string } | undefined
       const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const name = l.isFreebie ? `${item?.name ?? '—'} (Freebie)` : (item?.name ?? '—')
+      const costCells = canViewCost
+        ? (() => {
+            const unitPrice = Number(l.unitPrice ?? 0)
+            const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
+            return `<td class="right">${fmt(unitPrice)}</td><td class="right">${fmt(lineTotal)}</td>`
+          })()
+        : ''
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(name)}</td>
         <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
-        <td class="right">${fmt(unitPrice)}</td>
-        <td class="right">${fmt(lineTotal)}</td>
+        ${costCells}
       </tr>`
     })
     .join('')
@@ -208,8 +220,7 @@ export function printPurchaseOrderDocument(
           <th>Item</th>
           <th>Description</th>
           <th class="right">Qty</th>
-          <th class="right">Unit price</th>
-          <th class="right">Total</th>
+          ${canViewCost ? '<th class="right">Unit price</th><th class="right">Total</th>' : ''}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
