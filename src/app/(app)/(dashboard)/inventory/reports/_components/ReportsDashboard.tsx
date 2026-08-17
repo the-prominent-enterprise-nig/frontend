@@ -131,10 +131,10 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
-            <option value="">All Warehouses</option>
+            <option value="">All Branches</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {wh.branch?.name ?? wh.name}
               </option>
             ))}
           </select>

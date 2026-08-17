@@ -6,7 +6,7 @@ const ACTIVITIES = [
     icon: ShoppingCart,
     color: 'text-blue-500 bg-blue-50',
     label: 'Sale completed — Invoice #1048',
-    sub: 'Cebu Branch · ₱8,500 · Cash',
+    sub: 'Binalbagan · ₱8,500 · Cash',
     time: '5m ago',
   },
   {

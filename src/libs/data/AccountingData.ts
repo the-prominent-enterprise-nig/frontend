@@ -317,6 +317,10 @@ export interface Vendor {
   taxRate?: string | null
   businessType?: string | null
   visibility?: boolean
+  /** Default AP liability account for this vendor's bills (e.g. Trade vs. Non-Trade Suppliers). */
+  defaultPayableAccountId?: string | null
+  /** Default expense account for this vendor's bills, overridden per-bill when set on the bill itself. */
+  defaultExpenseAccountId?: string | null
   createdAt?: string
   updatedAt?: string
 }

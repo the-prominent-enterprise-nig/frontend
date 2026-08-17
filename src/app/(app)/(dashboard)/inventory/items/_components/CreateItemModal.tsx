@@ -12,7 +12,13 @@ import {
   UomOption,
 } from '@/src/schema/inventory/items'
 import type { ItemTagLabel, ClassificationOption } from '@/src/schema/inventory/items'
-import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
+import {
+  ALL_TAGS,
+  DIMENSION_FIELDS,
+  NumericInput,
+  FormSection,
+  AccountField,
+} from './item-form-shared'
 import { formatClassificationLabel } from '@/src/libs/format/text'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -751,9 +757,9 @@ export default function CreateItemModal({
               from a legacy stock sheet. Leave blank to create the item with no stock.
             </div>
 
-            {/* Warehouse */}
+            {/* Branch */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
               <Controller
                 name="initialWarehouseId"
                 control={control}
@@ -766,7 +772,7 @@ export default function CreateItemModal({
                     <option value="">— None —</option>
                     {warehouses.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name}
+                        {w.branch?.name ?? w.name}
                       </option>
                     ))}
                   </select>
@@ -1043,49 +1049,6 @@ function PendingThumbnail({
       >
         <X className="h-3 w-3" />
       </button>
-    </div>
-  )
-}
-
-// ACC-21: dropdown of accounts filtered by type, controlled by react-hook-form
-function AccountField({
-  label,
-  name,
-  control,
-  accounts,
-  filter,
-}: {
-  label: string
-  name: 'revenueAccountId' | 'cogsAccountId' | 'inventoryAccountId'
-  control: any
-  accounts: Account[]
-  filter?: string
-}) {
-  const filtered = filter
-    ? accounts.filter((a) => String((a as any).type).toUpperCase() === filter)
-    : accounts
-  return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-zinc-700">{label}</label>
-      <Controller
-        name={name}
-        control={control}
-        render={({ field }) => (
-          <select
-            {...field}
-            value={field.value != null ? String(field.value) : ''}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-          >
-            <option value="">— Use default mapping —</option>
-            {filtered.map((a) => (
-              <option key={a.id} value={a.id}>
-                {(a as any).number ?? a.code} — {a.name}
-              </option>
-            ))}
-          </select>
-        )}
-      />
-      \{' '}
     </div>
   )
 }

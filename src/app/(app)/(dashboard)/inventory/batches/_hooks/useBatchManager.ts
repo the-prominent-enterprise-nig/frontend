@@ -38,6 +38,10 @@ export function useBatchManager() {
     queryFn: () => getBatches(queryParams),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
+    // Scenario 26 — same gap found live across every maker-checker list
+    // this scenario touched: a quality hold placed/released in a different
+    // browser tab/session never appears here without a manual refresh.
+    refetchInterval: 10 * 1000,
   })
 
   const expiringQuery = useQuery({

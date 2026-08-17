@@ -16,6 +16,7 @@ import {
   FilePlus,
   History,
   AlertTriangle,
+  BellRing,
   KeyRound,
   X,
   Search,
@@ -67,6 +68,7 @@ export default function ARInvoicesList({
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
   const [loading, setLoading] = useState(true)
+  const [sweeping, setSweeping] = useState(false)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
   const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<ARInvoice | null>(null)
@@ -151,6 +153,25 @@ export default function ARInvoicesList({
     load()
   }
 
+  /** Scenario 26 Part 6 — no @Cron exists anywhere in the backend, so this
+   * manually-triggered sweep is the only way to fire AR-overdue
+   * notifications outside an external scheduler hitting the same endpoint. */
+  const sweepOverdue = async () => {
+    setSweeping(true)
+    const res = await ARInvoices.sweepOverdueNotifications()
+    setSweeping(false)
+    if (!res.success) {
+      alert(res.error || 'Failed to check overdue invoices.')
+      return
+    }
+    const notified = res.data?.notified ?? 0
+    alert(
+      notified > 0
+        ? `${notified} overdue invoice${notified === 1 ? '' : 's'} notified.`
+        : 'No new overdue invoices to notify.'
+    )
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -164,6 +185,15 @@ export default function ARInvoicesList({
             className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+          <button
+            onClick={sweepOverdue}
+            disabled={sweeping}
+            title="Notify Business Owner about any newly-overdue invoices"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-50"
+          >
+            <BellRing className={`w-4 h-4 ${sweeping ? 'animate-pulse' : ''}`} />
+            {sweeping ? 'Checking…' : 'Check Overdue'}
           </button>
           <button
             onClick={() => setCreating(true)}
@@ -1516,6 +1546,8 @@ function PaymentDialog({
     // field out for a legitimately-zero outstanding balance (0 is falsy).
     amount: String(outstanding),
     withholdingAmount: '0',
+    withholdingCertificateNo: '',
+    withholdingCertificateStatus: '' as '' | 'pending' | 'received',
     paymentDate: new Date().toISOString().slice(0, 10),
     method: 'CASH' as PaymentMethod,
     reference: '',
@@ -1538,6 +1570,8 @@ function PaymentDialog({
       ...form,
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
+      withholdingCertificateNo: form.withholdingCertificateNo || undefined,
+      withholdingCertificateStatus: form.withholdingCertificateStatus || undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -1621,6 +1655,34 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
+          {Number(form.withholdingAmount) > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="2307 Certificate No.">
+                <input
+                  type="text"
+                  value={form.withholdingCertificateNo}
+                  onChange={(e) => setForm({ ...form, withholdingCertificateNo: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              <Field label="Certificate Status">
+                <select
+                  value={form.withholdingCertificateStatus}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      withholdingCertificateStatus: e.target.value as '' | 'pending' | 'received',
+                    })
+                  }
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  <option value="">— Not tracked —</option>
+                  <option value="pending">Pending</option>
+                  <option value="received">Received</option>
+                </select>
+              </Field>
+            </div>
+          )}
           <div className="text-xs text-gray-500">
             Total applied to AR: <span className="font-semibold">{fmtMoney(totalApplied)}</span>
           </div>

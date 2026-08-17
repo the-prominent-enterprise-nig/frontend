@@ -1757,7 +1757,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3) */
+    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3). Readable from either the POS Collections screen or a CRM customer record. */
     get: operations['PosCustomersController_getInstallmentSchedules']
     put?: never
     post?: never
@@ -6246,6 +6246,58 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/credit-memos': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List credit memos (filter by status/customer/invoice) */
+    get: operations['CreditMemosController_findAll']
+    put?: never
+    /** Issue a credit memo against an open invoice — posts the GL contra entry and reduces the AR balance */
+    post: operations['CreditMemosController_issue']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a credit memo by id */
+    get: operations['CreditMemosController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/credit-memos/{id}/void': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Void a credit memo — reverses its journal entry and restores the invoice balance */
+    post: operations['CreditMemosController_void']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/suppliers': {
     parameters: {
       query?: never
@@ -6897,6 +6949,22 @@ export interface paths {
     patch: operations['ARInvoicesController_update']
     trace?: never
   }
+  '/ar-invoices/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ARInvoicesController_getDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ar-invoices/{id}/send': {
     parameters: {
       query?: never
@@ -6945,33 +7013,33 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/credit-memos': {
+  '/debit-memos': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** List credit memos (filter by status/customer/invoice) */
-    get: operations['CreditMemosController_findAll']
+    /** List debit memos (filter by status/customer/invoice) */
+    get: operations['DebitMemosController_findAll']
     put?: never
-    /** Issue a credit memo against an open invoice — posts the GL contra entry and reduces the AR balance */
-    post: operations['CreditMemosController_issue']
+    /** Issue a debit memo against an invoice — posts the GL entry and increases the AR balance */
+    post: operations['DebitMemosController_issue']
     delete?: never
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/credit-memos/{id}': {
+  '/debit-memos/{id}': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** Get a credit memo by id */
-    get: operations['CreditMemosController_findOne']
+    /** Get a debit memo by id */
+    get: operations['DebitMemosController_findOne']
     put?: never
     post?: never
     delete?: never
@@ -6980,7 +7048,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/credit-memos/{id}/void': {
+  '/debit-memos/{id}/void': {
     parameters: {
       query?: never
       header?: never
@@ -6989,8 +7057,8 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Void a credit memo — reverses its journal entry and restores the invoice balance */
-    post: operations['CreditMemosController_void']
+    /** Void a debit memo — reverses its journal entry and restores the invoice balance */
+    post: operations['DebitMemosController_void']
     delete?: never
     options?: never
     head?: never
@@ -9633,6 +9701,18 @@ export interface components {
       notes?: string
       serialNumberId?: string
     }
+    CreateServiceDraftServiceTypeDto: {
+      /** @enum {string} */
+      category:
+        | 'general_cleaning'
+        | 'replacement_minor_electrical_part'
+        | 'replacement_major_electrical_parts'
+        | 'repair_leakage_recharging_reprocessing'
+        | 'replacement_motor_compressor_reprocessing_recharging'
+        | 'relocation_split_type_aircon'
+      subType: string
+      quotedAmount: number
+    }
     CreateServiceDraftDto: {
       branchId?: string
       title: string
@@ -9640,6 +9720,7 @@ export interface components {
       posTransactionId?: string
       notes?: string
       lines: components['schemas']['CreateServiceDraftLineDto'][]
+      serviceTypes?: components['schemas']['CreateServiceDraftServiceTypeDto'][]
     }
     UpdateServiceDraftDto: {
       branchId?: string
@@ -9648,6 +9729,7 @@ export interface components {
       posTransactionId?: string
       notes?: string
       lines: components['schemas']['CreateServiceDraftLineDto'][]
+      serviceTypes?: components['schemas']['CreateServiceDraftServiceTypeDto'][]
     }
     StartInstallDto: {
       technicianName: string
@@ -10171,6 +10253,8 @@ export interface components {
       downPayment?: number
       /** @description FinancingTerm id to preview the schedule against */
       financingTermId: string
+      /** @description Scenario 15, Part 5 — resolved PriceListItem for this line, if any. When set and a curated PriceListItemTerm exists for this term, the preview uses the real rate-card monthlyInstallment/ppd instead of computing it from the FinancingTerm's factorRate. */
+      priceListItemId?: string
     }
     UpdateFinancingTermDto: {
       /**
@@ -10833,13 +10917,8 @@ export interface components {
        * @example 2027-06-01
        */
       expiryDate?: string
-      /** @description Serial numbers for serial-tracked items */
+      /** @description Supplier-provided serial numbers for serial-tracked items — required, one entry per unit (count must match quantityReceived). */
       serialNumbers?: string[]
-      /**
-       * @description Auto-generate serial numbers and barcodes for each unit received. Count is determined by quantityReceived. Ignored if serialNumbers is provided.
-       * @default false
-       */
-      autoGenerateSerials: boolean
       /**
        * @description Quantity received. Must be positive.
        * @example 100
@@ -11449,6 +11528,15 @@ export interface components {
        * @example 150
        */
       floorPrice?: number
+      /**
+       * @description Scenario 15, Part 5 — one down payment value per SKU+price-use-type (not per financing term).
+       * @example 2000
+       */
+      downPayment?: number
+      /** @description Scenario 15, Part 5 — mirrors the real price list's "CM" column (sales commission). Captured only, not yet wired into commission calculation. */
+      cmAmount?: number
+      /** @description Scenario 15, Part 5 — mirrors the real price list's "CREDIT" column. Meaning not fully resolved; captured only. */
+      creditAmount?: number
     }
     UpsertPriceListItemsDto: {
       items: components['schemas']['UpsertPriceListItemDto'][]
@@ -11991,6 +12079,8 @@ export interface components {
       lastOrNumber?: string
       lastOrDate?: string
       lastOrAmount?: number
+      /** @description Scenario 15, Part 5 — forces this exact PPD instead of the computed 7.5%-of-MI formula. Set by TransactionsService.createLinkedInstallmentAccount when the POS sale resolved a curated PriceListItemTerm for this SKU + term; NIG's real rate card doesn't always agree with the formula. */
+      ppdOverride?: number
     }
     InstallmentAccountListItemDto: {
       id: string
@@ -12052,6 +12142,8 @@ export interface components {
       lastOrNumber?: string
       lastOrDate?: string
       lastOrAmount?: number
+      /** @description Scenario 15, Part 5 — forces this exact PPD instead of the computed 7.5%-of-MI formula. Set by TransactionsService.createLinkedInstallmentAccount when the POS sale resolved a curated PriceListItemTerm for this SKU + term; NIG's real rate card doesn't always agree with the formula. */
+      ppdOverride?: number
       /** @enum {string} */
       status?: 'active' | 'closed' | 'early_closed' | 'written_off'
       /** @enum {string} */
@@ -12094,6 +12186,8 @@ export interface components {
       /** @example 2026-08-10T00:00:00.000Z */
       paidAt: string
       orNumber?: string
+      /** @description Rebate (Prompt Payment Discount) applied at collection time, capped server-side at this account's ppd */
+      rebateAmount?: number
     }
     RequestGraduationDto: {
       notes?: string
@@ -12367,6 +12461,40 @@ export interface components {
       duplicateId: string
       /** @description Reviewer-chosen field values to apply to the surviving record (e.g. picking the duplicate's phone number over the survivor's). Only the fields provided are changed — everything else keeps the survivor's current value. */
       fieldOverrides?: components['schemas']['UpdateCustomerDto']
+    }
+    CreateCreditMemoLineDto: {
+      /** @description Item being credited */
+      itemId: string
+      /** @example 1 */
+      quantity: number
+      /** @example 250 */
+      unitPrice: number
+      /** @description The specific physical unit returned, if serialized */
+      serialNumberId?: string
+      /**
+       * @description Amount deducted from this line (e.g. restocking fee)
+       * @example 0
+       */
+      deductionAmount?: number
+    }
+    CreateCreditMemoDto: {
+      /** @description AR invoice the credit memo is applied to */
+      arInvoiceId: string
+      /**
+       * @description Drives which JE gets posted
+       * @enum {string}
+       */
+      type: 'sales_return' | 'billing_adjustment' | 'goodwill'
+      /** @description Gross Credit − sum(deductionAmount) = Total Credit, computed from these lines */
+      lines: components['schemas']['CreateCreditMemoLineDto'][]
+      /** @example Damaged goods returned */
+      reason?: string
+      /** @description Defaults to today when omitted */
+      memoDate?: string
+      /** @description Auto-generated when omitted */
+      memoNumber?: string
+      /** @description Set when this memo is auto-created from an approved POS ReturnRefundRequest — traceability only */
+      sourceReturnRequestId?: string
     }
     SupplierBankAccountInputDto: {
       /** @example BPI */
@@ -12845,16 +12973,35 @@ export interface components {
       branchId?: string
       /** @description Collector who took this payment, if any (POS Collections) — omitted for a walk-in counter payment */
       collectorId?: string
+      /** @description Rebate (Prompt Payment Discount) applied at collection time, capped server-side at the linked InstallmentAccount.ppd */
+      rebateAmount?: number
     }
-    CreateCreditMemoDto: {
-      /** @description AR invoice the credit memo is applied to */
+    CreateDebitMemoLineDto: {
+      /** @description Item being debited (e.g. the replacement unit) */
+      itemId: string
+      /** @example 1 */
+      quantity: number
+      /** @example 250 */
+      unitPrice: number
+      /** @description The specific physical unit, if serialized (e.g. the replacement serial) */
+      serialNumberId?: string
+      /**
+       * @description Amount added on top of this line (e.g. a rush-processing fee)
+       * @example 0
+       */
+      additionAmount?: number
+    }
+    CreateDebitMemoDto: {
+      /** @description AR invoice the debit memo is applied to */
       arInvoiceId: string
       /**
-       * @description Credit amount (must not exceed the invoice outstanding balance)
-       * @example 500
+       * @description Drives which JE gets posted
+       * @enum {string}
        */
-      amount: number
-      /** @example Damaged goods returned */
+      type: 'unit_replacement' | 'billing_adjustment'
+      /** @description Gross Debit + sum(additionAmount) = Total Debit, computed from these lines */
+      lines: components['schemas']['CreateDebitMemoLineDto'][]
+      /** @example Replacement unit — higher-spec model */
       reason?: string
       /** @description Defaults to today when omitted */
       memoDate?: string
@@ -19009,6 +19156,10 @@ export interface operations {
         page?: number
         /** @description Items per page */
         limit?: number
+        /** @description List warehouses across every branch instead of just the caller's own — only honored for callers holding inventory:transfers:create (e.g. the stock-transfer request picker, which inherently needs to see other branches to request stock from). Ignored otherwise. */
+        allBranches?: boolean
+        /** @description Scenario 27 — only the 2 real physical warehouses (branchId: null), excluding the 41 per-branch stock locations. Used by the Warehouses admin page, which manages only the real warehouse entities. */
+        standaloneOnly?: boolean
       }
       header?: never
       path?: never
@@ -24207,6 +24358,87 @@ export interface operations {
       }
     }
   }
+  CreditMemosController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ISSUED' | 'VOID'
+        customerId?: string
+        arInvoiceId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_issue: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCreditMemoDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CreditMemosController_void: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   SupplierController_findAll: {
     parameters: {
       query?: {
@@ -25591,6 +25823,25 @@ export interface operations {
       }
     }
   }
+  ARInvoicesController_getDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ARInvoicesController_send: {
     parameters: {
       query?: never
@@ -25653,7 +25904,7 @@ export interface operations {
       }
     }
   }
-  CreditMemosController_findAll: {
+  DebitMemosController_findAll: {
     parameters: {
       query?: {
         search?: string
@@ -25675,7 +25926,7 @@ export interface operations {
       }
     }
   }
-  CreditMemosController_issue: {
+  DebitMemosController_issue: {
     parameters: {
       query?: never
       header?: never
@@ -25684,7 +25935,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['CreateCreditMemoDto']
+        'application/json': components['schemas']['CreateDebitMemoDto']
       }
     }
     responses: {
@@ -25696,7 +25947,7 @@ export interface operations {
       }
     }
   }
-  CreditMemosController_findOne: {
+  DebitMemosController_findOne: {
     parameters: {
       query?: never
       header?: never
@@ -25715,7 +25966,7 @@ export interface operations {
       }
     }
   }
-  CreditMemosController_void: {
+  DebitMemosController_void: {
     parameters: {
       query?: never
       header?: never

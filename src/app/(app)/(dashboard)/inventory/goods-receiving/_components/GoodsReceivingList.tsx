@@ -63,6 +63,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
     page,
     setPage,
     warehouseOptions,
+    destinationWarehouseOptions,
     itemOptions,
     receiveStock,
     isReceiving,
@@ -166,10 +167,10 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                 onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
                 className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
               >
-                <option value="">All Warehouses</option>
+                <option value="">All Branches</option>
                 {warehouseOptions.map((wh) => (
                   <option key={wh.id} value={wh.id}>
-                    {wh.code} — {wh.name}
+                    {wh.branch?.name ?? wh.name}
                   </option>
                 ))}
               </select>
@@ -388,7 +389,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                             Qty
                           </th>
                           <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                            Warehouse
+                            Branch
                           </th>
                           <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                             Date
@@ -409,7 +410,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                                 {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
                               </td>
                               <td className="px-4 py-2.5 text-zinc-500 hidden sm:table-cell">
-                                {entry.warehouse?.code ?? '—'}
+                                {entry.warehouse?.branch?.name ?? entry.warehouse?.name ?? '—'}
                               </td>
                               <td className="px-4 py-2.5 text-zinc-500 hidden md:table-cell">
                                 {date
@@ -447,7 +448,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
         onClose={() => setIsReceiveOpen(false)}
         onSubmit={receiveStock}
         isSubmitting={isReceiving}
-        warehouses={warehouseOptions}
+        warehouses={destinationWarehouseOptions}
         items={itemOptions}
         canViewCost={canViewCost}
       />

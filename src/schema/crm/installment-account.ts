@@ -65,6 +65,7 @@ export const recordPaymentSchema = z.object({
   dueDate: z.string().min(1, 'Due date is required'),
   paidAt: z.string().min(1, 'Paid date is required'),
   orNumber: z.string().max(50).optional().or(z.literal('')),
+  rebateAmount: z.coerce.number().min(0, 'Rebate must be 0 or more').optional(),
 })
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>

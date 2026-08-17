@@ -11,18 +11,25 @@ export default function RecordPaymentModal({
   onRecorded,
   accountId,
   suggestedAmount,
+  suggestedRebate,
 }: {
   open: boolean
   onClose: () => void
   onRecorded?: () => void
   accountId: string
   suggestedAmount: number
+  /** This account's ppd (Prompt Payment Discount) — the cap for the rebate field below. */
+  suggestedRebate?: number
 }) {
   const [form, setForm] = useState<RecordPaymentInput>({
-    amount: suggestedAmount,
+    // Nets out the suggested rebate so accepting both defaults as-is
+    // settles the due exactly, rather than over-crediting the balance
+    // (amount + rebate > what's actually due this month).
+    amount: Math.max(Math.round((suggestedAmount - (suggestedRebate ?? 0)) * 100) / 100, 0),
     dueDate: new Date().toISOString().slice(0, 10),
     paidAt: new Date().toISOString().slice(0, 10),
     orNumber: '',
+    rebateAmount: suggestedRebate ?? 0,
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -33,6 +40,8 @@ export default function RecordPaymentModal({
 
   const setField = <K extends keyof RecordPaymentInput>(key: K, value: RecordPaymentInput[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
+
+  const rebateExceedsCap = (form.rebateAmount ?? 0) > (suggestedRebate ?? 0) + 0.01
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -179,6 +188,34 @@ export default function RecordPaymentModal({
               />
             </div>
 
+            <div>
+              <label
+                htmlFor="payment-rebateAmount"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                Rebate (Prompt Payment Discount)
+              </label>
+              <input
+                id="payment-rebateAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.rebateAmount ?? 0}
+                onChange={(e) => setField('rebateAmount', Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-[12px] text-gray-400">
+                {suggestedRebate
+                  ? `Up to ₱${suggestedRebate.toLocaleString()} for this account.`
+                  : 'No rebate available for this account.'}
+              </p>
+              {rebateExceedsCap && (
+                <p className="mt-1 text-[12px] font-medium text-red-600">
+                  Rebate can&apos;t exceed ₱{(suggestedRebate ?? 0).toLocaleString()}.
+                </p>
+              )}
+            </div>
+
             {serverError && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{serverError}</p>
             )}
@@ -193,7 +230,7 @@ export default function RecordPaymentModal({
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || rebateExceedsCap}
                 className="rounded-lg bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
               >
                 {submitting ? 'Recording…' : 'Record payment'}

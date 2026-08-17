@@ -20,6 +20,9 @@ const ReorderWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
+  // Each branch has exactly one warehouse — the UI displays this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 export const ReorderRuleSchema = z.object({

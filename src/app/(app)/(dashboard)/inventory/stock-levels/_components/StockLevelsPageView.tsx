@@ -77,8 +77,12 @@ function StockLevelModal({ rule, isOpen, onClose, onSubmit, isSubmitting }: Stoc
               </span>
             </div>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="w-24 shrink-0 text-xs font-medium text-zinc-500">Warehouse</span>
-              <span className="text-zinc-700">{rule.warehouse?.name ?? 'All warehouses'}</span>
+              <span className="w-24 shrink-0 text-xs font-medium text-zinc-500">Branch</span>
+              <span className="text-zinc-700">
+                {rule.warehouse
+                  ? (rule.warehouse.branch?.name ?? rule.warehouse.name)
+                  : 'All branches'}
+              </span>
             </div>
           </div>
 
@@ -231,7 +235,7 @@ export default function StockLevelsPageView({ session }: { session: SessionUser 
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Level Boundaries</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Configure minimum, safety, and maximum stock level boundaries per item and warehouse.
+              Configure minimum, safety, and maximum stock level boundaries per item and branch.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -287,7 +291,7 @@ export default function StockLevelsPageView({ session }: { session: SessionUser 
                       Item
                     </th>
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 sm:table-cell">
-                      Warehouse
+                      Branch
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Min Stock
@@ -316,7 +320,11 @@ export default function StockLevelsPageView({ session }: { session: SessionUser 
                         {rule.item?.sku && <p className="text-xs text-zinc-400">{rule.item.sku}</p>}
                       </td>
                       <td className="hidden px-4 py-3 text-zinc-600 sm:table-cell">
-                        {rule.warehouse?.name ?? <span className="text-zinc-400 italic">All</span>}
+                        {rule.warehouse ? (
+                          (rule.warehouse.branch?.name ?? rule.warehouse.name)
+                        ) : (
+                          <span className="text-zinc-400 italic">All</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
                         {rule.minStockLevel != null ? (

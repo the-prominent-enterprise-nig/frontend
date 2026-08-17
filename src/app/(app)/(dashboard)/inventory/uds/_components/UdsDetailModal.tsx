@@ -94,8 +94,8 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider }:
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <InfoRow
-              label="Warehouse"
-              value={uds.warehouse ? `${uds.warehouse.code} — ${uds.warehouse.name}` : '—'}
+              label="Branch"
+              value={uds.warehouse ? (uds.warehouse.branch?.name ?? uds.warehouse.name) : '—'}
             />
             <InfoRow label="Expected Return" value={formatDate(uds.expectedReturnDate)} />
             <InfoRow label="Issued" value={formatDate(uds.createdAt)} />

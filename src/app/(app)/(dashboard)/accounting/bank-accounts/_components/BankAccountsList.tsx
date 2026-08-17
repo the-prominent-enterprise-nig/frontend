@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 export default function BankAccountsList() {
   const [items, setItems] = useState<BankAccount[]>([])
@@ -145,12 +146,26 @@ function BankForm({
     accountType: initial?.accountType ?? 'Operating',
     currencyCode: initial?.currencyCode ?? 'PHP',
     currentBalance: String(initial?.currentBalance ?? 0),
+    glAccountId: initial?.glAccountId ?? '',
   })
+  const [accounts, setAccounts] = useState<Account[]>([])
+  useEffect(() => {
+    ;(async () => {
+      const r = await getAccounts({ limit: 500 })
+      const data = r.data as any
+      setAccounts((data?.items ?? data ?? []) as Account[])
+    })()
+  }, [])
+  const glAccounts = accounts.filter((a) => String(a.type).toUpperCase() === 'ASSET')
   const [saving, setSaving] = useState(false)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
-    const payload = { ...form, currentBalance: Number(form.currentBalance) }
+    const payload = {
+      ...form,
+      currentBalance: Number(form.currentBalance),
+      glAccountId: form.glAccountId || null,
+    }
     if (initial) await BankAccounts.update(initial.id, payload)
     else await BankAccounts.create(payload)
     setSaving(false)
@@ -221,6 +236,20 @@ function BankForm({
               />
             </F>
           </div>
+          <F label="GL Account">
+            <select
+              value={form.glAccountId}
+              onChange={(e) => setForm({ ...form, glAccountId: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            >
+              <option value="">— Use default Cash/Bank mapping —</option>
+              {glAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.number ?? a.code} — {a.name}
+                </option>
+              ))}
+            </select>
+          </F>
           <div className="flex justify-end gap-2 pt-3 border-t">
             <button
               type="button"

@@ -281,11 +281,16 @@ export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] =
   { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
 ]
 
+export type WithholdingCertificateStatus = 'pending' | 'received'
+
 export interface ARPayment {
   id: string
   arInvoiceId: string
   amount: number
   withholdingAmount: number
+  withholdingCertificateNo?: string | null
+  withholdingCertificateStatus?: WithholdingCertificateStatus | null
+  rebateAmount: number
   paymentDate: string
   method?: PaymentMethod | null
   reference?: string | null
@@ -308,6 +313,9 @@ export interface RecordArPaymentInput {
   reference?: string
   notes?: string
   withholdingAmount?: number
+  withholdingCertificateNo?: string
+  withholdingCertificateStatus?: WithholdingCertificateStatus
+  rebateAmount?: number
   bankAccountId?: string
   branchId?: string
   collectorId?: string
@@ -387,6 +395,11 @@ export const ARInvoices = {
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
+  // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
+  // backend), so a real "Check overdue" button is the only way to fire it
+  // outside an external scheduler.
+  sweepOverdueNotifications: () =>
+    api.post<{ notified: number }>('/ar-invoices/sweep-overdue-notifications', {}),
 }
 
 // ============ Credit Memos ============
@@ -746,6 +759,8 @@ export interface BankAccount {
   currencyCode: string
   currentBalance: number
   isActive: boolean
+  /** GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping. */
+  glAccountId?: string | null
 }
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),

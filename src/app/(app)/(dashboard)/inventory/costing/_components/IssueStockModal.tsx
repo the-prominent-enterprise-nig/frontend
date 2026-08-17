@@ -18,6 +18,9 @@ interface WarehouseOption {
   id: string
   code: string
   name: string
+  // Each branch has exactly one warehouse — display this branch name rather
+  // than the warehouse's auto-generated "{branch} Warehouse" name.
+  branch?: { id: string; name: string } | null
 }
 
 interface Props {
@@ -135,18 +138,18 @@ export default function IssueStockModal({
             </select>
           </div>
 
-          {/* Warehouse */}
+          {/* Branch */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700">Source Warehouse</label>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">Source Branch</label>
             <select
               value={form.warehouseId}
               onChange={(e) => set('warehouseId', e.target.value)}
               className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">Select warehouse…</option>
+              <option value="">Select branch…</option>
               {warehouseOptions.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.code} — {w.name}
+                  {w.branch?.name ?? w.name}
                 </option>
               ))}
             </select>

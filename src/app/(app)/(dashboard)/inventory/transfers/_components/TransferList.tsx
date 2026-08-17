@@ -52,6 +52,15 @@ const STATUS_CONFIG: Record<
   cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-500', icon: XCircle },
 }
 
+// Each branch has exactly one warehouse, so a transfer's fromWarehouse/
+// toWarehouse is really a branch — display the branch's own name rather than
+// the warehouse's auto-generated "{branch} Warehouse" name.
+function branchLabel(
+  wh: { name: string; branch?: { name: string } | null } | null | undefined
+): string {
+  return wh?.branch?.name ?? wh?.name ?? '—'
+}
+
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   if (!lines || !lines.length) return <span className="text-zinc-300">—</span>
   const totalQty = lines.reduce((sum, l) => sum + Number(l.quantity), 0)
@@ -90,14 +99,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canManagerApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_APPROVE)
   const canManagerReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_MANAGER_REJECT)
 
-  // accept/reject/dispatch are source-branch-only and receive is
-  // destination-branch-only on the backend — a Branch Manager can hold the
-  // permission in general but still not be the right branch for a given
-  // row, so quick actions here must match what the detail modal actually
-  // allows (avoids showing a button that can only ever 403).
-  const inScope = (warehouseBranchId: string | null | undefined) =>
-    !session.branchId || warehouseBranchId === session.branchId
-
   const {
     transfers,
     pagination,
@@ -120,6 +121,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     transferDetail,
     isLoadingDetail,
     warehouseOptions,
+    branchOptions,
     createTransfer,
     isCreating,
     approveHqTransfer,
@@ -143,6 +145,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
     refetch,
   } = useTransferManager()
 
+  // accept/reject/dispatch are source-branch-only and receive is
+  // destination-branch-only on the backend — a Branch Manager can hold the
+  // permission in general but still not be the right branch for a given
+  // row, so quick actions here must match what the detail modal actually
+  // allows (avoids showing a button that can only ever 403). A real
+  // standalone warehouse (branchId: null — Scenario 27, ported from
+  // Warehouse Request) falls back to region match instead, since exact
+  // branch ownership can never be satisfied for one.
+  const currentUserRegion = branchOptions.find((b) => b.id === session.branchId)?.region ?? null
+  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+    !session.branchId ||
+    warehouseBranchId === session.branchId ||
+    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
+
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   function openDetail(transfer: TransferSummary) {
@@ -159,7 +175,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Transfers</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Move stock between warehouses with full ledger traceability.
+              Move stock between branches with full ledger traceability.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -225,7 +241,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
             <option value="">All Sources</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {branchLabel(wh)}
               </option>
             ))}
           </select>
@@ -238,7 +254,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
             <option value="">All Destinations</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {branchLabel(wh)}
               </option>
             ))}
           </select>
@@ -285,7 +301,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               <p className="text-sm font-medium text-zinc-500">No transfers found</p>
               {canCreate && (
                 <p className="mt-1 text-xs text-zinc-400">
-                  Create a transfer to move stock between warehouses.
+                  Create a transfer to move stock between branches.
                 </p>
               )}
             </div>
@@ -334,13 +350,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-zinc-700">
-                            <span className="font-medium">{tr.fromWarehouse?.code ?? '—'}</span>
+                            <span className="font-medium">{branchLabel(tr.fromWarehouse)}</span>
                             <ArrowRight className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                            <span className="font-medium">{tr.toWarehouse?.code ?? '—'}</span>
+                            <span className="font-medium">{branchLabel(tr.toWarehouse)}</span>
                           </div>
-                          <p className="mt-0.5 truncate text-xs text-zinc-400 max-w-[200px]">
-                            {tr.fromWarehouse?.name} → {tr.toWarehouse?.name}
-                          </p>
                         </td>
                         <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
                           {tr.transferDate
@@ -367,7 +380,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                           <div className="flex items-center justify-end gap-1">
                             {tr.status === 'pending_manager_approval' &&
                               (canManagerApprove || canManagerReject) &&
-                              inScope(tr.toWarehouse?.branchId) && (
+                              inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region) && (
                                 <button
                                   type="button"
                                   onClick={() => openDetail(tr)}
@@ -388,7 +401,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                               )}
                             {tr.status === 'requested' &&
                               (canAccept || canReject) &&
-                              inScope(tr.fromWarehouse?.branchId) && (
+                              inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region) && (
                                 <button
                                   type="button"
                                   onClick={() => openDetail(tr)}
@@ -399,7 +412,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                               )}
                             {tr.status === 'draft' &&
                               canDispatch &&
-                              inScope(tr.fromWarehouse?.branchId) && (
+                              inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region) && (
                                 <button
                                   type="button"
                                   onClick={() => openDetail(tr)}
@@ -410,7 +423,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                               )}
                             {tr.status === 'in_transit' &&
                               canReceive &&
-                              inScope(tr.toWarehouse?.branchId) && (
+                              inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region) && (
                                 <button
                                   type="button"
                                   onClick={() => openDetail(tr)}
@@ -421,7 +434,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                               )}
                             {tr.status === 'partially_received' &&
                               canReceive &&
-                              inScope(tr.toWarehouse?.branchId) && (
+                              inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region) && (
                                 <button
                                   type="button"
                                   onClick={() => openDetail(tr)}
@@ -496,6 +509,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerApprove={canManagerApprove}
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
+        currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
         onDispatch={dispatchTransfer}

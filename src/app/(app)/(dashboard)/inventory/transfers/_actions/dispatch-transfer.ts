@@ -35,5 +35,5 @@ export async function dispatchTransfer(id: string, input?: unknown): Promise<Api
 
   revalidatePath('/inventory/transfers')
 
-  return { success: true, message: 'Transfer dispatched — stock deducted from source warehouse' }
+  return { success: true, message: 'Transfer dispatched — stock deducted from source branch' }
 }

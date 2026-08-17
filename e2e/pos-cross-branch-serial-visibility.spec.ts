@@ -15,13 +15,19 @@ import { gotoReady, clickStable } from './utils'
 // rather than SKU, since "Refrigerator Deodorizer" also matches a substring
 // search and SKU prefixes can drift between seed runs.
 //
-// STALE, 2026-08-05: unrelated seed-data drift. This file still hardcodes
-// the old placeholder branch/warehouse names (Manila HQ / Cebu Office /
-// Davao Branch, terminal TN-B1-01, cashier "Tyrell Buckridge") which no
-// longer exist in current seed data (real NIG branch names replaced them
-// session-wide) — the test fails before even reaching the assertions
-// below. Flagged, not fixed here.
-async function openManilaSession(page: import('@playwright/test').Page) {
+// FIXED, 2026-08-14: this file previously hardcoded the old placeholder
+// branch/warehouse names (Manila HQ / Cebu Office / Davao Branch), which no
+// longer exist — real NIG branch names replaced them session-wide. Renamed
+// per docs/seed-data-reference.md: Bago (was "Manila HQ", b1), Binalbagan
+// (was "Cebu Office", b2), Candoni (was "Davao Branch", b3). Terminal codes
+// (TN-B1-01/TN-B2-01/TN-B3-01) and warehouse codes (WH-01/WH-02/WH-03) are
+// unchanged — only the branch display-name strings were ever fake. Cashier
+// name "Tyrell Buckridge" was left untouched (out of scope for this rename:
+// it's a person, not a branch name) — but per the current seed reference
+// table this name is now the Branch Manager for Binalbagan (b2), not a
+// Bago (b1) cashier, so if opening a Bago session with this cashier stops
+// working, that's a separate pre-existing data mismatch to check.
+async function openBagoSession(page: import('@playwright/test').Page) {
   await gotoReady(page, '/pos/sessions')
   await clickStable(
     page.getByRole('button', { name: 'Open Session' }),
@@ -29,7 +35,7 @@ async function openManilaSession(page: import('@playwright/test').Page) {
   )
 
   // Business Owner opening a session auto-fills themselves as the cashier —
-  // switch to a real Manila-branch cashier so the session lands on Manila's
+  // switch to a real Bago-branch cashier so the session lands on Bago's
   // roster the same way a normal shift-open would.
   const notYou = page.getByText('Not you?')
   if (await notYou.isVisible().catch(() => false)) {
@@ -46,13 +52,13 @@ async function openManilaSession(page: import('@playwright/test').Page) {
   })
 
   const terminalSelect = page.locator('select')
-  const manilaOption = terminalSelect.locator('option', { hasText: 'TN-B1-01' })
-  const manilaLabel = (await manilaOption.textContent())?.trim() ?? ''
-  expect(manilaLabel).toContain('TN-B1-01')
+  const bagoOption = terminalSelect.locator('option', { hasText: 'TN-B1-01' })
+  const bagoLabel = (await bagoOption.textContent())?.trim() ?? ''
+  expect(bagoLabel).toContain('TN-B1-01')
   // Same hydration race fillStable/clickStable guard against elsewhere in
   // this suite — retry the select until the value actually sticks.
   await expect(async () => {
-    await terminalSelect.selectOption({ label: manilaLabel })
+    await terminalSelect.selectOption({ label: bagoLabel })
     await expect(terminalSelect).toHaveValue(/.+/)
   }).toPass({ timeout: 10_000 })
 
@@ -74,12 +80,12 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
 
     const noSessionLink = page.getByRole('link', { name: 'Open a Session' })
     if (await noSessionLink.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await openManilaSession(page)
+      await openBagoSession(page)
       await gotoReady(page, '/pos/checkout')
     }
 
     // Multiple open sessions render a <select> in the top bar — explicitly
-    // pick Manila HQ rather than relying on whatever sorts first. Scoped to
+    // pick Bago rather than relying on whatever sorts first. Scoped to
     // the select that actually CONTAINS a TN-B1-01 option (there's also an
     // unrelated branch-context combobox elsewhere on the page that a bare
     // getByRole('combobox').first() can accidentally match instead).
@@ -95,8 +101,8 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
       .then(() => true)
       .catch(() => false)
     if (sessionSelectAppeared) {
-      const manilaOption = sessionSelect.locator('option', { hasText: 'TN-B1-01' })
-      const value = await manilaOption.getAttribute('value')
+      const bagoOption = sessionSelect.locator('option', { hasText: 'TN-B1-01' })
+      const value = await bagoOption.getAttribute('value')
       if (value) {
         // Same hydration race fillStable/clickStable guard against elsewhere
         // in this suite — retry the select until the value actually sticks.
@@ -124,7 +130,7 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
       timeout: 10_000,
     })
 
-    // In This Branch — Manila's own serials (WH-01).
+    // In This Branch — Bago's own serials (WH-01).
     await expect(page.getByText('In this branch', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
@@ -136,13 +142,13 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
     // that was a real bug (own-branch dedup only matched serials already
     // present in a separate, possibly-truncated fetch).
     await expect(page.getByText('Also available elsewhere', { exact: true })).toBeVisible()
-    await expect(page.getByText('Manila HQ Warehouse', { exact: true })).toHaveCount(0)
-    const cebuToggle = page.getByRole('button', { name: /Cebu Office Warehouse/ })
-    const davaoToggle = page.getByRole('button', { name: /Davao Branch Warehouse/ })
-    await expect(cebuToggle).toBeVisible()
-    await expect(davaoToggle).toBeVisible()
-    await expect(cebuToggle).toContainText(/in stock/)
-    await expect(davaoToggle).toContainText(/in stock/)
+    await expect(page.getByText('Bago Warehouse', { exact: true })).toHaveCount(0)
+    const binalbaganToggle = page.getByRole('button', { name: /Binalbagan Warehouse/ })
+    const candoniToggle = page.getByRole('button', { name: /Candoni Warehouse/ })
+    await expect(binalbaganToggle).toBeVisible()
+    await expect(candoniToggle).toBeVisible()
+    await expect(binalbaganToggle).toContainText(/in stock/)
+    await expect(candoniToggle).toContainText(/in stock/)
 
     // Side panel closed by default — no individual serials shown yet.
     await expect(page.getByText(/WH-02-BULK/)).toHaveCount(0)
@@ -151,18 +157,18 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
     // Part 3 — open the side panel to pick a specific unit, then request it.
     // Raises a real stock transfer via POST /inventory/transfers/request-from-pos;
     // not cleaned up afterward (local-only check) — a repeat run just
-    // requests a different (or the same) Cebu serial again.
-    await cebuToggle.click()
+    // requests a different (or the same) Binalbagan serial again.
+    await binalbaganToggle.click()
     await expect(page.getByText(/WH-02-BULK/).first()).toBeVisible({ timeout: 10_000 })
-    // Only one branch's panel shows at a time — Davao's serials stay hidden.
+    // Only one branch's panel shows at a time — Candoni's serials stay hidden.
     await expect(page.getByText(/WH-03-BULK/)).toHaveCount(0)
 
     const firstRequestButton = page.getByRole('button', { name: /Request/ }).first()
     await firstRequestButton.click()
     await expect(page.getByText('Requested', { exact: true })).toBeVisible({ timeout: 10_000 })
 
-    // Switching to Davao replaces the panel — Cebu's serials disappear, Davao's show.
-    await davaoToggle.click()
+    // Switching to Candoni replaces the panel — Binalbagan's serials disappear, Candoni's show.
+    await candoniToggle.click()
     await expect(page.getByText(/WH-03-BULK/).first()).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText(/WH-02-BULK/)).toHaveCount(0)
 

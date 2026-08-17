@@ -23,7 +23,12 @@ interface Props {
   isLoading: boolean
   isFetching: boolean
   warehouseFilter?: string
-  warehouseOptions: { id: string; code: string; name: string }[]
+  warehouseOptions: {
+    id: string
+    code: string
+    name: string
+    branch?: { id: string; name: string } | null
+  }[]
   onWarehouseChange: (id: string | undefined) => void
   onRefresh: () => void
 }
@@ -48,10 +53,10 @@ export default function ValuationTable({
           onChange={(e) => onWarehouseChange(e.target.value || undefined)}
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
         >
-          <option value="">All Warehouses</option>
+          <option value="">All Branches</option>
           {warehouseOptions.map((w) => (
             <option key={w.id} value={w.id}>
-              {w.code} — {w.name}
+              {w.branch?.name ?? w.name}
             </option>
           ))}
         </select>
@@ -86,7 +91,7 @@ export default function ValuationTable({
             <tr>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">SKU</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Item</th>
-              <th className="px-4 py-3 text-left font-medium text-zinc-500">Warehouse</th>
+              <th className="px-4 py-3 text-left font-medium text-zinc-500">Branch</th>
               <th className="px-4 py-3 text-left font-medium text-zinc-500">Method</th>
               <th className="px-4 py-3 text-right font-medium text-zinc-500">On-Hand Qty</th>
               <th className="px-4 py-3 text-right font-medium text-zinc-500">Avg Unit Cost</th>
@@ -116,7 +121,7 @@ export default function ValuationTable({
                   <td className="px-4 py-3 font-mono text-xs text-zinc-500">{item.sku}</td>
                   <td className="px-4 py-3 font-medium text-zinc-800">{item.name}</td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
-                    {item.warehouseCode} — {item.warehouseName}
+                    {item.warehouseBranchName ?? item.warehouseName}
                   </td>
                   <td className="px-4 py-3">
                     <span
