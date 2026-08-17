@@ -37,6 +37,11 @@ export function usePriceLists() {
     },
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
+    // Scenario 26 — same gap found live across every maker-checker list
+    // this scenario touched: staleTime alone only refetches on THIS tab's
+    // own refocus/remount, not when someone else's approve/reject changes
+    // the record in a different browser tab/session.
+    refetchInterval: 10 * 1000,
   })
 
   const currenciesQuery = useQuery({

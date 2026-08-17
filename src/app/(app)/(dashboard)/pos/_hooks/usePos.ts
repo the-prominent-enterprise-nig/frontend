@@ -628,6 +628,11 @@ export function useSkuReservations(filters?: SkuReservationFilters) {
     queryFn: () => getSkuReservations(filters),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    // Scenario 26 — same gap found live in credit applications, item
+    // master, stock adjustments, and purchase requests: cancel-request/
+    // approve-cancel is a handoff across different people's browser tabs,
+    // and staleTime alone only refetches on THIS tab's own refocus/remount.
+    refetchInterval: 10 * 1000,
   })
 }
 

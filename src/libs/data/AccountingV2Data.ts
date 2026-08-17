@@ -422,6 +422,11 @@ export const ARInvoices = {
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
+  // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
+  // backend), so a real "Check overdue" button is the only way to fire it
+  // outside an external scheduler.
+  sweepOverdueNotifications: () =>
+    api.post<{ notified: number }>('/ar-invoices/sweep-overdue-notifications', {}),
 }
 
 // ============ Credit Memos ============

@@ -36,6 +36,14 @@ export function useAdjustments() {
     queryFn: () => getAdjustments(queryParams),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
+    // Scenario 26 — same gap found live in credit applications and item
+    // master (see useCreditApplications.ts): this is a 4-stage maker-checker
+    // handoff across different people's browser tabs (Stock Controller
+    // submits, Branch Manager confirms, Business Owner investigates then
+    // approves), and it's exactly where a stock-adjustment notification's
+    // click-through lands — staleTime alone only refetches on THIS tab's
+    // own refocus/remount.
+    refetchInterval: 10 * 1000,
   })
 
   const warehousesQuery = useQuery({

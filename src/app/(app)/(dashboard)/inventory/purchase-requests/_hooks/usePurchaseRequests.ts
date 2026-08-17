@@ -35,6 +35,13 @@ export function usePurchaseRequests() {
     queryFn: () => getPurchaseRequests(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
+    // Scenario 26 — same gap found live in credit applications, item
+    // master, and stock adjustments: this is a maker-checker handoff
+    // across different people's browser tabs (Stock Controller submits,
+    // Branch Manager approves/rejects), and staleTime alone only refetches
+    // on THIS tab's own refocus/remount, not when someone else's action
+    // changes the record.
+    refetchInterval: 10 * 1000,
   })
 
   const createMutation = useMutation({

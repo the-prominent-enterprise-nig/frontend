@@ -1078,6 +1078,10 @@ export interface PosReleaseFormRequest {
   createdAt: string
   reviewedAt?: string | null
   createdTransactionId?: string | null
+  /** Only populated once approved — mirrors the same transaction number
+   * shown in this request's resolution notification title (see
+   * ReleaseFormRequestsService.notifyResolved on the backend). */
+  createdTransaction?: { transactionNumber: string } | null
   cartSnapshot: PosReleaseFormCartSnapshot
   requestedBy?: {
     name: string | null
