@@ -12,6 +12,7 @@ export interface BusinessProfile {
   companyTradingName: string | null
   contactPerson: string | null
   mobileNumber: string | null
+  address: string | null
   fiscalYearStartMonth: number
   requireHqApprovalForTransfers: boolean
 }

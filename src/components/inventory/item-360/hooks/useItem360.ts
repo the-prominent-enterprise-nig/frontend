@@ -5,6 +5,7 @@ import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/ge
 import { getItemStockSummary } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-item-stock-summary'
 import { getSubstitutes } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/substitutes'
 import { getChangeHistory } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/change-history'
+import { getItemLedger } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item-ledger'
 import { getSerialNumbers } from '@/src/app/(app)/(dashboard)/inventory/serial-numbers/_actions/get-serial-numbers'
 import { STALE } from '@/src/libs/query/stale-times'
 
@@ -37,6 +38,16 @@ export function useItem360(itemId: string, activeTab: string) {
     enabled: !!itemId && activeTab === 'history',
   })
 
+  // Stock provenance (receipts + transfers) shown alongside the field-edit
+  // audit log in the History tab — same ledger data Movements uses, just a
+  // wider page so the full chain of custody is available in one fetch.
+  const provenance = useQuery({
+    queryKey: ['inventory-item-360', itemId, 'history-provenance'],
+    queryFn: () => getItemLedger(itemId, { limit: 100 }),
+    staleTime: STALE.OPERATIONAL,
+    enabled: !!itemId && activeTab === 'history',
+  })
+
   const serials = useQuery({
     queryKey: ['inventory-item-360', itemId, 'serials'],
     queryFn: () => getSerialNumbers({ itemId, limit: 100 }),
@@ -46,5 +57,5 @@ export function useItem360(itemId: string, activeTab: string) {
     enabled: !!itemId && (activeTab === 'serials' || activeTab === 'overview'),
   })
 
-  return { item, stock, substitutes, history, serials }
+  return { item, stock, substitutes, history, provenance, serials }
 }

@@ -5,6 +5,10 @@ import { ChevronLeft, ChevronRight, CalendarDays, List } from 'lucide-react'
 import { useWidgetSize, useWidgetHeader } from '../WidgetSizeContext'
 import DayPopover from './DayPopover'
 import { api } from '@/src/libs/api/client'
+import {
+  getCalendarEvents,
+  createCalendarEvent,
+} from '@/src/app/(app)/(dashboard)/_actions/calendar-events-actions'
 
 type EmployeeBirthday = {
   id: string
@@ -14,16 +18,6 @@ type EmployeeBirthday = {
 }
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-
-// Kept as static export for EmployeeBirthdaysWidget
-export const CALENDAR_EVENTS: Record<number, string> = {
-  13: 'Birthday',
-  15: 'Review',
-  18: 'Team Building',
-  20: 'Payroll Cutoff',
-  22: 'Product Launch',
-  28: 'Board Meeting',
-}
 
 export type CalendarEvent = {
   id: string
@@ -59,39 +53,10 @@ function formatTimeShort(t: string): string {
   return `${hour}:${String(m).padStart(2, '0')}`
 }
 
-type SeedEntry = {
-  day: number
-  title: string
-  startTime?: string
-  endTime?: string
-  allDay?: boolean
-}
-
-const SEED_ENTRIES: SeedEntry[] = [
-  { day: 13, title: 'Birthday', allDay: true },
-  { day: 15, title: 'Review', startTime: '14:00', endTime: '15:00' },
-  { day: 18, title: 'Team Building', startTime: '09:00', endTime: '17:00' },
-  { day: 20, title: 'Payroll Cutoff', allDay: true },
-  { day: 22, title: 'PR General Meeting', startTime: '09:00', endTime: '10:00' },
-  { day: 22, title: 'WARP Weekly Meeting', startTime: '11:00', endTime: '11:30' },
-  { day: 22, title: 'Product Launch', startTime: '14:00', endTime: '15:00' },
-  { day: 22, title: 'Board Review', startTime: '16:00', endTime: '17:00' },
-  { day: 28, title: 'Board Meeting', startTime: '10:00', endTime: '11:00' },
-]
-
-function seedEvents(year: number, month: number): Record<string, CalendarEvent[]> {
+function groupEventsByDate(list: CalendarEvent[]): Record<string, CalendarEvent[]> {
   const result: Record<string, CalendarEvent[]> = {}
-  for (const entry of SEED_ENTRIES) {
-    const key = dateKey(year, month, entry.day)
-    const ev: CalendarEvent = {
-      id: `seed-${key}-${entry.title}`,
-      title: entry.title,
-      date: key,
-      allDay: entry.allDay,
-      startTime: entry.startTime,
-      endTime: entry.endTime,
-    }
-    result[key] = [...(result[key] ?? []), ev]
+  for (const ev of list) {
+    result[ev.date] = [...(result[ev.date] ?? []), ev]
   }
   return result
 }
@@ -105,9 +70,7 @@ export default function CalendarWidget() {
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear] = useState(now.getFullYear())
   const [view, setView] = useState<View>('calendar')
-  const [events, setEvents] = useState<Record<string, CalendarEvent[]>>(() =>
-    seedEvents(now.getFullYear(), now.getMonth())
-  )
+  const [events, setEvents] = useState<Record<string, CalendarEvent[]>>({})
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null)
   const [employeeBirthdays, setEmployeeBirthdays] = useState<EmployeeBirthday[]>([])
@@ -120,6 +83,18 @@ export default function CalendarWidget() {
       if (res.success && res.data) setEmployeeBirthdays(res.data)
     })
   }, [])
+
+  // Re-fetch real calendar events whenever the displayed month/year changes.
+  useEffect(() => {
+    let cancelled = false
+    getCalendarEvents(year, month + 1).then((res) => {
+      if (cancelled) return
+      if (res.success && res.data) setEvents(groupEventsByDate(res.data))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [year, month])
 
   // Birthday events for the currently displayed month/year (re-derived on navigation)
   const birthdayEvents: Record<string, CalendarEvent[]> = {}
@@ -201,11 +176,13 @@ export default function CalendarWidget() {
     setPopoverAnchor({ top: rect.bottom + 6, left: rect.left })
   }
 
-  function handleAddEvent(ev: Omit<CalendarEvent, 'id'>) {
-    const id = `${ev.date}-${Math.random().toString(36).slice(2)}`
+  async function handleAddEvent(ev: Omit<CalendarEvent, 'id'>) {
+    const res = await createCalendarEvent(ev)
+    if (!res.success || !res.data) return
+    const created = res.data
     setEvents((prev) => ({
       ...prev,
-      [ev.date]: [...(prev[ev.date] ?? []), { ...ev, id }],
+      [created.date]: [...(prev[created.date] ?? []), created],
     }))
   }
 

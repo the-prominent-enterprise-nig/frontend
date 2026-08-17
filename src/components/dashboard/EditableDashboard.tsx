@@ -16,13 +16,11 @@ import DashboardWidgetWrapper from './DashboardWidgetWrapper'
 // Widgets
 import StatsOverviewWidget from './widgets/StatsOverviewWidget'
 import ModulesWidget from './widgets/ModulesWidget'
-import PendingRequestsWidget from './widgets/PendingRequestsWidget'
 import RemindersWidget from './widgets/RemindersWidget'
 import EmployeeBirthdaysWidget from './widgets/EmployeeBirthdaysWidget'
 import RecentActivityWidget from './widgets/RecentActivityWidget'
 import QuickActionsWidget from './widgets/QuickActionsWidget'
 import SystemAlertsWidget from './widgets/SystemAlertsWidget'
-import TaskOverviewWidget from './widgets/TaskOverviewWidget'
 import CalendarWidget from './widgets/CalendarWidget'
 import SalesStatsWidget from './widgets/SalesStatsWidget'
 import SalesTrendWidget from './widgets/SalesTrendWidget'
@@ -35,6 +33,22 @@ import EnterpriseSummaryWidget from './widgets/EnterpriseSummaryWidget'
 import ModuleStatsWidget from './widgets/ModuleStatsWidget'
 import PendingApprovalsWidget from './widgets/PendingApprovalsWidget'
 import CogsGapsWidget from './widgets/CogsGapsWidget'
+import RecentLeadsWidget from './widgets/RecentLeadsWidget'
+// Not registered: there is no HR module on the backend (no employees/leave-management/
+// attendance/payroll controllers), so every one of these widgets' API calls 404s. Uncomment
+// once a real HR backend module exists.
+// import AttendanceSummaryWidget from './widgets/AttendanceSummaryWidget'
+// import DepartmentSummaryWidget from './widgets/DepartmentSummaryWidget'
+// import LeaveRequestsWidget from './widgets/LeaveRequestsWidget'
+// import OvertimeRequestsWidget from './widgets/OvertimeRequestsWidget'
+// import PayrollSummaryWidget from './widgets/PayrollSummaryWidget'
+// import PayslipStatusWidget from './widgets/PayslipStatusWidget'
+// Not registered: /leave-management/summary and /attendance/overtime-requests are the
+// same dead HR endpoints as above; Document Requests/Flagged Items were always hardcoded
+// with no backend concept at all. See dashboardWidgets.ts's own comment for detail.
+// import PendingRequestsWidget from './widgets/PendingRequestsWidget'
+// Not registered: no Task concept exists anywhere in the backend.
+// import TaskOverviewWidget from './widgets/TaskOverviewWidget'
 
 // ── Widget component registry ─────────────────────────────────────────────────
 
@@ -42,13 +56,11 @@ type WidgetComponent = React.ComponentType<{ userName?: string }>
 const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   stats: StatsOverviewWidget,
   modules: ModulesWidget,
-  'pending-requests': PendingRequestsWidget,
   reminders: RemindersWidget,
   'employee-birthdays': EmployeeBirthdaysWidget,
   'recent-activity': RecentActivityWidget,
   'quick-actions': QuickActionsWidget,
   'system-alerts': SystemAlertsWidget,
-  'task-overview': TaskOverviewWidget,
   calendar: CalendarWidget,
   'sales-stats': SalesStatsWidget,
   'sales-trend': SalesTrendWidget,
@@ -61,6 +73,15 @@ const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   'module-stats': ModuleStatsWidget,
   'pending-approvals': PendingApprovalsWidget,
   'cogs-gaps': CogsGapsWidget,
+  'recent-leads': RecentLeadsWidget,
+  // 'attendance-summary': AttendanceSummaryWidget,
+  // 'department-summary': DepartmentSummaryWidget,
+  // 'leave-requests': LeaveRequestsWidget,
+  // 'overtime-requests': OvertimeRequestsWidget,
+  // 'payroll-summary': PayrollSummaryWidget,
+  // 'payslip-status': PayslipStatusWidget,
+  // 'pending-requests': PendingRequestsWidget,
+  // 'task-overview': TaskOverviewWidget,
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────

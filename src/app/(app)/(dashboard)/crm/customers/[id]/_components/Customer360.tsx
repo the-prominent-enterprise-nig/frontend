@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -69,6 +69,11 @@ export default function Customer360({
   const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState<string | null>(null)
+
+  const upcomingPayables = useMemo(
+    () => flattenUpcomingPayables(installmentSchedules),
+    [installmentSchedules]
+  )
 
   async function handleDelete() {
     if (!data) return
@@ -208,6 +213,37 @@ export default function Customer360({
         </div>
       </header>
 
+      {upcomingPayables.length > 0 && (
+        <div
+          className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
+            URGENCY_STRIP_CLASSES[
+              payableUrgency(upcomingPayables[0].status, upcomingPayables[0].dueDate)
+            ]
+          }`}
+        >
+          <div className="text-[13px]">
+            <span className="text-gray-500">Next payment due </span>
+            <span className="font-semibold text-gray-900">
+              {formatPeso(upcomingPayables[0].amountDue)}
+            </span>
+            <span className="text-gray-500">
+              {' '}
+              on {new Date(upcomingPayables[0].dueDate).toLocaleDateString()}
+            </span>
+          </div>
+          <div className="text-[12px] text-gray-500">
+            {upcomingPayables.length} upcoming ·{' '}
+            {formatPeso(upcomingPayables.reduce((sum, p) => sum + p.amountDue, 0))} total
+            <a
+              href="#upcoming-payables"
+              className="ml-2 font-medium text-prominent-orange-700 hover:underline"
+            >
+              View all ↓
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Full width (lg:col-span-3) — the Address row wraps to several
             lines for a real PH address, and cramming that into a 1/3-width
@@ -279,6 +315,70 @@ export default function Customer360({
               </li>
             ))}
           </ul>
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section id="upcoming-payables" className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Upcoming Payables</h2>
+          {installmentLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading upcoming payables…</p>
+          ) : installmentError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
+          ) : upcomingPayables.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No upcoming payables for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {upcomingPayables.slice(0, 10).map((p) => (
+                  <li key={p.invoiceId} className="py-2.5 text-[13px]">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleDetailTarget(p.schedule)}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
+                    >
+                      <span className="text-gray-700">
+                        <span className="font-medium text-gray-800">
+                          {productLabel(p.schedule.posTransactionLines)}
+                        </span>
+                        {' · '}
+                        <span className="font-mono text-[11px] text-gray-400">
+                          {p.invoiceNumber}
+                        </span>
+                        {' · '}
+                        Payment {p.lineNumber} of {p.totalLines} · due{' '}
+                        <span className={URGENCY_TEXT_CLASSES[payableUrgency(p.status, p.dueDate)]}>
+                          {new Date(p.dueDate).toLocaleDateString()}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-medium text-gray-800">{formatPeso(p.amountDue)}</span>
+                        <InstallmentStatusBadge status={p.status} />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {upcomingPayables.length > 10 && (
+                <Link
+                  href={`/accounting/ar-invoices?customerId=${id}`}
+                  className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
+                >
+                  +{upcomingPayables.length - 10} more — View full AR ledger →
+                </Link>
+              )}
+            </>
+          )}
+          {!accountsLoading && installmentAccounts.length > 0 && (
+            <p className="mt-3 border-t border-gray-100 pt-3 text-[12px] text-gray-400">
+              This list only includes itemized due dates from POS-originated installment plans. This
+              customer also has {installmentAccounts.length} CRM collections account
+              {installmentAccounts.length !== 1 ? 's' : ''} on file — see aggregate balances in CRM
+              Collections Accounts below.
+            </p>
+          )}
         </section>
       </div>
 
@@ -528,6 +628,68 @@ function productLabel(
   if (!first?.item) return '—'
   const label = first.item.brand ? `${first.item.name} (${first.item.brand.name})` : first.item.name
   return rest.length > 0 ? `${label} +${rest.length} more` : label
+}
+
+// "Upcoming Payables" — a flattened, cross-plan view of every unpaid due
+// date across ALL of a customer's installment schedules (the existing
+// Installment Plans section only shows one schedule's due dates at a time,
+// behind a click). Reuses the exact same installmentSchedules fetch — no
+// new endpoint — just reshaped client-side: filter out settled/void lines,
+// flatten every schedule's lines into one array, sort by due date.
+type UpcomingPayable = {
+  schedule: InstallmentSchedule
+  invoiceId: string
+  invoiceNumber: string
+  lineNumber: number
+  totalLines: number
+  dueDate: string
+  amountDue: number
+  status: string
+}
+
+function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPayable[] {
+  const payables: UpcomingPayable[] = []
+  for (const schedule of schedules) {
+    for (const line of schedule.lines) {
+      if (['PAID', 'CANCELLED', 'DRAFT'].includes(line.arInvoice.status)) continue
+      payables.push({
+        schedule,
+        invoiceId: line.arInvoice.id,
+        invoiceNumber: line.arInvoice.invoiceNumber,
+        lineNumber: line.lineNumber,
+        totalLines: schedule.lines.length,
+        dueDate: line.arInvoice.dueDate,
+        amountDue: line.arInvoice.totalAmount - line.arInvoice.amountPaid,
+        status: line.arInvoice.status,
+      })
+    }
+  }
+  return payables.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+}
+
+// Due-date proximity accent — distinct from InstallmentStatusBadge (which
+// already covers OVERDUE in red) and from AgingColorBadge (a different axis
+// entirely: InstallmentAccount-level "months since last activity", not
+// per-due-date proximity). The 7-day "due soon" threshold is a reasonable
+// default, not a client-confirmed business rule.
+type PayableUrgency = 'overdue' | 'dueSoon' | 'upcoming'
+
+function payableUrgency(status: string, dueDate: string): PayableUrgency {
+  if (status === 'OVERDUE') return 'overdue'
+  const daysUntilDue = (new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  return daysUntilDue <= 7 ? 'dueSoon' : 'upcoming'
+}
+
+const URGENCY_TEXT_CLASSES: Record<PayableUrgency, string> = {
+  overdue: 'font-semibold text-red-600',
+  dueSoon: 'font-semibold text-orange-600',
+  upcoming: 'text-gray-700',
+}
+
+const URGENCY_STRIP_CLASSES: Record<PayableUrgency, string> = {
+  overdue: 'border-red-200 bg-red-50',
+  dueSoon: 'border-orange-200 bg-orange-50',
+  upcoming: 'border-gray-200 bg-gray-50',
 }
 
 // ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/

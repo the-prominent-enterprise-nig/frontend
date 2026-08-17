@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, CheckCircle } from 'lucide-react'
+import { X, Loader2, CheckCircle, ShoppingCart } from 'lucide-react'
 import {
   ApprovePrFormSchema,
   type ApprovePrFormValues,
@@ -36,6 +36,16 @@ export function ApprovePrModal({ open, onClose, pr, onApprove, isApproving }: Pr
   }, [open, reset])
 
   const pendingApproval = pr?.approvals.find((a) => a.status === 'pending')
+  // Mirrors PurchaseRequestService.approve()'s own auto-convert check —
+  // once the last pending tier clears on a PR that already has a supplier
+  // and firm per-line pricing, approval skips the "Approved" resting state
+  // and creates the Purchase Order directly. Auto-raised PRs (no
+  // supplier/pricing yet) still land at "Approved" and need the separate
+  // Convert to PO step, unchanged.
+  const pendingIndex = pr?.approvals.findIndex((a) => a.status === 'pending') ?? -1
+  const isLastTier = pendingIndex !== -1 && pendingIndex === (pr?.approvals.length ?? 0) - 1
+  const willAutoConvert =
+    isLastTier && !!pr?.supplierId && (pr?.lines.every((l) => l.unitPrice != null) ?? false)
 
   async function handleFormSubmit(data: ApprovePrFormValues) {
     if (!pr) return
@@ -84,6 +94,16 @@ export function ApprovePrModal({ open, onClose, pr, onApprove, isApproving }: Pr
                 {pr.lines.length} line{pr.lines.length !== 1 ? 's' : ''}
               </p>
             </div>
+
+            {willAutoConvert && (
+              <div className="flex items-start gap-2 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-3">
+                <ShoppingCart className="mt-0.5 h-4 w-4 shrink-0 text-prominent-purple-600" />
+                <p className="text-xs text-prominent-purple-800">
+                  This is the final approval — approving will convert this directly into a Purchase
+                  Order.
+                </p>
+              </div>
+            )}
 
             {/* Remarks */}
             <div>

@@ -10,6 +10,7 @@ import MovementsTab from './tabs/MovementsTab'
 import SubstitutesTab from './tabs/SubstitutesTab'
 import HistoryTab from './tabs/HistoryTab'
 import type { ItemSubstitute, ItemChangeLog } from '@/src/schema/inventory/items'
+import type { ItemLedgerEntry } from '@/src/schema/inventory/items/ledger'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { createPortal } from 'react-dom'
@@ -50,7 +51,7 @@ function DrawerSkeleton() {
 
 function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const { item, stock, substitutes, history, serials } = useItem360(itemId, activeTab)
+  const { item, stock, substitutes, history, provenance, serials } = useItem360(itemId, activeTab)
   // Scenario 05 followup — this drawer is mounted globally (ShellProviders),
   // not passed a server-fetched session prop like page-level components, so
   // it fetches its own via useMe() to gate the Cost Price field.
@@ -69,6 +70,11 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
     ? ((history.data.data as unknown as { data: ItemChangeLog[] })?.data ??
       (history.data.data as unknown as ItemChangeLog[]) ??
       [])
+    : []
+  const provenanceData: ItemLedgerEntry[] = provenance.data?.success
+    ? (provenance.data.data?.data.filter((e) =>
+        ['receipt', 'transfer_in', 'transfer_out'].includes(e.transactionType)
+      ) ?? [])
     : []
   const serialsData: SerialNumberSummary[] = serials.data?.success
     ? (serials.data.data?.data ?? [])
@@ -181,7 +187,11 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
             isLoading={substitutes.isLoading}
           />
         ) : activeTab === 'history' ? (
-          <HistoryTab entries={historyData} isLoading={history.isLoading} />
+          <HistoryTab
+            changeEntries={historyData}
+            provenanceEntries={provenanceData}
+            isLoading={history.isLoading || provenance.isLoading}
+          />
         ) : null}
       </div>
     </>

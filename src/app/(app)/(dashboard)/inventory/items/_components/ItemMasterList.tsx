@@ -198,7 +198,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or SKU…"
+              placeholder="Search by name, SKU, or serial number…"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
             {search && (
@@ -301,7 +301,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           items={items}
           isLoading={isLoading}
           isFetching={isFetching}
-          canViewCost={canViewCost}
           canUpdate={canUpdate}
           canDelete={canDelete}
           canManageLifecycle={canManageLifecycle}

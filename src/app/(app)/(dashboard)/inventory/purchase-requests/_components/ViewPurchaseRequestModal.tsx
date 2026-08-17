@@ -27,8 +27,8 @@ const APPROVAL_TIER_STYLES: Record<string, string> = {
 export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
   if (!open || !pr) return null
 
-  const estimatedTotal = pr.lines.reduce(
-    (sum, line) => sum + line.quantity * (line.estimatedUnitPrice ?? 0),
+  const total = pr.lines.reduce(
+    (sum, line) => (line.isFreebie ? sum : sum + line.quantity * (line.unitPrice ?? 0)),
     0
   )
 
@@ -62,6 +62,14 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
         <div className="px-6 py-4 space-y-4">
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
+            <div>
+              <p className="text-xs text-zinc-500">Supplier</p>
+              <p className="text-zinc-900">{pr.supplier?.name ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500">Warehouse</p>
+              <p className="text-zinc-900">{pr.warehouse?.name ?? '—'}</p>
+            </div>
             <div>
               <p className="text-xs text-zinc-500">Branch</p>
               <p className="text-zinc-900">{pr.branch?.name ?? '—'}</p>
@@ -152,10 +160,10 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
                       Qty
                     </th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                      Est. Unit Price
+                      Unit Price
                     </th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                      Est. Total
+                      Line Total
                     </th>
                   </tr>
                 </thead>
@@ -169,29 +177,33 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-700">{line.quantity}</td>
                       <td className="px-3 py-2 text-right text-zinc-700">
-                        {line.estimatedUnitPrice != null
-                          ? `₱${Number(line.estimatedUnitPrice).toLocaleString()}`
-                          : '—'}
+                        {line.isFreebie
+                          ? 'Freebie'
+                          : line.unitPrice != null
+                            ? `₱${Number(line.unitPrice).toLocaleString()}`
+                            : '—'}
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-zinc-900">
-                        {line.estimatedUnitPrice != null
-                          ? `₱${(line.quantity * line.estimatedUnitPrice).toLocaleString()}`
-                          : '—'}
+                        {line.isFreebie
+                          ? '₱0'
+                          : line.unitPrice != null
+                            ? `₱${(line.quantity * line.unitPrice).toLocaleString()}`
+                            : '—'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
-                {estimatedTotal > 0 && (
+                {total > 0 && (
                   <tfoot>
                     <tr className="border-t border-zinc-200 bg-zinc-50">
                       <td
                         colSpan={3}
                         className="px-3 py-2 text-right text-xs font-medium text-zinc-500"
                       >
-                        Estimated total
+                        Total
                       </td>
                       <td className="px-3 py-2 text-right font-semibold text-zinc-900">
-                        ₱{estimatedTotal.toLocaleString()}
+                        ₱{total.toLocaleString()}
                       </td>
                     </tr>
                   </tfoot>

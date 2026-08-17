@@ -115,7 +115,13 @@ export function usePurchaseRequests() {
           description: result.message,
           status: 'success',
         })
+        // Approving a fully-specified PR's final tier auto-converts it into
+        // a real PO server-side (PurchaseRequestService.approve()) — the
+        // Purchase Orders tab's own cache has no way to know that happened
+        // unless it's invalidated too, same as the explicit convertFromPr
+        // mutation in usePurchaseOrders.ts already does.
         queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
       } else {
         showToast({
           title: 'Failed to approve purchase request',

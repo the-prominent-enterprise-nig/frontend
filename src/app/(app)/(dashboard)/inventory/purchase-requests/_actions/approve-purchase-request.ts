@@ -48,6 +48,7 @@ export async function approvePurchaseRequest(
     }
   }
 
+  revalidatePath('/inventory/purchase-orders')
   revalidatePath('/inventory/purchase-requests')
 
   return {

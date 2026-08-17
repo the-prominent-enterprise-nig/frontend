@@ -82,6 +82,11 @@ const ReceivePoFormSchema = z.object({
   warehouseId: z.string().min(1, 'Destination warehouse is required'),
   receivedAt: z.string().optional(),
   notes: z.string().max(1000).optional(),
+  // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier ->
+  // this Receiving Report. Both are the supplier's own paperwork, typed in
+  // by whoever is physically receiving the delivery.
+  deliveryReceiptNumber: z.string().optional(),
+  supplierInvoiceNumber: z.string().optional(),
   withholding: z.enum(['none', 'pct_1']).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
@@ -186,6 +191,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       warehouseId: po?.warehouseId ?? '',
       receivedAt: '',
       notes: '',
+      deliveryReceiptNumber: '',
+      supplierInvoiceNumber: '',
       withholding: 'none',
       lines: defaultLines(),
     },
@@ -202,6 +209,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       warehouseId: po.warehouseId ?? '',
       receivedAt: '',
       notes: '',
+      deliveryReceiptNumber: '',
+      supplierInvoiceNumber: '',
       withholding: 'none',
       lines: defaultLines(),
     })
@@ -274,6 +283,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       applicationType: 'new_stock',
       receivedAt: data.receivedAt || undefined,
       notes: data.notes || undefined,
+      deliveryReceiptNumber: data.deliveryReceiptNumber || undefined,
+      supplierInvoiceNumber: data.supplierInvoiceNumber || undefined,
       supplierId: po.supplier.id,
       withholding: data.withholding,
       lines: data.lines
@@ -387,7 +398,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  GRN Reference
+                  Receiving Report Reference
                   <span className="ml-1 text-xs font-normal text-zinc-400">
                     (auto-generated if blank)
                   </span>
@@ -400,7 +411,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                       {...field}
                       value={field.value ?? ''}
                       type="text"
-                      placeholder="GRN-YYYYMMDD-0001"
+                      placeholder="RR-YYYYMMDD-0001"
                       className={fieldClass}
                     />
                   )}
@@ -416,6 +427,49 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                       {...field}
                       type="text"
                       placeholder="Delivery notes…"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
+                Receiving Report */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Delivery Receipt No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
+                </label>
+                <Controller
+                  name="deliveryReceiptNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. DR-00123"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Supplier Invoice No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
+                </label>
+                <Controller
+                  name="supplierInvoiceNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. SI-00456"
                       className={fieldClass}
                     />
                   )}

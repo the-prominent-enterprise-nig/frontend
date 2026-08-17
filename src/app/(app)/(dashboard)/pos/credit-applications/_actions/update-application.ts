@@ -2,13 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import { CreateCreditApplicationFormSchema } from '@/src/schema/credit/applications'
+import { UpdateCreditApplicationFormSchema } from '@/src/schema/credit/applications'
 import type { CreditApplication } from '@/src/schema/credit/applications'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
-
-const UpdateCreditApplicationFormSchema = CreateCreditApplicationFormSchema.partial()
 
 export async function updateCreditApplication(
   id: string,
