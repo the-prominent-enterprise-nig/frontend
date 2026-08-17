@@ -328,6 +328,8 @@ export interface ARInvoiceInstallmentItem {
   unitPrice: number | string
   item: { id: string; name: string; brand: { name: string } | null } | null
   lineTotal: number
+  serialNumber: { id: string; serialNumber: string } | null
+  secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
 export interface ARInvoiceInstallmentDetail {

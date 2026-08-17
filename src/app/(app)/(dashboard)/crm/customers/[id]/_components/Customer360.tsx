@@ -767,8 +767,8 @@ function InstallmentScheduleDetailModal({
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items in this plan</p>
             <ul className="divide-y divide-gray-100" data-testid="installment-plan-items">
               {schedule.posTransactionLines.map((line) => (
-                <li key={line.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-gray-700">
+                <li key={line.id} className="flex items-start justify-between py-1.5">
+                  <div className="text-gray-700">
                     {line.item
                       ? line.item.brand
                         ? `${line.item.name} (${line.item.brand.name})`
@@ -777,7 +777,14 @@ function InstallmentScheduleDetailModal({
                     {line.quantity !== 1 && (
                       <span className="text-gray-400"> ×{line.quantity}</span>
                     )}
-                  </span>
+                    {line.serialNumber && (
+                      <p className="font-mono text-[10px] text-purple-500">
+                        SN: {line.serialNumber.serialNumber}
+                        {line.secondarySerialNumber &&
+                          ` / ${line.secondarySerialNumber.serialNumber}`}
+                      </p>
+                    )}
+                  </div>
                   <span className="font-medium text-gray-800">{formatPeso(line.lineTotal)}</span>
                 </li>
               ))}

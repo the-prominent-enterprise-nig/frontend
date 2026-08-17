@@ -177,6 +177,7 @@ export interface PosTransactionLine {
   lineTotal: number
   notes?: string | null
   serialNumber?: string | null
+  secondarySerialNumber?: string | null
   invoiceType?: PosInvoiceType
   installmentProvider?: InstallmentProvider | null
   payNowMethod?: PayNowMethod | null
@@ -930,6 +931,8 @@ export interface InstallmentSchedule {
     unitPrice: number
     lineTotal: number
     item: { name: string; brand: { name: string } | null } | null
+    serialNumber: { id: string; serialNumber: string } | null
+    secondarySerialNumber: { id: string; serialNumber: string } | null
   }[]
   // The rebate — fixed 7.5% of the monthly installment. Null if this
   // schedule has no linked InstallmentAccount (shouldn't normally happen,
