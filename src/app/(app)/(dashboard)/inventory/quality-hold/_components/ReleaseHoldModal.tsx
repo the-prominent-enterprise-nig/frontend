@@ -204,7 +204,7 @@ export default function ReleaseHoldModal({
                       <option value="">Same warehouse</option>
                       {warehouseOptions.map((w) => (
                         <option key={w.id} value={w.id}>
-                          {w.name}
+                          {w.branch?.name ?? w.name}
                         </option>
                       ))}
                     </select>

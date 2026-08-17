@@ -46,6 +46,12 @@ export const WarehouseSummarySchema = z.object({
   address: z.string().nullable().optional(),
   status: WarehouseStatusSchema.optional(),
   branchId: z.string().nullable().optional(),
+  // Scenario 27 — only set on the 2 real (standalone) warehouses; used to
+  // default a branch's "Request from Warehouse" picker to its own region.
+  region: z.enum(['panay', 'negros']).nullable().optional(),
+  // Each branch has exactly one warehouse — pickers display this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
   _count: z.object({ locations: z.number() }).optional(),
 })
 

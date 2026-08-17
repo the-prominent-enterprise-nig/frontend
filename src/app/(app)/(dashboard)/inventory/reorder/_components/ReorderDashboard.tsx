@@ -102,17 +102,17 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
           ))}
         </div>
 
-        {/* Warehouse filter */}
+        {/* Branch filter */}
         <div className="flex gap-3">
           <select
             value={warehouseFilter ?? ''}
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
-            <option value="">All Warehouses</option>
+            <option value="">All Branches</option>
             {warehouseOptions.map((wh) => (
               <option key={wh.id} value={wh.id}>
-                {wh.code} — {wh.name}
+                {wh.branch?.name ?? wh.name}
               </option>
             ))}
           </select>
@@ -157,7 +157,7 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                         Item
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                        Warehouse
+                        Branch
                       </th>
                       <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                         Current Qty
@@ -183,7 +183,9 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                           )}
                         </td>
                         <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {alert.warehouse?.code ?? 'All'}
+                          {alert.warehouse
+                            ? (alert.warehouse.branch?.name ?? alert.warehouse.name)
+                            : 'All'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span
@@ -244,7 +246,7 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                         Item
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                        Warehouse
+                        Branch
                       </th>
                       <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                         Reorder Pt.
@@ -267,7 +269,9 @@ export default function ReorderDashboard({ session }: { session: SessionUser }) 
                           )}
                         </td>
                         <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {rule.warehouse?.code ?? 'All'}
+                          {rule.warehouse
+                            ? (rule.warehouse.branch?.name ?? rule.warehouse.name)
+                            : 'All'}
                         </td>
                         <td className="px-4 py-3 text-center font-semibold text-zinc-700">
                           {rule.reorderPoint}

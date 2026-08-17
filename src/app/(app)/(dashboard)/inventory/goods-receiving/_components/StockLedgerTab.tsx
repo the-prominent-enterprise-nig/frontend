@@ -67,10 +67,10 @@ export default function StockLedgerTab() {
           onChange={(e) => setWarehouseId(e.target.value || undefined)}
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
         >
-          <option value="">All Warehouses</option>
+          <option value="">All Branches</option>
           {warehouseOptions.map((wh) => (
             <option key={wh.id} value={wh.id}>
-              {wh.code} — {wh.name}
+              {wh.branch?.name ?? wh.name}
             </option>
           ))}
         </select>
@@ -147,9 +147,6 @@ export default function StockLedgerTab() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
                     Warehouse
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
-                    Branch
-                  </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     Qty
                   </th>
@@ -182,17 +179,7 @@ export default function StockLedgerTab() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                        {entry.warehouse?.code ?? '—'}
-                        {entry.warehouse?.name && (
-                          <span className="ml-1 text-zinc-400">({entry.warehouse.name})</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 hidden lg:table-cell">
-                        {entry.warehouse?.branch ? (
-                          <span className="text-zinc-700">{entry.warehouse.branch.name}</span>
-                        ) : (
-                          <span className="text-zinc-400">—</span>
-                        )}
+                        {entry.warehouse?.branch?.name ?? entry.warehouse?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span

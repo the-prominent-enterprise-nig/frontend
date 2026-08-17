@@ -22,6 +22,10 @@ test.describe('Inventory — Purchase Order PDF download', () => {
     await expect(supplierDropdown).toBeVisible({ timeout: 10_000 })
     await supplierDropdown.locator('button').first().click()
 
+    // Warehouse — required since Scenario 27 (a PO must always specify its
+    // real destination warehouse now, not an editable-later "Branch" field).
+    await page.locator('select').first().selectOption({ index: 1 })
+
     const itemInput = page.getByPlaceholder('Search item by name or SKU…')
     await itemInput.click()
     await itemInput.fill('a')

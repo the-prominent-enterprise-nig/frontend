@@ -1,7 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
+import { useEffect } from 'react'
+import {
+  useForm,
+  useWatch,
+  useController,
+  Controller,
+  useFieldArray,
+  type Control,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, Plus, Trash2 } from 'lucide-react'
@@ -11,10 +18,8 @@ import {
 } from '@/src/schema/inventory/transfers'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
-import { SerialSearchCombobox } from './SerialSearchCombobox'
 
 type Props = {
   isOpen: boolean
@@ -23,10 +28,17 @@ type Props = {
   isSubmitting: boolean
   warehouses: WarehouseSummary[]
   // A Branch Manager is always requesting stock be sent TO their own branch
-  // — "To Warehouse" locks to it, "From Warehouse" stays their free choice of
-  // who to ask. null/undefined (head office / Business Owner) leaves both
-  // fully open, matching this project's role-hierarchy convention.
+  // — "To Branch" locks to it, "From Branch" stays their free choice of who
+  // to ask. null/undefined (head office / Business Owner) leaves both fully
+  // open, matching this project's role-hierarchy convention.
   currentUserBranchId?: string | null
+}
+
+// Each branch has exactly one warehouse, so this picker is really choosing a
+// branch — display the branch's own name rather than the warehouse's
+// auto-generated "{branch} Warehouse" name.
+function branchLabel(wh: WarehouseSummary): string {
+  return wh.branch?.name ?? wh.name
 }
 
 const fieldClass =
@@ -35,25 +47,19 @@ const fieldClass =
 type LineRowProps = {
   control: Control<CreateTransferFormValues>
   index: number
-  fromWarehouseId: string | undefined
   canRemove: boolean
   onRemove: () => void
-  onSerialTrackedChange: (itemId: string, isSerialTracked: boolean) => void
   itemError?: string
   quantityError?: string
-  serialError?: string
 }
 
 function TransferLineRow({
   control,
   index,
-  fromWarehouseId,
   canRemove,
   onRemove,
-  onSerialTrackedChange,
   itemError,
   quantityError,
-  serialError,
 }: LineRowProps) {
   const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
 
@@ -68,28 +74,20 @@ function TransferLineRow({
   })
   const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
 
+  // The requester never picks a specific serial — they can't know what's
+  // physically on the shelf at the other branch/warehouse. The specific unit
+  // is chosen later by whoever's dispatching (see TransferDetailModal's
+  // dispatch form). All this side needs is "1 unit" per line, matching the
+  // backend's own per-line invariant for a serial-tracked line.
+  const quantityController = useController({ control, name: `lines.${index}.quantity` })
   useEffect(() => {
-    if (selectedItemId) onSerialTrackedChange(selectedItemId, isSerialTracked)
-  }, [selectedItemId, isSerialTracked, onSerialTrackedChange])
-
-  // Scoped to this line's specific item + the chosen source warehouse (not a
-  // blanket tenant-wide fetch) — with thousands of in-stock serials across a
-  // real tenant, an unscoped fetch capped at a fixed limit can silently miss
-  // the very serials that matter here.
-  const serialsQuery = useQuery({
-    queryKey: ['inventory-serials-in-stock', fromWarehouseId, selectedItemId],
-    queryFn: () =>
-      getSerialNumbers({
-        warehouseId: fromWarehouseId,
-        itemId: selectedItemId,
-        status: 'in_stock',
-        limit: 500,
-      }),
-    enabled: isSerialTracked && !!fromWarehouseId && !!selectedItemId,
-    staleTime: 60 * 1000,
-  })
-  const serialOptions = serialsQuery.data?.data?.data ?? []
-  const serialFieldDisabled = !fromWarehouseId || serialsQuery.isLoading
+    if (isSerialTracked && quantityController.field.value !== 1) {
+      quantityController.field.onChange(1)
+    }
+    // Only re-run when the tracked-ness flips — not on every quantity edit,
+    // which would fight a non-serial-tracked line's own quantity input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSerialTracked])
 
   return (
     <div className="rounded-lg border border-zinc-100 p-2">
@@ -106,21 +104,31 @@ function TransferLineRow({
         </div>
 
         <div className="w-28 shrink-0">
-          <Controller
-            name={`lines.${index}.quantity`}
-            control={control}
-            render={({ field: f }) => (
-              <input
-                {...f}
-                type="number"
-                min="1"
-                step="1"
-                placeholder="Qty"
-                className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
-              />
-            )}
-          />
+          {isSerialTracked ? (
+            <input
+              value={1}
+              disabled
+              readOnly
+              className={`${fieldClass} bg-zinc-50 text-zinc-500`}
+            />
+          ) : (
+            <input
+              value={quantityController.field.value}
+              name={quantityController.field.name}
+              onBlur={quantityController.field.onBlur}
+              ref={quantityController.field.ref}
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Qty"
+              className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+              onChange={(e) =>
+                quantityController.field.onChange(
+                  e.target.value === '' ? '' : Number(e.target.value)
+                )
+              }
+            />
+          )}
           {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
         </div>
 
@@ -135,33 +143,10 @@ function TransferLineRow({
       </div>
 
       {isSerialTracked && (
-        <div className="mt-2 pl-0.5">
-          <label className="mb-1 block text-xs font-medium text-zinc-500">
-            Specific serial number <span className="text-red-500">*</span>
-          </label>
-          <Controller
-            name={`lines.${index}.serialNumberId`}
-            control={control}
-            render={({ field: f }) => (
-              <SerialSearchCombobox
-                value={f.value ?? ''}
-                onChange={f.onChange}
-                options={serialOptions}
-                queryKey={`serial-search-${fromWarehouseId}-${selectedItemId}`}
-                disabled={serialFieldDisabled}
-                placeholder={
-                  !fromWarehouseId
-                    ? 'Please select a warehouse first'
-                    : serialsQuery.isLoading
-                      ? 'Loading serials…'
-                      : 'Search serial number…'
-                }
-                error={serialError}
-              />
-            )}
-          />
-          {serialError && <p className="mt-1 text-xs text-red-600">{serialError}</p>}
-        </div>
+        <p className="mt-2 pl-0.5 text-xs text-zinc-400">
+          Serial-tracked — 1 unit per line. The source branch/warehouse picks the specific serial
+          when they dispatch it.
+        </p>
       )}
     </div>
   )
@@ -191,7 +176,6 @@ export default function CreateTransferModal({
     handleSubmit,
     reset,
     watch,
-    setError,
     setValue,
     formState: { errors },
   } = useForm<CreateTransferFormValues>({
@@ -202,7 +186,7 @@ export default function CreateTransferModal({
       transferDate: today,
       expectedArrival: '',
       reason: '',
-      lines: [{ itemId: '', quantity: 1, serialNumberId: '' }],
+      lines: [{ itemId: '', quantity: 1 }],
     },
   })
 
@@ -216,10 +200,6 @@ export default function CreateTransferModal({
   const arrivalBeforeTransfer =
     !!expectedArrival && !!transferDate && expectedArrival < transferDate
 
-  // Keyed by itemId (not line index) so a line removal — which shifts every
-  // later index down — can never leave this map pointing at the wrong line.
-  const [serialTrackedByItemId, setSerialTrackedByItemId] = useState<Record<string, boolean>>({})
-
   useEffect(() => {
     if (isOpen) {
       // Re-applied on every open (not just mount) since `warehouses` loads
@@ -230,7 +210,7 @@ export default function CreateTransferModal({
         transferDate: today,
         expectedArrival: '',
         reason: '',
-        lines: [{ itemId: '', quantity: 1, serialNumberId: '' }],
+        lines: [{ itemId: '', quantity: 1 }],
       })
     } else {
       reset({
@@ -239,9 +219,8 @@ export default function CreateTransferModal({
         transferDate: today,
         expectedArrival: '',
         reason: '',
-        lines: [{ itemId: '', quantity: 1, serialNumberId: '' }],
+        lines: [{ itemId: '', quantity: 1 }],
       })
-      setSerialTrackedByItemId({})
     }
     // lockedToWarehouseId intentionally omitted — this must only reset on
     // the open/close transition, not on every render while the modal stays
@@ -264,18 +243,6 @@ export default function CreateTransferModal({
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateTransferFormValues) {
-    let missingRequiredSerial = false
-    data.lines.forEach((line, idx) => {
-      if (serialTrackedByItemId[line.itemId] && !line.serialNumberId) {
-        setError(`lines.${idx}.serialNumberId`, {
-          type: 'required',
-          message: 'This field is required',
-        })
-        missingRequiredSerial = true
-      }
-    })
-    if (missingRequiredSerial) return
-
     const result = await onSubmit({
       ...data,
       // Fields are defaulted to '' (not undefined) so their inputs stay
@@ -284,10 +251,6 @@ export default function CreateTransferModal({
       // would fail @IsDateString(). Normalize back to undefined here.
       expectedArrival: data.expectedArrival || undefined,
       reason: data.reason || undefined,
-      lines: data.lines.map((line) => ({
-        ...line,
-        serialNumberId: line.serialNumberId || undefined,
-      })),
     })
     if (result.success) onClose()
   }
@@ -315,11 +278,11 @@ export default function CreateTransferModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {/* Warehouses */}
+            {/* From / To — a warehouse or a branch, either can appear here */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  From Warehouse <span className="text-red-500">*</span>
+                  From <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="fromWarehouseId"
@@ -331,7 +294,7 @@ export default function CreateTransferModal({
                         .filter((wh) => wh.id !== lockedToWarehouseId)
                         .map((wh) => (
                           <option key={wh.id} value={wh.id}>
-                            {wh.code} — {wh.name}
+                            {branchLabel(wh)}
                           </option>
                         ))}
                     </select>
@@ -344,7 +307,7 @@ export default function CreateTransferModal({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  To Warehouse <span className="text-red-500">*</span>
+                  To <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="toWarehouseId"
@@ -357,7 +320,7 @@ export default function CreateTransferModal({
                         className={`${fieldClass} bg-zinc-50 text-zinc-500`}
                       >
                         <option value={lockedToWarehouseId}>
-                          {ownBranchWarehouses[0].code} — {ownBranchWarehouses[0].name}
+                          {branchLabel(ownBranchWarehouses[0])}
                         </option>
                       </select>
                     ) : (
@@ -367,7 +330,7 @@ export default function CreateTransferModal({
                           .filter((wh) => wh.id !== fromId)
                           .map((wh) => (
                             <option key={wh.id} value={wh.id}>
-                              {wh.code} — {wh.name}
+                              {branchLabel(wh)}
                             </option>
                           ))}
                       </select>
@@ -444,7 +407,7 @@ export default function CreateTransferModal({
                 </label>
                 <button
                   type="button"
-                  onClick={() => append({ itemId: '', quantity: 1, serialNumberId: '' })}
+                  onClick={() => append({ itemId: '', quantity: 1 })}
                   className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -465,17 +428,10 @@ export default function CreateTransferModal({
                     key={field.id}
                     control={control}
                     index={index}
-                    fromWarehouseId={fromId}
                     canRemove={fields.length > 1}
                     onRemove={() => fields.length > 1 && remove(index)}
-                    onSerialTrackedChange={(itemId, isTracked) =>
-                      setSerialTrackedByItemId((prev) =>
-                        prev[itemId] === isTracked ? prev : { ...prev, [itemId]: isTracked }
-                      )
-                    }
                     itemError={errors.lines?.[index]?.itemId?.message}
                     quantityError={errors.lines?.[index]?.quantity?.message}
-                    serialError={errors.lines?.[index]?.serialNumberId?.message}
                   />
                 ))}
               </div>

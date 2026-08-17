@@ -12,7 +12,12 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type ItemOption = { id: string; name: string; sku: string }
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  branch?: { id: string; name: string } | null
+}
 
 type Props = {
   isOpen: boolean
@@ -127,7 +132,7 @@ export default function RegisterSerialsModal({
                     <option value="">Select warehouse…</option>
                     {warehouses.map((wh) => (
                       <option key={wh.id} value={wh.id}>
-                        {wh.code} — {wh.name}
+                        {wh.branch?.name ?? wh.name}
                       </option>
                     ))}
                   </select>

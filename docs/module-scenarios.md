@@ -8,7 +8,7 @@ Each scenario has its own gap-analysis-and-closing-plan doc: `scenario-NN-<slug>
 
 ## 1. POS — a customer walks in and buys
 
-_See [scenario-01-pos-installment-sale-plan.md](./scenario-01-pos-installment-sale-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A walk-in customer buys a phone on installment at the Ajuy branch.
 
@@ -45,7 +45,7 @@ Scenario: A new customer is entered before they decide to buy.
 
 ## 3. Reservation / advance sale — item not in stock yet
 
-_See [scenario-03-reservation-advance-sale-plan.md](./scenario-03-reservation-advance-sale-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A customer wants furniture the branch does not have on hand.
 
@@ -61,7 +61,7 @@ Scenario: A customer wants furniture the branch does not have on hand.
 
 ## 4. POS serial availability — the item is in another branch
 
-_See [scenario-04-pos-cross-branch-serial-plan.md](./scenario-04-pos-cross-branch-serial-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: The model the customer wants is out at this branch.
 
@@ -74,24 +74,25 @@ Scenario: The model the customer wants is out at this branch.
 
 ---
 
-## 5. Receiving — a delivery arrives at the branch
+## 5. Receiving — a delivery arrives at a warehouse
 
 _See [scenario-05-receiving-plan.md](./scenario-05-receiving-plan.md)_
 
-Scenario: A supplier or warehouse delivery lands at a branch.
+Scenario: A supplier delivery arrives. **Updated 2026-08-14 (Scenario 27 — Warehouse Tier Correction)**: a delivery can no longer be received directly into a branch's own stock — it must land at one of the 2 real warehouses (PANAY or NEGROS); the system rejects any receipt targeting a branch-local shadow warehouse. Getting the stock onward to a branch is a separate step, via a warehouse-leg Stock Transfer (see Scenario 6).
 
-1. **Encode the RR** — the branch encodes the Receiving Report on the tablet for the delivery (with or without a PO): reference, date, PO # & date, origin, mode, destination, Cost.
+1. **Encode the RR** — whoever handles receiving at the warehouse encodes the Receiving Report on the tablet for the delivery (with or without a PO): reference, date, PO # & date, origin, mode, destination warehouse, Cost.
 2. **Withholding** — flag the 1% supplier withholding where applicable.
 3. **Link to the PO** — the RR links to the PO to monitor delivered versus lacking.
-4. **Post** — saving updates stock (by serial / SKU) and auto-updates the account ledger.
+4. **Post** — saving updates the warehouse's stock (by serial / SKU) and auto-updates the account ledger.
+5. **Onward to the branch** — the branch that needs the stock raises (or receives) a warehouse-leg transfer, which skips the usual Manager/HQ approval step and picks specific serials at dispatch.
 
-**Result**: every delivery is recorded on the tablet, tied to the PO, and posted to inventory and the books.
+**Result**: every delivery is recorded on the tablet, tied to the PO, posted to inventory and the books at the receiving warehouse, then moved on to the requesting branch via transfer.
 
 ---
 
 ## 6. Stock request & inter-branch transfer — a branch needs stock
 
-_See [scenario-06-stock-request-transfer-plan.md](./scenario-06-stock-request-transfer-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A branch is out of a model a customer wants.
 
@@ -106,7 +107,7 @@ Scenario: A branch is out of a model a customer wants.
 
 ## 7. Repair transfer — a unit needs repair
 
-_See [scenario-07-repair-transfer-plan.md](./scenario-07-repair-transfer-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A sold or stock unit is found defective and needs service.
 
@@ -120,7 +121,7 @@ Scenario: A sold or stock unit is found defective and needs service.
 
 ## 8. Caravan — a caravan sale at a host branch
 
-_See [scenario-08-caravan-plan.md](./scenario-08-caravan-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: The company runs a caravan event at a host branch.
 
@@ -135,7 +136,7 @@ Scenario: The company runs a caravan event at a host branch.
 
 ## 9. Aircool — aircon sale plus installation
 
-_See [scenario-09-aircool-plan.md](./scenario-09-aircool-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A customer buys a split-type aircon and needs it installed.
 
@@ -182,7 +183,7 @@ Scenario: A collector works their accounts and a customer pays an installment.
 
 ## 12. End-of-day cash & Cash in Transit — closing the branch
 
-_See [scenario-12-eod-cit-monitor-plan.md](./scenario-12-eod-cit-monitor-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A branch closes for the day and accounting reconciles it.
 
@@ -197,7 +198,7 @@ Scenario: A branch closes for the day and accounting reconciles it.
 
 ## 13. Credit & debit memos — a return or adjustment
 
-_See [scenario-13-credit-debit-memos-plan.md](./scenario-13-credit-debit-memos-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: A customer returns an item, or a bill needs adjusting.
 
@@ -211,7 +212,7 @@ Scenario: A customer returns an item, or a bill needs adjusting.
 
 ## 14. Accounting — the daily and month-end run
 
-_See [scenario-14-accounting-month-end-plan.md](./scenario-14-accounting-month-end-plan.md)_
+_Closed — see scenario-checklist.md for status (plan doc removed 2026-08-14)._
 
 Scenario: The accountant keeps the books current and closes the month.
 
@@ -231,10 +232,10 @@ A second, independently-sourced client scenario map (27 July 2026, 18 rows, chro
 | Draft 2 row                                                         | Routed to                                                                                            | Outcome                                                                                                                                                 |
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Encoding and activating multiple price lists                     | **[Scenario 15](./scenario-15-price-list-management-plan.md)** (new)                                 | A `PriceList` model exists but has no branch scoping, approval workflow, floor price, or true versioning                                                |
-| 2. Creating or updating an item master record                       | **[Scenario 16](./scenario-16-item-master-governance-plan.md)** (new)                                | Item CRUD publishes instantly today — no draft/approve workflow, no Master Data Approver role                                                           |
+| 2. Creating or updating an item master record                       | **Scenario 16** (new, closed — plan doc removed 2026-08-14)                                          | Item CRUD publishes instantly today — no draft/approve workflow, no Master Data Approver role                                                           |
 | 3. Creating or updating a customer and co-maker profile             | Scenario 02 (see its [updates doc](./scenario-02-crm-customer-profile-updates.md), 2026-07-31 entry) | Co-maker entity, duplicate detection, and BM/AR merge-resolution are real gaps on top of the existing profile flow                                      |
 | 4. Processing a cash or card sale with serial validation            | Scenario 01                                                                                          | Already implemented                                                                                                                                     |
-| 5. Processing an installment sale from application to release       | **[Scenario 17](./scenario-17-credit-application-promissory-note-plan.md)** (new)                    | Checkout mechanics are Scenario 01 (closed); the pre-sale Credit Application / Credit Investigation / Promissory Note process is net-new                |
+| 5. Processing an installment sale from application to release       | **Scenario 17** (new, closed — plan doc removed 2026-08-14)                                          | Checkout mechanics are Scenario 01 (closed); the pre-sale Credit Application / Credit Investigation / Promissory Note process is net-new                |
 | 6. Recording a reservation and converting it to a sale              | Scenario 03                                                                                          | Already implemented                                                                                                                                     |
 | 7. Processing a customer return, exchange or refund                 | **[Scenario 18](./scenario-18-returns-exchanges-disposition-plan.md)** (new)                         | Building blocks exist (request record, JE reversal, restock) but Quarantine, tiered custodian+approver flow, and working Exchange are missing           |
 | 8. Creating and completing a Repair Transfer                        | Scenario 07                                                                                          | Already implemented                                                                                                                                     |
@@ -242,9 +243,9 @@ A second, independently-sourced client scenario map (27 July 2026, 18 rows, chro
 | 10. Receiving supplier units and updating the open PO               | Scenarios 05 + 10                                                                                    | Already implemented                                                                                                                                     |
 | 11. Matching supplier documents and recording payment               | Scenario 10                                                                                          | Matches its existing, still-open AP-side gap (voucher, 3-way match, cheque printing, withholding, supplier returns)                                     |
 | 12. Requesting, dispatching and receiving a stock transfer          | Scenario 06                                                                                          | Already implemented                                                                                                                                     |
-| 13. Counting stock and approving an inventory adjustment            | **[Scenario 19](./scenario-19-stock-count-adjustment-approval-plan.md)** (new)                       | `StockCount`/`AdjustmentsService` exist but with no system snapshot, no approval chain, no before/after audit                                           |
+| 13. Counting stock and approving an inventory adjustment            | **Scenario 19** (new, closed — plan doc removed 2026-08-14)                                          | `StockCount`/`AdjustmentsService` exist but with no system snapshot, no approval chain, no before/after audit                                           |
 | 14. Closing the cashier and reconciling the deposit                 | Scenario 12                                                                                          | Already implemented                                                                                                                                     |
 | 15. Posting a collection and updating the correct contract          | Scenario 11                                                                                          | Already implemented                                                                                                                                     |
-| 16. Performing NAMIDRe reminders and follow-up                      | **[Scenario 20](./scenario-20-collections-namidre-dam-plan.md)** (new, combined with row 17)         | Net-new on top of the real Collections module — no reminder-task system tied to `InstallmentAccount`/`Collector`                                        |
-| 17. Managing a DAM account and escalating it for legal action       | **[Scenario 20](./scenario-20-collections-namidre-dam-plan.md)** (new, combined with row 16)         | Net-new — no delinquency-escalation stage, no legal/Small Claims pipeline                                                                               |
+| 16. Performing NAMIDRe reminders and follow-up                      | **Scenario 20** (new, closed — plan doc removed 2026-08-14, combined with row 17)                    | Net-new on top of the real Collections module — no reminder-task system tied to `InstallmentAccount`/`Collector`                                        |
+| 17. Managing a DAM account and escalating it for legal action       | **Scenario 20** (new, closed — plan doc removed 2026-08-14, combined with row 16)                    | Net-new — no delinquency-escalation stage, no legal/Small Claims pipeline                                                                               |
 | 18. Working from role queues and synchronizing audited transactions | **[Scenario 21](./scenario-21-role-queues-maker-checker-plan.md)** (new)                             | Action-queue aggregation, maker-checker, and approval limits are additive; true offline-first sync is flagged as future work, not scoped into this pass |

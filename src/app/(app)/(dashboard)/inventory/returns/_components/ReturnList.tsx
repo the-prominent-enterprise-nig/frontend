@@ -104,10 +104,10 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
-            <option value="">All Warehouses</option>
+            <option value="">All Branches</option>
             {warehouseOptions.map((w) => (
               <option key={w.id} value={w.id}>
-                {w.name}
+                {w.branch?.name ?? w.name}
               </option>
             ))}
           </select>
@@ -212,7 +212,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                           <p className="font-mono text-xs text-zinc-400">{ret.item?.sku}</p>
                         </td>
                         <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {ret.warehouse?.name ?? '—'}
+                          {ret.warehouse?.branch?.name ?? ret.warehouse?.name ?? '—'}
                         </td>
                         <td className="px-4 py-3 text-center font-semibold text-zinc-900">
                           {ret.quantity}

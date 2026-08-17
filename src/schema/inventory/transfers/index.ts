@@ -12,16 +12,14 @@ export const TransferStatusSchema = z.enum([
   'cancelled',
 ])
 
-export const CreateTransferLineSchema = z
-  .object({
-    itemId: z.string().min(1, 'Item is required'),
-    quantity: z.number().positive('Quantity must be greater than 0'),
-    serialNumberId: z.string().optional(),
-  })
-  .refine((d) => !d.serialNumberId || d.quantity === 1, {
-    message: 'A line with a specific serial must have quantity 1',
-    path: ['quantity'],
-  })
+// No serialNumberId here — the requester never picks the specific unit, they
+// only know they need one (or more, one line each) of a serial-tracked item.
+// The physical serial is chosen later by whoever's dispatching, at dispatch
+// time (see DispatchTransferFormSchema's serialAssignments below).
+export const CreateTransferLineSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  quantity: z.number().positive('Quantity must be greater than 0'),
+})
 
 export const CreateTransferFormSchema = z
   .object({
@@ -41,9 +39,20 @@ export const CreateTransferFormSchema = z
     path: ['expectedArrival'],
   })
 
+// One entry per serial-tracked line being dispatched — itemId/itemLabel are
+// form-only display context (which serial dropdown this is, and what to
+// fetch in-stock options for), stripped before the request is sent.
+export const DispatchSerialAssignmentSchema = z.object({
+  lineId: z.string().min(1),
+  itemId: z.string().optional(),
+  itemLabel: z.string().optional(),
+  serialNumberId: z.string().min(1, 'Select a serial number'),
+})
+
 export const DispatchTransferFormSchema = z.object({
   expectedArrival: z.string().min(1, 'Expected arrival date is required'),
   notes: z.string().max(500).optional(),
+  serialAssignments: z.array(DispatchSerialAssignmentSchema).optional(),
   driverName: z.string().min(1, "Driver's name is required").max(150),
   driverPhone: z.string().min(1, "Driver's contact number is required").max(50),
   driverLicense: z.string().min(1, "Driver's license number is required").max(100),
@@ -99,6 +108,7 @@ export const RejectManagerTransferFormSchema = z.object({
 export type CreateTransferFormValues = z.infer<typeof CreateTransferFormSchema>
 export type CreateTransferLineValues = z.infer<typeof CreateTransferLineSchema>
 export type DispatchTransferFormValues = z.infer<typeof DispatchTransferFormSchema>
+export type DispatchSerialAssignmentValues = z.infer<typeof DispatchSerialAssignmentSchema>
 export type ReceiveTransferFormValues = z.infer<typeof ReceiveTransferFormSchema>
 export type ReceiveTransferLineValues = z.infer<typeof ReceiveTransferLineSchema>
 export type ReceiveTransferExtraLineValues = z.infer<typeof ReceiveTransferExtraLineSchema>
@@ -112,12 +122,24 @@ const TransferWarehouseSchema = z.object({
   name: z.string(),
   code: z.string(),
   branchId: z.string().nullable().optional(),
+  // Set only on the 2 real standalone warehouses (Scenario 27); null for a
+  // branch-local one. For a branch-local warehouse the UI shows `branch`'s
+  // name instead of the warehouse's own "{branch} Warehouse" name.
+  region: z.enum(['panay', 'negros']).nullable().optional(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const TransferLineSchema = z.object({
   id: z.string().optional(),
   itemId: z.string().optional(),
-  item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
+  item: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      sku: z.string(),
+      isSerialTracked: z.boolean().optional(),
+    })
+    .optional(),
   quantity: z.number(),
   receivedQuantity: z.number().nullable().optional(),
   serialNumberId: z.string().nullable().optional(),
@@ -169,6 +191,11 @@ export const TransferSummarySchema = z.object({
   managerRejectedReason: z.string().nullable().optional(),
   lines: z.array(TransferLineSchema).optional(),
   _count: z.object({ lines: z.number() }).optional(),
+  // Present only for a repair transfer auto-paired by the UDS module — that
+  // flow already tracks its specific serial separately (UnitDocumentSheet's
+  // own lines), so dispatch never requires a serialAssignments entry for
+  // this transfer's lines even when they're serial-tracked.
+  linkedUds: z.array(z.object({ id: z.string() })).optional(),
   goodsReceipts: z
     .array(
       z.object({

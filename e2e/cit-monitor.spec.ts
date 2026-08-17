@@ -54,14 +54,15 @@ test.describe('Cash-in-Transit — cross-branch monitor (Scenario 12, Part 3)', 
       timeout: 10_000,
     })
 
-    // Manila HQ has a real, persistent outstanding session from earlier manual
-    // verification of this scenario — flagged non-zero, not just present.
-    const manilaRow = page.locator('tr', { hasText: 'Manila HQ' })
-    await expect(manilaRow).toBeVisible()
-    await expect(manilaRow.getByText('Not at ₱0.00')).toBeVisible()
+    // Bago (formerly seeded/labeled "Manila HQ") has a real, persistent
+    // outstanding session from earlier manual verification of this scenario —
+    // flagged non-zero, not just present.
+    const bagoRow = page.locator('tr', { hasText: 'Bago' })
+    await expect(bagoRow).toBeVisible()
+    await expect(bagoRow.getByText('Not at ₱0.00')).toBeVisible()
 
-    await manilaRow.click()
-    await expect(page.getByRole('heading', { name: /Manila HQ — Cash-in-Transit/i })).toBeVisible({
+    await bagoRow.click()
+    await expect(page.getByRole('heading', { name: /Bago — Cash-in-Transit/i })).toBeVisible({
       timeout: 10_000,
     })
     await expect(page.getByRole('button', { name: /Back to monitor/i })).toBeVisible()
@@ -81,9 +82,9 @@ test.describe('Cash-in-Transit — Excel export (Scenario 12, Part 5)', () => {
       timeout: 10_000,
     })
 
-    // Manila HQ's real outstanding session (from earlier manual verification)
+    // Bago's real outstanding session (from earlier manual verification)
     // guarantees this view has at least one row, so the button is enabled.
-    await expect(page.locator('tr', { hasText: 'Manila HQ' })).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('tr', { hasText: 'Bago' })).toBeVisible({ timeout: 10_000 })
 
     const exportButton = page.getByRole('button', { name: /Export to Excel/i })
     await expect(exportButton).toBeEnabled()

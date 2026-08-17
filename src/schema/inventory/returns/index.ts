@@ -29,6 +29,7 @@ const ReturnWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string().optional(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 export const ReturnSummarySchema = z.object({

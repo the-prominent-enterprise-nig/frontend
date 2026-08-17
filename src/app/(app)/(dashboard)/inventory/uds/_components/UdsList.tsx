@@ -143,7 +143,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Unit Document Sheets</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Track units leaving the warehouse for repair, pull-out, maintenance, or loan.
+              Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>
           </div>
           <button
@@ -315,9 +315,11 @@ export default function UdsList({ session }: { session: SessionUser }) {
                           )}
                         </td>
 
-                        {/* Route: warehouse, with an arrow to the auto-paired transfer if any */}
+                        {/* Route: branch, with an arrow to the auto-paired transfer if any */}
                         <td className="px-4 py-3">
-                          <p className="text-zinc-700">{uds.warehouse?.code ?? '—'}</p>
+                          <p className="text-zinc-700">
+                            {uds.warehouse?.branch?.name ?? uds.warehouse?.name ?? '—'}
+                          </p>
                           {uds.linkedStockTransfer && (
                             <Link
                               href="/inventory/transfers"

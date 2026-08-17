@@ -714,6 +714,7 @@ export default function InstallmentAccountDetail({
         }}
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
+        suggestedRebate={Number(account.ppd)}
       />
 
       {rejectingRequestId && (

@@ -36,13 +36,17 @@ test.describe('Inventory — Purchase Order discount pricing', () => {
     })
 
     const supplierLabel = await pickFirstOption(page, 'Search supplier by name or code…')
+    // Warehouse — required since Scenario 27 (a PO must always specify its
+    // real destination warehouse now, not an editable-later "Branch" field).
+    // This is now the first <select> on the form, ahead of Discount Type.
+    await page.locator('select').first().selectOption({ index: 1 })
     await pickFirstOption(page, 'Search item by name or SKU…')
 
     const numberInputs = page.locator('input[type="number"]')
     await fillStable(numberInputs.nth(0), '10') // Quantity
     await fillStable(numberInputs.nth(1), '850') // Unit Price
     await fillStable(numberInputs.nth(2), '1000') // Supplier SRP
-    await page.locator('select').selectOption('percentage')
+    await page.locator('select').nth(1).selectOption('percentage') // Discount Type
     await fillStable(numberInputs.nth(3), '15') // Discount %
 
     await expect(page.getByText('Discounted cost:')).toBeVisible()
