@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type SalesOrder = {
-  id: string
-  customerName?: string
-  totalAmount?: number | string | null
-}
+import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { customersApi } from '@/src/libs/api/crm'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 type CustomerRow = {
   name: string
@@ -38,20 +34,29 @@ export default function TopCustomersWidget() {
 
   const [customers, setCustomers] = useState<CustomerRow[]>([])
   const [loading, setLoading] = useState(true)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
-    api
-      .get<{ data?: SalesOrder[] }>('/sales/orders', { limit: 200 })
-      .then((res) => {
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+    Promise.all([
+      getTransactions({
+        transactionType: 'sale',
+        dateFrom: ninetyDaysAgo.toISOString(),
+        branchId: branchId ?? undefined,
+      }),
+      customersApi.list({ limit: 200 }),
+    ])
+      .then(([txRes, custRes]) => {
         if (cancelled) return
-        const orders = res.data?.data ?? []
+        const nameById = new Map((custRes.data?.data ?? []).map((c) => [c.id, c.name] as const))
+        const txns = (txRes.data ?? []).filter((t) => t.status !== 'voided')
         const map = new Map<string, CustomerRow>()
-        for (const o of orders) {
-          const name = o.customerName || 'Unknown'
+        for (const t of txns) {
+          const name = (t.customerId && nameById.get(t.customerId)) || 'Walk-in Customer'
           const existing = map.get(name) ?? { name, orders: 0, revenue: 0 }
           existing.orders += 1
-          existing.revenue += Number(o.totalAmount ?? 0)
+          existing.revenue += Number(t.totalAmount ?? 0)
           map.set(name, existing)
         }
         const sorted = Array.from(map.values()).sort((a, b) => b.revenue - a.revenue)
@@ -64,7 +69,7 @@ export default function TopCustomersWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   if (loading) {
     return (

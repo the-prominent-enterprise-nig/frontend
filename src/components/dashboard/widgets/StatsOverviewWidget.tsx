@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { TrendingUp, TrendingDown, Wallet, Receipt, ArrowUpRight } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { Reports } from '@/src/libs/data/AccountingV2Data'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 interface Stat {
   label: string
@@ -75,6 +76,7 @@ export default function StatsOverviewWidget() {
           : 'grid-cols-1'
 
   const [stats, setStats] = useState<Stat[]>(PLACEHOLDER)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
@@ -82,7 +84,10 @@ export default function StatsOverviewWidget() {
       const now = new Date()
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
       const today = now.toISOString().slice(0, 10)
-      const [pnl, bi] = await Promise.all([Reports.pnl(monthStart, today), Reports.biSummary()])
+      const [pnl, bi] = await Promise.all([
+        Reports.pnl(monthStart, today, branchId ?? undefined),
+        Reports.biSummary(),
+      ])
       if (cancelled) return
       const revenue = Number(pnl.data?.totalRevenue ?? 0)
       const expenses = Number(pnl.data?.totalOpEx ?? 0) + Number(pnl.data?.totalCogs ?? 0)
@@ -131,7 +136,7 @@ export default function StatsOverviewWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   return (
     <div className={`grid gap-2 ${gridCols}`}>

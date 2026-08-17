@@ -7,7 +7,14 @@ interface PosBranchContextStore {
   setBranch: (branch: { id: string; name: string } | null) => void
 }
 
-/** null branchId means "All Branches" — no filter applied. */
+/**
+ * null branchId means "All Branches" — no filter applied.
+ *
+ * Also used by the main dashboard's branch switcher
+ * (`src/components/dashboard/DashboardBranchSwitcher.tsx`), despite the
+ * "pos" name — kept as one shared store rather than a POS-only one plus a
+ * dashboard-only one, so switching branches in either place stays in sync.
+ */
 export const usePosBranchContext = create<PosBranchContextStore>()(
   persist(
     (set) => ({

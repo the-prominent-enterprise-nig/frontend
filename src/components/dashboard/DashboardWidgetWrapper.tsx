@@ -90,11 +90,11 @@ export default function DashboardWidgetWrapper({
 
   return (
     <div
-      className={`flex min-w-40 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition
+      className={`flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition
         ${
           isEditing
-            ? 'h-full min-h-0 ring-purple-300 shadow-md shadow-purple-100'
-            : 'h-full ring-zinc-200 hover:ring-zinc-300'
+            ? 'h-full min-h-0 min-w-36 ring-purple-300 shadow-md shadow-purple-100'
+            : 'h-full min-w-0 ring-zinc-200 hover:ring-zinc-300'
         }`}
     >
       {/* Widget header — always shrink-0 so it never gets clipped */}
