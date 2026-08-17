@@ -47,6 +47,11 @@ export const DispatchSerialAssignmentSchema = z.object({
   itemId: z.string().optional(),
   itemLabel: z.string().optional(),
   serialNumberId: z.string().min(1, 'Select a serial number'),
+  // Scenario 29 SN-01 — supervisor override: dispatch this serial even
+  // though it fails the normal in-stock/source-warehouse check. Requires
+  // inventory:transfers:serial-override and overrideReason server-side.
+  override: z.boolean().optional(),
+  overrideReason: z.string().max(500).optional(),
 })
 
 export const DispatchTransferFormSchema = z.object({

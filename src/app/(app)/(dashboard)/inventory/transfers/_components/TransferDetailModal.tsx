@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm, useFieldArray, Controller, type Control } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch, Controller, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -43,6 +43,10 @@ import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { SerialSearchCombobox } from './SerialSearchCombobox'
+import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
+import { searchVehicles } from '../_actions/search-vehicles'
+import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
 
 const STATUS_CONFIG = {
   pending_manager_approval: {
@@ -120,6 +124,7 @@ function DispatchSerialAssignmentRow({
   itemId,
   itemLabel,
   error,
+  canOverride,
 }: {
   control: Control<DispatchTransferFormValues>
   index: number
@@ -127,7 +132,20 @@ function DispatchSerialAssignmentRow({
   itemId: string | undefined
   itemLabel: string | undefined
   error?: string
+  canOverride: boolean
 }) {
+  // Everyone defaults to the narrow, safe picker — in-stock at the source
+  // warehouse only — same as before override existed. Only once the
+  // "Supervisor override" checkbox itself is ticked does it widen to a
+  // tenant-wide live search; merely HOLDING the permission isn't enough to
+  // change what a normal dispatch shows, since that would surface every
+  // other branch's serials on every single dispatch and make the common
+  // case harder to use for exactly the people this feature is for.
+  const overrideChecked = Boolean(
+    useWatch({ control, name: `serialAssignments.${index}.override` })
+  )
+  const widened = canOverride && overrideChecked
+
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
     queryFn: () =>
@@ -137,7 +155,7 @@ function DispatchSerialAssignmentRow({
         status: 'in_stock',
         limit: 500,
       }),
-    enabled: !!fromWarehouseId && !!itemId,
+    enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })
   const serialOptions = serialsQuery.data?.data?.data ?? []
@@ -150,19 +168,83 @@ function DispatchSerialAssignmentRow({
       <Controller
         name={`serialAssignments.${index}.serialNumberId`}
         control={control}
-        render={({ field: f }) => (
-          <SerialSearchCombobox
-            value={f.value ?? ''}
-            onChange={f.onChange}
-            options={serialOptions}
-            queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}`}
-            disabled={serialsQuery.isLoading}
-            placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
-            error={error}
-          />
-        )}
+        render={({ field: f }) =>
+          widened ? (
+            <SearchCombobox
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              error={error}
+              queryKey={`dispatch-serial-override-search-${itemId}`}
+              placeholder="Search any serial number…"
+              typeToSearchMessage="Type a serial number to search across every branch…"
+              emptyMessage="No matching serial numbers"
+              search={async (query) => {
+                const res = await getSerialNumbers({
+                  itemId,
+                  search: query || undefined,
+                  limit: 25,
+                  scope: 'override',
+                })
+                return (res.data?.data ?? []).map((s) => ({
+                  id: s.id,
+                  primary: s.serialNumber,
+                  secondary:
+                    [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+                }))
+              }}
+            />
+          ) : (
+            <SerialSearchCombobox
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              options={serialOptions}
+              queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}`}
+              disabled={serialsQuery.isLoading}
+              placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              error={error}
+            />
+          )
+        }
       />
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+
+      {/* Scenario 29 SN-01 — if the picked serial fails the in-stock/
+          source-warehouse check (stale system record, physically correct
+          unit), a supervisor can force it through with a reason. Hidden
+          entirely for anyone without the override permission. */}
+      {canOverride && (
+        <Controller
+          name={`serialAssignments.${index}.override`}
+          control={control}
+          render={({ field: overrideField }) => (
+            <div className="mt-1.5">
+              <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                <input
+                  type="checkbox"
+                  checked={Boolean(overrideField.value)}
+                  onChange={(e) => overrideField.onChange(e.target.checked)}
+                />
+                Supervisor override — force this serial past the in-stock/warehouse check
+              </label>
+              {overrideField.value && (
+                <Controller
+                  name={`serialAssignments.${index}.overrideReason`}
+                  control={control}
+                  render={({ field: reasonField }) => (
+                    <input
+                      {...reasonField}
+                      value={reasonField.value ?? ''}
+                      type="text"
+                      placeholder="Reason for the override (required)"
+                      className="mt-1 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
+                    />
+                  )}
+                />
+              )}
+            </div>
+          )}
+        />
+      )}
     </div>
   )
 }
@@ -224,6 +306,9 @@ type Props = {
   canAccept: boolean
   canReject: boolean
   canDispatch: boolean
+  /** Scenario 29 SN-01 — dispatch a mismatched serial past the normal
+   * in-stock/source-warehouse check, with a required reason. */
+  canOverrideSerial: boolean
   canReceive: boolean
   canHqApprove: boolean
   canHqReject: boolean
@@ -266,6 +351,7 @@ export default function TransferDetailModal({
   canAccept,
   canReject,
   canDispatch,
+  canOverrideSerial,
   canReceive,
   canHqApprove,
   canHqReject,
@@ -450,6 +536,10 @@ export default function TransferDetailModal({
         ? data.serialAssignments.map((a) => ({
             lineId: a.lineId,
             serialNumberId: a.serialNumberId,
+            ...(a.override && {
+              override: true,
+              overrideReason: a.overrideReason,
+            }),
           }))
         : undefined,
       driverName: data.driverName,
@@ -553,6 +643,22 @@ export default function TransferDetailModal({
 
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+
+  // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
+  // the source branch a vehicle is on file for, same as the branch the
+  // dispatching stock is leaving from.
+  const dispatchFromBranchId = transfer?.fromWarehouse?.branch?.id
+  async function searchDispatchVehicles(query: string) {
+    const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
+    return result.success && result.data ? result.data : []
+  }
+  // Picking a roster entry from either field fills both — driverName and
+  // vehiclePlate are the only two fields the Vehicle model actually carries
+  // (phone/license/carrier stay manual, they're not in the fleet sheet).
+  function pickDispatchVehicle(vehicle: VehicleSummary) {
+    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
+    dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -1002,6 +1108,7 @@ export default function TransferDetailModal({
                             dispatchForm.formState.errors.serialAssignments?.[idx]?.serialNumberId
                               ?.message
                           }
+                          canOverride={canOverrideSerial}
                         />
                       ))}
                     </div>
@@ -1021,11 +1128,14 @@ export default function TransferDetailModal({
                       name="driverName"
                       control={dispatchForm.control}
                       render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
+                        <VehicleAutocompleteInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          onPickVehicle={pickDispatchVehicle}
+                          search={searchDispatchVehicles}
+                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
-                          className={fieldClass}
+                          error={dispatchForm.formState.errors.driverName?.message}
                         />
                       )}
                     />
@@ -1072,11 +1182,14 @@ export default function TransferDetailModal({
                       name="vehiclePlate"
                       control={dispatchForm.control}
                       render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
+                        <VehicleAutocompleteInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          onPickVehicle={pickDispatchVehicle}
+                          search={searchDispatchVehicles}
+                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. ABC 1234"
-                          className={fieldClass}
+                          error={dispatchForm.formState.errors.vehiclePlate?.message}
                         />
                       )}
                     />

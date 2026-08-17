@@ -6,6 +6,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getPurchaseOrders } from '../_actions/get-purchase-orders'
 import { createPurchaseOrder } from '../_actions/create-purchase-order'
+import { updatePurchaseOrder } from '../_actions/update-purchase-order'
 import { convertPrToPo } from '../_actions/convert-pr-to-po'
 import { approvePurchaseOrder } from '../_actions/approve-purchase-order'
 import { sendPurchaseOrder } from '../_actions/send-purchase-order'
@@ -76,6 +77,27 @@ export function usePurchaseOrders() {
       } else {
         showToast({
           title: 'Failed to create purchase order',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreatePoFormValues }) =>
+      updatePurchaseOrder(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Purchase order updated',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+      } else {
+        showToast({
+          title: 'Failed to update purchase order',
           description: result.message,
           status: 'error',
         })
@@ -190,6 +212,9 @@ export function usePurchaseOrders() {
 
     createPO: (data: CreatePoFormValues) => createMutation.mutateAsync(data),
     isCreating: createMutation.isPending,
+
+    updatePO: (id: string, data: CreatePoFormValues) => updateMutation.mutateAsync({ id, data }),
+    isUpdating: updateMutation.isPending,
 
     convertFromPr: (prId: string, data: ConvertPrToPoFormValues) =>
       convertMutation.mutateAsync({ prId, data }),

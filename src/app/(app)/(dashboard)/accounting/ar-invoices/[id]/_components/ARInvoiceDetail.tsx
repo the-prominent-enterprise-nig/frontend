@@ -108,6 +108,10 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   }
 
   const outstanding = invoice.totalAmount - invoice.amountPaid
+  // Scenario 29 ACC-05 — Outstanding is the total owed regardless of
+  // maturity; Due only counts it once this invoice's own due date has
+  // passed (the collector's number).
+  const due = new Date(invoice.dueDate) <= new Date() ? Math.max(outstanding, 0) : 0
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
@@ -153,6 +157,7 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
             <Row label="Total" value={fmtMoney(invoice.totalAmount)} />
             <Row label="Paid" value={fmtMoney(invoice.amountPaid)} />
             <Row label="Outstanding" value={fmtMoney(outstanding)} bold />
+            <Row label="Due now" value={due > 0 ? fmtMoney(due) : '—'} bold={due > 0} />
           </dl>
         </section>
 

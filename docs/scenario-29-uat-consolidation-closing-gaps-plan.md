@@ -2,6 +2,8 @@
 
 Source: `uat-consolidation-2026-08-12_2.md` (UAT feedback notes prepared by Keb, Aug 12 2026, "Draft for review") — a 55-item consolidated list of CRs/bugs/open questions across Purchase Order, Receiving, Serial Numbers, POS, Accounting, CRM, and Inventory. Verified against live code (both repos, `development`-tracking state) on 2026-08-17 via 6 parallel Explore passes before any of this doc was written — the source doc itself was mostly _already resolved_, not a fresh backlog. Full verification detail (all 55 items, evidence, file:line citations) lives in this session's own audit; this doc only carries forward the items confirmed as real, unclosed gaps, plus enough "already done" context that nobody re-derives it from scratch.
 
+**Second source, added 2026-08-17 (same-day follow-up pass)**: "TPE NIG — Collections to Subledger to General Ledger" development brief (worked example: SI 73507-MIB, 6-month contract, MIB branch). Defines the intended AR-subledger→GL posting design for collections; reviewed against the same live code. Materially expands Closing Gap 10 (ACC-01) below and adds new Closing Gaps 11–15 (ACC-03 through ACC-07) for pieces the original UAT list never covered — see the note inside Gap 10 and the new "Decisions made — collections-to-GL brief review" section.
+
 ## Scope note — Procurement is charter-flagged, included anyway
 
 Sections 1–5 of the source doc (Purchase Order, Purchase Request, Receiving Report, Serial Numbers at receiving) are Procurement functionality. Per [[project_charter_nig]], Procurement is explicitly **out of scope** for NIG's engagement — it's a real TPE module NIG didn't subscribe to. It is nonetheless already built and under active development in this codebase (see Scenario 10, Scenario 27). Per standing instruction ([[feedback_dont_move_module_tickets]] — flag, don't move, module-adjacent work), these items are included in full below. This is worth a scope conversation with the client/PM before or alongside implementation — not a reason to skip building them if the client is already treating them as live requirements.
@@ -21,6 +23,17 @@ Roughly half the source doc's 39 code-checkable items are already correctly impl
 - **DISC-03 deferred**, not because it's low value but because OQ-06 (what should drive "automatic") is unanswered, and what exists today (live recompute as the user types) may not even be the feature being described. Don't build a confirmation step around the wrong mechanism.
 - **INV-01 deferred** — P3, cosmetic-only, ~25+ label sites across the Inventory module. Real risk of breaking text-matching e2e specs for low business value, same pattern as the earlier warehouse→branch relabel work ([[project_warehouse_tier_correction]]). Batch into a slow week rather than this pass.
 - **ACC-02 has nothing to build yet** — blocked entirely on accounting attaching their existing document templates.
+
+## Decisions made — collections-to-GL brief review (2026-08-17, same-day follow-up pass)
+
+Distinct from the planning-conversation decisions above — these are recommended defaults from standard accounting practice, applied while reviewing the Collections-to-GL brief against live code. **Not yet confirmed by Finance/NIG**; treat as the working default until they weigh in, same as the brief's own "build with the defaults above" framing. Answers 4 of the brief's 5 open Finance questions; the 5th (SMI) genuinely can't be defaulted — see Open Questions below. Also resolves the ACC-01 revenue-recognition model conflict flagged in Gap 10 (decided at the developer's request, same standing as the original planning conversation's implementation-timing calls above).
+
+- **ACC-01 revenue-recognition model**: the brief's model wins — recognize the full cash-price sale in full at booking, defer only the financing markup into Unearned Interest Income, release it via the month-end batch (Gap 12). The code already expenses COGS in full at time of sale (inventory deduction is a same-transaction posting, per Gap 9's finding that every stock deduction records its source document at time of sale) — deferring Sales revenue out to due dates while COGS is fully expensed at sale would violate the matching principle: month 1 would show a loss (all COGS, no revenue) followed by pure margin in months 2–6. Recognizing the sale in full and deferring only the markup keeps revenue and its matching cost in the same period, and is the correct treatment under PFRS 15 for a financed goods sale regardless. "Per installment, not lumped" most likely reflects the client noticing the _interest markup_ riding inside one lump figure, not an objection to sale-revenue timing itself. Decided for implementation purposes now; exact account codes/labels still subject to Finance sign-off, same caveat as D-08.
+- **Rebate presentation**: own contra-income line, not netted against interest income. Matches standard gross-to-net reporting, and matches how the code already stores it (`ARPayment.rebateAmount` is already its own column).
+- **Interest method**: straight-line, not effective interest. The "installment difference" is a flat markup fixed at sale time, not a stated rate — effective-interest math needs a real rate to discount against, which doesn't exist here. Straight-line is standard for this kind of retail/consumer installment financing.
+- **Early settlement**: treat as a return of unearned interest (`Dr Unearned Interest Income / Cr Receivable` for the unelapsed portion), not a prompt-payment rebate. Different economic events — PPD is a per-installment on-time incentive that always hits Rebates Granted; early payoff means the company never earns the rest of the financing charge, which is a liability-side reversal, not a promotional discount.
+- **Fare deposit**: hold as a customer-deposit liability until applied, not credited straight to Receivable. This is also **already how the code works** — `CustomerAdvance` (`record()`/`apply()`/`refund()`, branch-tagged) already implements exactly this, live, today. The brief's stated default ("credited straight to the receivable, matches the current ledger") reads like it's describing the old manual branch process, not the new system — flag this explicitly with Finance rather than building the brief's literal example over the already-correct existing system.
+- **SMI line**: not decided, deliberately. No industry-standard mapping exists for "SMI" — it's NIG-specific shorthand. Carried into Open Questions below, unresolved, per the brief's own instruction not to guess.
 
 ## Closing the gaps
 
@@ -105,9 +118,51 @@ Roughly half the source doc's 39 code-checkable items are already correctly impl
 
 **Problem**: collections already post correctly — each individual installment due gets its own journal entry at payment time (`ar-invoices.service.ts`'s `recordPaymentCore`, including under bulk "Pay Selected"). But sale-time revenue recognition posts one aggregate journal entry for the whole plan up front (`transactions.service.ts:2892-3121`'s `createAndPostInstallmentPlan`), explicitly documented in its own comment as "v1 simplification, not deferred/amortized" — very likely the exact "lumped per transaction" behavior flagged.
 
-**Fix**: change sale-time posting to defer/spread revenue recognition across the plan's individual due dates, matching the granularity collections already uses correctly. Per the decision above, don't wait on the exact ledger sample to fix the _timing_ — the client's language is plain enough to act on now. Keep account codes, line labels, and any other format specifics provisional/placeholder pending the real sample (D-08); this pass is not the final, signed-off ledger format.
+**Resolved, same-day follow-up pass** (see "ACC-01 revenue-recognition model" in Decisions above): the original fix direction below is superseded. Recognize the full cash-price sale in full **at booking** — do not defer or spread the sale itself across due dates. Only the financing markup gets deferred, into Unearned Interest Income, released via the month-end batch in Gap 12, independent of actual payment.
+
+**Fix**: at `createAndPostInstallmentPlan` (`transactions.service.ts:2892-3121`), split the posted amount into its cash-price and financing-markup components instead of posting one lumped figure — `Dr Installment Contracts Receivable [full price] / Cr Installment Sales [cash price] / Cr Unearned Interest Income [markup]`, all still posted at sale time as a single JE ("recognize in full at booking" — this does not mean spreading across due dates). Collections' existing per-payment posting (`recordPaymentCore`) needs no change — it already posts each payment correctly against Receivable. Keep account codes/labels provisional pending the real ledger sample (D-08); this pass fixes the mechanism, not the final signed-off format.
 
 **Status**: not started.
+
+### 11. Penalty assessments never post to the GL (ACC-03, new — from Collections-to-GL brief)
+
+**Problem**: `InstallmentAccount.penalty` (`installment-account.dto.ts:140`, written at `installment-account.service.ts:602`) is set directly on the row with no corresponding journal entry — `installment-account.service.ts` doesn't import `JournalPostingService` at all. A `"Penalty / Late Payment Charges"` GL account already exists in the seed chart of accounts (`coa-seed.service.ts:412`), but nothing posts to it — an orphaned account.
+
+**Fix**: post `Dr Receivable / Cr Penalty Income` through `JournalPostingService` whenever a penalty is assessed, mirroring the existing rebate/payment posting pattern already in `ar-invoices.service.ts`.
+
+**Status**: not started.
+
+### 12. No monthly Unearned Interest amortization schedule or batch (ACC-04, new — from Collections-to-GL brief)
+
+**Problem**: the brief requires a month-end batch that releases each contract's financing markup from Unearned Interest Income into Interest Income on Installments, straight-lined over the term (last month absorbs rounding) — independent of Gap 10's open question, this needs its own per-contract schedule (period, amount, posted flag). No such schedule table or batch job exists anywhere in the codebase today.
+
+**Fix**: build the schedule table and a month-end batch job that posts `Dr Unearned Interest Income / Cr Interest Income on Installments` per contract per elapsed period, flipping a `posted` flag so it never double-posts.
+
+**Status**: not started. Gap 10's model is now resolved (straight-line release of the markup only) — this gap can proceed independently.
+
+### 13. Subledger has no "Due" figure distinct from "Outstanding" (ACC-05, new — from Collections-to-GL brief)
+
+**Problem**: the brief specifies two computed numbers — Outstanding (total owed, unaffected by bills) and Due (what's fallen due minus what's paid, the collector's number — bills _do_ move this one). Only Outstanding exists today, computed as `totalAmount - amountPaid` in `ar-invoices.service.ts` and `pos-customers.service.ts`'s `listCollectionsCustomers()`. No separate "Due" computation was found anywhere.
+
+**Fix**: add a computed (never stored) "Due" figure alongside the existing Outstanding computation, derived from which installment schedule lines have actually fallen due vs. been paid.
+
+**Status**: not started.
+
+### 14. `ARInvoice` has no `branchId` — blocks per-branch AR/GL reconciliation (ACC-06, new — from Collections-to-GL brief)
+
+**Problem**: the brief's health check requires subledger open balances to equal the GL receivable control account **per branch and in total**. `JournalEntry.branchId` and `ARPayment.branchId` exist, but `ARInvoice` itself has no branch column at all (confirmed via an explicit code comment in `ar-invoices.service.ts` noting there's no branch dimension on that row). Any per-branch rollup today has to be derived indirectly (via payments, or the customer/collector's branch), which risks drifting from the "to the centavo" requirement.
+
+**Fix**: either add `branchId` to `ARInvoice` directly, or formally document and test a reliable derivation path (e.g. via the originating `PosTransaction`'s branch) before building the reconciliation check in Gap 15.
+
+**Status**: not started.
+
+### 15. Reconciliation checks don't exist yet (ACC-07, new — from Collections-to-GL brief)
+
+**Problem**: none of the brief's three reconciliation checks are built: (a) subledger open balances = GL receivable control account, per branch and total; (b) remaining unposted interest schedule = GL unearned interest balance; (c) e-wallet clearing account trends to zero as settlements post. `GET /pos/transactions/reports/missing-cogs` is the closest existing analog in the codebase (same "flag things missing expected linkage" pattern, applied to stock/COGS rather than GL balances) — worth reviewing its shape before building these.
+
+**Fix**: build three reconciliation endpoints/reports following that pattern. Report-only, no blocking behavior, consistent with how Gaps 8/9's reports are scoped.
+
+**Status**: not started. Depends on Gap 14 (branch tagging) for check (a), and Gap 12 (interest schedule) for check (b).
 
 ## Deferred / not in this pass
 
@@ -120,10 +175,11 @@ Roughly half the source doc's 39 code-checkable items are already correctly impl
 ## Open Questions — blocking, need an owner + date
 
 1. **OQ-06** — "Make it automatic with confirmation": automatic based on what source — a supplier price list, a default discount type, or the last PO's discount? Blocks DISC-03.
-2. **ACC-01 ledger sample** — accounting's real installment-ledger format. Blocks final sign-off on Closing Gap 10's account codes/labels (not the timing fix itself, which doesn't wait on this).
+2. **ACC-01 ledger sample** — accounting's real installment-ledger format. **Partially answered** by the Collections-to-GL brief (see Source above), which supplies concrete account names and a full worked example, and resolved the revenue-recognition-model question (see "ACC-01 revenue-recognition model" in Decisions above). Exact account codes/labels still not confirmed as accounting's actual sign-off format — that piece still blocks final sign-off.
 3. **ACC-02 document templates** — accounting's existing PO/RR/receipt/ledger formats. Blocks ACC-02 entirely; nothing to build until these are attached.
+4. **SMI line** — what it is and where it posts. No industry-standard mapping applies; must be confirmed with NIG per the brief's own instruction not to guess. Doesn't block Gaps 11–15, but needs an owner + date like the other three.
 
-Per the source doc's own note: these three need a named owner and a date, or they won't arrive.
+Per the source doc's own note: these need a named owner and a date, or they won't arrive.
 
 ## Implementation Log
 

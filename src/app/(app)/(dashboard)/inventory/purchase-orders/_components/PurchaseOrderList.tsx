@@ -15,10 +15,13 @@ import {
   PackagePlus,
   Ban,
   Download,
+  CheckCircle,
+  Pencil,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
 import { usePurchaseRequests } from '../../purchase-requests/_hooks/usePurchaseRequests'
 import { CancelPoModal } from './CancelPoModal'
+import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import { CreatePoModal } from './CreatePoModal'
 import { PoDetailModal } from './PoDetailModal'
 import { PoReceiptsPanel } from './PoReceiptsPanel'
@@ -238,6 +241,7 @@ export function PurchaseOrderList({
   canSend,
   canCancel,
   canClose,
+  canEdit,
   canReceive,
   canViewCost,
   currentUserBranchId,
@@ -250,6 +254,8 @@ export function PurchaseOrderList({
   canSend: boolean
   canCancel: boolean
   canClose: boolean
+  /** Scenario 29 PO-06/PO-08 — same PO_UPDATE permission as canClose. */
+  canEdit: boolean
   canReceive: boolean
   canViewCost: boolean
   /** Sent as branchId attribution on a created PR — the create modal has no
@@ -276,19 +282,25 @@ export function PurchaseOrderList({
     isClosing,
     cancelPO,
     isCancelling,
+    updatePO,
+    isUpdating,
     refetch,
   } = usePurchaseOrders()
 
   const { createPR, isCreating } = usePurchaseRequests()
 
   const [showCreatePo, setShowCreatePo] = useState(false)
+  const [editingPo, setEditingPo] = useState<PurchaseOrderSummary | null>(null)
   const [cancelTarget, setCancelTarget] = useState<PurchaseOrderSummary | null>(null)
+  const [approveTarget, setApproveTarget] = useState<PurchaseOrderSummary | null>(null)
+  const [sendTarget, setSendTarget] = useState<PurchaseOrderSummary | null>(null)
+  const [closeTarget, setCloseTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiptsTarget, setReceiptsTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrderSummary | null>(null)
   const [detailsTarget, setDetailsTarget] = useState<PurchaseOrderSummary | null>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
-  const isActing = isApproving || isSending || isClosing || isCancelling
+  const isActing = isApproving || isSending || isClosing || isCancelling || isUpdating
 
   const downloadPdf = async (po: PurchaseOrderSummary) => {
     setDownloadingId(po.id)
@@ -529,10 +541,19 @@ export function PurchaseOrderList({
                           </IconBtn>
                           {po.status === 'draft' && (
                             <>
+                              {canEdit && (
+                                <IconBtn
+                                  title="Edit"
+                                  onClick={() => setEditingPo(po)}
+                                  disabled={isActing}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
                               {canApprove && (
                                 <button
                                   type="button"
-                                  onClick={() => approvePO(po.id)}
+                                  onClick={() => setApproveTarget(po)}
                                   disabled={isActing}
                                   className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                                 >
@@ -554,6 +575,15 @@ export function PurchaseOrderList({
 
                           {po.status === 'approved' && (
                             <>
+                              {canEdit && (
+                                <IconBtn
+                                  title="Edit"
+                                  onClick={() => setEditingPo(po)}
+                                  disabled={isActing}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
                               {canReceive && (
                                 <IconBtn
                                   title="Receive stock"
@@ -566,7 +596,7 @@ export function PurchaseOrderList({
                               {canSend && (
                                 <IconBtn
                                   title="Send to supplier"
-                                  onClick={() => sendPO(po.id)}
+                                  onClick={() => setSendTarget(po)}
                                   disabled={isActing}
                                 >
                                   <Send className="h-3.5 w-3.5" />
@@ -585,14 +615,36 @@ export function PurchaseOrderList({
                             </>
                           )}
 
-                          {po.status === 'sent' && canReceive && (
-                            <IconBtn
-                              title="Receive stock"
-                              onClick={() => setReceiveTarget(po)}
-                              variant="purple"
-                            >
-                              <PackagePlus className="h-3.5 w-3.5" />
-                            </IconBtn>
+                          {po.status === 'sent' && (
+                            <>
+                              {canReceive && (
+                                <IconBtn
+                                  title="Receive stock"
+                                  onClick={() => setReceiveTarget(po)}
+                                  variant="purple"
+                                >
+                                  <PackagePlus className="h-3.5 w-3.5" />
+                                </IconBtn>
+                              )}
+                              {/* Scenario 29 PO-16 follow-up — no longer
+                                  editable once sent (the supplier already has
+                                  this document), so Close is the only way out
+                                  besides receiving. */}
+                              {canClose && (
+                                <IconBtn
+                                  title="Close"
+                                  onClick={() => setCloseTarget(po)}
+                                  disabled={isActing}
+                                  variant="default"
+                                >
+                                  {isClosing ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3.5 w-3.5" />
+                                  )}
+                                </IconBtn>
+                              )}
+                            </>
                           )}
 
                           {po.status === 'partially_received' && (
@@ -609,7 +661,7 @@ export function PurchaseOrderList({
                               {canClose && (
                                 <IconBtn
                                   title="Close"
-                                  onClick={() => closePO(po.id)}
+                                  onClick={() => setCloseTarget(po)}
                                   disabled={isActing}
                                   variant="default"
                                 >
@@ -626,7 +678,7 @@ export function PurchaseOrderList({
                           {po.status === 'fully_received' && canClose && (
                             <button
                               type="button"
-                              onClick={() => closePO(po.id)}
+                              onClick={() => setCloseTarget(po)}
                               disabled={isActing}
                               className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-900 disabled:opacity-50 transition-colors"
                             >
@@ -699,12 +751,20 @@ export function PurchaseOrderList({
       {/* ── Modals & panels ──────────────────────────────────────────────────── */}
 
       <CreatePoModal
-        open={showCreatePo}
-        onClose={() => setShowCreatePo(false)}
+        open={showCreatePo || editingPo !== null}
+        onClose={() => {
+          setShowCreatePo(false)
+          setEditingPo(null)
+        }}
         onCreate={async (data) => {
           await createPR(data)
         }}
         isCreating={isCreating}
+        po={editingPo}
+        onUpdatePo={async (id, data) => {
+          await updatePO(id, data)
+        }}
+        isSavingPo={isUpdating}
         currentUserBranchId={currentUserBranchId}
       />
 
@@ -717,6 +777,57 @@ export function PurchaseOrderList({
           setCancelTarget(null)
         }}
         isCancelling={isCancelling}
+      />
+
+      <ConfirmActionModal
+        open={approveTarget !== null}
+        onClose={() => setApproveTarget(null)}
+        title="Approve Purchase Order"
+        icon={<CheckCircle className="h-5 w-5" />}
+        iconColorClass="text-emerald-600"
+        summary={<p className="text-sm font-medium text-zinc-900">{approveTarget?.code}</p>}
+        message="This purchase order will move to Approved and can then be sent to the supplier or received against."
+        confirmLabel="Approve"
+        confirmingLabel="Approving…"
+        confirmButtonClass="bg-emerald-600 hover:bg-emerald-700"
+        onConfirm={async () => {
+          if (approveTarget) await approvePO(approveTarget.id)
+        }}
+        isConfirming={isApproving}
+      />
+
+      <ConfirmActionModal
+        open={sendTarget !== null}
+        onClose={() => setSendTarget(null)}
+        title="Send to Supplier"
+        icon={<Send className="h-5 w-5" />}
+        iconColorClass="text-zinc-600"
+        summary={<p className="text-sm font-medium text-zinc-900">{sendTarget?.code}</p>}
+        message="This marks the purchase order as sent to the supplier."
+        confirmLabel="Send"
+        confirmingLabel="Sending…"
+        confirmButtonClass="bg-zinc-800 hover:bg-zinc-900"
+        onConfirm={async () => {
+          if (sendTarget) await sendPO(sendTarget.id)
+        }}
+        isConfirming={isSending}
+      />
+
+      <ConfirmActionModal
+        open={closeTarget !== null}
+        onClose={() => setCloseTarget(null)}
+        title="Close Purchase Order"
+        icon={<Archive className="h-5 w-5" />}
+        iconColorClass="text-zinc-600"
+        summary={<p className="text-sm font-medium text-zinc-900">{closeTarget?.code}</p>}
+        message="Closing this purchase order marks it as complete — no further receiving can happen against it."
+        confirmLabel="Close"
+        confirmingLabel="Closing…"
+        confirmButtonClass="bg-zinc-800 hover:bg-zinc-900"
+        onConfirm={async () => {
+          if (closeTarget) await closePO(closeTarget.id)
+        }}
+        isConfirming={isClosing}
       />
 
       <PoDetailModal po={detailsTarget} onClose={() => setDetailsTarget(null)} />

@@ -9,7 +9,6 @@ import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
   ArrowLeftRight,
-  BarChart2,
   BarChart3,
   BellRing,
   BookOpen,
@@ -37,6 +36,7 @@ import {
   TrendingUp,
   Package,
   PackageCheck,
+  Percent,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -165,12 +165,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
       },
       {
-        label: 'Planning',
-        href: '/inventory/planning',
-        icon: BarChart2,
-        requiredPermission: INVENTORY_PERMISSIONS.REORDER_READ,
-      },
-      {
         label: 'Finance',
         href: '/inventory/finance',
         icon: Coins,
@@ -289,6 +283,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
       },
       {
+        label: 'Interest Release',
+        href: '/accounting/installment-interest-release',
+        icon: Percent,
+        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
+      },
+      {
         label: 'Fiscal Periods',
         href: '/accounting/fiscal-periods',
         icon: CalendarDays,
@@ -319,12 +319,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
       {
-        label: 'Tax Rates',
-        href: '/accounting/tax-rates',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
-      },
-      {
         label: 'Budgets',
         href: '/accounting/budgets',
         icon: BarChart3,
@@ -335,12 +329,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/cash-forecast',
         icon: TrendingUp,
         requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
-      },
-      {
-        label: 'FX Revaluation',
-        href: '/accounting/fx-revaluation',
-        icon: ArrowLeftRight,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FX_READ,
       },
       {
         label: 'Reports',
@@ -458,7 +446,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
           '/pos/settings/terminals',
           '/pos/settings/receipt-branding',
           '/pos/settings/financing-terms',
-          '/pos/settings/queue-categories',
           '/pos/settings/customer-display',
         ],
       },
@@ -818,12 +805,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     label: 'Business Policies',
     href: '/settings/business-policies',
     icon: ScrollText,
-  },
-  {
-    section: 'My Workspace',
-    label: 'Reports',
-    href: '/settings/export',
-    icon: FileBarChart,
   },
   {
     section: 'My Workspace',

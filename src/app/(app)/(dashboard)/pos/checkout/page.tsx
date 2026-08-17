@@ -1101,22 +1101,31 @@ export default function CheckoutPage() {
     }
     setCreditApplicationsLoading(true)
     getCreditApplications({
-      status: 'approved',
+      checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
       unconsumed: true,
       limit: 50,
     })
       .then((res) => {
         setApprovedCreditApplications(
-          (res.data?.data ?? []).map((a) => ({
-            id: a.id,
-            applicationNumber: a.applicationNumber,
-            requestedAmount: a.requestedAmount,
-            items: (a.items ?? []).map((i) => ({
-              itemName: i.item?.name ?? '—',
-              variantLabel: i.variant?.variantSku ?? null,
-            })),
-          }))
+          (res.data?.data ?? [])
+            .map((a) => {
+              // Only the approved items are ever usable — a
+              // partially_approved application's declined items are never
+              // includable, so neither the displayed scope nor the total
+              // should count them.
+              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                requestedAmount: approvedOnly.reduce((sum, i) => sum + i.requestedAmount, 0),
+                items: approvedOnly.map((i) => ({
+                  itemName: i.item?.name ?? '—',
+                  variantLabel: i.variant?.variantSku ?? null,
+                })),
+              }
+            })
+            .filter((a) => a.items.length > 0)
         )
       })
       .finally(() => setCreditApplicationsLoading(false))

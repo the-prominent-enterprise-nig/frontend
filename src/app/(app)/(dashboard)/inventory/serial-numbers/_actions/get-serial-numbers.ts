@@ -19,6 +19,11 @@ type Params = {
   // the value itself only matters for an unrestricted Business Owner
   // explicitly checking a specific branch.
   consignedToBranchId?: string
+  // "company": cross-branch availability, excludes the caller's own branch.
+  // "override" (Scenario 29 SN-01): bypasses branch scoping entirely
+  // (including the caller's own branch) — requires itemId and the
+  // inventory:transfers:serial-override permission server-side.
+  scope?: 'company' | 'override'
 }
 
 export async function getSerialNumbers(
@@ -32,6 +37,7 @@ export async function getSerialNumbers(
     status: params.status,
     search: params.search,
     consignedToBranchId: params.consignedToBranchId,
+    scope: params.scope,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

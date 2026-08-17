@@ -73,6 +73,40 @@ export const FixedAssetsV2 = {
   remove: (id: string) => api.delete(`/fixed-assets/${id}`),
 }
 
+// ============ Installment Interest Release (Scenario 29 ACC-04) ============
+export interface PendingInterestReleaseSchedule {
+  installmentScheduleId: string
+  transactionNumber?: string | null
+  periodsEligible: number
+  amount: number
+}
+export interface PendingInterestReleaseResult {
+  asOfDate: string
+  schedules: PendingInterestReleaseSchedule[]
+  totalPending: number
+}
+export interface InterestReleaseRunResultItem {
+  installmentScheduleId: string
+  journalEntryId: string
+  periodsReleased: number
+  amountReleased: number
+}
+export interface InterestReleaseRunResult {
+  asOfDate: string
+  schedulesReleased: number
+  totalReleased: number
+  results: InterestReleaseRunResultItem[]
+  skipped: { installmentScheduleId: string; reason: string }[]
+}
+export const InstallmentInterestRelease = {
+  getPending: (asOfDate?: string) =>
+    api.get<PendingInterestReleaseResult>('/accounting/installment-interest-release/pending', {
+      asOfDate,
+    }),
+  run: (body: { asOfDate?: string }) =>
+    api.post<InterestReleaseRunResult>('/accounting/installment-interest-release/run', body),
+}
+
 // ============ Budgets (ACC-23) ============
 export type BudgetGrain = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
 export interface Budget {
@@ -157,81 +191,6 @@ export const CashForecast = {
     apAccelerateDays?: number
     startDate?: string
   }) => api.get<CashForecastResult>('/cash-forecast', params as any),
-}
-
-// ============ FX Revaluation (ACC-26) ============
-export interface FxRate {
-  id: string
-  currencyId: string
-  currency?: { id: string; code: string; name: string }
-  rate: number
-  effectiveDate: string
-  source?: string | null
-}
-export interface RevaluationLine {
-  id: string
-  runId: string
-  accountId: string
-  account?: { id: string; number?: string; name: string }
-  currencyId: string
-  currency?: { id: string; code: string }
-  beforeBalance: number
-  rateUsed: number
-  afterBalance: number
-  gainLoss: number
-}
-export interface RevaluationRun {
-  id: string
-  asOfDate: string
-  periodId?: string | null
-  journalEntryId?: string | null
-  reversalJEId?: string | null
-  totalGainLoss: number
-  status: 'DRAFT' | 'POSTED' | 'REVERSED'
-  notes?: string | null
-  createdBy?: string | null
-  createdAt: string
-  lines: RevaluationLine[]
-}
-export const FxRevaluation = {
-  listRates: (currencyId?: string) =>
-    api.get<FxRate[]>('/fx-revaluation/rates', currencyId ? { currencyId } : undefined),
-  addRate: (body: { currencyId: string; rate: number; effectiveDate: string; source?: string }) =>
-    api.post<FxRate>('/fx-revaluation/rates', body),
-  listRuns: () => api.get<RevaluationRun[]>('/fx-revaluation/runs'),
-  preview: (asOfDate: string) =>
-    api.get<{
-      asOfDate: string
-      totalGainLoss: number
-      lines: Omit<RevaluationLine, 'id' | 'runId'>[]
-    }>('/fx-revaluation/preview', { asOfDate }),
-  createRun: (body: { asOfDate: string; periodId?: string; notes?: string }) =>
-    api.post<RevaluationRun>('/fx-revaluation/runs', body),
-}
-
-// ============ Tax Rates (ACC-21) ============
-export type TaxRateType = 'VAT' | 'EXEMPT' | 'ZERO_RATED' | 'WHT'
-export interface TaxRate {
-  id: string
-  code: string
-  name: string
-  ratePercent: number | string
-  type: TaxRateType
-  description?: string | null
-  isActive: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-export const TaxRates = {
-  list: (activeOnly?: boolean) =>
-    api.get<TaxRate[]>('/tax-rates', activeOnly ? { activeOnly: 'true' } : undefined, {
-      tags: ['tax-rates'],
-    }),
-  get: (id: string) => api.get<TaxRate>(`/tax-rates/${id}`),
-  create: (body: Omit<TaxRate, 'id' | 'createdAt' | 'updatedAt'>) =>
-    api.post<TaxRate>('/tax-rates', body),
-  update: (id: string, body: Partial<TaxRate>) => api.patch<TaxRate>(`/tax-rates/${id}`, body),
-  remove: (id: string) => api.delete(`/tax-rates/${id}`),
 }
 
 // ============ Reports ============

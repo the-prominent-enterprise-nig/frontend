@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Loader2 } from 'lucide-react'
+import { Plus, Loader2, Send } from 'lucide-react'
 import { usePurchaseRequests } from '../_hooks/usePurchaseRequests'
 import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrders'
 import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
@@ -9,6 +9,7 @@ import { ApprovePrModal } from './ApprovePrModal'
 import { RejectPrModal } from './RejectPrModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
 import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
+import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -118,6 +119,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingPr, setEditingPr] = useState<PurchaseRequestSummary | null>(null)
+  const [submittingPr, setSubmittingPr] = useState<PurchaseRequestSummary | null>(null)
   const [approvingPr, setApprovingPr] = useState<PurchaseRequestSummary | null>(null)
   const [rejectingPr, setRejectingPr] = useState<PurchaseRequestSummary | null>(null)
   const [convertingPr, setConvertingPr] = useState<PurchaseRequestSummary | null>(null)
@@ -250,7 +252,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                             {canCreate && (
                               <button
                                 type="button"
-                                onClick={() => submitPR(pr.id)}
+                                onClick={() => setSubmittingPr(pr)}
                                 disabled={isSubmitting}
                                 className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                               >
@@ -377,6 +379,23 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         }}
         isSaving={isUpdating}
         currentUserBranchId={session.branchId}
+      />
+
+      <ConfirmActionModal
+        open={submittingPr !== null}
+        onClose={() => setSubmittingPr(null)}
+        title="Submit Purchase Request"
+        icon={<Send className="h-5 w-5" />}
+        iconColorClass="text-blue-600"
+        summary={<p className="text-sm font-medium text-zinc-900">{submittingPr?.code}</p>}
+        message="This sends the purchase request into the approval queue — you won't be able to edit it as a draft afterward."
+        confirmLabel="Submit"
+        confirmingLabel="Submitting…"
+        confirmButtonClass="bg-blue-600 hover:bg-blue-700"
+        onConfirm={async () => {
+          if (submittingPr) await submitPR(submittingPr.id)
+        }}
+        isConfirming={isSubmitting}
       />
 
       <ApprovePrModal

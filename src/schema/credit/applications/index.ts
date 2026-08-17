@@ -6,6 +6,7 @@ export const CreditApplicationStatusSchema = z.enum([
   'under_investigation',
   'pending_approval',
   'approved',
+  'partially_approved',
   'declined',
   'cancelled',
 ])
@@ -17,6 +18,7 @@ export const CREDIT_APPLICATION_STATUS_LABELS: Record<CreditApplicationStatus, s
   under_investigation: 'Under Investigation',
   pending_approval: 'Pending Approval',
   approved: 'Approved',
+  partially_approved: 'Partially Approved',
   declined: 'Declined',
   cancelled: 'Cancelled',
 }
@@ -27,8 +29,26 @@ export const CREDIT_APPLICATION_STATUS_COLORS: Record<CreditApplicationStatus, s
   under_investigation: 'bg-amber-100 text-amber-700',
   pending_approval: 'bg-amber-100 text-amber-700',
   approved: 'bg-green-100 text-green-700',
+  partially_approved: 'bg-orange-100 text-orange-700',
   declined: 'bg-red-100 text-red-600',
   cancelled: 'bg-red-100 text-red-600',
+}
+
+// Scenario 29 POS-02 — per-item status, independent of the application's
+// own status above.
+export const CreditApplicationItemStatusSchema = z.enum(['pending', 'approved', 'declined'])
+export type CreditApplicationItemStatus = z.infer<typeof CreditApplicationItemStatusSchema>
+
+export const CREDIT_APPLICATION_ITEM_STATUS_LABELS: Record<CreditApplicationItemStatus, string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  declined: 'Declined',
+}
+
+export const CREDIT_APPLICATION_ITEM_STATUS_COLORS: Record<CreditApplicationItemStatus, string> = {
+  pending: 'bg-zinc-100 text-zinc-600',
+  approved: 'bg-green-100 text-green-700',
+  declined: 'bg-red-100 text-red-600',
 }
 
 export const CreditApplicationDocumentTypeSchema = z.enum([
@@ -118,10 +138,16 @@ export const CancelCreditApplicationFormSchema = z.object({
 })
 export type CancelCreditApplicationFormValues = z.infer<typeof CancelCreditApplicationFormSchema>
 
-export const DeclineCreditApplicationFormSchema = z.object({
-  reason: z.string().min(1, 'Reason is required').max(500),
+// Scenario 29 POS-02 — replaces the old whole-application decline. Every
+// item on the application must appear in exactly one of the two lists.
+export const DecideCreditApplicationItemsFormSchema = z.object({
+  approveItemIds: z.array(z.string()),
+  declineItemIds: z.array(z.string()),
+  declineReason: z.string().max(500).optional(),
 })
-export type DeclineCreditApplicationFormValues = z.infer<typeof DeclineCreditApplicationFormSchema>
+export type DecideCreditApplicationItemsFormValues = z.infer<
+  typeof DecideCreditApplicationItemsFormSchema
+>
 
 export const AttachCreditApplicationDocumentFormSchema = z.object({
   fileId: z.string().min(1, 'File is required'),
@@ -176,6 +202,9 @@ export interface CreditApplicationItemLine {
   variantId?: string | null
   variant?: CreditApplicationVariantLite | null
   requestedAmount: number
+  status: CreditApplicationItemStatus
+  decidedAt?: string | null
+  decidedById?: string | null
 }
 
 export interface CreditApplication {

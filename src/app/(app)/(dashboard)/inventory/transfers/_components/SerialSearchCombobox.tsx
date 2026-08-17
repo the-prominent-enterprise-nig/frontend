@@ -46,7 +46,15 @@ export function SerialSearchCombobox({
         const matches = q
           ? options.filter((s) => s.serialNumber.toLowerCase().includes(q))
           : options
-        return matches.map((s) => ({ id: s.id, primary: s.serialNumber }))
+        // Scenario 29 SN-01 — an override-capable picker's `options` isn't
+        // pre-scoped to "valid at this warehouse" anymore, so surfacing
+        // where each serial actually is lets a supervisor tell apart the
+        // physically-correct-but-stale one from an unrelated unit.
+        return matches.map((s) => ({
+          id: s.id,
+          primary: s.serialNumber,
+          secondary: [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+        }))
       }}
     />
   )
