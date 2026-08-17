@@ -73,6 +73,7 @@ export type LeadFilters = {
   status?: string
   stageId?: string
   assignedTo?: string
+  branchId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
