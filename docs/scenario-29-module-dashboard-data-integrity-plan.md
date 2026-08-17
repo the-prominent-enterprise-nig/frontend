@@ -1,4 +1,4 @@
-# Scenario 28 — Module Dashboard Data Integrity — Gap Analysis & Closing Plan
+# Scenario 29 — Module Dashboard Data Integrity — Gap Analysis & Closing Plan
 
 Source: not from either client PDF (`NIG-TPE-Module-Scenarios.pdf` or the Draft 2 map) — new scenario, added the same way Scenarios 22-25 were: as a real gap that surfaced live during development rather than from a specific audit row. It falls out of the dashboard data-wiring initiative (`feat/dashboard-data-wiring`, frontend PR #132 / backend PR #124) — once the main dashboard's widgets were being wired to real data widget-by-widget, the natural next question was whether the three module-level "Intelligence" dashboards (Accounting, Inventory, CRM) that already existed independently of that effort could actually be trusted the same way.
 
