@@ -43,15 +43,6 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_MANAGER_APPROVE: 'inventory:transfers:manager-approve',
   TRANSFERS_MANAGER_REJECT: 'inventory:transfers:manager-reject',
 
-  // ── Warehouse Requests (Scenario 27 Part 4) ───────────────────────────────
-  WAREHOUSE_REQUESTS_READ: 'inventory:warehouse-requests:read',
-  WAREHOUSE_REQUESTS_CREATE: 'inventory:warehouse-requests:create',
-  WAREHOUSE_REQUESTS_ACCEPT: 'inventory:warehouse-requests:accept',
-  WAREHOUSE_REQUESTS_REJECT: 'inventory:warehouse-requests:reject',
-  WAREHOUSE_REQUESTS_DISPATCH: 'inventory:warehouse-requests:dispatch',
-  WAREHOUSE_REQUESTS_RECEIVE: 'inventory:warehouse-requests:receive',
-  WAREHOUSE_REQUESTS_CANCEL: 'inventory:warehouse-requests:cancel',
-
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
   BUNDLES_CREATE: 'inventory:bundles:create',
@@ -219,15 +210,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     "Approve a Stock-Controller-originated transfer request on behalf of the requester's own branch",
   'inventory:transfers:manager-reject':
     "Reject a Stock-Controller-originated transfer request on behalf of the requester's own branch",
-  'inventory:warehouse-requests:read': 'View warehouse requests (branch ↔ real warehouse)',
-  'inventory:warehouse-requests:create':
-    'Request stock from a warehouse (pull), or record a warehouse delivery to a branch (push)',
-  'inventory:warehouse-requests:accept': 'Warehouse-side: accept a pull request from a branch',
-  'inventory:warehouse-requests:reject': 'Warehouse-side: reject a pull request from a branch',
-  'inventory:warehouse-requests:dispatch': 'Warehouse-side: dispatch an accepted request',
-  'inventory:warehouse-requests:receive':
-    'Branch-side: confirm physical arrival of a warehouse request',
-  'inventory:warehouse-requests:cancel': 'Cancel a warehouse request before it has been dispatched',
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',

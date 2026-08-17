@@ -179,7 +179,7 @@ test.describe('POS Service Jobs — Cashier cannot install (role gate)', () => {
     const { id } = await createServiceJob(page, title)
     createdIds.push(id)
 
-    // Same branch (Manila HQ) as the Cashier, so the Stock Controller's own
+    // Same branch (Bago) as the Cashier, so the Stock Controller's own
     // branch-scoped list shows this same draft — switch identity in-place
     // rather than a second persisted storage-state file for one check.
     // loginAs assumes a fresh, unauthenticated session (visiting /login

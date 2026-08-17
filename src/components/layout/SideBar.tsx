@@ -157,12 +157,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/inventory/purchase-orders'],
       },
       {
-        label: 'Warehouse Requests',
-        href: '/inventory/warehouse-requests',
-        icon: PackageCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSE_REQUESTS_READ,
-      },
-      {
         label: 'Suppliers',
         href: '/inventory/suppliers',
         icon: Truck,

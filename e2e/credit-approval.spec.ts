@@ -37,7 +37,7 @@ async function createSubmittedApplication(page: Page, label: string): Promise<st
 
   const branchesRes = await page.request.get('/api/branches?limit=200')
   const branches = ((await branchesRes.json()).data ?? []) as { id: string; name: string }[]
-  const branchId = branches.find((b) => b.name === 'Manila HQ')!.id
+  const branchId = branches.find((b) => b.name === 'Bago')!.id
 
   const applicationRes = await page.request.post('/api/credit/applications', {
     data: {

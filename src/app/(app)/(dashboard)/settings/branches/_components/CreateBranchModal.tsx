@@ -122,7 +122,7 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
                 setName(e.target.value)
                 if (errors.name) setErrors((p) => ({ ...p, name: undefined }))
               }}
-              placeholder="e.g. Manila HQ"
+              placeholder="e.g. Bago"
               maxLength={150}
               className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition ${
                 errors.name

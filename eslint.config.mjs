@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Isolated e2e frontend's own build dir (see next.config.ts) — same
+    // reason .next/** is ignored, just a second instance's worth of it.
+    '.next-e2e/**',
   ]),
   {
     rules: {

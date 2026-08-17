@@ -10,6 +10,7 @@ import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
 import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
+import NotificationBell from '@/src/components/notifications/NotificationBell'
 
 interface SessionUser {
   id: string
@@ -26,7 +27,6 @@ interface SessionUser {
 export default function TopBar({ session }: { session: SessionUser | null }) {
   const pathname = usePathname()
 
-  const [notificationCount] = useState(6)
   const [profileOpen, setProfileOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -55,30 +55,7 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
           {/* Right: Actions */}
           <div className="flex items-center gap-3">
             {/* Notification Bell */}
-            <button
-              type="button"
-              className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-gray-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.8}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0m6 0H9"
-                />
-              </svg>
-              {notificationCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4.25 min-w-4.25 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                  {notificationCount}
-                </span>
-              )}
-            </button>
+            {session && <NotificationBell />}
 
             {/* Avatar — gradient with profile dropdown */}
             {session && (

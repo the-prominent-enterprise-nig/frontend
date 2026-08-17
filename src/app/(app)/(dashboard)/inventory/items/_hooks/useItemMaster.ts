@@ -117,6 +117,15 @@ export function useItemMaster() {
     queryFn: () => getItems(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
+    // Scenario 26 — same gap found live in the credit applications queue
+    // (see useCreditApplications.ts): this is a three-way maker-checker
+    // handoff across three different people's browser tabs (Stock
+    // Controller submits, Branch Manager confirms accounting, Master Data
+    // Approver decides), and it's exactly where an item-master notification's
+    // click-through lands — staleTime alone only refetches on THIS tab's
+    // own refocus/remount, so another actor's transition could sit stale
+    // here indefinitely.
+    refetchInterval: 10 * 1000,
   })
 
   const categoriesQuery = useQuery({
