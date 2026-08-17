@@ -35,7 +35,12 @@ function renderInvoiceBody(doc: PrintDocumentEnvelope): string {
       const unitPrice = Number(l.unitPrice ?? 0)
       const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const brand = item?.brand ? ` — ${item.brand.name}` : ''
-      return `<tr><td>${item?.name ?? '—'}${brand}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
+      const serialNumber = l.serialNumber as { serialNumber?: string } | null
+      const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
+      const serials = serialNumber
+        ? `<div style="font-size:10px;color:#7c3aed">SN: ${serialNumber.serialNumber}${secondarySerialNumber ? ` / ${secondarySerialNumber.serialNumber}` : ''}</div>`
+        : ''
+      return `<tr><td>${item?.name ?? '—'}${brand}${serials}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
     })
     .join('')
 
@@ -182,6 +187,13 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
                           {l.item?.brand ? (
                             <span className="text-gray-500"> — {l.item.brand.name}</span>
                           ) : null}
+                          {l.serialNumber && (
+                            <p className="font-mono text-[10px] text-purple-500">
+                              SN: {l.serialNumber.serialNumber}
+                              {l.secondarySerialNumber &&
+                                ` / ${l.secondarySerialNumber.serialNumber}`}
+                            </p>
+                          )}
                         </td>
                         <td className="py-2 pr-4 text-right">{l.quantity}</td>
                         <td className="py-2 pr-4 text-right">{fmtMoney(Number(l.unitPrice))}</td>
