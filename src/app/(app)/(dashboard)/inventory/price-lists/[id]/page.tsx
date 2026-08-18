@@ -2,14 +2,14 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { PriceUseTypesPageView } from './_components'
+import { PriceListDetailPageView } from './_components/PriceListDetailPageView'
 
 export const metadata = {
-  title: 'Price Use Types | Prominent Enterprise',
-  description: 'Manage the price-use categories price lists are grouped under',
+  title: 'Price List Items | Prominent Enterprise',
+  description: 'Manage the priced items in a price list',
 }
 
-export default async function PriceUseTypesPage() {
+export default async function PriceListDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionOrNull()
 
   if (!session) {
@@ -20,9 +20,11 @@ export default async function PriceUseTypesPage() {
     redirect('/403')
   }
 
+  const { id } = await params
+
   return (
     <div className="min-h-screen bg-zinc-50">
-      <PriceUseTypesPageView session={session} />
+      <PriceListDetailPageView priceListId={id} session={session} />
     </div>
   )
 }

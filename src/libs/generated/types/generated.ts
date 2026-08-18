@@ -155,6 +155,74 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/users/{id}/resend-invite': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Resend the account-setup invite to a pending user */
+    post: operations['UsersController_resendInvite']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/users/{id}/invite-link': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a pending user's claimable invite link, to share manually */
+    get: operations['UsersController_getInviteLink']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/users/{id}/revoke-invite': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Revoke a pending invite before it is claimed */
+    post: operations['UsersController_revokeInvite']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/users/{id}/pending-email': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Correct the email on a pending invite and resend it */
+    patch: operations['UsersController_editPendingEmail']
+    trace?: never
+  }
   '/users/birthdays': {
     parameters: {
       query?: never
@@ -337,6 +405,23 @@ export interface paths {
     }
     /** List audit logs for the current tenant (Admin / Super Admin only) */
     get: operations['AuditLogController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/audit-logs/recent': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Curated recent-activity feed for the main dashboard widget — a narrow, non-admin slice of the audit trail (see RECENT_ACTIVITY_RESOURCE_TYPES) */
+    get: operations['AuditLogController_findRecent']
     put?: never
     post?: never
     delete?: never
@@ -812,6 +897,23 @@ export interface paths {
     }
     /** Count and list completed sales whose lines never got a COGS/Inventory posting (computeCogs() failed at sale time — e.g. a FIFO/LIFO item with no cost layers, or a missing GL mapping) — the visibility gate for a previously-silent posting gap. */
     get: operations['TransactionsController_getMissingCogsReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/transactions/reports/sales-by-branch': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Sales by Branch dashboard widget — every visible branch with its sale total and transaction count for the given date range. */
+    get: operations['TransactionsController_getSalesByBranch']
     put?: never
     post?: never
     delete?: never
@@ -2599,6 +2701,60 @@ export interface paths {
     patch: operations['FinancingTermsController_update']
     trace?: never
   }
+  '/pos/tpf-providers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List TPF providers */
+    get: operations['TpfProvidersController_findAll']
+    put?: never
+    /** Register a TPF (third-party financing) provider */
+    post: operations['TpfProvidersController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/tpf-providers/active': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List active TPF providers selectable at checkout */
+    get: operations['TpfProvidersController_findActive']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/pos/tpf-providers/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get one TPF provider */
+    get: operations['TpfProvidersController_findOne']
+    put?: never
+    post?: never
+    /** Delete a TPF provider that has never backed a sale. Providers already used cannot be hard-deleted — deactivate them instead. */
+    delete: operations['TpfProvidersController_remove']
+    options?: never
+    head?: never
+    /** Update a TPF provider (name, active flag) */
+    patch: operations['TpfProvidersController_update']
+    trace?: never
+  }
   '/inventory/items/images/bulk-import': {
     parameters: {
       query?: never
@@ -3469,41 +3625,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/inventory/stock/reorder-rules': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List reorder rules, optionally filtered by warehouse or item */
-    get: operations['StockController_getReorderRules']
-    put?: never
-    /** Create or update a reorder rule for an item. Upserted by (tenantId, itemId, warehouseId). */
-    post: operations['StockController_upsertReorderRule']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/stock/reorder-alerts': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get all items whose current availableQty is below their reorder point. Returns item details, current stock, reorder point, and shortfall. */
-    get: operations['StockController_getReorderAlerts']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/inventory/transfers': {
     parameters: {
       query?: never
@@ -4184,8 +4305,25 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Inventory aging report — stock grouped into 0-30, 31-60, 61-90, 90+ day buckets */
+    /** Inventory aging report — one row per in_stock serial, aged from its goods-receipt date, in 0-30/31-60/61-90/91-180/180+ day buckets */
     get: operations['ReportsController_getAgingReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/reports/reconciliation': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Stock usage reconciliation — StockLedger rows with no source reference, plus POS transactions/transfer dispatches/approved adjustments with no matching movement at all */
+    get: operations['ReportsController_getReconciliationReport']
     put?: never
     post?: never
     delete?: never
@@ -4442,11 +4580,13 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    get?: never
+    /** List a price list's items, paginated and searchable */
+    get: operations['PriceListsController_findItems']
     put?: never
     /** Upsert item price overrides within a price list */
     post: operations['PriceListsController_upsertItems']
-    delete?: never
+    /** Bulk-remove items from a price list */
+    delete: operations['PriceListsController_removeItems']
     options?: never
     head?: never
     patch?: never
@@ -4504,58 +4644,6 @@ export interface paths {
     head?: never
     /** Update a price use type */
     patch: operations['PriceUseTypesController_update']
-    trace?: never
-  }
-  '/inventory/reorder/rules': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List reorder rules with min/max/safety stock levels */
-    get: operations['ReorderController_getRules']
-    put?: never
-    /** Create or update a reorder rule (includes min/max/safety stock — INV-33) */
-    post: operations['ReorderController_upsertRule']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/reorder/rules/{ruleId}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    /** Delete a reorder rule */
-    delete: operations['ReorderController_deleteRule']
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/inventory/reorder/alerts': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get stock level alerts — items breaching min/max thresholds or at reorder point */
-    get: operations['ReorderController_getAlerts']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
     trace?: never
   }
   '/inventory/reservations': {
@@ -5111,7 +5199,7 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    /** Update a draft purchase order */
+    /** Update a purchase order (draft/approved/sent — editing an approved or sent PO reverts it to draft and voids the prior approval) */
     patch: operations['PurchaseOrderController_update']
     trace?: never
   }
@@ -5463,6 +5551,92 @@ export interface paths {
     patch: operations['ItemClassificationController_updateType']
     trace?: never
   }
+  '/inventory/vehicles': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search the fleet roster (plate + driver on file) by branch */
+    get: operations['VehiclesController_findAll']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/manual-receiving-reports': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List manual receiving reports (paginated) */
+    get: operations['ManualReceivingReportController_findAll']
+    put?: never
+    /** Submit a manual receiving report to originate a serial with no PO/transfer/count context — pending until approved */
+    post: operations['ManualReceivingReportController_submit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/manual-receiving-reports/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get a single manual receiving report */
+    get: operations['ManualReceivingReportController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/inventory/manual-receiving-reports/{id}/approve': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Approves a pending report and originates the serial — the submitter cannot approve their own submission */
+    patch: operations['ManualReceivingReportController_approve']
+    trace?: never
+  }
+  '/inventory/manual-receiving-reports/{id}/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Rejects a pending report — no serial is created. The submitter cannot reject their own submission */
+    patch: operations['ManualReceivingReportController_reject']
+    trace?: never
+  }
   '/accounting/customer-advances': {
     parameters: {
       query?: never
@@ -5530,6 +5704,74 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/notifications': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List the current user's notifications */
+    get: operations['NotificationsController_findMine']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/notifications/unread-count': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Count the current user's unread notifications */
+    get: operations['NotificationsController_unreadCount']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/notifications/{id}/read': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Mark one notification as read */
+    patch: operations['NotificationsController_markRead']
+    trace?: never
+  }
+  '/notifications/read-all': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Mark all of the current user's notifications as read */
+    patch: operations['NotificationsController_markAllRead']
     trace?: never
   }
   '/accounting/tax-rates': {
@@ -6603,43 +6845,6 @@ export interface paths {
     patch: operations['CurrenciesController_update']
     trace?: never
   }
-  '/vendors': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List vendors (optionally filter by type/search) */
-    get: operations['VendorsController_findAll']
-    put?: never
-    /** Create a vendor */
-    post: operations['VendorsController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/vendors/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a vendor by id */
-    get: operations['VendorsController_findOne']
-    put?: never
-    post?: never
-    /** Soft-delete a vendor (visibility=false) */
-    delete: operations['VendorsController_remove']
-    options?: never
-    head?: never
-    /** Update a vendor */
-    patch: operations['VendorsController_update']
-    trace?: never
-  }
   '/customers': {
     parameters: {
       query?: never
@@ -6901,6 +7106,54 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/reports/reconciliation/ar-subledger': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ReportsController_reconcileArSubledger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/reports/reconciliation/unearned-interest': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ReportsController_reconcileUnearnedInterest']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/reports/reconciliation/ewallet-clearing': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ReportsController_reconcileEwalletClearing']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ar-invoices': {
     parameters: {
       query?: never
@@ -6997,6 +7250,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/ar-invoices/bulk-payments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['ARInvoicesController_recordBulkPayment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/ar-invoices/{id}/payments/{paymentId}/cancel': {
     parameters: {
       query?: never
@@ -7007,6 +7276,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['ARInvoicesController_cancelPayment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ar-invoices/sweep-overdue-notifications': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['ARInvoicesController_sweepOverdueNotifications']
     delete?: never
     options?: never
     head?: never
@@ -7072,7 +7357,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List AP bills (filter by status/vendor/supplier/search) */
+    /** List AP bills (filter by status/supplier/search) */
     get: operations['APBillsController_findAll']
     put?: never
     /** Create an AP bill */
@@ -7334,7 +7619,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** List business expenses (filter by status/category/vendor/date) */
+    /** List business expenses (filter by status/category/supplier/date) */
     get: operations['ExpensesController_findAll']
     put?: never
     /** Create a draft business expense */
@@ -7571,6 +7856,40 @@ export interface paths {
     put?: never
     /** Dispose an asset; computes gain/loss and posts JE */
     post: operations['FixedAssetsController_dispose']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/installment-interest-release/pending': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Preview what a release run would post, without posting anything */
+    get: operations['InstallmentInterestReleaseController_getPending']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/installment-interest-release/run': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Release each eligible contract's elapsed financing markup; posts one JE per contract */
+    post: operations['InstallmentInterestReleaseController_runRelease']
     delete?: never
     options?: never
     head?: never
@@ -7977,72 +8296,6 @@ export interface paths {
     }
     /** Rolling weekly cash-flow forecast (default 13 weeks); supports what-if delay/accelerate days */
     get: operations['CashForecastController_forecast']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/fx-revaluation/rates': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['FxRevaluationController_listRates']
-    put?: never
-    post: operations['FxRevaluationController_addRate']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/fx-revaluation/runs': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['FxRevaluationController_listRuns']
-    put?: never
-    /** Persist a revaluation run + post consolidated JE + schedule reversal next month */
-    post: operations['FxRevaluationController_createRun']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/fx-revaluation/runs/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['FxRevaluationController_findRun']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/fx-revaluation/preview': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Preview a revaluation run — does not persist or post */
-    get: operations['FxRevaluationController_preview']
     put?: never
     post?: never
     delete?: never
@@ -8491,6 +8744,23 @@ export interface paths {
     put?: never
     /** Management rejection for a Category C/D incentive */
     post: operations['CollectionIncentiveController_reject']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/collections-calendar': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Day-grouped view of installment dues and reminders for a date range — a branch-assigned caller is always scoped to their own branch, regardless of what branchId filter is submitted. */
+    get: operations['CollectionsCalendarController_getCalendar']
+    put?: never
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -8959,7 +9229,7 @@ export interface paths {
     patch: operations['CreditApplicationController_submit']
     trace?: never
   }
-  '/credit/applications/{id}/approve': {
+  '/credit/applications/{id}/decide': {
     parameters: {
       query?: never
       header?: never
@@ -8972,25 +9242,8 @@ export interface paths {
     delete?: never
     options?: never
     head?: never
-    /** BM/Credit Approver approves a pending_approval application */
-    patch: operations['CreditApplicationController_approve']
-    trace?: never
-  }
-  '/credit/applications/{id}/decline': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    /** BM/Credit Approver declines a pending_approval application */
-    patch: operations['CreditApplicationController_decline']
+    /** BM/Credit Approver decides a pending_approval application per item — approve some, decline others, in one review (Scenario 29 POS-02) */
+    patch: operations['CreditApplicationController_decideItems']
     trace?: never
   }
   '/credit/applications/{id}/cancel': {
@@ -9107,6 +9360,24 @@ export interface paths {
     put?: never
     /** Mark every promissory note for this application as signed — unblocks release alongside the manager-approval gate */
     post: operations['PromissoryNoteController_sign']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/calendar-events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List calendar events for a given month (main dashboard Calendar widget) */
+    get: operations['CalendarEventsController_findForMonth']
+    put?: never
+    /** Add an event to the shared company calendar */
+    post: operations['CalendarEventsController_create']
     delete?: never
     options?: never
     head?: never
@@ -9333,6 +9604,10 @@ export interface components {
       /** Format: date-time */
       updatedAt: string
     }
+    EditPendingEmailDto: {
+      /** @example corrected@example.com */
+      email: string
+    }
     UpdateUserDto: {
       /** @example John */
       firstName?: string
@@ -9476,14 +9751,24 @@ export interface components {
       /** @description True when unitPrice was manually set by a PIN-approved manager override rather than resolved from priceListItemId */
       priceOverride?: boolean
       /**
-       * @description Per-line payment mode, so one cart can mix cash/charge/installment lines. Falls back to the transaction-level invoiceType when omitted (default cash), so whole-cart single-mode sales can keep sending one transaction-level invoiceType and skip this per line.
+       * @description Per-line payment mode, so one cart can mix cash/installment lines. Falls back to the transaction-level invoiceType when omitted (default cash), so whole-cart single-mode sales can keep sending one transaction-level invoiceType and skip this per line. 'charge' is no longer accepted for a NEW sale (TransactionsService.validateAndPrepare rejects it) — kept in this DTO's accepted values only because a refund submission reuses this same shape to carry the ORIGINAL sale's historical invoiceType through (see ReturnRefundRequestsService.submitRefund).
        * @enum {string}
        */
       invoiceType?: 'cash' | 'charge' | 'installment'
-      /** @description Financing term for this line (installment lines only). Falls back to the transaction-level financingTermId when omitted. */
+      /**
+       * @description Which financing this installment line runs on — 'inhouse' (default, NIG's own CreditApplication/FinancingTerm/PromissoryNote) or 'tpf' (an outside financing company pays NIG in full at time of sale; no local credit application/promissory note/receivable tracking). Only meaningful when invoiceType is 'installment'.
+       * @enum {string}
+       */
+      installmentProvider?: 'inhouse' | 'tpf'
+      /**
+       * @description Cosmetic sub-choice for a 'cash'-mode line — how the customer intends to pay (Cash vs Credit Card), recorded for receipt/reporting only. Never affects the separate PAYMENT/tender section.
+       * @enum {string}
+       */
+      payNowMethod?: 'cash' | 'credit_card'
+      /** @description Financing term for this line (inhouse installment lines only). Falls back to the transaction-level financingTermId when omitted. */
       financingTermId?: string
       /**
-       * @description This line's own down payment (installment lines only) — each installment line carries its own down payment rather than one pooled across the cart. Falls back to the transaction-level downPayment when omitted.
+       * @description This line's own down payment (inhouse installment lines only) — each installment line carries its own down payment rather than one pooled across the cart. Falls back to the transaction-level downPayment when omitted.
        * @example 3000
        */
       downPayment?: number
@@ -9555,6 +9840,7 @@ export interface components {
         | 'store_credit'
         | 'loyalty_points'
         | 'bank_transfer'
+        | 'tpf'
         | 'custom'
       )[]
       /**
@@ -9574,7 +9860,7 @@ export interface components {
       journalEntryId?: string
       notes?: string
       /**
-       * @description cash = customer pays immediately at checkout; charge = creates an AR invoice for deferred payment (requires customerId); installment = splits the balance after downPayment into a financing-term schedule of AR invoices (requires customerId + financingTermId)
+       * @description cash = customer pays in full at checkout (Pay Now); installment = either an inhouse financing-term schedule (requires customerId + creditApplicationId) or TPF (requires tpfProviderId + tpfReferenceNumber, no local underwriting). 'charge' is no longer accepted for a NEW sale (TransactionsService.validateAndPrepare rejects it) — kept in this DTO's accepted values only because a refund submission reuses this same shape to carry the ORIGINAL sale's historical invoiceType through.
        * @default cash
        * @enum {string}
        */
@@ -9589,10 +9875,22 @@ export interface components {
       /** @description Scenario 17 Part 6 — the customer's approved CreditApplication this sale fulfills (installment invoices only, required). Must be 'approved', belong to this customer and branch, and not already linked to another sale. */
       creditApplicationId?: string
       /**
-       * @description Amount collected up front (installment invoices only). Defaults to 0.
+       * @description Amount collected up front (inhouse installment invoices only). Defaults to 0.
        * @example 3000
        */
       downPayment?: number
+      /** @description TPF financing company backing this sale's TPF-mode line(s) — required whenever any line has installmentProvider: 'tpf'. Must be active and belong to this tenant. */
+      tpfProviderId?: string
+      /**
+       * @description This financier's own application/reference number for the sale — required alongside tpfProviderId.
+       * @example TPF-REF-00123
+       */
+      tpfReferenceNumber?: string
+      /**
+       * @description The amount this financier approved, for audit/reconciliation only — never enforced against item pricing the way an inhouse CreditApplication is.
+       * @example 25000
+       */
+      tpfApprovedAmount?: number
       /**
        * @description CRM-owned sales agent to attribute this sale to — distinct from the cashier operating the terminal, and from system User accounts. Must reference an active Agent record.
        * @example uuid-agent-id
@@ -9619,6 +9917,7 @@ export interface components {
         | 'store_credit'
         | 'loyalty_points'
         | 'bank_transfer'
+        | 'tpf'
         | 'custom'
       /** @example 500 */
       amount: number
@@ -10265,6 +10564,15 @@ export interface components {
       factorRate?: number
       isActive?: boolean
       notes?: string
+    }
+    CreateTpfProviderDto: {
+      /** @example Home Credit */
+      name: string
+    }
+    UpdateTpfProviderDto: {
+      /** @example Home Credit */
+      name?: string
+      isActive?: boolean
     }
     BulkImageMappingDto: {
       /** @description Item SKU to match */
@@ -10946,8 +11254,8 @@ export interface components {
     }
     ReceiveStockDto: {
       /**
-       * @description Reference number for this goods receipt. Auto-generated (GRN-YYYYMMDD-NNNN) when omitted.
-       * @example GRN-20260713-0001
+       * @description Reference number for this receiving report. Auto-generated (RR-YYYYMMDD-NNNN) when omitted.
+       * @example RR-20260713-0001
        */
       code?: string
       /** @description Destination warehouse ID */
@@ -10987,6 +11295,10 @@ export interface components {
        * @example PO-20260701-0001
        */
       purchaseOrderNumber?: string
+      /** @description Supplier's own delivery receipt (DR) number, as written on the physical delivery paperwork */
+      deliveryReceiptNumber?: string
+      /** @description Supplier's own sales invoice (SI) number for this delivery */
+      supplierInvoiceNumber?: string
       /**
        * @description Withholding tax flag for this receipt. Defaults to the supplier's configured default when omitted.
        * @enum {string}
@@ -11029,29 +11341,6 @@ export interface components {
        * @enum {string}
        */
       repairDecision?: 'restock' | 'flag_for_repair'
-    }
-    ReorderRuleDto: {
-      /** @description Item ID this rule applies to */
-      itemId: string
-      /** @description Warehouse ID to scope this rule. If omitted, applies across all warehouses. */
-      warehouseId?: string
-      /**
-       * @description Quantity threshold at which a reorder should be triggered
-       * @example 50
-       */
-      reorderPoint: number
-      /**
-       * @description Quantity to reorder when the reorder point is hit
-       * @example 200
-       */
-      reorderQuantity: number
-      /** @description Preferred supplier ID (cross-module reference) */
-      preferredSupplierId?: string
-      /**
-       * @description Automatically create a purchase requisition when stock drops below reorder point
-       * @default false
-       */
-      autoCreatePr: boolean
     }
     CreateTransferLineDto: {
       /** @description Item UUID */
@@ -11112,6 +11401,16 @@ export interface components {
       /** @description Reason the source branch is rejecting this request */
       reason: string
     }
+    DispatchTransferSerialAssignmentDto: {
+      /** @description StockTransferLine UUID this assignment fulfills */
+      lineId: string
+      /** @description The specific serial number the source is physically sending for this line — chosen by whoever's dispatching (they're the ones who can actually see it), not by whoever originally requested it */
+      serialNumberId: string
+      /** @description Scenario 29 SN-01 — supervisor override: dispatch this serial even though it fails the normal in-stock/source-warehouse check. Requires inventory:transfers:serial-override and overrideReason. */
+      override?: boolean
+      /** @description Required when override is true — why the mismatch is being overridden */
+      overrideReason?: string
+    }
     DispatchTransferDto: {
       /**
        * @description Expected arrival date (ISO 8601)
@@ -11120,6 +11419,8 @@ export interface components {
       expectedArrival: string
       /** @description Dispatch notes */
       notes?: string
+      /** @description One entry per serial-tracked line being dispatched, assigning the specific physical unit sent. Required for any serial-tracked line that doesn't already carry a serialNumberId (i.e. every normal human-requested line — the requester never picks the serial themselves). */
+      serialAssignments?: components['schemas']['DispatchTransferSerialAssignmentDto'][]
       /** @description Driver's full name */
       driverName: string
       /** @description Driver's contact number */
@@ -11541,6 +11842,10 @@ export interface components {
     UpsertPriceListItemsDto: {
       items: components['schemas']['UpsertPriceListItemDto'][]
     }
+    RemovePriceListItemsDto: {
+      /** @description Item UUIDs to remove */
+      itemIds: string[]
+    }
     CreatePriceUseTypeDto: {
       /** @example SSC */
       name: string
@@ -11552,29 +11857,6 @@ export interface components {
       name?: string
       /** @example Special Spot Cash */
       description?: string
-    }
-    UpsertReorderRuleDto: {
-      /** @description Item UUID */
-      itemId: string
-      /** @description Warehouse UUID; null = applies to all warehouses */
-      warehouseId?: string
-      /** @description Trigger reorder when onHandQty falls to or below this value */
-      reorderPoint: number
-      /** @description Quantity to order when reorder is triggered */
-      reorderQuantity: number
-      /** @description INV-33: Critical floor — alert fires when onHandQty < minStockLevel */
-      minStockLevel?: number
-      /** @description INV-33: Ceiling — blocks receipts when onHandQty would exceed this */
-      maxStockLevel?: number
-      /** @description INV-34: Buffer above reorder formula to absorb demand variance */
-      safetyStock?: number
-      /** @description Preferred supplier UUID */
-      preferredSupplierId?: string
-      /**
-       * @description Auto-create a Purchase Request when reorder triggers
-       * @default false
-       */
-      autoCreatePr: boolean
     }
     CreateReservationDto: {
       /** @description Item UUID */
@@ -11785,23 +12067,42 @@ export interface components {
        */
       attributes: Record<string, never>
     }
+    LineDiscountInputDto: {
+      /** @enum {string} */
+      type: 'percentage' | 'amount'
+      /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
+      value: number
+    }
     CreatePurchaseRequestLineDto: {
       itemId: string
       quantity: number
-      /** @description Requester's estimated unit price for budget reference */
-      estimatedUnitPrice?: number
-      suggestedSupplierId?: string
+      unitPrice: number
+      /** @description Pricing breakdown, e.g. "(3,649 - 30% - 20%)" */
+      description?: string
       notes?: string
+      /** @description Supplier suggested retail/list price for this line — same as CreatePoLineDto.srp */
+      srp?: number
+      discounts?: components['schemas']['LineDiscountInputDto'][]
+      /** @description A supplier-given free unit; unitPrice is forced to 0 */
+      isFreebie?: boolean
     }
     CreatePurchaseRequestDto: {
+      supplierId: string
       branchId?: string
-      reason?: string
+      warehouseId?: string
+      expectedDeliveryDate?: string
+      deliveryInstructions?: string
+      paymentTerms?: string
       notes?: string
       lines: components['schemas']['CreatePurchaseRequestLineDto'][]
     }
     UpdatePurchaseRequestDto: {
+      supplierId: string
       branchId?: string
-      reason?: string
+      warehouseId?: string
+      expectedDeliveryDate?: string
+      deliveryInstructions?: string
+      paymentTerms?: string
       notes?: string
       lines: components['schemas']['CreatePurchaseRequestLineDto'][]
     }
@@ -11820,10 +12121,7 @@ export interface components {
       notes?: string
       /** @description Scenario 10 Part 6 — supplier suggested retail/list price for this line */
       srp?: number
-      /** @enum {string} */
-      discountType?: 'percentage' | 'amount'
-      /** @description Interpreted per discountType — a percent (0-100) or a flat amount off srp */
-      discountValue?: number
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       /** @description Scenario 10 Part 8 — a supplier-given free unit; unitPrice/lineTotal are forced to 0 server-side when true */
       isFreebie?: boolean
     }
@@ -11835,17 +12133,19 @@ export interface components {
       /** @description Full delivery note, e.g. "Deliver to Brgy. Igang on June 19 @ Afternoon" */
       deliveryInstructions?: string
       paymentTerms?: string
-      shippingAddress?: string
       notes?: string
       lines: components['schemas']['CreatePoLineDto'][]
     }
     UpdatePoDto: {
+      supplierId: string
+      branchId?: string
       warehouseId?: string
       expectedDeliveryDate?: string
+      /** @description Full delivery note, e.g. "Deliver to Brgy. Igang on June 19 @ Afternoon" */
       deliveryInstructions?: string
       paymentTerms?: string
-      shippingAddress?: string
       notes?: string
+      lines: components['schemas']['CreatePoLineDto'][]
     }
     ConvertPrToPoLineDto: {
       prLineId: string
@@ -11856,10 +12156,7 @@ export interface components {
       notes?: string
       /** @description Scenario 10 Part 6 — supplier suggested retail/list price for this line */
       srp?: number
-      /** @enum {string} */
-      discountType?: 'percentage' | 'amount'
-      /** @description Interpreted per discountType — a percent (0-100) or a flat amount off srp */
-      discountValue?: number
+      discounts?: components['schemas']['LineDiscountInputDto'][]
       /** @description Scenario 10 Part 8 — a supplier-given free unit; unitPrice/lineTotal are forced to 0 server-side when true */
       isFreebie?: boolean
     }
@@ -11870,7 +12167,6 @@ export interface components {
       /** @description Full delivery note, e.g. "Please deliver to Brgy. Igang, Pototan Covered Gym on June 19, 2026 @ Afternoon" */
       deliveryInstructions?: string
       paymentTerms?: string
-      shippingAddress?: string
       notes?: string
       lines: components['schemas']['ConvertPrToPoLineDto'][]
     }
@@ -11964,6 +12260,25 @@ export interface components {
       name?: string
       description?: string
     }
+    CreateManualReceivingReportDto: {
+      /** @description Serial-tracked item UUID this unit belongs to */
+      itemId: string
+      /** @description Warehouse UUID this unit is physically at */
+      warehouseId: string
+      /** @description The physical serial number, exactly as printed on the unit */
+      serialNumber: string
+      /**
+       * @description Why this unit was never in the system
+       * @enum {string}
+       */
+      reasonCode: 'damaged' | 'miscounted' | 'expired' | 'theft' | 'write_off' | 'found'
+      /** @description Additional context for the approver */
+      notes?: string
+    }
+    RejectManualReceivingReportDto: {
+      /** @description Reason this manual receiving report was rejected */
+      reason: string
+    }
     CreateCustomerAdvanceDto: {
       /** @description Customer UUID */
       customerId: string
@@ -12056,6 +12371,10 @@ export interface components {
       arInvoiceId?: string
       /** @description Set only when this account was auto-created from a POS installment-line sale (TransactionsService.createLinkedInstallmentAccount) rather than hand-entered — bridges the POS InstallmentSchedule to this collections ledger. */
       installmentScheduleId?: string
+      /** @description The financing scheme (WIP, CR-BR, SSC, TONIK, SKYRO, etc.) this account was sold under — carried over from the POS transaction at creation time. Set only for POS-originated accounts. */
+      priceUseTypeId?: string
+      /** @description Selling agent this account was sold under — carried over from PosTransaction.sellingAgentId at creation time. Set only for POS-originated accounts. */
+      sellingAgentId?: string
       /**
        * @description Listed Cash Price
        * @example 50000
@@ -12119,6 +12438,10 @@ export interface components {
       arInvoiceId?: string
       /** @description Set only when this account was auto-created from a POS installment-line sale (TransactionsService.createLinkedInstallmentAccount) rather than hand-entered — bridges the POS InstallmentSchedule to this collections ledger. */
       installmentScheduleId?: string
+      /** @description The financing scheme (WIP, CR-BR, SSC, TONIK, SKYRO, etc.) this account was sold under — carried over from the POS transaction at creation time. Set only for POS-originated accounts. */
+      priceUseTypeId?: string
+      /** @description Selling agent this account was sold under — carried over from PosTransaction.sellingAgentId at creation time. Set only for POS-originated accounts. */
+      sellingAgentId?: string
       /**
        * @description Listed Cash Price
        * @example 50000
@@ -12556,6 +12879,36 @@ export interface components {
        * @enum {string}
        */
       defaultWithholding: 'none' | 'pct_1'
+      /**
+       * @description Scenario 33 — what kind of AP payee this is, not just an inventory supplier (e.g. CONTRACTOR, CONSULTANT).
+       * @default SUPPLIER
+       * @enum {string}
+       */
+      type:
+        | 'CONTRACTOR'
+        | 'SUPPLIER'
+        | 'OFFICER'
+        | 'CONSULTANT'
+        | 'EMPLOYEE'
+        | 'CONSTRUCTION'
+        | 'FOUNDER'
+        | 'OTHER'
+      /** @example Corporation */
+      businessType?: string
+      /**
+       * @description e.g. VAT, NON-VAT
+       * @example VAT
+       */
+      alphanumericTaxCode?: string
+      /**
+       * @description e.g. 12%, Exempt
+       * @example 12%
+       */
+      taxRate?: string
+      /** @description Default AP liability account for this supplier's bills (e.g. Trade vs. Non-Trade) — falls back to the AP_PAYABLE mapping when unset. */
+      defaultPayableAccountId?: string
+      /** @description Default expense account for this supplier's bills — overridden per-bill by APBill.expenseAccountId when set; falls back to DEFAULT_EXPENSE otherwise. */
+      defaultExpenseAccountId?: string
     }
     SupplierBankAccountDto: {
       id: string
@@ -12598,6 +12951,19 @@ export interface components {
       onboardingStatus: 'pending' | 'in_review' | 'approved' | 'blocked'
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blacklisted'
+      /**
+       * @default SUPPLIER
+       * @enum {string}
+       */
+      type:
+        | 'CONTRACTOR'
+        | 'SUPPLIER'
+        | 'OFFICER'
+        | 'CONSULTANT'
+        | 'EMPLOYEE'
+        | 'CONSTRUCTION'
+        | 'FOUNDER'
+        | 'OTHER'
       createdAt: string
       updatedAt: string
       legalName?: string
@@ -12615,6 +12981,11 @@ export interface components {
       notes?: string
       documents: components['schemas']['SupplierDocumentDto'][]
       deletedAt?: string
+      businessType?: string
+      alphanumericTaxCode?: string
+      taxRate?: string
+      defaultPayableAccountId?: string
+      defaultExpenseAccountId?: string
     }
     SupplierListItemDto: {
       id: string
@@ -12629,6 +13000,19 @@ export interface components {
       onboardingStatus: 'pending' | 'in_review' | 'approved' | 'blocked'
       /** @enum {string} */
       status: 'active' | 'inactive' | 'blacklisted'
+      /**
+       * @default SUPPLIER
+       * @enum {string}
+       */
+      type:
+        | 'CONTRACTOR'
+        | 'SUPPLIER'
+        | 'OFFICER'
+        | 'CONSULTANT'
+        | 'EMPLOYEE'
+        | 'CONSTRUCTION'
+        | 'FOUNDER'
+        | 'OTHER'
       createdAt: string
       updatedAt: string
     }
@@ -12686,6 +13070,36 @@ export interface components {
        * @enum {string}
        */
       defaultWithholding: 'none' | 'pct_1'
+      /**
+       * @description Scenario 33 — what kind of AP payee this is, not just an inventory supplier (e.g. CONTRACTOR, CONSULTANT).
+       * @default SUPPLIER
+       * @enum {string}
+       */
+      type:
+        | 'CONTRACTOR'
+        | 'SUPPLIER'
+        | 'OFFICER'
+        | 'CONSULTANT'
+        | 'EMPLOYEE'
+        | 'CONSTRUCTION'
+        | 'FOUNDER'
+        | 'OTHER'
+      /** @example Corporation */
+      businessType?: string
+      /**
+       * @description e.g. VAT, NON-VAT
+       * @example VAT
+       */
+      alphanumericTaxCode?: string
+      /**
+       * @description e.g. 12%, Exempt
+       * @example 12%
+       */
+      taxRate?: string
+      /** @description Default AP liability account for this supplier's bills (e.g. Trade vs. Non-Trade) — falls back to the AP_PAYABLE mapping when unset. */
+      defaultPayableAccountId?: string
+      /** @description Default expense account for this supplier's bills — overridden per-bill by APBill.expenseAccountId when set; falls back to DEFAULT_EXPENSE otherwise. */
+      defaultExpenseAccountId?: string
     }
     CreateSupplierDocumentDto: {
       /** @enum {string} */
@@ -12877,54 +13291,6 @@ export interface components {
       mainCurrency?: boolean
       visibility?: boolean
     }
-    CreateVendorDto: {
-      name: string
-      contactPerson?: string
-      contactNumber?: string
-      email?: string
-      address?: string
-      bankAccount?: string
-      taxIdNumber?: string
-      /**
-       * @default SUPPLIER
-       * @enum {string}
-       */
-      type:
-        | 'CONTRACTOR'
-        | 'SUPPLIER'
-        | 'OFFICER'
-        | 'CONSULTANT'
-        | 'EMPLOYEE'
-        | 'CONSTRUCTION'
-        | 'FOUNDER'
-        | 'OTHER'
-      alphanumericTaxCode?: string
-      taxRate?: string
-      businessType?: string
-    }
-    UpdateVendorDto: {
-      name?: string
-      contactPerson?: string
-      contactNumber?: string
-      email?: string
-      address?: string
-      bankAccount?: string
-      taxIdNumber?: string
-      /** @enum {string} */
-      type?:
-        | 'CONTRACTOR'
-        | 'SUPPLIER'
-        | 'OFFICER'
-        | 'CONSULTANT'
-        | 'EMPLOYEE'
-        | 'CONSTRUCTION'
-        | 'FOUNDER'
-        | 'OTHER'
-      alphanumericTaxCode?: string
-      taxRate?: string
-      businessType?: string
-      visibility?: boolean
-    }
     TransactionLineDto: {
       accountId: string
       /** @example 0 */
@@ -12961,6 +13327,13 @@ export interface components {
       amount?: number
       /** @description Withholding tax amount, if any */
       withholdingAmount?: number
+      /** @description BIR Form 2307 certificate number, if the customer provided one */
+      withholdingCertificateNo?: string
+      /**
+       * @description Whether the 2307 certificate has been received — for the Pending 2307 aging report, not a posting gate
+       * @enum {string}
+       */
+      withholdingCertificateStatus?: 'pending' | 'received'
       bankAccountId?: string
       /** @description Date the payment was collected */
       paymentDate?: string
@@ -12975,6 +13348,29 @@ export interface components {
       collectorId?: string
       /** @description Rebate (Prompt Payment Discount) applied at collection time, capped server-side at the linked InstallmentAccount.ppd */
       rebateAmount?: number
+    }
+    BulkPayInstallmentLineDto: {
+      /** @description ARInvoice id for the due being paid */
+      invoiceId?: string
+      /** @description Amount applied to this due */
+      amount?: number
+      /** @description Rebate (Prompt Payment Discount) applied to this due, capped server-side at the linked InstallmentAccount.ppd */
+      rebateAmount?: number
+    }
+    BulkRecordArPaymentDto: {
+      /** @description One entry per due being settled in this batch */
+      lines?: components['schemas']['BulkPayInstallmentLineDto'][]
+      /** @description Date the payment was collected */
+      paymentDate?: string
+      /** @enum {string} */
+      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
+      /** @description OR / reference number — required for a bulk/early-payment batch (unlike the single-payment endpoint, where it is optional) */
+      reference?: string
+      notes?: string
+      /** @description Branch this payment was collected at (POS Collections) */
+      branchId?: string
+      /** @description Collector who took this payment, if any (POS Collections) */
+      collectorId?: string
     }
     CreateDebitMemoLineDto: {
       /** @description Item being debited (e.g. the replacement unit) */
@@ -13011,10 +13407,8 @@ export interface components {
     CreateAPBillDto: {
       /** @description Manual bill number — auto-generated (AP-<timestamp>) if omitted */
       billNumber?: string
-      /** @description General AP payee (utilities, rent, non-supplier expenses) */
-      vendorId: string
-      /** @description Scenario 10 Part 1 — set when this bill originates from a PO/RR against a real inventory Supplier, distinct from vendorId. Enables the 3-way match. */
-      supplierId?: string
+      /** @description The AP payee — every bill, general AP or PO/RR-matched alike (Scenario 33 collapsed the old separate vendorId/supplierId pair into this single required field). */
+      supplierId: string
       /** @description Scenario 10 Part 2 — the PO this invoice bills against, for the 3-way match */
       purchaseOrderId?: string
       /** @description Scenario 10 Part 2 — Receiving Reports matched against this bill (a bill can match several partial-delivery RRs against the same PO) */
@@ -13114,8 +13508,8 @@ export interface components {
       expenseNumber?: string
       /** @example 2026-07-15 */
       expenseDate: string
-      vendorId?: string
-      /** @description Free-text payee when no vendor */
+      supplierId?: string
+      /** @description Free-text payee when no supplier */
       payee?: string
       description?: string
       /** @description Expense account id from chart of accounts */
@@ -13137,8 +13531,8 @@ export interface components {
       expenseNumber?: string
       /** @example 2026-07-15 */
       expenseDate?: string
-      vendorId?: string
-      /** @description Free-text payee when no vendor */
+      supplierId?: string
+      /** @description Free-text payee when no supplier */
       payee?: string
       description?: string
       /** @description Expense account id from chart of accounts */
@@ -13154,6 +13548,30 @@ export interface components {
       costCenter?: string
       /** @description VAT, NON_VAT, EXEMPT */
       taxCode?: string
+    }
+    CreateBankAccountDto: {
+      name: string
+      bankName: string
+      accountNumber: string
+      /** @description e.g. Operating, Payroll, Savings */
+      accountType?: string
+      currencyCode?: string
+      currentBalance?: number
+      /** @description GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping */
+      glAccountId?: string
+      isActive?: boolean
+    }
+    UpdateBankAccountDto: {
+      name?: string
+      bankName?: string
+      accountNumber?: string
+      /** @description e.g. Operating, Payroll, Savings */
+      accountType?: string
+      currencyCode?: string
+      currentBalance?: number
+      /** @description GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping */
+      glAccountId?: string
+      isActive?: boolean
     }
     ClearCashInTransitDto: {
       /** @description Bank account the deposit was made to */
@@ -13232,6 +13650,8 @@ export interface components {
       estimatedValue?: number
       /** @description User ID (sales rep) — string FK* */
       assignedTo?: string
+      /** @description Branch this lead is sourced/owned by */
+      branchId?: string
       notes?: string
       /**
        * @default active
@@ -13303,6 +13723,8 @@ export interface components {
       estimatedValue?: number
       /** @description User ID (sales rep) — string FK* */
       assignedTo?: string
+      /** @description Branch this lead is sourced/owned by */
+      branchId?: string
       notes?: string
       /**
        * @default active
@@ -13637,7 +14059,7 @@ export interface components {
       userId: string
     }
     UpdateBranchDto: {
-      /** @example Manila HQ */
+      /** @example Bago */
       name?: string
       /** @enum {string} */
       type?: 'retail' | 'warehouse' | 'office' | 'mixed'
@@ -13647,7 +14069,7 @@ export interface components {
       city?: string
     }
     CreateBranchDto: {
-      /** @example Manila HQ */
+      /** @example Bago */
       name: string
       /**
        * @example retail
@@ -13664,39 +14086,43 @@ export interface components {
     UpdateModulesDto: Record<string, never>
     UpdateSubscriptionDto: Record<string, never>
     CreateTenantAdminDto: Record<string, never>
+    CreditApplicationItemInputDto: {
+      /** @description Item/model UUID being financed */
+      itemId: string
+      /** @description Variant UUID, required when the selected item has variants (Item.hasVariants) — must belong to itemId */
+      variantId?: string
+    }
     CreateCreditApplicationDto: {
-      /** @description Branch UUID where this application is being taken */
-      branchId: string
+      /** @description Branch UUID this application is recorded against, for audit purposes only — applications are not branch-restricted for usage. Defaults to the caller's own branch if branch-locked, otherwise the enterprise's main branch. */
+      branchId?: string
       /** @description Applicant customer UUID */
       applicantCustomerId: string
-      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker) */
-      coMakerId: string
-      /**
-       * @description Requested financing amount
-       * @example 25000
-       */
-      requestedAmount: number
-      /** @description Free-text description of what is being financed (e.g. "Split-type aircon 1.5HP") */
+      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker). Optional — not every application has a co-maker. */
+      coMakerId?: string
+      /** @description One or more items/models being financed together under this application */
+      items: components['schemas']['CreditApplicationItemInputDto'][]
+      /** @description Optional notes not captured by the item/variant picker (e.g. "with installation", a preference) */
       itemDescription?: string
     }
     UpdateCreditApplicationDto: {
-      /** @description Branch UUID where this application is being taken */
+      /** @description Branch UUID this application is recorded against, for audit purposes only — applications are not branch-restricted for usage. Defaults to the caller's own branch if branch-locked, otherwise the enterprise's main branch. */
       branchId?: string
       /** @description Applicant customer UUID */
       applicantCustomerId?: string
-      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker) */
+      /** @description Co-maker UUID — must belong to the applicant's customer profile (see CoMaker). Optional — not every application has a co-maker. */
       coMakerId?: string
-      /**
-       * @description Requested financing amount
-       * @example 25000
-       */
-      requestedAmount?: number
-      /** @description Free-text description of what is being financed (e.g. "Split-type aircon 1.5HP") */
+      /** @description One or more items/models being financed together under this application */
+      items?: components['schemas']['CreditApplicationItemInputDto'][]
+      /** @description Optional notes not captured by the item/variant picker (e.g. "with installation", a preference) */
       itemDescription?: string
     }
-    DeclineCreditApplicationDto: {
-      /** @description Reason the application was declined */
-      reason: string
+    DecideCreditApplicationItemsDto: {
+      /** @description CreditApplicationItem IDs to approve */
+      approveItemIds: string[]
+      /** @description CreditApplicationItem IDs to decline */
+      declineItemIds: string[]
+      /** @description Reason for the declined items — required if declineItemIds is non-empty */
+      declineReason?: string
     }
     CancelCreditApplicationDto: {
       /** @description Reason the application was cancelled */
@@ -13725,6 +14151,40 @@ export interface components {
       affordabilityOutcome: 'recommend_approve' | 'recommend_decline'
       /** @description Investigation notes */
       notes?: string
+    }
+    CalendarEventDto: {
+      id: string
+      title: string
+      /** @example 2026-08-15 */
+      date: string
+      allDay: boolean
+      startTime?: string
+      endTime?: string
+      branchId?: string
+      createdAt: string
+    }
+    CreateCalendarEventDto: {
+      /** @example Board Meeting */
+      title: string
+      /**
+       * @description YYYY-MM-DD
+       * @example 2026-08-15
+       */
+      date: string
+      /** @default true */
+      allDay: boolean
+      /**
+       * @description HH:MM 24h — required when allDay is false
+       * @example 14:00
+       */
+      startTime?: string
+      /**
+       * @description HH:MM 24h
+       * @example 15:00
+       */
+      endTime?: string
+      /** @description Scopes the event to one branch. Omit for enterprise-wide. */
+      branchId?: string
     }
   }
   responses: never
@@ -13980,6 +14440,86 @@ export interface operations {
         content: {
           'application/json': components['schemas']['UserResponseDto']
         }
+      }
+    }
+  }
+  UsersController_resendInvite: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UsersController_getInviteLink: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UsersController_revokeInvite: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  UsersController_editPendingEmail: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EditPendingEmailDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -14297,6 +14837,26 @@ export interface operations {
         dateTo?: string
         page?: number
         limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AuditLogController_findRecent: {
+    parameters: {
+      query?: {
+        branchId?: string
+        limit?: string
       }
       header?: never
       path?: never
@@ -15138,7 +15698,9 @@ export interface operations {
   }
   TransactionsController_getMissingCogsReport: {
     parameters: {
-      query?: never
+      query: {
+        branchId: string
+      }
       header?: never
       path?: never
       cookie?: never
@@ -15146,6 +15708,24 @@ export interface operations {
     requestBody?: never
     responses: {
       /** @description Count of affected sales plus a recent sample */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TransactionsController_getSalesByBranch: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Per-branch sales summary rows */
       200: {
         headers: {
           [name: string]: unknown
@@ -17762,6 +18342,122 @@ export interface operations {
       }
     }
   }
+  TpfProvidersController_findAll: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TpfProvidersController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateTpfProviderDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TpfProvidersController_findActive: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TpfProvidersController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TpfProvidersController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  TpfProvidersController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateTpfProviderDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ItemImagesController_bulkImport: {
     parameters: {
       query?: never
@@ -19607,69 +20303,6 @@ export interface operations {
       }
     }
   }
-  StockController_getReorderRules: {
-    parameters: {
-      query?: {
-        warehouseId?: string
-        itemId?: string
-        page?: number
-        limit?: number
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of reorder rules with item and warehouse details */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  StockController_upsertReorderRule: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ReorderRuleDto']
-      }
-    }
-    responses: {
-      /** @description Upserted reorder rule */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  StockController_getReorderAlerts: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of reorder alerts */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   TransfersController_findAll: {
     parameters: {
       query?: {
@@ -19688,6 +20321,8 @@ export interface operations {
         fromWarehouseId?: string
         /** @description Filter by destination warehouse UUID */
         toWarehouseId?: string
+        /** @description Branch override — only used when the caller has no branch of their own (Business Owner); a branch-assigned caller is always scoped to their own branch regardless of this value. See TransfersController.findAll. */
+        branchId?: string
         /** @description Search by transfer number, item name/SKU (model number), or serial number */
         search?: string
         /** @description Page number (1-based) */
@@ -20540,8 +21175,8 @@ export interface operations {
           | 'in_repair'
           | 'pulled_out'
           | 'lost_in_transit'
-        /** @description Read-only visibility scope. "company" returns matching serials across every branch (each with its warehouse) instead of forcing the caller's own branch — used only to show cross-branch availability in the POS serial picker, never to populate the sellable list. Requires itemId. Defaults to "branch" (the existing, sellable, caller-branch-forced behavior). */
-        scope?: 'branch' | 'company'
+        /** @description Read-only visibility scope. "company" returns matching serials across every branch (each with its warehouse) instead of forcing the caller's own branch — used only to show cross-branch availability in the POS serial picker, never to populate the sellable list. "override" (Scenario 29 SN-01) bypasses branch scoping entirely, including the caller's own branch — requires itemId and inventory:transfers:serial-override; used by the transfer-dispatch serial picker so a supervisor can find a unit whose system-recorded location is stale. Requires itemId for both. Defaults to "branch" (the existing, sellable, caller-branch-forced behavior). */
+        scope?: 'branch' | 'company' | 'override'
         /** @description Case-insensitive substring match against the serial number. */
         search?: string
         /** @description Scenario 08 (Caravan) Part 2 — "Caravan" view. Filters to serials currently consigned to this branch (physically here for an event, still owned elsewhere). A branch-restricted caller is always forced to their own branch, regardless of what is submitted. */
@@ -20759,6 +21394,35 @@ export interface operations {
       query?: {
         warehouseId?: string
         categoryId?: string
+        itemId?: string
+        search?: string
+        bucket?: '0_30' | '31_60' | '61_90' | '91_180' | '180_plus'
+        /** @description Defaults to 1 */
+        page?: number
+        /** @description Defaults to 50 */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReportsController_getReconciliationReport: {
+    parameters: {
+      query?: {
+        /** @description Defaults to 90 days before endDate */
+        startDate?: string
+        /** @description Defaults to today */
+        endDate?: string
       }
       header?: never
       path?: never
@@ -21158,6 +21822,29 @@ export interface operations {
       }
     }
   }
+  PriceListsController_findItems: {
+    parameters: {
+      query?: {
+        search?: string
+        page?: string
+        limit?: string
+      }
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   PriceListsController_upsertItems: {
     parameters: {
       query?: never
@@ -21170,6 +21857,29 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': components['schemas']['UpsertPriceListItemsDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PriceListsController_removeItems: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RemovePriceListItemsDto']
       }
     }
     responses: {
@@ -21291,85 +22001,6 @@ export interface operations {
         'application/json': components['schemas']['UpdatePriceUseTypeDto']
       }
     }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReorderController_getRules: {
-    parameters: {
-      query?: {
-        itemId?: string
-        warehouseId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReorderController_upsertRule: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpsertReorderRuleDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReorderController_deleteRule: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        ruleId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  ReorderController_getAlerts: {
-    parameters: {
-      query?: {
-        warehouseId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -22903,6 +23534,144 @@ export interface operations {
       }
     }
   }
+  VehiclesController_findAll: {
+    parameters: {
+      query?: {
+        /** @description Search term matched against driver name or plate number */
+        q?: string
+        /** @description Branch UUID to scope results to */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ManualReceivingReportController_findAll: {
+    parameters: {
+      query?: {
+        /** @description Filter by warehouse UUID */
+        warehouseId?: string
+        /** @description Filter by status */
+        status?: 'pending' | 'approved' | 'rejected'
+        /** @description Page number (1-based) */
+        page?: number
+        /** @description Items per page */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated list of manual receiving reports */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ManualReceivingReportController_submit: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateManualReceivingReportDto']
+      }
+    }
+    responses: {
+      /** @description Manual receiving report submitted */
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ManualReceivingReportController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Manual receiving report UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Manual receiving report detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ManualReceivingReportController_approve: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Manual receiving report UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Report approved and serial created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ManualReceivingReportController_reject: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Manual receiving report UUID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectManualReceivingReportDto']
+      }
+    }
+    responses: {
+      /** @description Report rejected */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   CustomerAdvancesController_findAll: {
     parameters: {
       query?: {
@@ -23006,6 +23775,80 @@ export interface operations {
     }
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  NotificationsController_findMine: {
+    parameters: {
+      query?: {
+        page?: number
+        limit?: number
+        unreadOnly?: boolean
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  NotificationsController_unreadCount: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  NotificationsController_markRead: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  NotificationsController_markAllRead: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -25138,123 +25981,6 @@ export interface operations {
       }
     }
   }
-  VendorsController_findAll: {
-    parameters: {
-      query?: {
-        type?:
-          | 'CONTRACTOR'
-          | 'SUPPLIER'
-          | 'OFFICER'
-          | 'CONSULTANT'
-          | 'EMPLOYEE'
-          | 'CONSTRUCTION'
-          | 'FOUNDER'
-          | 'OTHER'
-        search?: string
-        /** @description Include soft-deleted records */
-        includeHidden?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description List of vendors */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  VendorsController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateVendorDto']
-      }
-    }
-    responses: {
-      /** @description Vendor created */
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  VendorsController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Vendor UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  VendorsController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Vendor UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  VendorsController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Vendor UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateVendorDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   CustomersController_findAll: {
     parameters: {
       query?: {
@@ -25708,12 +26434,70 @@ export interface operations {
       }
     }
   }
+  ReportsController_reconcileArSubledger: {
+    parameters: {
+      query: {
+        asOf: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReportsController_reconcileUnearnedInterest: {
+    parameters: {
+      query: {
+        asOf: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ReportsController_reconcileEwalletClearing: {
+    parameters: {
+      query: {
+        days: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ARInvoicesController_findAll: {
     parameters: {
       query: {
         search: string
         status: string
         customerId: string
+        branchId: string
       }
       header?: never
       path?: never
@@ -25884,6 +26668,27 @@ export interface operations {
       }
     }
   }
+  ARInvoicesController_recordBulkPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BulkRecordArPaymentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ARInvoicesController_cancelPayment: {
     parameters: {
       query?: never
@@ -25892,6 +26697,23 @@ export interface operations {
         id: string
         paymentId: string
       }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ARInvoicesController_sweepOverdueNotifications: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
       cookie?: never
     }
     requestBody?: never
@@ -25990,8 +26812,7 @@ export interface operations {
       query?: {
         search?: string
         status?: string
-        vendorId?: string
-        /** @description Scenario 10 Part 1 — filter to bills originating from this supplier */
+        /** @description Filter to bills against this supplier */
         supplierId?: string
       }
       header?: never
@@ -26441,7 +27262,7 @@ export interface operations {
         search?: string
         status?: 'DRAFT' | 'RECORDED' | 'VOID'
         categoryAccountId?: string
-        vendorId?: string
+        supplierId?: string
         startDate?: string
         endDate?: string
       }
@@ -26603,7 +27424,11 @@ export interface operations {
       path?: never
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateBankAccountDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -26696,7 +27521,11 @@ export interface operations {
       }
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateBankAccountDto']
+      }
+    }
     responses: {
       200: {
         headers: {
@@ -26897,6 +27726,42 @@ export interface operations {
       path: {
         id: string
       }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentInterestReleaseController_getPending: {
+    parameters: {
+      query: {
+        asOfDate: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentInterestReleaseController_runRelease: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
       cookie?: never
     }
     requestBody?: never
@@ -27583,114 +28448,6 @@ export interface operations {
       }
     }
   }
-  FxRevaluationController_listRates: {
-    parameters: {
-      query: {
-        currencyId: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FxRevaluationController_addRate: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FxRevaluationController_listRuns: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FxRevaluationController_createRun: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FxRevaluationController_findRun: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  FxRevaluationController_preview: {
-    parameters: {
-      query: {
-        asOfDate: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   PipelineStageController_findAll: {
     parameters: {
       query?: {
@@ -27828,6 +28585,8 @@ export interface operations {
         stageId?: string
         /** @description Filter by assigned sales rep */
         assignedTo?: string
+        /** @description Filter by owning branch */
+        branchId?: string
         page?: number
         limit?: number
       }
@@ -28829,6 +29588,31 @@ export interface operations {
       }
     }
   }
+  CollectionsCalendarController_getCalendar: {
+    parameters: {
+      query?: {
+        /** @description Start of the date range (inclusive) */
+        startDate?: string
+        /** @description End of the date range (inclusive) — defaults to startDate when omitted */
+        endDate?: string
+        branchId?: string
+        collectorId?: string
+        customerId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   BranchesController_findAll: {
     parameters: {
       query?: never
@@ -29512,14 +30296,17 @@ export interface operations {
           | 'under_investigation'
           | 'pending_approval'
           | 'approved'
+          | 'partially_approved'
           | 'declined'
           | 'cancelled'
         /** @description Filter by branch UUID */
         branchId?: string
         /** @description Filter by applicant customer UUID */
         applicantCustomerId?: string
-        /** @description Scenario 17 Part 6 — when true, only return applications not yet consumed by a POS sale (posTransactionId is null). Combine with status=approved for a checkout picker. */
+        /** @description Scenario 17 Part 6 — when true, only return applications not yet consumed by a POS sale (posTransactionId is null). Combine with checkoutEligible for a checkout picker. */
         unconsumed?: boolean
+        /** @description Scenario 29 POS-02 — when true, only return applications checkout can actually use (status approved or partially_approved). Use instead of status='approved' for a checkout picker, since a partially_approved application is still usable for its approved items. */
+        checkoutEligible?: boolean
         /** @description Page number (1-based) */
         page?: number
         /** @description Items per page */
@@ -29629,28 +30416,7 @@ export interface operations {
       }
     }
   }
-  CreditApplicationController_approve: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Credit application UUID */
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Credit application approved */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  CreditApplicationController_decline: {
+  CreditApplicationController_decideItems: {
     parameters: {
       query?: never
       header?: never
@@ -29662,11 +30428,11 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['DeclineCreditApplicationDto']
+        'application/json': components['schemas']['DecideCreditApplicationItemsDto']
       }
     }
     responses: {
-      /** @description Credit application declined */
+      /** @description Credit application resolved — status is approved/declined/partially_approved depending on the item-level outcome */
       200: {
         headers: {
           [name: string]: unknown
@@ -29853,6 +30619,54 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  CalendarEventsController_findForMonth: {
+    parameters: {
+      query: {
+        year: number
+        /** @description 1-12 */
+        month: number
+        /** @description Filter to one branch’s events plus enterprise-wide ones. */
+        branchId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CalendarEventDto'][]
+        }
+      }
+    }
+  }
+  CalendarEventsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCalendarEventDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CalendarEventDto']
+        }
       }
     }
   }

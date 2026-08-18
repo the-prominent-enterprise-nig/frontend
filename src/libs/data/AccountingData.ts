@@ -279,51 +279,8 @@ export function getTransactionById(id: string) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Vendors / Suppliers / Customers                                    */
+/* Suppliers / Customers                                              */
 /* ------------------------------------------------------------------ */
-
-export type VendorType =
-  | 'CONTRACTOR'
-  | 'SUPPLIER'
-  | 'OFFICER'
-  | 'CONSULTANT'
-  | 'EMPLOYEE'
-  | 'CONSTRUCTION'
-  | 'FOUNDER'
-  | 'OTHER'
-
-export const VENDOR_TYPES: VendorType[] = [
-  'CONTRACTOR',
-  'SUPPLIER',
-  'OFFICER',
-  'CONSULTANT',
-  'EMPLOYEE',
-  'CONSTRUCTION',
-  'FOUNDER',
-  'OTHER',
-]
-
-export interface Vendor {
-  id: string | number
-  name: string
-  contactPerson?: string | null
-  contactNumber?: string | null
-  email?: string | null
-  address?: string | null
-  bankAccount?: string | null
-  taxIdNumber?: string | null
-  type: VendorType
-  alphanumericTaxCode?: string | null
-  taxRate?: string | null
-  businessType?: string | null
-  visibility?: boolean
-  /** Default AP liability account for this vendor's bills (e.g. Trade vs. Non-Trade Suppliers). */
-  defaultPayableAccountId?: string | null
-  /** Default expense account for this vendor's bills, overridden per-bill when set on the bill itself. */
-  defaultExpenseAccountId?: string | null
-  createdAt?: string
-  updatedAt?: string
-}
 
 export interface Customer {
   id: string | number
@@ -353,26 +310,6 @@ export interface CustomerInput {
   customerType?: CustomerType
   groupId?: string | null
   lifecycleStatus?: CustomerLifecycleStatus
-}
-
-export function getVendors(params?: ListParams) {
-  return api.get<PaginatedResponse<Vendor> | Vendor[]>('/vendors', params, {
-    tags: ['accounting-vendors'],
-  })
-}
-export function getVendorById(id: string | number) {
-  return api.get<Vendor>(`/vendors/${id}`, undefined, {
-    tags: ['accounting-vendors', `accounting-vendor-${id}`],
-  })
-}
-export function createVendor(data: Partial<Vendor>) {
-  return api.post<Vendor>('/vendors', data)
-}
-export function updateVendor(id: string | number, data: Partial<Vendor>) {
-  return api.patch<Vendor>(`/vendors/${id}`, data)
-}
-export function deleteVendor(id: string | number) {
-  return api.delete(`/vendors/${id}`)
 }
 
 export function getCustomers(params?: ListParams) {

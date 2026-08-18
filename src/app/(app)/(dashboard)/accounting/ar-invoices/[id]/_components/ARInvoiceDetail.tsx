@@ -130,6 +130,12 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
             <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
               {invoice.status}
             </span>
+            {invoice.status === 'OVERDUE' && (
+              <span className="text-xs font-medium text-red-500">
+                {Math.floor((Date.now() - new Date(invoice.dueDate).getTime()) / 86400000)} days
+                overdue
+              </span>
+            )}
           </div>
         </div>
         <button
@@ -150,6 +156,19 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-1">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Details</h2>
           <dl className="space-y-2 text-[13px]">
+            {invoice.posTransaction && (
+              <Row
+                label="Source sale"
+                value={
+                  <Link
+                    href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+                    className="text-purple-700 hover:underline"
+                  >
+                    {invoice.posTransaction.transactionNumber}
+                  </Link>
+                }
+              />
+            )}
             <Row label="Invoice date" value={fmtDate(invoice.invoiceDate)} />
             <Row label="Due date" value={fmtDate(invoice.dueDate)} />
             <Row label="Subtotal" value={fmtMoney(invoice.subtotal)} />
@@ -252,7 +271,7 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   )
 }
 
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function Row({ label, value, bold }: { label: string; value: React.ReactNode; bold?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-gray-500">{label}</dt>

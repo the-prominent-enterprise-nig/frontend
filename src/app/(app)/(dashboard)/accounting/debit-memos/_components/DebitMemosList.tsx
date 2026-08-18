@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { RefreshCw, Search, ChevronDown, ChevronRight, Ban } from 'lucide-react'
 import {
   DebitMemos,
@@ -137,7 +138,19 @@ export default function DebitMemosList() {
                     </td>
                     <td className="px-3 py-2 font-mono">{m.memoNumber}</td>
                     <td className="px-3 py-2">{TYPE_LABELS[m.type] ?? m.type}</td>
-                    <td className="px-3 py-2">{m.arInvoice?.invoiceNumber ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      {m.arInvoice ? (
+                        <Link
+                          href={`/accounting/ar-invoices/${m.arInvoice.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-mono text-purple-700 hover:underline"
+                        >
+                          {m.arInvoice.invoiceNumber}
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="px-3 py-2">{m.customer?.name ?? '—'}</td>
                     <td className="px-3 py-2 text-right font-medium">{fmtMoney(m.amount)}</td>
                     <td className="px-3 py-2 text-gray-500">{fmtDate(m.memoDate)}</td>

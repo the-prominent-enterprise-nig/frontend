@@ -22,63 +22,23 @@ import { usePriceLists } from '../_hooks/usePriceLists'
 import PriceListModal from './PriceListModal'
 import { ApprovePriceListModal } from './ApprovePriceListModal'
 import { RejectPriceListModal } from './RejectPriceListModal'
-import { PriceListItemsModal } from './PriceListItemsModal'
 import { DeletePriceListModal } from './DeletePriceListModal'
+import ManageCategoriesDrawer from './ManageCategoriesDrawer'
+import {
+  EDITABLE_STATUSES,
+  DELETABLE_STATUSES,
+  STATUS_LABELS,
+  statusBadge,
+  itemCountLabel,
+  branchScopeLabel,
+  formatEffectiveRange,
+} from '../_lib/price-list-format'
 import type {
   ApprovePriceListFormValues,
   PriceList,
   PriceListFormValues,
   RejectPriceListFormValues,
 } from '@/src/schema/inventory/price-lists'
-import type { Branch } from '../_actions/get-branches'
-
-// Editing an 'active' list is allowed too — it drops back to
-// pending_approval on save (see the backend's revertToPendingIfActive) so
-// the change can't reach checkout without a fresh approval. Only genuinely
-// retired statuses (inactive, expired) stay locked.
-const EDITABLE_STATUSES = ['pending_approval', 'rejected', 'active']
-// Deleting an already-retired list is a no-op from the user's perspective —
-// only offer it for lists that are actually still "live" in some sense.
-const DELETABLE_STATUSES = ['pending_approval', 'rejected', 'active']
-
-const STATUS_BADGE_CLASS: Record<string, string> = {
-  pending_approval: 'bg-amber-100 text-amber-700',
-  active: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  inactive: 'bg-zinc-100 text-zinc-500',
-  expired: 'bg-zinc-100 text-zinc-500',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  pending_approval: 'Pending',
-  active: 'Active',
-  rejected: 'Rejected',
-  inactive: 'Inactive',
-  expired: 'Expired',
-}
-
-function statusBadge(status: string) {
-  return STATUS_BADGE_CLASS[status] ?? 'bg-zinc-100 text-zinc-500'
-}
-
-function branchScopeLabel(allowedBranchIds: string[] | undefined, branches: Branch[]) {
-  if (!allowedBranchIds || allowedBranchIds.length === 0) return 'All branches'
-  const names = branches.filter((b) => allowedBranchIds.includes(b.id)).map((b) => b.name)
-  if (names.length === 0) return `${allowedBranchIds.length} branch(es)`
-  return names.join(', ')
-}
-
-function formatDate(date?: string | null) {
-  if (!date) return '—'
-  const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString()
-}
-
-function formatEffectiveRange(from?: string | null, to?: string | null) {
-  if (!from && !to) return 'No date range'
-  return `${formatDate(from)} – ${formatDate(to)}`
-}
 
 type PriceListActionsProps = {
   pl: PriceList
@@ -87,7 +47,6 @@ type PriceListActionsProps = {
   canDelete: boolean
   isResubmitting: boolean
   justify?: 'start' | 'end'
-  onManageItems: () => void
   onEdit: () => void
   onApprove: () => void
   onReject: () => void
@@ -108,7 +67,6 @@ function PriceListActions({
   canDelete,
   isResubmitting,
   justify = 'end',
-  onManageItems,
   onEdit,
   onApprove,
   onReject,
@@ -137,14 +95,13 @@ function PriceListActions({
     <div
       className={`flex flex-wrap items-center gap-1 ${justify === 'end' ? 'justify-end' : 'justify-start'}`}
     >
-      <button
-        type="button"
+      <Link
+        href={`/inventory/price-lists/${pl.id}`}
         title="Manage Items"
-        onClick={onManageItems}
         className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
       >
         <ListChecks className="h-4 w-4" />
-      </button>
+      </Link>
       {pl.status === 'pending_approval' && canApprove && (
         <>
           <button
@@ -179,8 +136,8 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
   const [editingList, setEditingList] = useState<PriceList | undefined>(undefined)
   const [approvingList, setApprovingList] = useState<PriceList | null>(null)
   const [rejectingList, setRejectingList] = useState<PriceList | null>(null)
-  const [managingItemsList, setManagingItemsList] = useState<PriceList | null>(null)
   const [deletingList, setDeletingList] = useState<PriceList | null>(null)
+  const [isCategoriesDrawerOpen, setIsCategoriesDrawerOpen] = useState(false)
 
   const {
     priceLists,
@@ -259,13 +216,14 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               />
               <span className="hidden sm:inline">Show inactive/expired</span>
             </label>
-            <Link
-              href="/inventory/price-use-types"
+            <button
+              type="button"
+              onClick={() => setIsCategoriesDrawerOpen(true)}
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
             >
               <Tags className="h-4 w-4" />
               <span className="hidden sm:inline">Price Use Types</span>
-            </Link>
+            </button>
             <button
               type="button"
               onClick={() => refetch()}
@@ -323,11 +281,16 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                           <p className="truncate text-xs text-zinc-400">{pl.description}</p>
                         )}
                       </div>
-                      <span
-                        className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
-                      >
-                        {STATUS_LABELS[pl.status] ?? pl.status}
-                      </span>
+                      <div className="flex shrink-0 flex-col items-end gap-0.5">
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge(pl.status)}`}
+                        >
+                          {STATUS_LABELS[pl.status] ?? pl.status}
+                        </span>
+                        <span className="text-[11px] text-zinc-400">
+                          {itemCountLabel(pl.itemCount)}
+                        </span>
+                      </div>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       {pl.priceUseType && (
@@ -352,7 +315,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                           canDelete={canDelete}
                           isResubmitting={isResubmitting}
                           justify="start"
-                          onManageItems={() => setManagingItemsList(pl)}
                           onEdit={() => openEditModal(pl)}
                           onApprove={() => setApprovingList(pl)}
                           onReject={() => setRejectingList(pl)}
@@ -414,6 +376,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                           >
                             {STATUS_LABELS[pl.status] ?? pl.status}
                           </span>
+                          <p className="mt-1 text-[11px] text-zinc-400">
+                            {itemCountLabel(pl.itemCount)}
+                          </p>
                         </td>
                         <td className="px-4 py-3 text-zinc-600">
                           {formatEffectiveRange(pl.effectiveFrom, pl.effectiveTo)}
@@ -429,7 +394,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                               canApprove={canApprove}
                               canDelete={canDelete}
                               isResubmitting={isResubmitting}
-                              onManageItems={() => setManagingItemsList(pl)}
                               onEdit={() => openEditModal(pl)}
                               onApprove={() => setApprovingList(pl)}
                               onReject={() => setRejectingList(pl)}
@@ -488,21 +452,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         initial={editingList}
       />
 
-      <PriceListItemsModal
-        open={managingItemsList !== null}
-        onClose={() => setManagingItemsList(null)}
-        priceList={managingItemsList}
-        canEdit={Boolean(
-          canUpdate && managingItemsList && EDITABLE_STATUSES.includes(managingItemsList.status)
-        )}
-        // Editing items on an active list can flip its status server-side
-        // (see revertToPendingIfActive) — this modal only reloads its own
-        // item list on save, not the outer table's separately-cached query,
-        // so the status badge there would otherwise stay stale until the
-        // next 30s background refetch.
-        onItemsChanged={refetch}
-      />
-
       <ApprovePriceListModal
         open={approvingList !== null}
         onClose={() => setApprovingList(null)}
@@ -525,6 +474,12 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         priceList={deletingList}
         onDelete={handleDelete}
         isDeleting={isDeleting}
+      />
+
+      <ManageCategoriesDrawer
+        isOpen={isCategoriesDrawerOpen}
+        onClose={() => setIsCategoriesDrawerOpen(false)}
+        session={session}
       />
     </div>
   )

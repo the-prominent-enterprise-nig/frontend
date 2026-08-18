@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -338,6 +339,15 @@ export default function ARInvoicesList({
                     >
                       {i.invoiceNumber}
                     </span>
+                    {i.posTransaction && (
+                      <Link
+                        href={`/pos/transactions?search=${encodeURIComponent(i.posTransaction.transactionNumber)}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="block truncate text-[10px] text-gray-400 hover:text-purple-700 hover:underline"
+                      >
+                        Sale: {i.posTransaction.transactionNumber}
+                      </Link>
+                    )}
                   </td>
                   <td className="px-3 py-2 max-w-40">
                     <span title={i.customer?.name} className="block truncate">
@@ -371,6 +381,12 @@ export default function ARInvoicesList({
                     >
                       {i.status}
                     </span>
+                    {i.status === 'OVERDUE' && (
+                      <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
+                        {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days
+                        overdue
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-0.5">

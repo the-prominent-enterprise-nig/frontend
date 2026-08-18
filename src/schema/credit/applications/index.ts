@@ -111,7 +111,7 @@ export const CreateCreditApplicationFormSchema = z.object({
   // enterprise's main branch (see CreditApplicationService.create()).
   branchId: z.string().optional(),
   applicantCustomerId: z.string().min(1, 'Applicant is required'),
-  coMakerId: z.string().min(1, 'Co-maker is required'),
+  coMakerId: z.string().optional(),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
   items: z
@@ -215,8 +215,8 @@ export interface CreditApplication {
   branch: CreditApplicationBranchLite
   applicantCustomerId: string
   applicantCustomer: CreditApplicationCustomerLite
-  coMakerId: string
-  coMaker: CreditApplicationCoMakerLite
+  coMakerId?: string | null
+  coMaker?: CreditApplicationCoMakerLite | null
   items: CreditApplicationItemLine[]
   requestedAmount: number
   itemDescription?: string | null

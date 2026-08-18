@@ -190,6 +190,12 @@ export default function CreditApplicationDetail({
   }
 
   const isDraft = application.status === 'draft'
+  // Editable (items/notes/documents) any time before a decision is made —
+  // matches CreditApplicationService.update()'s widened window on the
+  // backend. Submitting/cancelling stay draft-only (isDraft, above).
+  const isEditable = (
+    ['draft', 'submitted', 'under_investigation', 'pending_approval'] as string[]
+  ).includes(application.status)
 
   async function handleAttach() {
     if (!pendingFile) return
@@ -318,27 +324,31 @@ export default function CreditApplicationDetail({
 
           <div className="rounded-xl border border-zinc-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-zinc-700">Co-Maker</h2>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Name</dt>
-                <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Relationship</dt>
-                <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Contact</dt>
-                <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
-              </div>
-            </dl>
+            {application.coMaker ? (
+              <dl className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Name</dt>
+                  <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Relationship</dt>
+                  <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Contact</dt>
+                  <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="text-sm text-zinc-400">No co-maker on this application.</p>
+            )}
           </div>
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-zinc-700">Financing Request</h2>
-            {isDraft && canUpdate && (
+            {isEditable && canUpdate && (
               <button
                 type="button"
                 onClick={() => setIsEditOpen(true)}
@@ -436,7 +446,7 @@ export default function CreditApplicationDetail({
                       </p>
                     </div>
                   </div>
-                  {isDraft && canUpdate && (
+                  {isEditable && canUpdate && (
                     <button
                       type="button"
                       onClick={() => removeDocument(doc.id)}
@@ -450,7 +460,7 @@ export default function CreditApplicationDetail({
             </ul>
           )}
 
-          {isDraft && canUpdate && (
+          {isEditable && canUpdate && (
             <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-100 pt-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">

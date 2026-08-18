@@ -364,6 +364,7 @@ export interface ARInvoice {
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
   installmentDetail?: ARInvoiceInstallmentDetail | null
+  posTransaction?: { id: string; transactionNumber: string; createdAt?: string } | null
 }
 
 export interface RecordPaymentResult extends ARInvoice {
@@ -577,11 +578,9 @@ export interface APBillPayment {
 export interface APBill {
   id: string
   billNumber: string
-  vendorId: string
-  vendor?: { id: string; name: string }
-  // Scenario 10 Part 1 — set only when this bill originates from a PO/RR
-  // against a real inventory Supplier, distinct from vendorId.
-  supplierId?: string | null
+  // Scenario 33 collapsed the old separate vendorId (required) + supplierId
+  // (optional) pair into this single required field.
+  supplierId: string
   supplier?: { id: string; code: string; name: string } | null
   // Scenario 10 Part 2 — the PO this invoice bills against, and the RRs
   // matched to it, for the 3-way match.
@@ -609,7 +608,7 @@ export interface APBill {
   payments?: APBillPayment[]
 }
 export const APBills = {
-  list: (params?: { search?: string; status?: string; vendorId?: string; supplierId?: string }) =>
+  list: (params?: { search?: string; status?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
@@ -752,8 +751,8 @@ export interface BusinessExpense {
   id: string
   expenseNumber: string
   expenseDate: string
-  vendorId?: string | null
-  vendor?: { id: string; name: string } | null
+  supplierId?: string | null
+  supplier?: { id: string; name: string } | null
   payee?: string | null
   description?: string | null
   categoryAccountId: string
@@ -774,7 +773,7 @@ export const Expenses = {
     search?: string
     status?: string
     categoryAccountId?: string
-    vendorId?: string
+    supplierId?: string
     startDate?: string
     endDate?: string
   }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),

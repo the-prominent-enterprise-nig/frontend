@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   useTransactions,
@@ -85,8 +86,11 @@ export default function TransactionsList({ session }: Props) {
   // Type/Status/Date filters still wait for an explicit Apply click (you're
   // usually setting several before submitting), but a plain search box
   // should just search as you stop typing, no button needed.
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchParams = useSearchParams()
+  // Lets an AR Invoice "Sale: <transactionNumber>" link deep-link straight
+  // into a prefilled search, rather than landing on an empty list.
+  const [search, setSearch] = useState(searchParams.get('search') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') ?? '')
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400)
     return () => clearTimeout(timer)

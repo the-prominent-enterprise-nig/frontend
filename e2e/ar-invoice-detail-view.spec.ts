@@ -163,6 +163,22 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   // Actions 9) shows "—" (nothing due yet) even though Outstanding is the
   // real balance.
   await expect(row.locator('td').nth(7)).toHaveText('—')
+
+  // Scenario 31 Part 1 — "Sale: <transactionNumber>" link under the
+  // invoice number, deep-linking into a prefilled search on the
+  // Transactions page.
+  const saleLink = row.getByRole('link', { name: new RegExp(transaction.transactionNumber) })
+  await expect(saleLink).toBeVisible()
+  await saleLink.click()
+  await expect(page).toHaveURL(
+    new RegExp(`/pos/transactions\\?search=${transaction.transactionNumber}`)
+  )
+  await expect(page.getByText(transaction.transactionNumber, { exact: true }).first()).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.goBack()
+  await expect(row).toBeVisible({ timeout: 10_000 })
+
   // Click a non-invoice-number cell (customer name) — the whole row must
   // navigate, not just the invoice number text.
   await row.getByText(applicantName).click()
@@ -175,6 +191,24 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await expect(page.getByText(applicantName)).toBeVisible()
   await expect(page.getByText(item.name, { exact: false }).first()).toBeVisible()
   await expect(page.getByText('Rebate on this due date', { exact: false })).toBeVisible()
+
+  // Scenario 31 Part 1 — "Source sale" row, same link/deep-link behavior
+  // as the list.
+  const sourceSaleRow = page.locator('dl > div', { hasText: 'Source sale' })
+  await expect(sourceSaleRow).toBeVisible()
+  const detailSaleLink = sourceSaleRow.getByRole('link', { name: transaction.transactionNumber })
+  await expect(detailSaleLink).toBeVisible()
+  await detailSaleLink.click()
+  await expect(page).toHaveURL(
+    new RegExp(`/pos/transactions\\?search=${transaction.transactionNumber}`)
+  )
+  await expect(page.getByText(transaction.transactionNumber, { exact: true }).first()).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: invoice.invoiceNumber })).toBeVisible({
+    timeout: 10_000,
+  })
 
   // Scenario 29 ACC-05 — "Due now" sits right below "Outstanding" and, for
   // this not-yet-matured due, shows "—" even though Outstanding is real.

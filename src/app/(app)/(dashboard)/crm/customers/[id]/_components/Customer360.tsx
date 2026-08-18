@@ -19,13 +19,7 @@ import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
-import type {
-  Customer,
-  Lead,
-  Interaction,
-  Reminder,
-  InstallmentAccount,
-} from '@/src/schema/crm/types'
+import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
 import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
 
 // Same mapping TransactionsList.tsx uses for its own transaction rows —
@@ -42,7 +36,6 @@ const txStatusColor: Record<string, string> = {
 
 type CustomerView = Customer & {
   leads: Lead[]
-  interactions: Interaction[]
   reminders: Reminder[]
 }
 
@@ -286,21 +279,65 @@ export default function Customer360({
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Activity feed</h2>
-          {data.interactions.length === 0 && (
-            <p className="py-6 text-center text-[13px] text-gray-400">No interactions logged.</p>
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) => (
+                  <li
+                    key={tx.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-gray-800">
+                        {tx.transactionNumber}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.transactionType}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.status}
+                      </span>
+                    </div>
+                    <span className="flex items-center gap-3 text-gray-600">
+                      <span>
+                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                      <span>
+                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {transactionHistory.length >= 20 && (
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  Showing the most recent 20 transactions.
+                </p>
+              )}
+            </>
           )}
-          <ul className="divide-y divide-gray-100">
-            {data.interactions.map((i) => (
-              <li key={i.id} className="py-3">
-                <div className="flex justify-between text-[12px] text-gray-500">
-                  <span className="font-medium text-gray-700">{i.interactionType}</span>
-                  <span>{new Date(i.occurredAt).toLocaleString()}</span>
-                </div>
-                <p className="mt-1 text-[13px] text-gray-800">{i.summary}</p>
-              </li>
-            ))}
-          </ul>
         </section>
       </div>
 
@@ -450,70 +487,6 @@ export default function Customer360({
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
-          {historyLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              Loading transaction history…
-            </p>
-          ) : historyError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : transactionHistory.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No transactions for this customer.
-            </p>
-          ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) => (
-                  <li
-                    key={tx.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium text-gray-800">
-                        {tx.transactionNumber}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.transactionType}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.status}
-                      </span>
-                    </div>
-                    <span className="flex items-center gap-3 text-gray-600">
-                      <span>
-                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                      <span>
-                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
-                      </span>
-                      <span className="font-medium text-gray-800">
-                        {formatPeso(tx.totalAmount)}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
-              )}
-            </>
-          )}
-        </section>
-      </div>
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">

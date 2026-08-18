@@ -295,12 +295,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
       },
       {
-        label: 'Vendors',
-        href: '/accounting/vendors',
-        icon: Truck,
-        requiredPermission: ACCOUNTING_PERMISSIONS.VENDOR_READ,
-      },
-      {
         label: 'Customers',
         href: '/accounting/customers',
         icon: Users,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 
@@ -28,6 +28,33 @@ export default function Drawer({
   footer,
 }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
+  // `typeof window === 'undefined'` evaluates differently between the SSR
+  // pass and the client's first hydration render, causing a hydration
+  // mismatch as soon as this component mounts. Deferring the portal to a
+  // post-mount effect keeps the server and initial client render both null.
+  const [mounted, setMounted] = useState(false)
+  // The panel stays mounted (translated off-screen) while closed so the
+  // slide-out has something to animate — but that leaves its buttons/inputs
+  // reachable by keyboard and screen readers, and matchable by any page-wide
+  // accessibility query, for as long as it sits there. `inert` alone doesn't
+  // reliably pull it out of every query surface (observed to still match via
+  // getByRole in Chromium/Playwright despite being set), so this also delays
+  // `visibility: hidden` until the close transition actually finishes —
+  // visible immediately on open, hidden only `duration` after closing.
+  const [isVisible, setIsVisible] = useState(isOpen)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsVisible(true)
+      return
+    }
+    const timeout = setTimeout(() => setIsVisible(false), 300)
+    return () => clearTimeout(timeout)
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -50,7 +77,7 @@ export default function Drawer({
     }
   }, [isOpen])
 
-  if (typeof window === 'undefined') return null
+  if (!mounted) return null
 
   return createPortal(
     <>
@@ -69,9 +96,10 @@ export default function Drawer({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        inert={!isOpen}
         className={`fixed inset-y-0 right-0 z-50 flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${WIDTHS[width]} ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        } ${isVisible ? '' : 'invisible'}`}
       >
         {/* Header */}
         {title && (

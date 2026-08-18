@@ -118,8 +118,11 @@ export async function apiClient<T = any>(
       signal: AbortSignal.timeout(30_000),
     }
 
-    // Add body for POST, PUT, PATCH
-    if (body && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    // Add body for POST, PUT, PATCH, DELETE (a DELETE-with-body is a valid
+    // REST pattern — e.g. the price-lists bulk-remove endpoint — and was
+    // previously silently dropped here, sending an empty body no matter what
+    // callers passed).
+    if (body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       requestOptions.body = JSON.stringify(body)
     }
 

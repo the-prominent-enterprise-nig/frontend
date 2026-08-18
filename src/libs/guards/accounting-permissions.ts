@@ -51,11 +51,6 @@ export const ACCOUNTING_PERMISSIONS = {
   PAYMENT_UPDATE: 'accounting:payment:update',
   PAYMENT_DELETE: 'accounting:payment:delete',
 
-  VENDOR_READ: 'accounting:vendor:read',
-  VENDOR_CREATE: 'accounting:vendor:create',
-  VENDOR_UPDATE: 'accounting:vendor:update',
-  VENDOR_DELETE: 'accounting:vendor:delete',
-
   SUPPLIER_READ: 'accounting:supplier:read',
   SUPPLIER_CREATE: 'accounting:supplier:create',
   SUPPLIER_UPDATE: 'accounting:supplier:update',
@@ -196,10 +191,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:payment:create': 'Create payments',
   'accounting:payment:update': 'Edit payments',
   'accounting:payment:delete': 'Delete payments',
-  'accounting:vendor:read': 'View vendors',
-  'accounting:vendor:create': 'Create vendors',
-  'accounting:vendor:update': 'Edit vendors',
-  'accounting:vendor:delete': 'Delete vendors',
   'accounting:supplier:read': 'View suppliers',
   'accounting:supplier:create': 'Create suppliers',
   'accounting:supplier:update': 'Edit suppliers',

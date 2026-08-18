@@ -463,6 +463,11 @@ export default function CheckoutPage() {
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // Down payment is a flat 10%-of-sale-amount floor, never a function of the
+  // chosen term — shown by default as a fixed stat so it doesn't read as an
+  // editable box that mysteriously never changes. Keyed by line.lineId (the
+  // same key the displayGroups card uses) so each item's reveal is independent.
+  const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
   // not-yet-used CreditApplication for the selected customer. Corrected
@@ -930,9 +935,15 @@ export default function CheckoutPage() {
           serialMatchedItemIds.has(item.id)
       )
     }
-    // Priced items first — unpriced parts (needing a manager override) sort
-    // to the bottom instead of interrupting the browsable, sellable catalog.
-    return [...filtered].sort((a, b) => (a.price > 0 ? 0 : 1) - (b.price > 0 ? 0 : 1))
+    // In-stock items first, out-of-stock after — the browsable catalog should
+    // lead with what's actually sellable right now. Within each stock group,
+    // priced items still sort before unpriced parts (needing a manager
+    // override) so they don't interrupt the browsable, sellable catalog.
+    return [...filtered].sort((a, b) => {
+      const stockDelta = ((a.stockQty ?? 0) > 0 ? 0 : 1) - ((b.stockQty ?? 0) > 0 ? 0 : 1)
+      if (stockDelta !== 0) return stockDelta
+      return (a.price > 0 ? 0 : 1) - (b.price > 0 ? 0 : 1)
+    })
   }, [catalogItems, searchQuery, serialSearchResults])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
@@ -1427,6 +1438,10 @@ export default function CheckoutPage() {
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
     setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+  }
+
+  function toggleDownPaymentEdit(lineId: string) {
+    setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
   }
 
   function setQty(itemId: string, qty: number) {
@@ -3213,6 +3228,13 @@ export default function CheckoutPage() {
                   const groupLineIds = group.map((l) => l.lineId)
                   const groupMode = line.invoiceType ?? 'cash'
                   const groupProvider = line.installmentProvider ?? 'inhouse'
+                  const lineSaleAmount =
+                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity
+                  const minDownPayment = 0.1 * lineSaleAmount
+                  const downPaymentValue = line.downPaymentInput
+                    ? parseFloat(line.downPaymentInput) || 0
+                    : minDownPayment
+                  const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -3280,47 +3302,77 @@ export default function CheckoutPage() {
                           </div>
                           {groupProvider === 'inhouse' && (
                             <>
-                              <div className="flex items-center gap-1.5">
-                                <div className="relative flex-1">
-                                  <select
-                                    value={line.financingTermId ?? ''}
-                                    onChange={(e) =>
-                                      setLineFinancingTermId(groupLineIds, e.target.value)
-                                    }
-                                    className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  >
-                                    <option value="">Select a term…</option>
-                                    {financingTerms.map((t) => (
-                                      <option key={t.id} value={t.id}>
-                                        {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <ChevronDown
-                                    size={11}
-                                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                                  />
-                                </div>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.01}
-                                  placeholder="Down payment"
-                                  value={line.downPaymentInput ?? ''}
+                              <div className="relative">
+                                <select
+                                  value={line.financingTermId ?? ''}
                                   onChange={(e) =>
-                                    setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    setLineFinancingTermId(groupLineIds, e.target.value)
                                   }
-                                  className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                >
+                                  <option value="">Select a term…</option>
+                                  {financingTerms.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.termMonths} months
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown
+                                  size={11}
+                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
                                 />
                               </div>
-                              <p className="text-xs text-gray-500">
-                                Min{' '}
-                                {fmt(
-                                  0.1 *
-                                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                                    line.quantity
-                                )}{' '}
-                                (10% of sale amount)
+                              {downPaymentEditingThisLine ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    placeholder="Down payment"
+                                    autoFocus
+                                    value={line.downPaymentInput ?? ''}
+                                    onChange={(e) =>
+                                      setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  />
+                                  <p className="text-xs text-gray-500">
+                                    Must be at least {fmt(minDownPayment)} and no more than{' '}
+                                    {fmt(lineSaleAmount)}.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    Use the minimum instead
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between gap-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment{' '}
+                                      <span className="font-mono font-bold text-prominent-purple-800">
+                                        {fmt(downPaymentValue)}
+                                      </span>
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      10% min
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    Use a different amount
+                                  </button>
+                                </>
+                              )}
+                              <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                                <span className="text-prominent-purple-400">●</span>
+                                Fixed at 10% of the sale amount — the same for every term.
                               </p>
                               {line.financingTermId && (
                                 <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">

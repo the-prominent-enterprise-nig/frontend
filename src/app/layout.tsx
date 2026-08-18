@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Poppins } from 'next/font/google'
 import './globals.css'
+import NumberInputScrollGuard from '@/src/components/common/NumberInputScrollGuard'
 
 const poppins = Poppins({
   subsets: ['latin'],
@@ -21,6 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${poppins.variable} font-(family-name:--font-poppins) antialiased`}>
+        <NumberInputScrollGuard />
         {children}
       </body>
     </html>
