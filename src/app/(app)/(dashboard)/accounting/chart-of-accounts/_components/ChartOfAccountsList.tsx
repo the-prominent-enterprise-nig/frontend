@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, Search, X, Sparkles } from 'lucide-react'
+import { Plus, RefreshCw, Pencil, Trash2, Search, X } from 'lucide-react'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import {
   getAccounts,
@@ -10,7 +10,6 @@ import {
   deleteAccount,
   type Account,
 } from '@/src/libs/data/AccountingData'
-import { COASeed } from '@/src/libs/data/AccountingV2Data'
 
 const TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']
 const CATEGORIES = [
@@ -63,24 +62,6 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
       load()
     }
   }
-  const seedPH = async () => {
-    if (
-      !confirm(
-        "Seed NIG's real chart of accounts? This adds ~155 Revenue/Cost of Sales/Expense accounts (no Balance Sheet accounts yet) and configures the mappings we have real matches for. Existing accounts with the same numbers will be skipped."
-      )
-    )
-      return
-    const res = await COASeed.seedPH()
-    if (res.success && res.data) {
-      alert(
-        `Created ${res.data.created} accounts, skipped ${res.data.skipped} existing. ${res.data.mappingsConfigured} mappings configured.`
-      )
-      load()
-    } else {
-      alert(res.message || 'Seed failed')
-    }
-  }
-
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
@@ -94,12 +75,6 @@ export function ChartOfAccountsList(_props: { session: SessionUser | null }) {
             className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
-          <button
-            onClick={seedPH}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-lg"
-          >
-            <Sparkles className="w-4 h-4" /> Seed NIG Accounts
           </button>
           <button
             onClick={() => setCreating(true)}

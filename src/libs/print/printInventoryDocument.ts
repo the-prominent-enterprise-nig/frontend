@@ -139,13 +139,14 @@ export function printPurchaseOrderDocument(
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .brand-logo { height: 48px; width: auto; object-fit: contain; }
     .company-name { text-align: right; font-size: 16px; font-weight: 700; color: #333; max-width: 320px; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
-    .po-number { margin: 8px 0 0; font-size: 15px; font-weight: 700; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
     .delivery-note { font-weight: 700; margin: 0 0 16px; }
@@ -174,7 +175,10 @@ export function printPurchaseOrderDocument(
   </style></head><body>
     <div class="top">
       <h1>Purchase Order</h1>
-      <div class="company-name">${esc(enterprise?.companyTradingName || enterprise?.companyLegalName)}</div>
+      <div class="brand">
+        <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+        <div class="company-name">${esc(enterprise?.companyTradingName || enterprise?.companyLegalName)}</div>
+      </div>
     </div>
 
     <div class="info">
@@ -185,13 +189,14 @@ export function printPurchaseOrderDocument(
       <div class="meta">
         <p class="meta-label">Issue date</p>
         <p class="meta-value">${fmtDate(po.orderDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${esc(po.code)}</p>
         <p class="meta-label">PAYEE'S TIN:</p>
         <p class="meta-value">${esc(supplier?.taxId) || '—'}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        <p class="po-number">PO # ${esc(po.code)}</p>
       </div>
     </div>
 
