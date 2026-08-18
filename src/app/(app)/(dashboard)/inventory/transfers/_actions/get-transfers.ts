@@ -13,6 +13,7 @@ export async function getTransfers(params?: {
   status?: TransferStatus
   fromWarehouseId?: string
   toWarehouseId?: string
+  branchId?: string
   search?: string
 }): Promise<ApiResponse<TransferListResponse>> {
   try {

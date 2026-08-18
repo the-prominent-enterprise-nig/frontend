@@ -404,7 +404,7 @@ export interface ARInvoiceCustomerResult {
 }
 
 export const ARInvoices = {
-  list: (params?: { search?: string; status?: string; customerId?: string }) =>
+  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
   // Scoped to accounting:ar-invoices:read (not the CRM customer list, which
   // needs crm:customers:read — a permission Accountant doesn't hold) so

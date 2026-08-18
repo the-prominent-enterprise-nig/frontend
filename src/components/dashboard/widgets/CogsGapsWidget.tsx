@@ -7,24 +7,26 @@ import {
   getMissingCogsReport,
   type MissingCogsReport,
 } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 export default function CogsGapsWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs'
   const limit = isCompact ? 2 : 4
   const [report, setReport] = useState<MissingCogsReport | null>(null)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await getMissingCogsReport()
+      const res = await getMissingCogsReport(branchId ?? undefined)
       if (cancelled) return
       setReport(res.success ? (res.data ?? { count: 0, sample: [] }) : { count: 0, sample: [] })
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   if (report === null) {
     return <div className="text-xs text-zinc-400 p-2">Loading...</div>
