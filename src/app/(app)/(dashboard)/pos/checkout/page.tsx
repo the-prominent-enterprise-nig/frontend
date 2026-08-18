@@ -1050,6 +1050,18 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
+  // The Payment section used to start on an empty "+ Add payment method"
+  // placeholder for every sale, reading as a missing/broken step rather than
+  // an optional one. Pre-open one payment row the moment there's something
+  // to collect, same defaulting addPaymentRow already does on a manual
+  // click — reserve mode's deposit stays untouched since it's genuinely
+  // optional there.
+  useEffect(() => {
+    if (saleMode !== 'sale' || tenderTarget <= 0 || payments.length > 0) return
+    addPaymentRow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, tenderTarget, payments.length])
+
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
   useEffect(() => {
@@ -2756,7 +2768,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-96 lg:w-[420px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-110 lg:w-120 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -2780,7 +2792,7 @@ export default function CheckoutPage() {
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
                         {loyaltyAccount && (
-                          <p className="text-[10px] font-medium text-purple-500">
+                          <p className="text-xs font-medium text-purple-500">
                             {loyaltyAccount.currentPoints} pts
                           </p>
                         )}
@@ -2791,7 +2803,7 @@ export default function CheckoutPage() {
                     {customerHistory.length > 0 && (
                       <button
                         onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-[10px] font-medium text-purple-400 hover:text-purple-700"
+                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
                       >
                         {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                         {customerHistory.length} past
@@ -2865,7 +2877,7 @@ export default function CheckoutPage() {
                           <User size={11} className="shrink-0 text-gray-700" />
                           <div>
                             <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-[10px] text-gray-700">{c.phone}</p>}
+                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
                           </div>
                         </button>
                       ))
@@ -2951,9 +2963,7 @@ export default function CheckoutPage() {
                             <User size={11} className="shrink-0 text-gray-700" />
                             <div>
                               <p className="font-medium text-gray-900">{a.name}</p>
-                              <p className="text-[10px] text-gray-700">
-                                {a.phone || a.email || ''}
-                              </p>
+                              <p className="text-xs text-gray-700">{a.phone || a.email || ''}</p>
                             </div>
                           </button>
                         ))
@@ -3155,7 +3165,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Sale
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   Cash / charge / installment per item
                 </span>
               </button>
@@ -3168,7 +3178,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Reserve
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   No serial yet, optional deposit
                 </span>
               </button>
@@ -3194,7 +3204,7 @@ export default function CheckoutPage() {
 
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                   Item Payment Mode
                 </p>
                 {displayGroups.map((group) => {
@@ -3222,7 +3232,7 @@ export default function CheckoutPage() {
                           <button
                             key={mode}
                             onClick={() => setLineInvoiceType(groupLineIds, mode)}
-                            className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                            className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                               groupMode === mode
                                 ? mode === 'installment'
                                   ? 'bg-prominent-purple-100 text-prominent-purple-700'
@@ -3240,7 +3250,7 @@ export default function CheckoutPage() {
                             <button
                               key={method}
                               onClick={() => setLinePayNowMethod(groupLineIds, method)}
-                              className={`flex-1 rounded-lg px-2 py-1 text-[10px] font-medium transition-colors ${
+                              className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
                                 (line.payNowMethod ?? 'cash') === method
                                   ? 'bg-purple-100 text-purple-700'
                                   : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
@@ -3258,7 +3268,7 @@ export default function CheckoutPage() {
                               <button
                                 key={provider}
                                 onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                className={`flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors ${
+                                className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   groupProvider === provider
                                     ? 'bg-prominent-purple-200 text-prominent-purple-800'
                                     : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
@@ -3277,7 +3287,7 @@ export default function CheckoutPage() {
                                     onChange={(e) =>
                                       setLineFinancingTermId(groupLineIds, e.target.value)
                                     }
-                                    className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[11px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                    className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   >
                                     <option value="">Select a term…</option>
                                     {financingTerms.map((t) => (
@@ -3300,10 +3310,10 @@ export default function CheckoutPage() {
                                   onChange={(e) =>
                                     setLineDownPaymentInput(groupLineIds, e.target.value)
                                   }
-                                  className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                 />
                               </div>
-                              <p className="text-[10px] text-gray-500">
+                              <p className="text-xs text-gray-500">
                                 Min{' '}
                                 {fmt(
                                   0.1 *
@@ -3313,7 +3323,7 @@ export default function CheckoutPage() {
                                 (10% of sale amount)
                               </p>
                               {line.financingTermId && (
-                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
+                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
                                   {installmentPreviewLoading[line.lineId] ? (
                                     <span className="flex items-center gap-1.5">
                                       <Loader2 size={10} className="animate-spin" /> Calculating…
@@ -3339,7 +3349,7 @@ export default function CheckoutPage() {
                             </>
                           )}
                           {groupProvider === 'tpf' && (
-                            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-[10px] text-gray-500">
+                            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
                               Financed by a third party — the financier's details are entered once
                               below, under Payment.
                             </p>
@@ -3377,13 +3387,13 @@ export default function CheckoutPage() {
                       {inhouseInstallmentCartLines.length} item
                       {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
                     </p>
-                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
                     {selectedCustomer && (
                       <div className="mt-2.5">
-                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
                         <div className="relative">
@@ -3423,7 +3433,7 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-700">
+                          <p className="mt-1 text-[13px] text-amber-700">
                             Every installment sale requires an approved credit application — open
                             one in Credit Applications first.
                           </p>
@@ -3438,13 +3448,13 @@ export default function CheckoutPage() {
                       {tpfInstallmentCartLines.length} item
                       {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
                     </p>
-                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
                       {fmt(tpfLinesTotal)} collected now from the financier — no down payment, no
                       local schedule.
                     </p>
                     <div className="mt-2.5 space-y-2">
                       <div>
-                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           TPF Provider
                         </label>
                         <div className="relative">
@@ -3470,7 +3480,7 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {tpfProviders.length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-700">
+                          <p className="mt-1 text-[13px] text-amber-700">
                             Add a TPF provider under POS Settings first.
                           </p>
                         )}
@@ -3592,7 +3602,7 @@ export default function CheckoutPage() {
                 {/* Quick cash denomination buttons */}
                 {payments.some((p) => p.method === 'cash') && (
                   <div className="mt-1">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-700">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700">
                       Quick Amount
                     </p>
                     <div className="flex flex-wrap gap-1">
