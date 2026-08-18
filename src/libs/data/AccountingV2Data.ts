@@ -228,6 +228,55 @@ export const Reports = {
     }),
 }
 
+// ============ GL Reconciliation (Scenario 29 ACC-07) ============
+export interface ArSubledgerReconciliation {
+  asOfDate: string
+  total: { subledger: number; gl: number; diff: number; matches: boolean }
+  glBranchTaggingCoverage: number | null
+  byBranch: {
+    branchId: string | null
+    branchName: string | null
+    subledger: number
+    gl: number
+    diff: number
+  }[]
+}
+export interface UnearnedInterestReconciliation {
+  asOfDate: string
+  subledgerRemaining: number
+  glBalance: number
+  diff: number
+  matches: boolean
+  scheduleWithMarkupCount: number
+}
+export interface EwalletClearingTrend {
+  asOfDate: string
+  periodDays: number
+  periodStartDate: string
+  currentBalance: number
+  balanceAtPeriodStart: number
+  delta: number
+  trend: 'improving' | 'worsening' | 'flat'
+  note: string
+}
+export const GlReconciliation = {
+  arSubledger: (asOf?: string) =>
+    api.get<ArSubledgerReconciliation>(
+      '/reports/reconciliation/ar-subledger',
+      asOf ? { asOf } : undefined
+    ),
+  unearnedInterest: (asOf?: string) =>
+    api.get<UnearnedInterestReconciliation>(
+      '/reports/reconciliation/unearned-interest',
+      asOf ? { asOf } : undefined
+    ),
+  ewalletClearing: (days?: number) =>
+    api.get<EwalletClearingTrend>(
+      '/reports/reconciliation/ewallet-clearing',
+      days ? { days } : undefined
+    ),
+}
+
 // ============ AR Invoices ============
 
 // Mirrors the backend's PaymentMethod enum (also used by JournalEntry).

@@ -183,4 +183,31 @@ Per the source doc's own note: these need a named owner and a date, or they won'
 
 ## Implementation Log
 
-_(empty — no implementation has started; this is the planning pass only, per explicit "no code changes" instruction)_
+### 2026-08-18
+
+**For this scenario, I have done:**
+
+- Item 6 (SN-01): transfer dispatch serial-override picker for a physically-correct but system-stale serial — new `inventory:transfers:serial-override` permission (Business Owner, Branch Manager, Stock Controller), widened live-search picker only appears once the override checkbox is actually ticked
+- Item 7 (RR-05 half of item 7): manual receiving report — origination path for a serial with no PO/transfer/count context, owner-only by default, submit-then-approve with self-approval blocked
+- Item 8 (INV-02): aging report rebuilt on real per-serial goods-receipt data (bucketed 0–30/31–60/61–90/91–180/180+ days) instead of the old placeholder logic
+- Item 9 (INV-03): new inventory reconciliation report — null-reference `StockLedger` rows, and POS sales/transfers/adjustments that should have moved stock but have no matching ledger entry
+- Item 10 (ACC-01): installment financing markup deferred into Unearned Interest Income at sale time instead of recognized immediately, per the "ACC-01 revenue-recognition model" decision above
+- Item 11 (ACC-03): `InstallmentAccount` penalty increases now post `Dr Accounts Receivable / Cr Penalty Income` (only the delta, on increase) instead of only updating the stored balance — the seeded "Penalty / Late Payment Charges" GL account is no longer orphaned
+- Item 12 (ACC-04): month-end batch releasing each contract's elapsed financing markup from Unearned Interest Income into recognized interest income, straight-lined per due-date period (last period absorbs rounding), one JE per contract, manually triggered (Business Owner + Branch Manager), idempotent against double-posting
+- Item 13 (ACC-05): a computed "Due" figure (fallen-due-and-unpaid) alongside the existing "Outstanding" figure — applied to every AR invoice (not just installment ones), surfaced on the AR Invoices list/detail and the POS Collections customer list
+- Item 14 (ACC-06): `ARInvoice` gained a real, nullable `branchId` — auto-set from the POS session for POS-originated invoices, forced to the creating user's own branch for manually-created ones (mirroring `ARPayment.branchId`'s existing convention); backfilled on the 9/14 dev-DB invoices with a derivable branch
+- Item 15 (ACC-07): three GL reconciliation checks on a new "GL Reconciliation" tab — AR subledger vs. AR Receivable control account (per branch and total), remaining installment markup vs. Unearned Interest Income, and an E-Wallet Receivable Clearing balance trend. All report-only, no blocking behavior
+
+**Also fixed, surfaced live during manual UAT of the above (not in this doc's original scope):**
+
+- PR→PO auto-convert wrapped in try/catch — a transient failure now leaves the PR at `approved` with manual "Convert to PO" still available, instead of the approval itself erroring out
+- A `sent` purchase order is no longer editable, only closable, once it's gone to the supplier
+- Customer phone-number display fixed to avoid an E.164 parse crash on already-locally-formatted (pre-existing/imported) numbers
+- Creating a purchase from the Purchase Orders tab (always drafts a PR) or approving a PR that auto-converts to a PO now follows the user to whichever tab the record actually landed on, instead of leaving them looking at a list it just disappeared from
+
+**Worth flagging:**
+
+- **Item 7's RR-04 half was not separately verified.** Only RR-05 (manual RR) was built; the doc's own decision note above ("RR-04 may not need separate work... confirm this with the developer") was never explicitly confirmed with the developer during this pass. Needs a follow-up check before this item is called fully closed.
+- Item 15 check (a)'s per-branch breakdown is only as complete as the GL side's branch-tagging — the journal entries that debit AR Receivable at sale time still don't carry a `branchId` themselves (a narrower, adjacent gap this pass didn't fix, even though Item 14 added the column). The report surfaces this honestly via a `glBranchTaggingCoverage` percentage rather than hiding it; the **total** figure is unaffected and fully accurate regardless.
+- Item 15 check (c) (e-wallet clearing) can only observe a balance trend — no e-wallet settlement action exists anywhere in this codebase to validate against, so "trends to zero" is reported as a trend, not a pass/fail. `POS_EWALLET` is also deliberately left unmapped by the seed (manual configuration only by design), so the check 400s until it's mapped once via Settings → Account Mapping.
+- Discovered but not fixed (pre-existing, unrelated to this pass): several frontend e2e specs are stale from before this branch's PR-first procurement redesign — `purchase-order-discount.spec.ts`, `purchase-order-freebie.spec.ts`, and `purchase-order-pdf.spec.ts` all expect a "create a live PO directly" path that no longer exists (creating always drafts a PR now). Also `src/pos/transactions.service.spec.ts` (backend, 28 unit tests) is out of sync with an in-progress `partially_approved`/per-item-status change to credit applications that predates this pass. Both flagged to the developer, not fixed here.

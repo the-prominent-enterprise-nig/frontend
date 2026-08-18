@@ -8,6 +8,7 @@ import {
   getBranches,
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
+import GlReconciliationView from './GlReconciliationView'
 
 type Tab =
   | 'trial-balance'
@@ -20,6 +21,7 @@ type Tab =
   | 'customer-statement'
   | 'cost-center'
   | 'bi'
+  | 'reconciliation'
 
 const VALID_TABS: Tab[] = [
   'trial-balance',
@@ -32,6 +34,7 @@ const VALID_TABS: Tab[] = [
   'customer-statement',
   'cost-center',
   'bi',
+  'reconciliation',
 ]
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -60,6 +63,9 @@ export default function ReportsHub() {
   )
 
   const load = async () => {
+    // Reconciliation is self-contained (GlReconciliationView fetches its
+    // own three endpoints) — nothing for this hub's shared data state to do.
+    if (tab === 'reconciliation') return
     setLoading(true)
     setData(null)
     let res: any
@@ -125,6 +131,7 @@ export default function ReportsHub() {
             ['customer-statement', 'Customer Statement'],
             ['cost-center', 'Cost Center'],
             ['bi', 'BI Summary'],
+            ['reconciliation', 'GL Reconciliation'],
           ] as [Tab, string][]
         ).map(([k, l]) => (
           <button
@@ -137,7 +144,9 @@ export default function ReportsHub() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3 mb-4 items-end">
+      <div
+        className={`flex flex-wrap gap-3 mb-4 items-end ${tab === 'reconciliation' ? 'hidden' : ''}`}
+      >
         {needsAsOf && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">As of</label>
@@ -230,8 +239,12 @@ export default function ReportsHub() {
         </button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
-        {!data ? (
+      <div
+        className={tab === 'reconciliation' ? '' : 'bg-white border border-gray-200 rounded-lg p-4'}
+      >
+        {tab === 'reconciliation' ? (
+          <GlReconciliationView />
+        ) : !data ? (
           <div className="text-center text-gray-400 py-8">
             {needsCustomer && !customerId
               ? 'Select a customer to view their statement.'
