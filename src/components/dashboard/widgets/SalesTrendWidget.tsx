@@ -2,13 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type SalesOrder = {
-  id: string
-  totalAmount?: number | string | null
-  orderDate?: string
-}
+import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 type MonthData = { label: string; value: number }
 
@@ -31,25 +26,30 @@ export default function SalesTrendWidget() {
 
   const [months, setMonths] = useState<MonthData[]>(getRecentMonths(monthCount))
   const [loading, setLoading] = useState(true)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
-    api
-      .get<{ data?: SalesOrder[] }>('/sales/orders', { limit: 500 })
+    const now = new Date()
+    const rangeStart = new Date(now.getFullYear(), now.getMonth() - (monthCount - 1), 1)
+
+    getTransactions({
+      transactionType: 'sale',
+      dateFrom: rangeStart.toISOString(),
+      branchId: branchId ?? undefined,
+    })
       .then((res) => {
         if (cancelled) return
-        const orders = res.data?.data ?? []
+        const txns = (res.data ?? []).filter((t) => t.status !== 'voided')
         const base = getRecentMonths(monthCount)
-        const now = new Date()
 
-        for (const o of orders) {
-          if (!o.orderDate) continue
-          const d = new Date(o.orderDate)
+        for (const t of txns) {
+          const d = new Date(t.occurredAt)
           const monthsAgo =
             (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
           const idx = monthCount - 1 - monthsAgo
           if (idx >= 0 && idx < monthCount) {
-            base[idx].value += Number(o.totalAmount ?? 0)
+            base[idx]!.value += Number(t.totalAmount ?? 0)
           }
         }
 
@@ -62,7 +62,7 @@ export default function SalesTrendWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   const maxVal = Math.max(...months.map((m) => m.value), 1)
   const hasData = months.some((m) => m.value > 0)

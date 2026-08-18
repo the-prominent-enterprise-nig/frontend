@@ -73,6 +73,40 @@ export const FixedAssetsV2 = {
   remove: (id: string) => api.delete(`/fixed-assets/${id}`),
 }
 
+// ============ Installment Interest Release (Scenario 29 ACC-04) ============
+export interface PendingInterestReleaseSchedule {
+  installmentScheduleId: string
+  transactionNumber?: string | null
+  periodsEligible: number
+  amount: number
+}
+export interface PendingInterestReleaseResult {
+  asOfDate: string
+  schedules: PendingInterestReleaseSchedule[]
+  totalPending: number
+}
+export interface InterestReleaseRunResultItem {
+  installmentScheduleId: string
+  journalEntryId: string
+  periodsReleased: number
+  amountReleased: number
+}
+export interface InterestReleaseRunResult {
+  asOfDate: string
+  schedulesReleased: number
+  totalReleased: number
+  results: InterestReleaseRunResultItem[]
+  skipped: { installmentScheduleId: string; reason: string }[]
+}
+export const InstallmentInterestRelease = {
+  getPending: (asOfDate?: string) =>
+    api.get<PendingInterestReleaseResult>('/accounting/installment-interest-release/pending', {
+      asOfDate,
+    }),
+  run: (body: { asOfDate?: string }) =>
+    api.post<InterestReleaseRunResult>('/accounting/installment-interest-release/run', body),
+}
+
 // ============ Budgets (ACC-23) ============
 export type BudgetGrain = 'MONTHLY' | 'QUARTERLY' | 'ANNUAL'
 export interface Budget {
@@ -159,81 +193,6 @@ export const CashForecast = {
   }) => api.get<CashForecastResult>('/cash-forecast', params as any),
 }
 
-// ============ FX Revaluation (ACC-26) ============
-export interface FxRate {
-  id: string
-  currencyId: string
-  currency?: { id: string; code: string; name: string }
-  rate: number
-  effectiveDate: string
-  source?: string | null
-}
-export interface RevaluationLine {
-  id: string
-  runId: string
-  accountId: string
-  account?: { id: string; number?: string; name: string }
-  currencyId: string
-  currency?: { id: string; code: string }
-  beforeBalance: number
-  rateUsed: number
-  afterBalance: number
-  gainLoss: number
-}
-export interface RevaluationRun {
-  id: string
-  asOfDate: string
-  periodId?: string | null
-  journalEntryId?: string | null
-  reversalJEId?: string | null
-  totalGainLoss: number
-  status: 'DRAFT' | 'POSTED' | 'REVERSED'
-  notes?: string | null
-  createdBy?: string | null
-  createdAt: string
-  lines: RevaluationLine[]
-}
-export const FxRevaluation = {
-  listRates: (currencyId?: string) =>
-    api.get<FxRate[]>('/fx-revaluation/rates', currencyId ? { currencyId } : undefined),
-  addRate: (body: { currencyId: string; rate: number; effectiveDate: string; source?: string }) =>
-    api.post<FxRate>('/fx-revaluation/rates', body),
-  listRuns: () => api.get<RevaluationRun[]>('/fx-revaluation/runs'),
-  preview: (asOfDate: string) =>
-    api.get<{
-      asOfDate: string
-      totalGainLoss: number
-      lines: Omit<RevaluationLine, 'id' | 'runId'>[]
-    }>('/fx-revaluation/preview', { asOfDate }),
-  createRun: (body: { asOfDate: string; periodId?: string; notes?: string }) =>
-    api.post<RevaluationRun>('/fx-revaluation/runs', body),
-}
-
-// ============ Tax Rates (ACC-21) ============
-export type TaxRateType = 'VAT' | 'EXEMPT' | 'ZERO_RATED' | 'WHT'
-export interface TaxRate {
-  id: string
-  code: string
-  name: string
-  ratePercent: number | string
-  type: TaxRateType
-  description?: string | null
-  isActive: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-export const TaxRates = {
-  list: (activeOnly?: boolean) =>
-    api.get<TaxRate[]>('/tax-rates', activeOnly ? { activeOnly: 'true' } : undefined, {
-      tags: ['tax-rates'],
-    }),
-  get: (id: string) => api.get<TaxRate>(`/tax-rates/${id}`),
-  create: (body: Omit<TaxRate, 'id' | 'createdAt' | 'updatedAt'>) =>
-    api.post<TaxRate>('/tax-rates', body),
-  update: (id: string, body: Partial<TaxRate>) => api.patch<TaxRate>(`/tax-rates/${id}`, body),
-  remove: (id: string) => api.delete(`/tax-rates/${id}`),
-}
-
 // ============ Reports ============
 export const Reports = {
   trialBalance: (asOf?: string) =>
@@ -267,6 +226,55 @@ export const Reports = {
       ...(startDate && { startDate }),
       ...(endDate && { endDate }),
     }),
+}
+
+// ============ GL Reconciliation (Scenario 29 ACC-07) ============
+export interface ArSubledgerReconciliation {
+  asOfDate: string
+  total: { subledger: number; gl: number; diff: number; matches: boolean }
+  glBranchTaggingCoverage: number | null
+  byBranch: {
+    branchId: string | null
+    branchName: string | null
+    subledger: number
+    gl: number
+    diff: number
+  }[]
+}
+export interface UnearnedInterestReconciliation {
+  asOfDate: string
+  subledgerRemaining: number
+  glBalance: number
+  diff: number
+  matches: boolean
+  scheduleWithMarkupCount: number
+}
+export interface EwalletClearingTrend {
+  asOfDate: string
+  periodDays: number
+  periodStartDate: string
+  currentBalance: number
+  balanceAtPeriodStart: number
+  delta: number
+  trend: 'improving' | 'worsening' | 'flat'
+  note: string
+}
+export const GlReconciliation = {
+  arSubledger: (asOf?: string) =>
+    api.get<ArSubledgerReconciliation>(
+      '/reports/reconciliation/ar-subledger',
+      asOf ? { asOf } : undefined
+    ),
+  unearnedInterest: (asOf?: string) =>
+    api.get<UnearnedInterestReconciliation>(
+      '/reports/reconciliation/unearned-interest',
+      asOf ? { asOf } : undefined
+    ),
+  ewalletClearing: (days?: number) =>
+    api.get<EwalletClearingTrend>(
+      '/reports/reconciliation/ewallet-clearing',
+      days ? { days } : undefined
+    ),
 }
 
 // ============ AR Invoices ============
@@ -328,6 +336,8 @@ export interface ARInvoiceInstallmentItem {
   unitPrice: number | string
   item: { id: string; name: string; brand: { name: string } | null } | null
   lineTotal: number
+  serialNumber: { id: string; serialNumber: string } | null
+  secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
 export interface ARInvoiceInstallmentDetail {
@@ -361,6 +371,31 @@ export interface RecordPaymentResult extends ARInvoice {
   overpayment: { paymentId: string; overpaidAmount: number; wasClosedAccount: boolean } | null
 }
 
+// POS Collections bulk/early-payment ("Pay Selected") — settles several of a
+// customer's own upcoming installment dues in one shot, with one shared
+// (required) reference number across the whole batch.
+export interface BulkPayInstallmentLineInput {
+  invoiceId: string
+  amount: number
+  rebateAmount?: number
+}
+
+export interface BulkRecordArPaymentInput {
+  lines: BulkPayInstallmentLineInput[]
+  paymentDate: string
+  method?: PaymentMethod
+  reference: string
+  notes?: string
+  branchId?: string
+  collectorId?: string
+}
+
+export interface BulkRecordPaymentResult {
+  payments: RecordPaymentResult[]
+  totalCollected: number
+  invoiceCount: number
+}
+
 export interface ARInvoiceCustomerResult {
   id: string
   name: string
@@ -369,7 +404,7 @@ export interface ARInvoiceCustomerResult {
 }
 
 export const ARInvoices = {
-  list: (params?: { search?: string; status?: string; customerId?: string }) =>
+  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
   // Scoped to accounting:ar-invoices:read (not the CRM customer list, which
   // needs crm:customers:read — a permission Accountant doesn't hold) so
@@ -392,9 +427,16 @@ export const ARInvoices = {
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
   recordPayment: (id: string, body: RecordArPaymentInput) =>
     api.post<RecordPaymentResult>(`/ar-invoices/${id}/payments`, body),
+  recordBulkPayment: (body: BulkRecordArPaymentInput) =>
+    api.post<BulkRecordPaymentResult>('/ar-invoices/bulk-payments', body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
+  // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
+  // backend), so a real "Check overdue" button is the only way to fire it
+  // outside an external scheduler.
+  sweepOverdueNotifications: () =>
+    api.post<{ notified: number }>('/ar-invoices/sweep-overdue-notifications', {}),
 }
 
 // ============ Credit Memos ============

@@ -25,6 +25,9 @@ const PoReceiptSchema = z.object({
   code: z.string(),
   receivedAt: z.string(),
   notes: z.string().nullable().optional(),
+  // Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this receipt.
+  deliveryReceiptNumber: z.string().nullable().optional(),
+  supplierInvoiceNumber: z.string().nullable().optional(),
   warehouse: z.object({ id: z.string(), name: z.string(), code: z.string() }).nullable().optional(),
   lines: z.array(PoReceiptLineSchema),
 })

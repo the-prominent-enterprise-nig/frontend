@@ -9,8 +9,8 @@ Not checked this pass — recommend a quick `clickup_search` before further work
 ## Related docs
 
 - `scenario-15-price-list-management-plan.md` — where `InstallmentAccount.ppd` originates (7.5%-of-MI formula, or a curated `PriceListItemTerm.ppd` from NIG's real rate card).
-- `scenario-23-transaction-invoice-lookup-plan.md` — Closing Gap 2 first surfaced `ppd` read-only in Customer360's Installment Plan modal.
-- `scenario-25-ar-invoice-detail-view-plan.md` — extended that same read-only surfacing to the AR Invoice detail/print page ("Rebate on this due date").
+- Scenario 23 (closed, plan doc removed 2026-08-14) — Closing Gap 2 first surfaced `ppd` read-only in Customer360's Installment Plan modal.
+- Scenario 25 (closed, plan doc removed 2026-08-14) — extended that same read-only surfacing to the AR Invoice detail/print page ("Rebate on this due date").
 - `scenario-11-collections-ar-aging-plan.md` — the Collector/InstallmentAccount collections module this scenario's two payment-collection screens belong to.
 
 ## The scenario we're building toward

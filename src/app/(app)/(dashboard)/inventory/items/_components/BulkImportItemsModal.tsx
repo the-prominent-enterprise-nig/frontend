@@ -161,15 +161,15 @@ export default function BulkImportItemsModal({ isOpen, onClose }: Props) {
           ) : (
             <div className="space-y-4">
               <Link
-                href="/inventory/catalog?tab=serials"
+                href="/inventory/stock?tab=serials"
                 onClick={handleClose}
                 className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 hover:bg-amber-100"
               >
                 <span>
                   Have unit-level data (serial numbers, RR, date-in)? That belongs in{' '}
                   <span className="font-semibold">Import Serialized Inventory</span>, under{' '}
-                  <span className="font-semibold">Catalog → Serial Numbers</span> — this importer
-                  only creates catalog items with no stock or serial numbers.
+                  <span className="font-semibold">Stock → Serial Numbers</span> — this importer only
+                  creates catalog items with no stock or serial numbers.
                 </span>
                 <ArrowRight className="h-4 w-4 shrink-0" />
               </Link>

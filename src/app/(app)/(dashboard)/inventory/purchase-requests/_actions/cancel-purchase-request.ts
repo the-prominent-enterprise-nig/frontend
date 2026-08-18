@@ -32,6 +32,7 @@ export async function cancelPurchaseRequest(id: string): Promise<ApiResponse<{ i
     }
   }
 
+  revalidatePath('/inventory/purchase-orders')
   revalidatePath('/inventory/purchase-requests')
 
   return {

@@ -70,6 +70,10 @@ import {
   createFinancingTerm,
   updateFinancingTerm,
   deleteFinancingTerm,
+  getTpfProviders,
+  createTpfProvider,
+  updateTpfProvider,
+  deleteTpfProvider,
   previewInstallment,
   getCustomerInstallmentSchedules,
   listCollectionsCustomers,
@@ -98,6 +102,8 @@ import type {
   ReviewVoidRequestInput,
   CreateFinancingTermInput,
   UpdateFinancingTermInput,
+  CreateTpfProviderInput,
+  UpdateTpfProviderInput,
   ComputeInstallmentPreviewInput,
   SkuReservationFilters,
   FulfilSkuReservationInput,
@@ -501,6 +507,41 @@ export function useDeleteFinancingTerm() {
   })
 }
 
+// ─── TPF (third-party financing) Providers ─────────────────────────────────
+
+export function useTpfProviders() {
+  return useQuery({
+    queryKey: ['pos-tpf-providers'],
+    queryFn: getTpfProviders,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function useCreateTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateTpfProviderInput) => createTpfProvider(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
+  })
+}
+
+export function useUpdateTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateTpfProviderInput }) =>
+      updateTpfProvider(id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
+  })
+}
+
+export function useDeleteTpfProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteTpfProvider(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-tpf-providers'] }),
+  })
+}
+
 export function useInstallmentPreview() {
   return useMutation({
     mutationFn: (input: ComputeInstallmentPreviewInput) => previewInstallment(input),
@@ -587,6 +628,11 @@ export function useSkuReservations(filters?: SkuReservationFilters) {
     queryFn: () => getSkuReservations(filters),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    // Scenario 26 — same gap found live in credit applications, item
+    // master, stock adjustments, and purchase requests: cancel-request/
+    // approve-cancel is a handoff across different people's browser tabs,
+    // and staleTime alone only refetches on THIS tab's own refocus/remount.
+    refetchInterval: 10 * 1000,
   })
 }
 

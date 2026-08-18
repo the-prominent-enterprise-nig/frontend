@@ -1,20 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ShoppingCart, TrendingUp, Clock, PackageCheck, ArrowUpRight } from 'lucide-react'
+import { ShoppingCart, Receipt, RotateCcw, TrendingUp, ArrowUpRight } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type SalesOrder = {
-  id: string
-  totalAmount?: number | string | null
-  status?: string
-}
-
-type OrdersResponse = {
-  data?: SalesOrder[]
-  total?: number
-}
+import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 function fmtMoney(n: number): string {
   if (!Number.isFinite(n)) return '—'
@@ -26,12 +16,41 @@ function fmtMoney(n: number): string {
 type StatEntry = {
   label: string
   value: string
-  change: string
-  positive: boolean
   icon: typeof ShoppingCart
   iconBg: string
   iconColor: string
 }
+
+const BASE_STATS: StatEntry[] = [
+  {
+    label: 'Total Sales (MTD)',
+    value: '—',
+    icon: ShoppingCart,
+    iconBg: 'bg-green-100',
+    iconColor: 'text-green-600',
+  },
+  {
+    label: 'Transactions (MTD)',
+    value: '—',
+    icon: Receipt,
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-600',
+  },
+  {
+    label: 'Refunds (MTD)',
+    value: '—',
+    icon: RotateCcw,
+    iconBg: 'bg-amber-100',
+    iconColor: 'text-amber-600',
+  },
+  {
+    label: 'Avg. Transaction',
+    value: '—',
+    icon: TrendingUp,
+    iconBg: 'bg-purple-100',
+    iconColor: 'text-purple-600',
+  },
+]
 
 export default function SalesStatsWidget() {
   const { variant } = useWidgetSize()
@@ -45,96 +64,34 @@ export default function SalesStatsWidget() {
           ? 'grid-cols-2'
           : 'grid-cols-1'
 
-  const [stats, setStats] = useState<StatEntry[]>([
-    {
-      label: 'Total Sales (MTD)',
-      value: '—',
-      change: '',
-      positive: true,
-      icon: ShoppingCart,
-      iconBg: 'bg-green-100',
-      iconColor: 'text-green-600',
-    },
-    {
-      label: 'Monthly Revenue',
-      value: '—',
-      change: '',
-      positive: true,
-      icon: TrendingUp,
-      iconBg: 'bg-blue-100',
-      iconColor: 'text-blue-600',
-    },
-    {
-      label: 'Pending Orders',
-      value: '—',
-      change: '',
-      positive: false,
-      icon: Clock,
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
-    },
-    {
-      label: 'Orders to Deliver',
-      value: '—',
-      change: '',
-      positive: false,
-      icon: PackageCheck,
-      iconBg: 'bg-red-100',
-      iconColor: 'text-red-600',
-    },
-  ])
+  const [stats, setStats] = useState<StatEntry[]>(BASE_STATS)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
-    api.get<OrdersResponse>('/sales/orders', { limit: 200 }).then((res) => {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    getTransactions({
+      dateFrom: monthStart.toISOString(),
+      branchId: branchId ?? undefined,
+    }).then((res) => {
       if (cancelled) return
-      const orders = res.data?.data ?? []
-      const revenue = orders.reduce((sum, o) => sum + Number(o.totalAmount ?? 0), 0)
-      const pending = orders.filter((o) => o.status === 'draft').length
-      const toDeliver = orders.filter((o) => o.status === 'confirmed').length
+      const txns = res.data ?? []
+      const sales = txns.filter((t) => t.transactionType === 'sale' && t.status !== 'voided')
+      const refunds = txns.filter((t) => t.transactionType === 'refund' && t.status !== 'voided')
+      const totalSales = sales.reduce((sum, t) => sum + Number(t.totalAmount ?? 0), 0)
+      const avgTxn = sales.length > 0 ? totalSales / sales.length : 0
+
       setStats([
-        {
-          label: 'Total Sales (MTD)',
-          value: fmtMoney(revenue),
-          change: '',
-          positive: true,
-          icon: ShoppingCart,
-          iconBg: 'bg-green-100',
-          iconColor: 'text-green-600',
-        },
-        {
-          label: 'Total Orders',
-          value: String(orders.length),
-          change: '',
-          positive: true,
-          icon: TrendingUp,
-          iconBg: 'bg-blue-100',
-          iconColor: 'text-blue-600',
-        },
-        {
-          label: 'Pending Orders',
-          value: String(pending),
-          change: '',
-          positive: false,
-          icon: Clock,
-          iconBg: 'bg-amber-100',
-          iconColor: 'text-amber-600',
-        },
-        {
-          label: 'Orders to Deliver',
-          value: String(toDeliver),
-          change: '',
-          positive: false,
-          icon: PackageCheck,
-          iconBg: 'bg-red-100',
-          iconColor: 'text-red-600',
-        },
+        { ...BASE_STATS[0]!, value: fmtMoney(totalSales) },
+        { ...BASE_STATS[1]!, value: String(sales.length) },
+        { ...BASE_STATS[2]!, value: String(refunds.length) },
+        { ...BASE_STATS[3]!, value: fmtMoney(avgTxn) },
       ])
     })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   return (
     <div className={`grid gap-2 ${gridCols}`}>
@@ -170,13 +127,6 @@ export default function SalesStatsWidget() {
               >
                 {stat.value}
               </p>
-              {!isCompact && stat.change && (
-                <p
-                  className={`text-xs mt-0.5 ${stat.positive ? 'text-emerald-600' : 'text-red-500'}`}
-                >
-                  {stat.change}
-                </p>
-              )}
             </div>
           </div>
         )

@@ -22,6 +22,7 @@ import type {
   AgentCommission,
   DuplicateCheckResult,
   DuplicatePair,
+  CollectionsCalendarResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
@@ -72,6 +73,7 @@ export type LeadFilters = {
   status?: string
   stageId?: string
   assignedTo?: string
+  branchId?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
@@ -384,4 +386,19 @@ export const collectionIncentivesApi = {
 export const priceCheckApi = {
   check: (params: PriceCheckInput) =>
     api.get<PriceCheckResult>('/crm/installment-accounts/price-check', params),
+}
+
+// ─── Collections Calendar ───────────────────────────────────
+
+export type CollectionsCalendarFilters = {
+  startDate: string
+  endDate?: string
+  branchId?: string
+  collectorId?: string
+  customerId?: string
+} & Record<string, string | number | boolean | undefined>
+
+export const collectionsCalendarApi = {
+  get: (filters: CollectionsCalendarFilters) =>
+    api.get<CollectionsCalendarResponse>('/crm/collections-calendar', filters),
 }

@@ -20,21 +20,21 @@ test('P&L report has a branch selector that scopes the report', async ({ page })
   const branchSelect = page.getByLabel('Branch')
   await expect(branchSelect).toBeVisible({ timeout: 10_000 })
   await expect(branchSelect).toContainText('All Branches')
-  await expect(branchSelect).toContainText('Manila HQ')
+  await expect(branchSelect).toContainText('Bago')
 
-  await branchSelect.selectOption({ label: 'Manila HQ' })
+  await branchSelect.selectOption({ label: 'Bago' })
   await clickStable(
     page.getByRole('button', { name: 'Run Report' }),
     page.getByText('Revenue', { exact: true })
   )
 
   // Badge only renders inside the P&L result card when data.branchId is
-  // set — scoped by class rather than page.getByText('Manila HQ') because
-  // the still-present (if closed) <option>Manila HQ</option> in the
+  // set — scoped by class rather than page.getByText('Bago') because
+  // the still-present (if closed) <option>Bago</option> in the
   // selector itself would otherwise make a toHaveCount(0) check below a
   // false negative.
   const branchBadge = page.locator('span.bg-purple-50')
-  await expect(branchBadge).toContainText('Manila HQ', { timeout: 10_000 })
+  await expect(branchBadge).toContainText('Bago', { timeout: 10_000 })
   await expect(page.getByText('Net Income')).toBeVisible()
 
   // Switch back to All Branches — the branch badge should disappear.

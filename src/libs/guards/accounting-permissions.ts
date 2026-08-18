@@ -139,9 +139,9 @@ export const ACCOUNTING_PERMISSIONS = {
   FIXED_ASSET_DEPRECIATE: 'accounting:fixedAsset:depreciate',
   FIXED_ASSET_DISPOSE: 'accounting:fixedAsset:dispose',
 
-  FX_READ: 'accounting:fx:read',
-  FX_MANAGE: 'accounting:fx:manage',
-  FX_REVALUATE: 'accounting:fx:revaluate',
+  // Scenario 29 ACC-04 — month-end batch releasing installment financing
+  // markup from Unearned Interest Income into recognized interest income.
+  INSTALLMENT_INTEREST_RELEASE: 'accounting:installmentInterest:release',
 
   RECURRING_ENTRIES_READ: 'accounting:recurring-entries:read',
   RECURRING_ENTRIES_CREATE: 'accounting:recurring-entries:create',
@@ -270,9 +270,7 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:fixedAsset:delete': 'Retire a fixed asset',
   'accounting:fixedAsset:depreciate': 'Run depreciation (posts JE)',
   'accounting:fixedAsset:dispose': 'Dispose a fixed asset (posts gain/loss)',
-  'accounting:fx:read': 'View FX rates + revaluation runs',
-  'accounting:fx:manage': 'Add effective-dated FX rates',
-  'accounting:fx:revaluate': 'Run FX revaluation (posts JE + reversal)',
+  'accounting:installmentInterest:release': 'Run the month-end installment interest release batch',
   'accounting:recurring-entries:read': 'View recurring journal entry templates',
   'accounting:recurring-entries:create': 'Create a recurring journal entry template',
   'accounting:recurring-entries:update': 'Edit a recurring journal entry template',

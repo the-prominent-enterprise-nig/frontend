@@ -89,6 +89,7 @@ import {
   getCancellationRequestStatus,
   cancelReleaseFormRequest,
   getActiveFinancingTerms,
+  getActiveTpfProviders,
   previewInstallment,
   createSkuReservation,
   createCustomerAdvance,
@@ -109,6 +110,8 @@ import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
   PosInvoiceType,
+  InstallmentProvider,
+  PayNowMethod,
   PromoValidationResult,
   PosCustomer,
   LoyaltyAccount,
@@ -116,6 +119,7 @@ import type {
   PosTransaction,
   SyncTransactionItem,
   FinancingTerm,
+  TpfProvider,
   InstallmentPreview,
 } from '@/src/schema/pos'
 
@@ -178,10 +182,16 @@ interface CartLine {
    * Price Use change must not silently clobber this. */
   priceOverrideBy?: string | null
   priceOverrideApproverName?: string
-  /** Per-line payment mode — a cart can mix cash/charge/installment lines.
+  /** Per-line payment mode — a cart can mix cash/installment lines.
    * Defaults to 'cash' when unset. Installment lines carry their own
    * financingTermId + down payment, independent of every other line. */
   invoiceType?: PosInvoiceType
+  /** Which financing an installment line runs on — 'inhouse' (default,
+   * unset) or 'tpf'. Only meaningful when invoiceType is 'installment'. */
+  installmentProvider?: InstallmentProvider
+  /** Cosmetic sub-choice for a 'cash'-mode line — how the customer intends
+   * to pay, for receipt/reporting only. Never affects the PAYMENT section. */
+  payNowMethod?: PayNowMethod
   financingTermId?: string
   downPaymentInput?: string
 }
@@ -208,10 +218,18 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   store_credit: 'Store Credit',
   loyalty_points: 'Loyalty Points',
   bank_transfer: 'Bank Transfer',
+  tpf: 'TPF Settlement',
   custom: 'Custom',
 }
 
-const REF_METHODS: PosPaymentMethod[] = ['card', 'bank_transfer', 'gift_card', 'gcash', 'maya']
+const REF_METHODS: PosPaymentMethod[] = [
+  'card',
+  'bank_transfer',
+  'gift_card',
+  'gcash',
+  'maya',
+  'tpf',
+]
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000]
 
@@ -422,13 +440,19 @@ export default function CheckoutPage() {
   // single-item mode that never creates a PosTransaction at all — kept as
   // its own top-level toggle since it isn't a payment mode a line can pick.
   const [saleMode, setSaleMode] = useState<'sale' | 'reserve'>('sale')
-  const [chargeDueDays, setChargeDueDays] = useState(30)
 
   // Installment financing — financingTerms is shared (fetched once), but
   // the term/down-payment/preview a cashier picks are per cart LINE now,
   // not one global selection, so a cart can finance different items under
   // different terms. Keyed by CartLine.lineId.
   const [financingTerms, setFinancingTerms] = useState<FinancingTerm[]>([])
+  // TPF financing — one financier/reference covers however many TPF-mode
+  // lines are in the cart, mirroring how one creditApplicationId already
+  // covers however many inhouse installment lines.
+  const [tpfProviders, setTpfProviders] = useState<TpfProvider[]>([])
+  const [tpfProviderId, setTpfProviderId] = useState('')
+  const [tpfReferenceNumber, setTpfReferenceNumber] = useState('')
+  const [tpfApprovedAmount, setTpfApprovedAmount] = useState('')
   const [installmentPreviews, setInstallmentPreviews] = useState<
     Record<string, InstallmentPreview | null>
   >({})
@@ -441,9 +465,17 @@ export default function CheckoutPage() {
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
-  // not-yet-used CreditApplication for the selected customer.
+  // not-yet-used CreditApplication for the selected customer. Corrected
+  // 2026-08-15, second pass — applications can cover a bundle of models;
+  // checkout requires an exact match against the sale's installment lines
+  // (enforced server-side in TransactionsService.validateAndPrepare).
   const [approvedCreditApplications, setApprovedCreditApplications] = useState<
-    { id: string; applicationNumber: string; requestedAmount: number }[]
+    {
+      id: string
+      applicationNumber: string
+      requestedAmount: number
+      items: { itemName: string; variantLabel: string | null }[]
+    }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
   const [creditApplicationsLoading, setCreditApplicationsLoading] = useState(false)
@@ -542,6 +574,7 @@ export default function CheckoutPage() {
       lineId: string
       itemName: string
       invoiceType: PosInvoiceType
+      installmentProvider?: InstallmentProvider | null
       installmentPreview?: InstallmentPreview | null
     }[]
   } | null>(null)
@@ -934,11 +967,20 @@ export default function CheckoutPage() {
   const totalAmount = Math.max(0, Math.round((subtotal - promoDiscount) * 100) / 100)
 
   // ─── Per-line mode groupings ────────────────────────────────────────────
-  // A cart can mix cash/charge/installment lines. cash is the default for
-  // any line that hasn't explicitly picked charge/installment.
+  // A cart can mix cash/installment lines (charge is no longer selectable,
+  // kept only as a possible value on historical lines). cash is the default
+  // for any line that hasn't explicitly picked installment.
   const cashCartLines = cart.filter((l) => (l.invoiceType ?? 'cash') === 'cash')
   const chargeCartLines = cart.filter((l) => l.invoiceType === 'charge')
   const installmentCartLines = cart.filter((l) => l.invoiceType === 'installment')
+  // TPF: an outside financing company pays NIG in full at time of sale, so
+  // it's collectible now (like cash), not via a down payment + schedule.
+  const tpfInstallmentCartLines = installmentCartLines.filter(
+    (l) => l.installmentProvider === 'tpf'
+  )
+  const inhouseInstallmentCartLines = installmentCartLines.filter(
+    (l) => l.installmentProvider !== 'tpf'
+  )
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
 
   // What's actually collectible at POS right now: cash-mode lines' full
@@ -957,12 +999,26 @@ export default function CheckoutPage() {
     ) / 100
   const cashShareOfPromo = subtotal > 0 ? Math.min(1, cashLinesGross / subtotal) * promoDiscount : 0
   const cashLinesTotal = Math.max(0, Math.round((cashLinesGross - cashShareOfPromo) * 100) / 100)
+  // TPF lines are collectible in full right now (the financier pays NIG
+  // immediately), same treatment as a cash line — not a down payment.
+  const tpfLinesGross =
+    Math.round(
+      tpfInstallmentCartLines.reduce(
+        (s, l) => s + displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity,
+        0
+      ) * 100
+    ) / 100
+  const tpfShareOfPromo = subtotal > 0 ? Math.min(1, tpfLinesGross / subtotal) * promoDiscount : 0
+  const tpfLinesTotal = Math.max(0, Math.round((tpfLinesGross - tpfShareOfPromo) * 100) / 100)
   const installmentDownPaymentsTotal =
     Math.round(
-      installmentCartLines.reduce((s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0), 0) *
-        100
+      inhouseInstallmentCartLines.reduce(
+        (s, l) => s + (parseFloat(l.downPaymentInput ?? '0') || 0),
+        0
+      ) * 100
     ) / 100
-  const tenderTarget = Math.round((cashLinesTotal + installmentDownPaymentsTotal) * 100) / 100
+  const tenderTarget =
+    Math.round((cashLinesTotal + tpfLinesTotal + installmentDownPaymentsTotal) * 100) / 100
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
@@ -994,6 +1050,18 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
+  // The Payment section used to start on an empty "+ Add payment method"
+  // placeholder for every sale, reading as a missing/broken step rather than
+  // an optional one. Pre-open one payment row the moment there's something
+  // to collect, same defaulting addPaymentRow already does on a manual
+  // click — reserve mode's deposit stays untouched since it's genuinely
+  // optional there.
+  useEffect(() => {
+    if (saleMode !== 'sale' || tenderTarget <= 0 || payments.length > 0) return
+    addPaymentRow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, tenderTarget, payments.length])
+
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
   useEffect(() => {
@@ -1005,6 +1073,21 @@ export default function CheckoutPage() {
     // keystroke — length-gated intentionally.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleMode, activeBranchId, installmentCartLines.length > 0])
+
+  useEffect(() => {
+    if (saleMode !== 'sale' || tpfInstallmentCartLines.length === 0) {
+      // No TPF line left in the cart — clear stale provider/reference state
+      // so it can't silently carry over into a later, unrelated TPF line.
+      setTpfProviderId('')
+      setTpfReferenceNumber('')
+      setTpfApprovedAmount('')
+      return
+    }
+    getActiveTpfProviders().then((res) => {
+      setTpfProviders(res.data ?? [])
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, tpfInstallmentCartLines.length > 0])
 
   // One debounced preview per installment line, keyed by lineId — each line
   // has its own amount/term/down-payment, so each gets its own preview call
@@ -1030,18 +1113,31 @@ export default function CheckoutPage() {
     }
     setCreditApplicationsLoading(true)
     getCreditApplications({
-      status: 'approved',
+      checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
       unconsumed: true,
       limit: 50,
     })
       .then((res) => {
         setApprovedCreditApplications(
-          (res.data?.data ?? []).map((a) => ({
-            id: a.id,
-            applicationNumber: a.applicationNumber,
-            requestedAmount: a.requestedAmount,
-          }))
+          (res.data?.data ?? [])
+            .map((a) => {
+              // Only the approved items are ever usable — a
+              // partially_approved application's declined items are never
+              // includable, so neither the displayed scope nor the total
+              // should count them.
+              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                requestedAmount: approvedOnly.reduce((sum, i) => sum + i.requestedAmount, 0),
+                items: approvedOnly.map((i) => ({
+                  itemName: i.item?.name ?? '—',
+                  variantLabel: i.variant?.variantSku ?? null,
+                })),
+              }
+            })
+            .filter((a) => a.items.length > 0)
         )
       })
       .finally(() => setCreditApplicationsLoading(false))
@@ -1245,9 +1341,10 @@ export default function CheckoutPage() {
     setSaleMode(mode)
   }
 
-  // Per-line payment mode (cash/charge/installment) — switching a line away
-  // from installment clears its financing term/down-payment so stale state
-  // doesn't linger if it's switched back later.
+  // Per-line payment mode (Pay Now/Installment) — switching a line away
+  // from installment clears its financing term/down-payment/provider so
+  // stale state doesn't linger if it's switched back later; switching away
+  // from cash clears its payNowMethod tag the same way.
   // lineIds accepts an array so a displayed row that collapses several
   // physical-unit CartLines (grouped serial-tracked items, same item/qty>1)
   // updates them all together — a customer doesn't split identical units of
@@ -1261,12 +1358,42 @@ export default function CheckoutPage() {
               ...l,
               invoiceType: mode,
               ...(mode !== 'installment'
+                ? {
+                    financingTermId: undefined,
+                    downPaymentInput: undefined,
+                    installmentProvider: undefined,
+                  }
+                : {}),
+              ...(mode !== 'cash' ? { payNowMethod: undefined } : {}),
+            }
+          : l
+      )
+    )
+  }
+
+  // Switching an installment line's provider clears whatever the OTHER
+  // provider's fields held — inhouse's financingTermId/downPayment don't
+  // apply to TPF, and there's nothing for TPF to clear going the other way.
+  function setLineInstallmentProvider(lineIds: string | string[], provider: InstallmentProvider) {
+    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? {
+              ...l,
+              installmentProvider: provider,
+              ...(provider === 'tpf'
                 ? { financingTermId: undefined, downPaymentInput: undefined }
                 : {}),
             }
           : l
       )
     )
+  }
+
+  function setLinePayNowMethod(lineIds: string | string[], method: PayNowMethod) {
+    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
+    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, payNowMethod: method } : l)))
   }
 
   function setLineFinancingTermId(lineIds: string | string[], financingTermId: string) {
@@ -1667,8 +1794,14 @@ export default function CheckoutPage() {
           // backend's transaction-level fallback (for older/other callers)
           // never needs to apply here.
           priceUseTypeId: priceUseTypeId || undefined,
-          chargeDueDays: chargeCartLines.length > 0 ? chargeDueDays : undefined,
-          creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
+          creditApplicationId:
+            inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
+          tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
+          tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
+          tpfApprovedAmount:
+            tpfInstallmentCartLines.length > 0 && tpfApprovedAmount
+              ? parseFloat(tpfApprovedAmount)
+              : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
@@ -1695,9 +1828,15 @@ export default function CheckoutPage() {
             priceListItemId: l.priceListItemId ?? undefined,
             priceOverride: l.priceOverrideBy ? true : undefined,
             invoiceType: l.invoiceType ?? 'cash',
-            financingTermId: l.invoiceType === 'installment' ? l.financingTermId : undefined,
+            installmentProvider:
+              l.invoiceType === 'installment' ? l.installmentProvider : undefined,
+            payNowMethod: (l.invoiceType ?? 'cash') === 'cash' ? l.payNowMethod : undefined,
+            financingTermId:
+              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf'
+                ? l.financingTermId
+                : undefined,
             downPayment:
-              l.invoiceType === 'installment'
+              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf'
                 ? parseFloat(l.downPaymentInput ?? '0') || 0
                 : undefined,
           })),
@@ -1792,7 +1931,8 @@ export default function CheckoutPage() {
             releaseFormRequestId,
             totalAmount,
             serialLines: displayLines,
-            creditApplicationId: installmentCartLines.length > 0 ? creditApplicationId : undefined,
+            creditApplicationId:
+              inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
           })
           return
         }
@@ -1906,8 +2046,12 @@ export default function CheckoutPage() {
           lineId: l.lineId,
           itemName: l.itemName,
           invoiceType: l.invoiceType ?? 'cash',
+          installmentProvider:
+            l.invoiceType === 'installment' ? (l.installmentProvider ?? 'inhouse') : null,
           installmentPreview:
-            l.invoiceType === 'installment' ? (installmentPreviews[l.lineId] ?? null) : null,
+            l.invoiceType === 'installment' && l.installmentProvider !== 'tpf'
+              ? (installmentPreviews[l.lineId] ?? null)
+              : null,
         })),
       })
     } catch (err) {
@@ -1946,7 +2090,9 @@ export default function CheckoutPage() {
     setPriceOverrideTargetLineId(null)
     setFromTab(null)
     setSaleMode('sale')
-    setChargeDueDays(30)
+    setTpfProviderId('')
+    setTpfReferenceNumber('')
+    setTpfApprovedAmount('')
     setInstallmentPreviews({})
     setInstallmentPreviewErrors({})
     setInstallmentPreviewLoading({})
@@ -2622,7 +2768,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-96 lg:w-[420px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-110 lg:w-120 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -2646,7 +2792,7 @@ export default function CheckoutPage() {
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
                         {loyaltyAccount && (
-                          <p className="text-[10px] font-medium text-purple-500">
+                          <p className="text-xs font-medium text-purple-500">
                             {loyaltyAccount.currentPoints} pts
                           </p>
                         )}
@@ -2657,7 +2803,7 @@ export default function CheckoutPage() {
                     {customerHistory.length > 0 && (
                       <button
                         onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-[10px] font-medium text-purple-400 hover:text-purple-700"
+                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
                       >
                         {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                         {customerHistory.length} past
@@ -2731,7 +2877,7 @@ export default function CheckoutPage() {
                           <User size={11} className="shrink-0 text-gray-700" />
                           <div>
                             <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-[10px] text-gray-700">{c.phone}</p>}
+                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
                           </div>
                         </button>
                       ))
@@ -2817,9 +2963,7 @@ export default function CheckoutPage() {
                             <User size={11} className="shrink-0 text-gray-700" />
                             <div>
                               <p className="font-medium text-gray-900">{a.name}</p>
-                              <p className="text-[10px] text-gray-700">
-                                {a.phone || a.email || ''}
-                              </p>
+                              <p className="text-xs text-gray-700">{a.phone || a.email || ''}</p>
                             </div>
                           </button>
                         ))
@@ -3021,7 +3165,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Sale
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   Cash / charge / installment per item
                 </span>
               </button>
@@ -3034,7 +3178,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Reserve
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   No serial yet, optional deposit
                 </span>
               </button>
@@ -3054,29 +3198,13 @@ export default function CheckoutPage() {
             )}
             {saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer && (
               <p className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                A customer must be selected — this cart has a charge or installment item.
+                A customer must be selected — this cart has an installment item.
               </p>
-            )}
-            {saleMode === 'sale' && chargeCartLines.length > 0 && (
-              <div className="mt-2.5 flex items-center gap-2">
-                <label className="text-xs text-gray-700 whitespace-nowrap">
-                  Charge items due in
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={chargeDueDays}
-                  onChange={(e) => setChargeDueDays(Math.max(1, parseInt(e.target.value) || 30))}
-                  className="w-20 rounded-lg border border-purple-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-                <label className="text-xs text-gray-700">days</label>
-              </div>
             )}
 
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                   Item Payment Mode
                 </p>
                 {displayGroups.map((group) => {
@@ -3084,6 +3212,7 @@ export default function CheckoutPage() {
                   const groupQty = group.length
                   const groupLineIds = group.map((l) => l.lineId)
                   const groupMode = line.invoiceType ?? 'cash'
+                  const groupProvider = line.installmentProvider ?? 'inhouse'
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -3099,93 +3228,131 @@ export default function CheckoutPage() {
                         </span>
                       </div>
                       <div className="flex gap-1.5">
-                        {(['cash', 'charge', 'installment'] as PosInvoiceType[]).map((mode) => (
+                        {(['cash', 'installment'] as PosInvoiceType[]).map((mode) => (
                           <button
                             key={mode}
                             onClick={() => setLineInvoiceType(groupLineIds, mode)}
-                            className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                            className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                               groupMode === mode
-                                ? mode === 'charge'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : mode === 'installment'
-                                    ? 'bg-prominent-purple-100 text-prominent-purple-700'
-                                    : 'bg-purple-200 text-purple-700'
+                                ? mode === 'installment'
+                                  ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                                  : 'bg-purple-200 text-purple-700'
                                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                             }`}
                           >
-                            {mode === 'cash'
-                              ? 'Cash'
-                              : mode === 'charge'
-                                ? 'Charge'
-                                : 'Installment'}
+                            {mode === 'cash' ? 'Pay Now' : 'Installment'}
                           </button>
                         ))}
                       </div>
+                      {groupMode === 'cash' && (
+                        <div className="mt-1.5 flex gap-1.5">
+                          {(['cash', 'credit_card'] as PayNowMethod[]).map((method) => (
+                            <button
+                              key={method}
+                              onClick={() => setLinePayNowMethod(groupLineIds, method)}
+                              className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
+                                (line.payNowMethod ?? 'cash') === method
+                                  ? 'bg-purple-100 text-purple-700'
+                                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                              }`}
+                            >
+                              {method === 'cash' ? 'Cash' : 'Credit Card'}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {groupMode === 'installment' && (
                         <div className="mt-2 space-y-1.5">
-                          <div className="flex items-center gap-1.5">
-                            <div className="relative flex-1">
-                              <select
-                                value={line.financingTermId ?? ''}
-                                onChange={(e) =>
-                                  setLineFinancingTermId(groupLineIds, e.target.value)
-                                }
-                                className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[11px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                          <div className="flex gap-1.5">
+                            {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
+                              <button
+                                key={provider}
+                                onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
+                                className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                                  groupProvider === provider
+                                    ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                                }`}
                               >
-                                <option value="">Select a term…</option>
-                                {financingTerms.map((t) => (
-                                  <option key={t.id} value={t.id}>
-                                    {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown
-                                size={11}
-                                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                              />
-                            </div>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              placeholder="Down payment"
-                              value={line.downPaymentInput ?? ''}
-                              onChange={(e) =>
-                                setLineDownPaymentInput(groupLineIds, e.target.value)
-                              }
-                              className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                            />
+                                {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
+                              </button>
+                            ))}
                           </div>
-                          <p className="text-[10px] text-gray-500">
-                            Min{' '}
-                            {fmt(
-                              0.1 *
-                                displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                                line.quantity
-                            )}{' '}
-                            (10% of sale amount)
-                          </p>
-                          {line.financingTermId && (
-                            <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
-                              {installmentPreviewLoading[line.lineId] ? (
-                                <span className="flex items-center gap-1.5">
-                                  <Loader2 size={10} className="animate-spin" /> Calculating…
-                                </span>
-                              ) : installmentPreviews[line.lineId] ? (
-                                <div className="flex items-center justify-between">
-                                  <span>
-                                    {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}/mo
-                                  </span>
-                                  <span className="font-semibold">
-                                    {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
-                                  </span>
+                          {groupProvider === 'inhouse' && (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <div className="relative flex-1">
+                                  <select
+                                    value={line.financingTermId ?? ''}
+                                    onChange={(e) =>
+                                      setLineFinancingTermId(groupLineIds, e.target.value)
+                                    }
+                                    className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  >
+                                    <option value="">Select a term…</option>
+                                    {financingTerms.map((t) => (
+                                      <option key={t.id} value={t.id}>
+                                        {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown
+                                    size={11}
+                                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                                  />
                                 </div>
-                              ) : (
-                                <span className="opacity-70">
-                                  {installmentPreviewErrors[line.lineId] ?? 'Preview unavailable.'}
-                                </span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  placeholder="Down payment"
+                                  value={line.downPaymentInput ?? ''}
+                                  onChange={(e) =>
+                                    setLineDownPaymentInput(groupLineIds, e.target.value)
+                                  }
+                                  className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Min{' '}
+                                {fmt(
+                                  0.1 *
+                                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                    line.quantity
+                                )}{' '}
+                                (10% of sale amount)
+                              </p>
+                              {line.financingTermId && (
+                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
+                                  {installmentPreviewLoading[line.lineId] ? (
+                                    <span className="flex items-center gap-1.5">
+                                      <Loader2 size={10} className="animate-spin" /> Calculating…
+                                    </span>
+                                  ) : installmentPreviews[line.lineId] ? (
+                                    <div className="flex items-center justify-between">
+                                      <span>
+                                        {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}
+                                        /mo
+                                      </span>
+                                      <span className="font-semibold">
+                                        {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="opacity-70">
+                                      {installmentPreviewErrors[line.lineId] ??
+                                        'Preview unavailable.'}
+                                    </span>
+                                  )}
+                                </div>
                               )}
-                            </div>
+                            </>
+                          )}
+                          {groupProvider === 'tpf' && (
+                            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
+                              Financed by a third party — the financier's details are entered once
+                              below, under Payment.
+                            </p>
                           )}
                         </div>
                       )}
@@ -3214,33 +3381,19 @@ export default function CheckoutPage() {
 
             {saleMode === 'sale' && hasChargeOrInstallmentLine && (
               <div className="mb-3 space-y-2">
-                {chargeCartLines.length > 0 && (
-                  <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-                    <p className="text-xs font-medium text-blue-700">
-                      {chargeCartLines.length} item{chargeCartLines.length !== 1 ? 's' : ''} billed
-                      to account
-                    </p>
-                    <p className="mt-1 text-[11px] text-blue-500">
-                      One AR invoice for{' '}
-                      {fmt(chargeCartLines.reduce((s, l) => s + lineTotal(l), 0))}, due in{' '}
-                      {chargeDueDays} day{chargeDueDays !== 1 ? 's' : ''} — collected through
-                      Accounts Receivable.
-                    </p>
-                  </div>
-                )}
-                {installmentCartLines.length > 0 && (
+                {inhouseInstallmentCartLines.length > 0 && (
                   <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
                     <p className="text-xs font-medium text-prominent-purple-700">
-                      {installmentCartLines.length} item
-                      {installmentCartLines.length !== 1 ? 's' : ''} on installment
+                      {inhouseInstallmentCartLines.length} item
+                      {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
                     </p>
-                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
                     {selectedCustomer && (
                       <div className="mt-2.5">
-                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
                         <div className="relative">
@@ -3259,7 +3412,15 @@ export default function CheckoutPage() {
                             </option>
                             {approvedCreditApplications.map((a) => (
                               <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · ₱
+                                {a.applicationNumber} ·{' '}
+                                {a.items
+                                  .map((i) =>
+                                    i.variantLabel
+                                      ? `${i.itemName} (${i.variantLabel})`
+                                      : i.itemName
+                                  )
+                                  .join(', ')}{' '}
+                                · ₱
                                 {a.requestedAmount.toLocaleString('en-PH', {
                                   minimumFractionDigits: 2,
                                 })}
@@ -3272,13 +3433,75 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-700">
+                          <p className="mt-1 text-[13px] text-amber-700">
                             Every installment sale requires an approved credit application — open
                             one in Credit Applications first.
                           </p>
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+                {tpfInstallmentCartLines.length > 0 && (
+                  <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
+                    <p className="text-xs font-medium text-prominent-purple-700">
+                      {tpfInstallmentCartLines.length} item
+                      {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
+                    </p>
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
+                      {fmt(tpfLinesTotal)} collected now from the financier — no down payment, no
+                      local schedule.
+                    </p>
+                    <div className="mt-2.5 space-y-2">
+                      <div>
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
+                          TPF Provider
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={tpfProviderId}
+                            onChange={(e) => setTpfProviderId(e.target.value)}
+                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                          >
+                            <option value="">
+                              {tpfProviders.length === 0
+                                ? 'No TPF providers on file'
+                                : 'Select a TPF provider…'}
+                            </option>
+                            {tpfProviders.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                          />
+                        </div>
+                        {tpfProviders.length === 0 && (
+                          <p className="mt-1 text-[13px] text-amber-700">
+                            Add a TPF provider under POS Settings first.
+                          </p>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Financier's reference number"
+                        value={tpfReferenceNumber}
+                        onChange={(e) => setTpfReferenceNumber(e.target.value)}
+                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        placeholder="Approved amount (optional)"
+                        value={tpfApprovedAmount}
+                        onChange={(e) => setTpfApprovedAmount(e.target.value)}
+                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -3379,7 +3602,7 @@ export default function CheckoutPage() {
                 {/* Quick cash denomination buttons */}
                 {payments.some((p) => p.method === 'cash') && (
                   <div className="mt-1">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-700">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700">
                       Quick Amount
                     </p>
                     <div className="flex flex-wrap gap-1">
@@ -3505,9 +3728,13 @@ export default function CheckoutPage() {
                   (l.isSerialTracked && !l.serialNumberId) ||
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
-              const anyInstallmentMissingTerm = installmentCartLines.some((l) => !l.financingTermId)
+              const anyInstallmentMissingTerm = inhouseInstallmentCartLines.some(
+                (l) => !l.financingTermId
+              )
               const installmentMissingCreditApplication =
-                installmentCartLines.length > 0 && !creditApplicationId
+                inhouseInstallmentCartLines.length > 0 && !creditApplicationId
+              const tpfMissingReference =
+                tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
               const priceUseInvalid =
@@ -3524,6 +3751,7 @@ export default function CheckoutPage() {
                   ((hasChargeOrInstallmentLine && !selectedCustomer) ||
                     anyInstallmentMissingTerm ||
                     installmentMissingCreditApplication ||
+                    tpfMissingReference ||
                     balance > 0.009 ||
                     loyaltyOverBalance ||
                     (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
@@ -3547,25 +3775,27 @@ export default function CheckoutPage() {
                             ? 'Select a financing term for every installment item'
                             : saleMode === 'sale' && installmentMissingCreditApplication
                               ? 'Select an approved credit application'
-                              : saleMode === 'sale' &&
-                                  !hasChargeOrInstallmentLine &&
-                                  !selectedCustomer
-                                ? 'Select a customer'
-                                : saleMode === 'sale' && balance > 0.009
-                                  ? `Underpaid by ${fmt(balance)}`
-                                  : saleMode === 'sale' && loyaltyOverBalance
-                                    ? 'Insufficient loyalty points'
-                                    : needsManagerOverride && !managerOverrideApproved
-                                      ? 'Manager override required'
-                                      : cart.some((l) => l.isSerialTracked)
-                                        ? `Submit for Approval — ${fmt(totalAmount)}`
-                                        : saleMode === 'reserve'
-                                          ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                          : allCharge
-                                            ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                            : allInstallment
-                                              ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                              : `Confirm Sale — ${fmt(totalAmount)}`
+                              : saleMode === 'sale' && tpfMissingReference
+                                ? 'Select a TPF provider and enter a reference number'
+                                : saleMode === 'sale' &&
+                                    !hasChargeOrInstallmentLine &&
+                                    !selectedCustomer
+                                  ? 'Select a customer'
+                                  : saleMode === 'sale' && balance > 0.009
+                                    ? `Underpaid by ${fmt(balance)}`
+                                    : saleMode === 'sale' && loyaltyOverBalance
+                                      ? 'Insufficient loyalty points'
+                                      : needsManagerOverride && !managerOverrideApproved
+                                        ? 'Manager override required'
+                                        : cart.some((l) => l.isSerialTracked)
+                                          ? `Submit for Approval — ${fmt(totalAmount)}`
+                                          : saleMode === 'reserve'
+                                            ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                            : allCharge
+                                              ? `Issue Charge Invoice — ${fmt(totalAmount)}`
+                                              : allInstallment
+                                                ? `Create Installment Plan — ${fmt(totalAmount)}`
+                                                : `Confirm Sale — ${fmt(totalAmount)}`
 
               const colorClass =
                 saleMode === 'reserve'
@@ -4303,6 +4533,7 @@ function SuccessScreen({
       lineId: string
       itemName: string
       invoiceType: PosInvoiceType
+      installmentProvider?: InstallmentProvider | null
       installmentPreview?: InstallmentPreview | null
     }[]
   }
@@ -4441,8 +4672,17 @@ function SuccessScreen({
                   key={o.lineId}
                   className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
                 >
-                  <p className="mb-1 font-semibold">{o.itemName}</p>
-                  {o.installmentPreview ? (
+                  <p className="mb-1 font-semibold">
+                    {o.itemName}
+                    <span className="ml-1.5 font-normal opacity-70">
+                      · {o.installmentProvider === 'tpf' ? 'TPF' : 'Inhouse'}
+                    </span>
+                  </p>
+                  {o.installmentProvider === 'tpf' ? (
+                    <span className="opacity-70">
+                      Financed by a third party — collected in full, no local schedule.
+                    </span>
+                  ) : o.installmentPreview ? (
                     <>
                       <div className="flex justify-between">
                         <span>Monthly Installment</span>

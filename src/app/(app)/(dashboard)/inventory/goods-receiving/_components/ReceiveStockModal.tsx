@@ -61,6 +61,8 @@ const defaultValues: ReceiveStockFormValues = {
   nndpCost: undefined,
   receivedAt: '',
   notes: '',
+  deliveryReceiptNumber: '',
+  supplierInvoiceNumber: '',
   lines: [],
 }
 
@@ -228,7 +230,7 @@ export default function ReceiveStockModal({
                   )}
                 />
                 <p className="mt-0.5 text-xs text-zinc-400">
-                  Leave blank to auto-generate (GRN-YYYYMMDD-NNNN)
+                  Leave blank to auto-generate (RR-YYYYMMDD-NNNN)
                 </p>
               </div>
 
@@ -272,6 +274,50 @@ export default function ReceiveStockModal({
                   name="purchaseOrderDate"
                   control={control}
                   render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+                />
+              </div>
+            </div>
+
+            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
+                Receiving Report */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Delivery Receipt No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
+                </label>
+                <Controller
+                  name="deliveryReceiptNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. DR-00123"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Supplier Invoice No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
+                </label>
+                <Controller
+                  name="supplierInvoiceNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. SI-00456"
+                      className={fieldClass}
+                    />
+                  )}
                 />
               </div>
             </div>

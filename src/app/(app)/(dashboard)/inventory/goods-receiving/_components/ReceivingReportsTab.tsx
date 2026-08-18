@@ -18,15 +18,27 @@ import {
   type PrintDocumentEnvelope,
 } from '@/src/libs/print/printInventoryDocument'
 
+function receiptPoCode(lines: Array<Record<string, unknown>>): string | null {
+  for (const l of lines) {
+    const pol = l.purchaseOrderLine as Record<string, unknown> | undefined
+    const po = pol?.purchaseOrder as Record<string, unknown> | undefined
+    if (po?.code) return po.code as string
+  }
+  return null
+}
+
 function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
   const d = doc.document as Record<string, unknown>
   const lines = (d.lines as Array<Record<string, unknown>>) ?? []
   const supplier = d.supplier as Record<string, unknown> | undefined
+  const poCode = receiptPoCode(lines)
 
   const detailsHtml = `<h2>Receiving Details</h2><div class="meta">
       <div><p class="label">Supplier</p><p>${supplier?.name ?? '—'}</p></div>
-      ${d.purchaseOrderNumber ? `<div><p class="label">PO No.</p><p>${d.purchaseOrderNumber}</p></div>` : ''}
+      ${poCode ? `<div><p class="label">PO Reference</p><p>${poCode}</p></div>` : d.purchaseOrderNumber ? `<div><p class="label">PO No.</p><p>${d.purchaseOrderNumber}</p></div>` : ''}
       ${d.poDate ? `<div><p class="label">PO Date</p><p>${new Date(d.poDate as string).toLocaleDateString('en-PH')}</p></div>` : ''}
+      ${d.deliveryReceiptNumber ? `<div><p class="label">Delivery Receipt No.</p><p>${d.deliveryReceiptNumber}</p></div>` : ''}
+      ${d.supplierInvoiceNumber ? `<div><p class="label">Supplier Invoice No.</p><p>${d.supplierInvoiceNumber}</p></div>` : ''}
       ${d.withholding === 'pct_1' ? `<div><p class="label">Withholding</p><p>1% (₱${Number(d.withheldAmount ?? 0).toFixed(2)})</p></div>` : ''}
     </div>`
 
@@ -65,7 +77,18 @@ function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
 }
 
 function printDocument(data: unknown) {
-  printInventoryDocument(data, 'Goods Receipt Note', renderGoodsReceiptBody)
+  printInventoryDocument(data, 'Receiving Report', renderGoodsReceiptBody)
+}
+
+// The real linked PO's code (when this receipt came from Receive Against
+// PO) — falls back to the free-text purchaseOrderNumber field for receipts
+// entered through the standalone Receive Stock form with no PO link.
+function reportPoCode(report: ReceivingReport): string | null {
+  for (const line of report.lines) {
+    const code = line.purchaseOrderLine?.purchaseOrder?.code
+    if (code) return code
+  }
+  return null
 }
 
 function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
@@ -122,11 +145,21 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
               Supplier:{' '}
               <span className="font-medium text-zinc-700">{report.supplier?.name ?? '—'}</span>
             </span>
-            {report.purchaseOrderNumber && (
-              <span>
-                PO No: <span className="font-mono text-zinc-700">{report.purchaseOrderNumber}</span>
-              </span>
-            )}
+            {(() => {
+              const poCode = reportPoCode(report)
+              return poCode ? (
+                <span>
+                  PO Reference: <span className="font-mono text-zinc-700">{poCode}</span>
+                </span>
+              ) : (
+                report.purchaseOrderNumber && (
+                  <span>
+                    PO No:{' '}
+                    <span className="font-mono text-zinc-700">{report.purchaseOrderNumber}</span>
+                  </span>
+                )
+              )
+            })()}
             {report.poDate && (
               <span>
                 PO Date:{' '}
@@ -137,6 +170,18 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
                     year: 'numeric',
                   })}
                 </span>
+              </span>
+            )}
+            {report.deliveryReceiptNumber && (
+              <span>
+                DR No:{' '}
+                <span className="font-mono text-zinc-700">{report.deliveryReceiptNumber}</span>
+              </span>
+            )}
+            {report.supplierInvoiceNumber && (
+              <span>
+                SI No:{' '}
+                <span className="font-mono text-zinc-700">{report.supplierInvoiceNumber}</span>
               </span>
             )}
             {report.withholding === 'pct_1' && (
@@ -374,7 +419,10 @@ export default function ReceivingReportsTab() {
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                    GRN Code
+                    Receiving Report No.
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
+                    PO Reference
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
                     Warehouse
@@ -403,6 +451,15 @@ export default function ReceivingReportsTab() {
                         <td className="px-4 py-3 font-mono font-medium text-zinc-900">
                           {report.code}
                         </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          {(reportPoCode(report) ?? report.purchaseOrderNumber) ? (
+                            <span className="font-mono text-zinc-600">
+                              {reportPoCode(report) ?? report.purchaseOrderNumber}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-300">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
                           {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                         </td>
@@ -428,7 +485,7 @@ export default function ReceivingReportsTab() {
                       {isSelected && (
                         <tr>
                           <td
-                            colSpan={7}
+                            colSpan={8}
                             className="border-l-4 border-prominent-purple-300 bg-prominent-purple-50/40 p-3"
                           >
                             {isLoadingDetail ? (

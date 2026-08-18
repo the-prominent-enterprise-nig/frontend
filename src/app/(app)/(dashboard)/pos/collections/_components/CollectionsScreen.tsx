@@ -76,6 +76,37 @@ function useDebounced(value: string, delayMs: number): string {
   return debounced
 }
 
+// A due is eligible for bulk/early-payment selection once it's past DRAFT
+// (never posted) and hasn't been settled/voided — the same set MovementsTab
+// et al. call "collectable", just without the isNextDue restriction that
+// only the single-due "Collect" button needs.
+function isEligibleForBulkPay(line: InstallmentScheduleLineWithInvoice): boolean {
+  return !['DRAFT', 'CANCELLED', 'PAID'].includes(line.arInvoice.status)
+}
+
+// Shopee-style early-payment selection: checking a due auto-checks every
+// earlier unpaid due on its schedule; unchecking one un-checks everything
+// after it. This always resolves to a valid contiguous prefix client-side —
+// one click for a K-line selection — matching how the backend's own
+// earlierUnpaidLine check (ar-invoices.service.ts recordPaymentCore) is
+// independently enforced regardless of what the UI allows.
+function toggleLineSelection(
+  scheduleLines: InstallmentScheduleLineWithInvoice[],
+  line: InstallmentScheduleLineWithInvoice,
+  selected: Set<string>
+): Set<string> {
+  const eligible = scheduleLines.filter(isEligibleForBulkPay)
+  const idx = eligible.findIndex((l) => l.arInvoice.id === line.arInvoice.id)
+  if (idx === -1) return selected
+  const next = new Set(selected)
+  if (!next.has(line.arInvoice.id)) {
+    for (let i = 0; i <= idx; i++) next.add(eligible[i].arInvoice.id)
+  } else {
+    for (let i = idx; i < eligible.length; i++) next.delete(eligible[i].arInvoice.id)
+  }
+  return next
+}
+
 function CollectionsCustomerRow({
   customer,
   onSelect,
@@ -83,7 +114,6 @@ function CollectionsCustomerRow({
   customer: CollectionsCustomer
   onSelect: () => void
 }) {
-  const overdue = customer.outstandingCount > 0 && new Date(customer.nextDueDate) < new Date()
   return (
     <li>
       <button
@@ -106,11 +136,13 @@ function CollectionsCustomerRow({
         <span className="shrink-0 text-right">
           <span className="block text-[13px] font-semibold text-zinc-900">
             {fmtMoney(customer.outstandingAmount)}
+            <span className="ml-1 text-[11px] font-normal text-zinc-400">outstanding</span>
           </span>
           <span
-            className={`block text-[12px] ${overdue ? 'font-medium text-red-600' : 'text-zinc-500'}`}
+            className={`block text-[12px] ${customer.dueAmount > 0 ? 'font-medium text-red-600' : 'text-zinc-500'}`}
           >
-            {customer.outstandingCount} due · next {fmtDate(customer.nextDueDate)}
+            {customer.dueAmount > 0 ? `${fmtMoney(customer.dueAmount)} due now` : 'Nothing due yet'}{' '}
+            · next {fmtDate(customer.nextDueDate)}
           </span>
         </span>
       </button>
@@ -146,12 +178,29 @@ export default function CollectionsScreen() {
     // carry it. Null when the schedule has no linked account.
     suggestedRebate: number | null
   } | null>(null)
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
+  const [showBulkPay, setShowBulkPay] = useState(false)
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
   const schedulesQuery = useCustomerInstallmentSchedules(customer?.id)
 
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
+  const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
+  const selectedPayableLines = schedules.flatMap((s) =>
+    s.lines
+      .filter((l) => selectedInvoiceIds.has(l.arInvoice.id))
+      .map((l) => ({
+        line: l,
+        suggestedRebate:
+          s.installmentAccount?.ppd != null ? Number(s.installmentAccount.ppd) : null,
+      }))
+  )
+
+  function selectCustomer(next: PosCustomer | null) {
+    setCustomer(next)
+    setSelectedInvoiceIds(new Set())
+  }
 
   return (
     <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">
@@ -207,7 +256,7 @@ export default function CollectionsScreen() {
                       key={c.id}
                       customer={c}
                       onSelect={() =>
-                        setCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
+                        selectCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
                       }
                     />
                   ))}
@@ -233,12 +282,28 @@ export default function CollectionsScreen() {
                 </div>
               </div>
               <button
-                onClick={() => setCustomer(null)}
+                onClick={() => selectCustomer(null)}
                 className="text-[13px] font-medium text-prominent-purple-700 hover:underline"
               >
                 Change customer
               </button>
             </div>
+
+            {selectedPayableLines.length > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-prominent-purple-200 bg-prominent-purple-50 px-5 py-3.5">
+                <span className="text-[13px] text-prominent-purple-800">
+                  {selectedPayableLines.length} due{selectedPayableLines.length !== 1 ? 's' : ''}{' '}
+                  selected
+                </span>
+                <button
+                  onClick={() => setShowBulkPay(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-prominent-purple-800"
+                >
+                  <Banknote className="h-3.5 w-3.5" />
+                  Pay Selected ({selectedPayableLines.length})
+                </button>
+              </div>
+            )}
 
             {schedulesQuery.isLoading && (
               <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-zinc-400">
@@ -246,59 +311,72 @@ export default function CollectionsScreen() {
                 Loading installment plans…
               </div>
             )}
-            {!schedulesQuery.isLoading &&
-              (!schedulesQuery.data?.success || (schedulesQuery.data.data ?? []).length === 0) && (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white py-16 shadow-sm">
-                  <Banknote className="mb-3 h-10 w-10 text-zinc-300" />
-                  <p className="text-sm font-medium text-zinc-500">
-                    No installment plans for this customer
-                  </p>
-                </div>
-              )}
+            {!schedulesQuery.isLoading && schedules.length === 0 && (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 bg-white py-16 shadow-sm">
+                <Banknote className="mb-3 h-10 w-10 text-zinc-300" />
+                <p className="text-sm font-medium text-zinc-500">
+                  No installment plans for this customer
+                </p>
+              </div>
+            )}
 
             <div className="space-y-4">
-              {schedulesQuery.data?.success &&
-                (schedulesQuery.data.data ?? []).map((s) => (
-                  <div
-                    key={s.id}
-                    className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
-                      <span className="font-mono">
-                        {s.posTransaction?.transactionNumber ?? s.id}
-                      </span>
-                      <span>
-                        {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
-                      </span>
-                    </div>
-                    {(() => {
-                      // Dues are settled in order — the earliest line that
-                      // isn't PAID/CANCELLED yet is the only one collectible.
-                      // Backed by a matching hard block server-side
-                      // (ar-invoices.service.ts's recordPayment()), so this
-                      // is UI convenience, not the only guard.
-                      const nextDueLineNumber = s.lines.find(
-                        (l) => !['PAID', 'CANCELLED'].includes(l.arInvoice.status)
-                      )?.lineNumber
-                      return (
-                        <ul className="divide-y divide-zinc-100">
-                          {s.lines.map((line) => {
-                            // Fully paid dues can no longer be collected against
-                            // at all through this screen — no more overpayment
-                            // entry via a stray click here. A genuine correction
-                            // (e.g. reversing a bad payment) goes through
-                            // Accounting → AR Invoices instead.
-                            const isFullyPaid = line.arInvoice.status === 'PAID'
-                            const isNextDue = line.lineNumber === nextDueLineNumber
-                            const collectable =
-                              !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) &&
-                              !isFullyPaid &&
-                              isNextDue
-                            return (
-                              <li
-                                key={line.lineNumber}
-                                className="flex items-center justify-between gap-3 px-5 py-3"
-                              >
+              {schedules.map((s) => (
+                <div
+                  key={s.id}
+                  className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50 px-5 py-2.5 text-[13px] text-zinc-500">
+                    <span className="font-mono">{s.posTransaction?.transactionNumber ?? s.id}</span>
+                    <span>
+                      {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
+                    </span>
+                  </div>
+                  {(() => {
+                    // Dues are settled in order — the earliest line that
+                    // isn't PAID/CANCELLED yet is the only one collectible.
+                    // Backed by a matching hard block server-side
+                    // (ar-invoices.service.ts's recordPayment()), so this
+                    // is UI convenience, not the only guard.
+                    const nextDueLineNumber = s.lines.find(
+                      (l) => !['PAID', 'CANCELLED'].includes(l.arInvoice.status)
+                    )?.lineNumber
+                    return (
+                      <ul className="divide-y divide-zinc-100">
+                        {s.lines.map((line) => {
+                          // Fully paid dues can no longer be collected against
+                          // at all through this screen — no more overpayment
+                          // entry via a stray click here. A genuine correction
+                          // (e.g. reversing a bad payment) goes through
+                          // Accounting → AR Invoices instead.
+                          const isFullyPaid = line.arInvoice.status === 'PAID'
+                          const isNextDue = line.lineNumber === nextDueLineNumber
+                          const isEligible = isEligibleForBulkPay(line)
+                          const collectable = isEligible && isNextDue
+                          const isSelected = selectedInvoiceIds.has(line.arInvoice.id)
+                          return (
+                            <li
+                              key={line.lineNumber}
+                              className="flex items-center justify-between gap-3 px-5 py-3"
+                            >
+                              <div className="flex min-w-0 items-center gap-3">
+                                {isEligible && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() =>
+                                      setSelectedInvoiceIds((prev) =>
+                                        toggleLineSelection(s.lines, line, prev)
+                                      )
+                                    }
+                                    title={
+                                      !isNextDue
+                                        ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
+                                        : undefined
+                                    }
+                                    className="h-4 w-4 shrink-0 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
+                                  />
+                                )}
                                 <div className="min-w-0">
                                   <div className="text-[13px] text-zinc-800">
                                     Payment {line.lineNumber} of {s.lines.length} · due{' '}
@@ -312,58 +390,44 @@ export default function CollectionsScreen() {
                                     </span>
                                   </div>
                                 </div>
-                                {isFullyPaid && (
-                                  <span
-                                    title="This due is already fully paid — any additional amount would be an overpayment, and this screen no longer allows recording one. If a correction is needed (e.g. reversing a mistaken payment), use Accounting → AR Invoices."
-                                    className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    Paid
-                                  </span>
-                                )}
-                                {collectable && (
-                                  <button
-                                    onClick={() =>
-                                      setCollectingLine({
-                                        line,
-                                        // ppd comes over the wire as a string (Prisma Decimal JSON
-                                        // serialization) — coerce explicitly, same convention this
-                                        // codebase already uses for downPayment/floorPrice/minQty.
-                                        suggestedRebate:
-                                          s.installmentAccount?.ppd != null
-                                            ? Number(s.installmentAccount.ppd)
-                                            : null,
-                                      })
-                                    }
-                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
-                                  >
-                                    <Banknote className="h-3.5 w-3.5" />
-                                    Collect
-                                  </button>
-                                )}
-                                {!isFullyPaid &&
-                                  !isNextDue &&
-                                  !['DRAFT', 'CANCELLED'].includes(line.arInvoice.status) && (
-                                    <span
-                                      title={
-                                        nextDueLineNumber != null
-                                          ? `Payment ${nextDueLineNumber} must be collected first — dues are settled in order.`
-                                          : undefined
-                                      }
-                                      className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[12px] font-semibold text-zinc-400"
-                                    >
-                                      <Banknote className="h-3.5 w-3.5" />
-                                      Locked
-                                    </span>
-                                  )}
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      )
-                    })()}
-                  </div>
-                ))}
+                              </div>
+                              {isFullyPaid && (
+                                <span
+                                  title="This due is already fully paid — any additional amount would be an overpayment, and this screen no longer allows recording one. If a correction is needed (e.g. reversing a mistaken payment), use Accounting → AR Invoices."
+                                  className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Paid
+                                </span>
+                              )}
+                              {collectable && (
+                                <button
+                                  onClick={() =>
+                                    setCollectingLine({
+                                      line,
+                                      // ppd comes over the wire as a string (Prisma Decimal JSON
+                                      // serialization) — coerce explicitly, same convention this
+                                      // codebase already uses for downPayment/floorPrice/minQty.
+                                      suggestedRebate:
+                                        s.installmentAccount?.ppd != null
+                                          ? Number(s.installmentAccount.ppd)
+                                          : null,
+                                    })
+                                  }
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
+                                >
+                                  <Banknote className="h-3.5 w-3.5" />
+                                  Collect
+                                </button>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )
+                  })()}
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -385,6 +449,20 @@ export default function CollectionsScreen() {
             // interactive-but-stale window for a fast click-through to hit.
             await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
             setCollectingLine(null)
+          }}
+        />
+      )}
+
+      {showBulkPay && (
+        <BulkCollectPaymentModal
+          lines={selectedPayableLines}
+          customerName={customer?.name}
+          defaultBranchId={branchId || undefined}
+          onClose={() => setShowBulkPay(false)}
+          onCollected={async () => {
+            await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
+            setSelectedInvoiceIds(new Set())
+            setShowBulkPay(false)
           }}
         />
       )}
@@ -742,6 +820,293 @@ function CollectPaymentModal({
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {submitting ? 'Collecting…' : 'Collect payment'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Shopee-style bulk/early-payment ("Pay Selected") — settles several of a
+ * customer's own upcoming installment dues in one submit, requiring a
+ * reference number (unlike the single-payment modal above, where it's
+ * optional). Per-line amounts are read-only here (same default formula
+ * CollectPaymentModal uses: outstanding minus the suggested rebate) — a
+ * cashier needing a custom partial amount on one due still uses the single
+ * "Collect" flow for that line instead.
+ */
+function BulkCollectPaymentModal({
+  lines,
+  customerName,
+  defaultBranchId,
+  onClose,
+  onCollected,
+}: {
+  lines: {
+    line: InstallmentScheduleLineWithInvoice
+    suggestedRebate: number | null
+  }[]
+  customerName?: string
+  defaultBranchId?: string
+  onClose: () => void
+  onCollected: () => Promise<void>
+}) {
+  const payableLines = lines.map(({ line, suggestedRebate }) => {
+    const outstanding = Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0)
+    const rebateAmount = suggestedRebate ?? 0
+    const amount = Math.max(Math.round((outstanding - rebateAmount) * 100) / 100, 0)
+    return { line, rebateAmount, amount }
+  })
+  const runningTotal = payableLines.reduce((sum, p) => sum + p.amount, 0)
+
+  const [paymentDate, setPaymentDate] = useState(todayIso())
+  const [method, setMethod] = useState<PaymentMethod>('CASH')
+  const [reference, setReference] = useState('')
+  const [notes, setNotes] = useState('')
+  const [branchId, setBranchId] = useState('')
+  const [collectorId, setCollectorId] = useState('')
+  const [branchDefault, setBranchDefault] = useState<{ id: string; name: string } | null>(null)
+  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
+    []
+  )
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [overpaidCount, setOverpaidCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
+      if (cancelled) return
+      const targetId = session?.branchId || defaultBranchId
+      const match = (branchesRes.data ?? []).find((b) => b.id === targetId)
+      if (!match) return
+      setBranchDefault({ id: match.id, name: match.name })
+      setBranchId((current) => current || match.id)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [defaultBranchId])
+
+  useEffect(() => {
+    collectorsApi.list({ limit: 200, ...(branchId ? { branchId } : {}) }).then((res) => {
+      if (res.success && res.data) setCollectors(res.data.data)
+    })
+  }, [branchId])
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    const res = await ARInvoices.recordBulkPayment({
+      lines: payableLines.map((p) => ({
+        invoiceId: p.line.arInvoice.id,
+        amount: p.amount,
+        rebateAmount: p.rebateAmount,
+      })),
+      paymentDate,
+      method,
+      reference,
+      notes: notes || undefined,
+      branchId: branchId || undefined,
+      collectorId: collectorId || undefined,
+    })
+    if (!res.success) {
+      setSubmitting(false)
+      setError(res.message || res.error || 'Failed to collect payment')
+      return
+    }
+    const overpaid = (res.data?.payments ?? []).filter((p) => p.overpayment).length
+    if (overpaid > 0) {
+      setSubmitting(false)
+      setOverpaidCount(overpaid)
+      return
+    }
+    // Stays "submitting" until the parent's refetch lands, same contract as
+    // CollectPaymentModal's onSubmit.
+    await onCollected()
+  }
+
+  if (overpaidCount != null) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-6 w-6 text-amber-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-zinc-900">
+              {overpaidCount} payment{overpaidCount !== 1 ? 's' : ''} recorded as an overpayment
+            </h3>
+            <p className="text-sm text-zinc-600">
+              This batch was <span className="font-semibold">not rejected</span> — {overpaidCount}{' '}
+              of the {payableLines.length} payments exceeded what was owed. A manager can cancel any
+              specific payment from Accounting → AR Invoices if needed.
+            </p>
+            <button
+              onClick={onCollected}
+              className="mt-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
+              <Banknote className="h-5 w-5 text-prominent-purple-700" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900">Pay Selected Dues</h2>
+              <p className="text-sm text-zinc-500">
+                {customerName ?? 'Customer'} · {payableLines.length} due
+                {payableLines.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} noValidate>
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto px-6 py-5">
+            <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+              {payableLines.map(({ line, amount }) => (
+                <li
+                  key={line.arInvoice.id}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]"
+                >
+                  <span className="text-zinc-700">
+                    Payment {line.lineNumber} · due {fmtDate(line.arInvoice.dueDate)}
+                  </span>
+                  <span className="font-medium text-zinc-900">{fmtMoney(amount)}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
+              <span className="text-[13px] text-zinc-500">Total</span>
+              <span className="text-base font-semibold text-zinc-900">
+                {fmtMoney(runningTotal)}
+              </span>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Payment date <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                type="date"
+                max={todayIso()}
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className={fieldClass}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+                className={fieldClass}
+              >
+                {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <BranchSearchCombobox
+                key={branchDefault?.id ?? 'no-default'}
+                value={branchId}
+                onChange={(id) => {
+                  setBranchId(id)
+                  setCollectorId('')
+                }}
+                initialLabel={branchDefault?.name}
+                placeholder="Search branch…"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
+              <select
+                value={collectorId}
+                onChange={(e) => setCollectorId(e.target.value)}
+                className={fieldClass}
+              >
+                <option value="">Walk-in / none</option>
+                {collectors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.stubNumber} — {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Reference <span className="text-red-500">*</span>
+              </label>
+              <input
+                required
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="OR number"
+                className={fieldClass}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
+              <input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className={fieldClass}
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !reference.trim()}
+              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+            >
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? 'Collecting…' : `Pay ${fmtMoney(runningTotal)}`}
             </button>
           </div>
         </form>

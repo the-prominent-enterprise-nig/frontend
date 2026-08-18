@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, ArrowLeft, Paperclip, Plus, Trash2, X } from 'lucide-react'
-import PhoneInput from 'react-phone-number-input'
+import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import { customersApi } from '@/src/libs/api/crm'
 import { uploadIdDocument } from '../_actions/upload-id-document'
@@ -75,6 +75,28 @@ const empty: FormState = {
   idNumber: '',
   idDocumentFileId: '',
   consentGiven: false,
+}
+
+/**
+ * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
+ * `undefined` — some existing customer records predate this component
+ * (imported/seeded data entered in a local format like "(656) 929-6118")
+ * and break it otherwise, logging a console error every time that record's
+ * edit form mounts. Best-effort re-parses a legacy value assuming PH as the
+ * default country and returns its real E.164 form when that succeeds;
+ * `undefined` otherwise (PhoneInput just renders empty — the underlying
+ * `form.phone` state keeps the original raw string either way, so an
+ * unrelated edit-and-save never silently overwrites/loses it).
+ */
+function toDisplayPhoneValue(raw: string): string | undefined {
+  if (!raw) return undefined
+  if (raw.startsWith('+')) return raw
+  try {
+    const parsed = parsePhoneNumber(raw, 'PH')
+    return parsed?.isValid() ? parsed.number : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -363,7 +385,7 @@ export default function CustomerForm({ id }: { id?: string }) {
           <div>
             <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
             <PhoneInput
-              value={form.phone ?? ''}
+              value={toDisplayPhoneValue(form.phone ?? '')}
               defaultCountry="PH"
               international
               countryCallingCodeEditable={false}

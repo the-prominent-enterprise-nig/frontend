@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { getPendingInviteCount } from '@/src/app/(app)/(dashboard)/settings/_actions/get-pending-invite-count'
 import { hasModuleAccess, hasPermission } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import {
   ArrowLeftRight,
-  BarChart2,
   BarChart3,
   BellRing,
   BookOpen,
@@ -36,6 +36,7 @@ import {
   TrendingUp,
   Package,
   PackageCheck,
+  Percent,
   Receipt,
   ReceiptText,
   RefreshCcw,
@@ -50,6 +51,7 @@ import {
   Undo2,
   Users,
   UsersRound,
+  UserPlus,
   Wallet,
   Warehouse,
   Wrench,
@@ -128,7 +130,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: INVENTORY_PERMISSIONS.PRICE_LISTS_READ,
       },
       {
-        label: 'Operations',
+        label: 'Purchase Orders',
+        href: '/inventory/purchase-orders',
+        icon: ShoppingCart,
+        requiredPermission: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
+        activeWhen: ['/inventory/purchase-orders'],
+      },
+      {
+        label: 'Stock Transfers',
         href: '/inventory/operations',
         icon: ArrowLeftRight,
         requiredPermission: [
@@ -144,25 +153,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ],
       },
       {
-        label: 'Purchase Requests',
-        href: '/inventory/purchase-requests',
-        icon: ClipboardList,
-        requiredPermission: PROCUREMENT_PERMISSIONS.PR_READ,
-      },
-      {
-        label: 'Purchase Orders',
-        href: '/inventory/purchase-orders',
-        icon: ShoppingCart,
-        requiredPermission: PROCUREMENT_PERMISSIONS.PO_READ,
-        activeWhen: ['/inventory/purchase-orders'],
-      },
-      {
-        label: 'Warehouse Requests',
-        href: '/inventory/warehouse-requests',
-        icon: PackageCheck,
-        requiredPermission: INVENTORY_PERMISSIONS.WAREHOUSE_REQUESTS_READ,
-      },
-      {
         label: 'Suppliers',
         href: '/inventory/suppliers',
         icon: Truck,
@@ -173,12 +163,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/counting',
         icon: RefreshCcw,
         requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
-      },
-      {
-        label: 'Planning',
-        href: '/inventory/planning',
-        icon: BarChart2,
-        requiredPermission: INVENTORY_PERMISSIONS.REORDER_READ,
       },
       {
         label: 'Finance',
@@ -299,6 +283,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
       },
       {
+        label: 'Interest Release',
+        href: '/accounting/installment-interest-release',
+        icon: Percent,
+        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
+      },
+      {
         label: 'Fiscal Periods',
         href: '/accounting/fiscal-periods',
         icon: CalendarDays,
@@ -329,12 +319,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
       {
-        label: 'Tax Rates',
-        href: '/accounting/tax-rates',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
-      },
-      {
         label: 'Budgets',
         href: '/accounting/budgets',
         icon: BarChart3,
@@ -345,12 +329,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/cash-forecast',
         icon: TrendingUp,
         requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
-      },
-      {
-        label: 'FX Revaluation',
-        href: '/accounting/fx-revaluation',
-        icon: ArrowLeftRight,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FX_READ,
       },
       {
         label: 'Reports',
@@ -468,7 +446,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
           '/pos/settings/terminals',
           '/pos/settings/receipt-branding',
           '/pos/settings/financing-terms',
-          '/pos/settings/queue-categories',
           '/pos/settings/customer-display',
         ],
       },
@@ -533,6 +510,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm/installment-accounts',
         icon: Wallet,
         requiredPermission: CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_READ,
+      },
+      {
+        label: 'Collections Calendar',
+        href: '/crm/collections-calendar',
+        icon: CalendarDays,
+        requiredPermission: CRM_PERMISSIONS.COLLECTIONS_CALENDAR_READ,
       },
       {
         label: 'Collection Incentives',
@@ -809,6 +792,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     href: '/settings/users',
     icon: UsersRound,
   },
+  {
+    section: 'My Workspace',
+    label: 'Pending Invites',
+    href: '/settings/pending-invites',
+    icon: UserPlus,
+  },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
   {
@@ -816,12 +805,6 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     label: 'Business Policies',
     href: '/settings/business-policies',
     icon: ScrollText,
-  },
-  {
-    section: 'My Workspace',
-    label: 'Reports',
-    href: '/settings/export',
-    icon: FileBarChart,
   },
   {
     section: 'My Workspace',
@@ -916,6 +899,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [pendingInviteCount, setPendingInviteCount] = useState(0)
 
   const segment = pathname.split('/').filter(Boolean)[0] ?? 'dashboard'
 
@@ -926,6 +910,27 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
 
   const isBranchManager = session?.primaryRole === 'Branch Manager'
 
+  // Refresh-on-navigation, not live — re-fetched whenever the route
+  // changes rather than polled, matching how the rest of this app's nav
+  // already behaves (Scenario 28, Part 2).
+  useEffect(() => {
+    if (!isOwner) return
+    getPendingInviteCount().then((result) => {
+      if (result.success && result.data) setPendingInviteCount(result.data.count)
+    })
+  }, [isOwner, pathname])
+
+  const ownerWorkspaceItems: NavItem[] = isOwner
+    ? OWNER_WORKSPACE_ITEMS.map((item) =>
+        item.href === '/settings/pending-invites' && pendingInviteCount > 0
+          ? {
+              ...item,
+              badge: { text: String(pendingInviteCount), variant: 'count', color: 'bg-red-500' },
+            }
+          : item
+      )
+    : OWNER_WORKSPACE_ITEMS
+
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
   const moduleWithWorkspace = resolvedSegment !== 'Business Owner'
 
@@ -934,12 +939,12 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   let mainItems: NavItem[]
   if (isOwner) {
     if (resolvedSegment === 'Business Owner') {
-      mainItems = OWNER_WORKSPACE_ITEMS
+      mainItems = ownerWorkspaceItems
     } else {
       const moduleLabel = MODULE_SECTION_LABELS[resolvedSegment] ?? resolvedSegment
       const moduleItems = config.main.filter((item) => item.section !== 'My Workspace')
       const labeledModuleItems = moduleItems.map((item) => ({ ...item, section: moduleLabel }))
-      mainItems = [...labeledModuleItems, ...OWNER_WORKSPACE_ITEMS]
+      mainItems = [...labeledModuleItems, ...ownerWorkspaceItems]
     }
   } else if (isBranchManager) {
     if (resolvedSegment === 'Business Owner') {

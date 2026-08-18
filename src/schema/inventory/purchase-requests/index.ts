@@ -1,19 +1,17 @@
 import { z } from 'zod'
+import {
+  CreatePoLineSchema,
+  CreatePoFormSchema,
+  LineDiscountSchema,
+} from '@/src/schema/inventory/purchase-orders'
 
-export const CreatePrLineSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  estimatedUnitPrice: z.number().min(0).optional(),
-  suggestedSupplierId: z.string().optional(),
-  notes: z.string().max(500).optional(),
-})
-
-export const CreatePurchaseRequestFormSchema = z.object({
-  branchId: z.string().optional(),
-  reason: z.string().max(500).optional(),
-  notes: z.string().max(1000).optional(),
-  lines: z.array(CreatePrLineSchema).min(1, 'At least one line item is required'),
-})
+// A Purchase Request is created with the exact same commitment as a
+// Purchase Order (firm supplier + priced/discounted lines) — the only
+// difference is it's pending approval before it becomes one. Aliasing PO's
+// schema/types directly (rather than redefining an identical shape) is what
+// keeps the two forms from drifting apart again.
+export const CreatePrLineSchema = CreatePoLineSchema
+export const CreatePurchaseRequestFormSchema = CreatePoFormSchema
 
 export const UpdatePurchaseRequestFormSchema = CreatePurchaseRequestFormSchema
 
@@ -41,13 +39,32 @@ const PrItemSchema = z.object({
   name: z.string(),
 })
 
+const PrSupplierSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  taxId: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+})
+
+const PrWarehouseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+
+// Same input-field shape as PoLineSchema (unitPrice/description/srp/
+// discounts/isFreebie) — PO-computed-only fields (discountedCost,
+// lastPriceOverridden, lineTotal) aren't mirrored here, see the plan's
+// "computed line fields" decision.
 const PrLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   quantity: z.coerce.number(),
-  estimatedUnitPrice: z.coerce.number().optional().nullable(),
   item: PrItemSchema,
-  suggestedSupplierId: z.string().optional().nullable(),
+  unitPrice: z.coerce.number().optional().nullable(),
+  description: z.string().optional().nullable(),
+  srp: z.coerce.number().optional().nullable(),
+  discounts: z.array(LineDiscountSchema).optional().nullable(),
+  isFreebie: z.boolean().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
 
@@ -65,6 +82,14 @@ export const PurchaseRequestSummarySchema = z.object({
       city: z.string().nullable().optional(),
     })
     .nullable(),
+  supplierId: z.string().nullable(),
+  supplier: PrSupplierSchema.nullable(),
+  warehouseId: z.string().nullable(),
+  warehouse: PrWarehouseSchema.nullable(),
+  expectedDeliveryDate: z.string().nullable(),
+  deliveryInstructions: z.string().nullable(),
+  paymentTerms: z.string().nullable(),
+  shippingAddress: z.string().nullable(),
   reason: z.string().nullable(),
   notes: z.string().nullable(),
   submittedAt: z.string().nullable(),

@@ -84,6 +84,7 @@ export interface Lead {
   stageId: string
   estimatedValue?: number | string | null
   assignedTo?: string | null
+  branchId?: string | null
   convertedToCustomerId?: string | null
   notes?: string | null
   status: LeadStatus
@@ -450,6 +451,57 @@ export interface PipelineColumn {
   leadCount: number
   totalValue: number
   leads: Lead[]
+}
+
+// Collections Calendar — day-grouped view of installment dues + reminders.
+// Only dues bridged from a real POS InstallmentSchedule have a per-day due
+// date (see backend CollectionsCalendarService) — hand-entered/imported
+// InstallmentAccounts never appear in `payments`.
+export interface CollectionsCalendarPayment {
+  id: string
+  dueDate: string
+  amount: number
+  arInvoiceId: string
+  arInvoiceStatus: string
+  outstanding: number
+  customerId: string
+  customerName: string
+  installmentAccountId?: string | null
+  accountNumber?: string | null
+  branchId?: string | null
+  branchName?: string | null
+  collectorId?: string | null
+  collectorName?: string | null
+}
+
+export interface CollectionsCalendarReminder {
+  id: string
+  dueAt: string
+  reminderType: ReminderType
+  status: ReminderStatus
+  note?: string | null
+  isOverdue: boolean
+  customerId?: string | null
+  customerName?: string | null
+  leadId?: string | null
+  leadName?: string | null
+  installmentAccountId?: string | null
+  accountNumber?: string | null
+  collectorId?: string | null
+  collectorName?: string | null
+  assignedTo: string
+}
+
+export interface CollectionsCalendarResponse {
+  range: { startDate: string; endDate: string }
+  payments: CollectionsCalendarPayment[]
+  reminders: CollectionsCalendarReminder[]
+  meta: {
+    totalPaymentsDue: number
+    totalPaymentsAmount: number
+    totalReminders: number
+    totalOverdueReminders: number
+  }
 }
 
 export interface PaginatedResponse<T> {

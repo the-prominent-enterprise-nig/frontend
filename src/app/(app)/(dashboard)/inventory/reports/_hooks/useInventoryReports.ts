@@ -4,10 +4,13 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { getValuationReport } from '../_actions/get-valuation-report'
 import { getTurnoverReport } from '../_actions/get-turnover-report'
+import { getAgingReport } from '../_actions/get-aging-report'
+import { getReconciliationReport } from '../_actions/get-reconciliation-report'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getCategories } from '../../items/_actions/get-lookup-data'
+import type { SerialAgingBucket } from '@/src/schema/inventory/reports'
 
-export type ReportTab = 'valuation' | 'turnover'
+export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
 
 const PAGE_SIZE = 20
 
@@ -25,6 +28,16 @@ export function useInventoryReports() {
   const [statusFilter, setStatusFilter] = useState<
     'healthy' | 'slow_moving' | 'dead_stock' | undefined
   >(undefined)
+
+  // Aging-specific
+  const [agingBucketFilter, setAgingBucketFilter] = useState<SerialAgingBucket | undefined>(
+    undefined
+  )
+
+  // Reconciliation-specific — no pagination (backend caps each section at
+  // 50 sample rows server-side), just an optional date range.
+  const [reconStartDate, setReconStartDate] = useState<string | undefined>(undefined)
+  const [reconEndDate, setReconEndDate] = useState<string | undefined>(undefined)
 
   function resetPage(): void {
     setPage(1)
@@ -70,6 +83,39 @@ export function useInventoryReports() {
     enabled: tab === 'turnover',
   })
 
+  const agingParams = useMemo(
+    () => ({
+      warehouseId: warehouseFilter,
+      categoryId: categoryFilter,
+      search: search || undefined,
+      bucket: agingBucketFilter,
+      page,
+      limit: PAGE_SIZE,
+    }),
+    [warehouseFilter, categoryFilter, search, agingBucketFilter, page]
+  )
+
+  const agingQuery = useQuery({
+    queryKey: ['inventory-report-aging', agingParams],
+    queryFn: () => getAgingReport(agingParams),
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
+    enabled: tab === 'aging',
+  })
+
+  const reconciliationParams = useMemo(
+    () => ({ startDate: reconStartDate, endDate: reconEndDate }),
+    [reconStartDate, reconEndDate]
+  )
+
+  const reconciliationQuery = useQuery({
+    queryKey: ['inventory-report-reconciliation', reconciliationParams],
+    queryFn: () => getReconciliationReport(reconciliationParams),
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
+    enabled: tab === 'reconciliation',
+  })
+
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
@@ -109,6 +155,9 @@ export function useInventoryReports() {
       setCategoryFilter(undefined)
       setSearch('')
       setStatusFilter(undefined)
+      setAgingBucketFilter(undefined)
+      setReconStartDate(undefined)
+      setReconEndDate(undefined)
       resetPage()
     },
 
@@ -135,6 +184,29 @@ export function useInventoryReports() {
     isTurnoverFetching: turnoverQuery.isFetching,
     turnoverError: turnoverQuery.error,
     refetchTurnover: () => turnoverQuery.refetch(),
+
+    // Aging
+    agingBucketFilter,
+    setAgingBucketFilter: (v: SerialAgingBucket | undefined) => {
+      setAgingBucketFilter(v)
+      resetPage()
+    },
+    agingData: agingQuery.data?.data,
+    isAgingLoading: agingQuery.isLoading,
+    isAgingFetching: agingQuery.isFetching,
+    agingError: agingQuery.error,
+    refetchAging: () => agingQuery.refetch(),
+
+    // Reconciliation
+    reconStartDate,
+    reconEndDate,
+    setReconStartDate,
+    setReconEndDate,
+    reconciliationData: reconciliationQuery.data?.data,
+    isReconciliationLoading: reconciliationQuery.isLoading,
+    isReconciliationFetching: reconciliationQuery.isFetching,
+    reconciliationError: reconciliationQuery.error,
+    refetchReconciliation: () => reconciliationQuery.refetch(),
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     categoryOptions: categoriesQuery.data?.data?.data ?? [],

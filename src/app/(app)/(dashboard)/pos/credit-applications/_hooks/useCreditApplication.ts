@@ -5,19 +5,20 @@ import { useRouter } from 'next/navigation'
 import { showToast } from '@/src/components/ui/toast'
 import { getCreditApplication } from '../_actions/get-application'
 import { getCreditApplicationDocuments } from '../_actions/get-documents'
+import { updateCreditApplication } from '../_actions/update-application'
 import { submitCreditApplication } from '../_actions/submit-application'
 import { cancelCreditApplication } from '../_actions/cancel-application'
 import { attachCreditApplicationDocument } from '../_actions/attach-document'
 import { removeCreditApplicationDocument } from '../_actions/remove-document'
 import { startCreditInvestigation } from '../_actions/start-investigation'
 import { recordCreditInvestigation } from '../_actions/record-investigation'
-import { approveCreditApplication } from '../_actions/approve-application'
-import { declineCreditApplication } from '../_actions/decline-application'
+import { decideCreditApplicationItems } from '../_actions/decide-application'
 import type {
   AttachCreditApplicationDocumentFormValues,
   CancelCreditApplicationFormValues,
   RecordCreditInvestigationFormValues,
-  DeclineCreditApplicationFormValues,
+  DecideCreditApplicationItemsFormValues,
+  UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
 export function useCreditApplication(id: string) {
@@ -28,6 +29,12 @@ export function useCreditApplication(id: string) {
     queryKey: ['credit-application', id],
     queryFn: () => getCreditApplication(id),
     staleTime: 15 * 1000,
+    // Scenario 26 — same reasoning as useCreditApplications.ts's poll: this
+    // page is exactly where a resolution notification's click-through
+    // lands, so a stale status here (e.g. still showing
+    // under_investigation after the Branch Manager already approved it in
+    // another tab) directly undercuts the point of the notification.
+    refetchInterval: 10 * 1000,
   })
 
   const documentsQuery = useQuery({
@@ -41,6 +48,18 @@ export function useCreditApplication(id: string) {
     queryClient.invalidateQueries({ queryKey: ['credit-application-documents', id] })
     queryClient.invalidateQueries({ queryKey: ['credit-applications'] })
   }
+
+  const updateMutation = useMutation({
+    mutationFn: (data: UpdateCreditApplicationFormValues) => updateCreditApplication(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Updated', description: result.message, status: 'success' })
+        invalidate()
+      } else {
+        showToast({ title: 'Failed', description: result.message, status: 'error' })
+      }
+    },
+  })
 
   const submitMutation = useMutation({
     mutationFn: () => submitCreditApplication(id),
@@ -123,23 +142,12 @@ export function useCreditApplication(id: string) {
     },
   })
 
-  const approveMutation = useMutation({
-    mutationFn: () => approveCreditApplication(id),
+  const decideMutation = useMutation({
+    mutationFn: (data: DecideCreditApplicationItemsFormValues) =>
+      decideCreditApplicationItems(id, data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Approved', description: result.message, status: 'success' })
-        invalidate()
-      } else {
-        showToast({ title: 'Failed', description: result.message, status: 'error' })
-      }
-    },
-  })
-
-  const declineMutation = useMutation({
-    mutationFn: (data: DeclineCreditApplicationFormValues) => declineCreditApplication(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({ title: 'Declined', description: result.message, status: 'success' })
+        showToast({ title: 'Decision recorded', description: result.message, status: 'success' })
         invalidate()
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
@@ -151,6 +159,9 @@ export function useCreditApplication(id: string) {
     application: applicationQuery.data?.data,
     isLoading: applicationQuery.isLoading,
     error: applicationQuery.error,
+
+    update: updateMutation.mutateAsync,
+    isUpdating: updateMutation.isPending,
 
     documents: documentsQuery.data?.data ?? [],
     isDocumentsLoading: documentsQuery.isLoading,
@@ -173,11 +184,8 @@ export function useCreditApplication(id: string) {
     recordInvestigation: recordInvestigationMutation.mutateAsync,
     isRecordingInvestigation: recordInvestigationMutation.isPending,
 
-    approve: approveMutation.mutateAsync,
-    isApproving: approveMutation.isPending,
-
-    decline: declineMutation.mutateAsync,
-    isDeclining: declineMutation.isPending,
+    decideItems: decideMutation.mutateAsync,
+    isDeciding: decideMutation.isPending,
 
     goToList: () => router.push('/pos/credit-applications'),
   }

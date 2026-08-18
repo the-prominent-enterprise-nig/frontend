@@ -42,11 +42,11 @@ test.describe('POS Settings — Configuration migration', () => {
     ).toBeVisible()
 
     // Selecting a specific branch switches to that branch's override editor.
-    // Match the full sentence, not just "Manila HQ" alone — that string also
+    // Match the full sentence, not just "Bago" alone — that string also
     // matches the (hidden, closed) <option> in the branch switcher itself.
-    await branchSelect.selectOption({ label: 'Manila HQ' })
+    await branchSelect.selectOption({ label: 'Bago' })
     await expect(page.getByText('Branch Override', { exact: true })).toBeVisible()
-    await expect(page.getByText('Overriding the company default for Manila HQ.')).toBeVisible()
+    await expect(page.getByText('Overriding the company default for Bago.')).toBeVisible()
   })
 
   test('Payment Methods: the per-method table toggle is the single, checkout-enforced control', async ({

@@ -11125,7 +11125,7 @@ export interface components {
       /** @description Driver's contact number */
       driverPhone: string
       /** @description Driver's license number */
-      driverLicense: string
+      driverLicense?: string
       /** @description Vehicle plate number */
       vehiclePlate: string
       /** @description Carrier or trucking company name */

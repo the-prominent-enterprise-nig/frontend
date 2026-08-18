@@ -2,9 +2,10 @@
 
 import { useEffect } from 'react'
 import { useForm, Controller, useFieldArray } from 'react-hook-form'
+import type { Control, FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { X, Loader2, ShoppingCart } from 'lucide-react'
+import { X, Loader2, ShoppingCart, Plus } from 'lucide-react'
 import {
   ConvertPrToPoFormSchema,
   type ConvertPrToPoFormValues,
@@ -20,11 +21,6 @@ type Props = {
   pr: PurchaseRequestSummary | null
   onConvert: (prId: string, data: ConvertPrToPoFormValues) => Promise<void>
   isConverting?: boolean
-}
-
-function defaultShippingAddress(pr: PurchaseRequestSummary | null): string {
-  if (!pr) return ''
-  return [pr.branch?.addressLine1, pr.branch?.city].filter(Boolean).join(', ')
 }
 
 export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting }: Props) {
@@ -44,6 +40,8 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
     control,
     handleSubmit,
     reset,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<ConvertPrToPoFormValues>({
     resolver: zodResolver(ConvertPrToPoFormSchema),
@@ -53,7 +51,6 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
       expectedDeliveryDate: '',
       deliveryInstructions: '',
       paymentTerms: '',
-      shippingAddress: '',
       notes: '',
       lines: [],
     },
@@ -66,20 +63,32 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
 
   useEffect(() => {
     if (open && pr) {
+      // A manually-created PR now already carries the same commitment a PO
+      // would (supplier, warehouse, firm pricing) — pre-fill from it rather
+      // than starting blank, so approving+converting needs little to no
+      // re-entry. Auto-raised PRs (from a ServiceDraft shortfall) still
+      // lack all of this, so they fall back to blank exactly as before.
       reset({
-        supplierId: '',
-        warehouseId: '',
-        expectedDeliveryDate: '',
-        deliveryInstructions: '',
-        paymentTerms: '',
-        shippingAddress: defaultShippingAddress(pr),
-        notes: '',
+        supplierId: pr.supplierId ?? '',
+        warehouseId: pr.warehouseId ?? '',
+        expectedDeliveryDate: pr.expectedDeliveryDate ? pr.expectedDeliveryDate.slice(0, 10) : '',
+        deliveryInstructions: pr.deliveryInstructions ?? '',
+        paymentTerms: pr.paymentTerms ?? '',
+        notes: pr.notes ?? '',
         lines: pr.lines.map((line) => ({
           prLineId: line.id,
           quantity: Number(line.quantity),
-          unitPrice: Number(line.estimatedUnitPrice ?? 0),
-          description: '',
-          notes: '',
+          unitPrice: Number(line.unitPrice ?? 0),
+          description: line.description ?? '',
+          notes: line.notes ?? '',
+          // Scenario 29 PO-14 — carry the discount breakdown over too, not
+          // just the already-computed unit price.
+          srp: line.srp != null ? Number(line.srp) : undefined,
+          discounts:
+            line.discounts && line.discounts.length > 0
+              ? line.discounts
+              : [{ type: 'percentage', value: 0 }],
+          isFreebie: line.isFreebie ?? false,
         })),
       })
     } else if (!open) {
@@ -89,12 +98,27 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
         expectedDeliveryDate: '',
         deliveryInstructions: '',
         paymentTerms: '',
-        shippingAddress: '',
         notes: '',
         lines: [],
       })
     }
   }, [open, pr, reset])
+
+  // Unit Price defaults to srp with every discount step applied
+  // sequentially — same logic as PurchaseOrderFormFields.tsx's
+  // recomputeUnitPrice, only fires off srp/discount changes so a manual
+  // override isn't immediately overwritten.
+  function recomputeUnitPrice(index: number) {
+    const line = getValues(`lines.${index}`)
+    const srp = Number(line?.srp)
+    if (!line?.srp || !line.discounts || line.discounts.length === 0) return
+    const computed = line.discounts.reduce((price, d) => {
+      const val = Number(d?.value)
+      if (!d?.type || d.value == null || isNaN(val)) return price
+      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
+    }, srp)
+    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
+  }
 
   async function handleFormSubmit(data: ConvertPrToPoFormValues) {
     if (!pr) return
@@ -221,26 +245,6 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Shipping Address */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Shipping Address
-              </label>
-              <Controller
-                name="shippingAddress"
-                control={control}
-                render={({ field }) => (
-                  <textarea
-                    {...field}
-                    value={field.value ?? ''}
-                    rows={2}
-                    placeholder="Optional shipping address…"
-                    className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-            </div>
-
             {/* Notes */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
@@ -270,128 +274,16 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
 
               <div className="space-y-3">
-                {fields.map((field, index) => {
-                  const prLine = pr.lines[index]
-                  return (
-                    <div
-                      key={field.id}
-                      className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"
-                    >
-                      {/* Item info */}
-                      <div className="mb-3 flex items-start justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-zinc-900">
-                            {prLine?.item.name ?? `Line ${index + 1}`}
-                          </p>
-                          {prLine && (
-                            <p className="text-xs text-zinc-500">
-                              SKU: {prLine.item.sku} &middot; Requested qty: {prLine.quantity}
-                              {prLine.estimatedUnitPrice
-                                ? ` · Est. price: ₱${Number(prLine.estimatedUnitPrice).toLocaleString()}`
-                                : null}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* Quantity */}
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-zinc-600">
-                            Quantity <span className="text-red-500">*</span>
-                          </label>
-                          <Controller
-                            name={`lines.${index}.quantity`}
-                            control={control}
-                            render={({ field: f }) => (
-                              <NumericInput
-                                integer
-                                value={f.value}
-                                onChange={(v) => f.onChange(v ?? 0)}
-                                onBlur={f.onBlur}
-                                placeholder="0"
-                                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.quantity ? 'border-red-400' : 'border-zinc-200'}`}
-                              />
-                            )}
-                          />
-                          {errors.lines?.[index]?.quantity && (
-                            <p className="mt-1 text-xs text-red-500">
-                              {errors.lines[index]?.quantity?.message}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Unit Price */}
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-zinc-600">
-                            Unit Price <span className="text-red-500">*</span>
-                          </label>
-                          <Controller
-                            name={`lines.${index}.unitPrice`}
-                            control={control}
-                            render={({ field: f }) => (
-                              <NumericInput
-                                value={f.value}
-                                onChange={(v) => f.onChange(v ?? 0)}
-                                onBlur={f.onBlur}
-                                placeholder="0.00"
-                                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.unitPrice ? 'border-red-400' : 'border-zinc-200'}`}
-                              />
-                            )}
-                          />
-                          {errors.lines?.[index]?.unitPrice && (
-                            <p className="mt-1 text-xs text-red-500">
-                              {errors.lines[index]?.unitPrice?.message}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Description (pricing breakdown) */}
-                        <div className="col-span-2">
-                          <label className="mb-1 block text-xs font-medium text-zinc-600">
-                            Description
-                            <span className="ml-1 font-normal text-zinc-400">
-                              (pricing breakdown)
-                            </span>
-                          </label>
-                          <Controller
-                            name={`lines.${index}.description`}
-                            control={control}
-                            render={({ field: f }) => (
-                              <input
-                                {...f}
-                                value={f.value ?? ''}
-                                type="text"
-                                placeholder='e.g. "(3,649 - 30% - 20%)"'
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                              />
-                            )}
-                          />
-                        </div>
-
-                        {/* Line Notes */}
-                        <div className="col-span-2">
-                          <label className="mb-1 block text-xs font-medium text-zinc-600">
-                            Notes
-                          </label>
-                          <Controller
-                            name={`lines.${index}.notes`}
-                            control={control}
-                            render={({ field: f }) => (
-                              <input
-                                {...f}
-                                value={f.value ?? ''}
-                                type="text"
-                                placeholder="Optional line notes"
-                                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                              />
-                            )}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                {fields.map((field, index) => (
+                  <ConvertPrToPoLineCard
+                    key={field.id}
+                    control={control}
+                    errors={errors}
+                    index={index}
+                    prLine={pr.lines[index]}
+                    recomputeUnitPrice={recomputeUnitPrice}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -416,6 +308,243 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+type LineCardProps = {
+  control: Control<ConvertPrToPoFormValues>
+  errors: FieldErrors<ConvertPrToPoFormValues>
+  index: number
+  prLine: PurchaseRequestSummary['lines'][number] | undefined
+  recomputeUnitPrice: (index: number) => void
+}
+
+// Its own component (not inlined in the parent's .map()) so the discount
+// chain's own useFieldArray can be called per line — same reason
+// PurchaseOrderFormFields.tsx splits PurchaseOrderLineCard out.
+function ConvertPrToPoLineCard({
+  control,
+  errors,
+  index,
+  prLine,
+  recomputeUnitPrice,
+}: LineCardProps) {
+  const {
+    fields: discountFields,
+    append: appendDiscount,
+    remove: removeDiscount,
+  } = useFieldArray({
+    control,
+    name: `lines.${index}.discounts` as `lines.${number}.discounts`,
+  })
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+      {/* Item info + Freebie */}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-zinc-900">
+            {prLine?.item.name ?? `Line ${index + 1}`}
+          </p>
+          {prLine && (
+            <p className="text-xs text-zinc-500">
+              SKU: {prLine.item.sku} &middot; Requested qty: {prLine.quantity}
+              {prLine.unitPrice
+                ? ` · PR price: ₱${Number(prLine.unitPrice).toLocaleString()}`
+                : null}
+            </p>
+          )}
+        </div>
+        <Controller
+          name={`lines.${index}.isFreebie`}
+          control={control}
+          render={({ field: f }) => (
+            <label className="flex shrink-0 items-center gap-2 text-xs text-zinc-600">
+              <input
+                type="checkbox"
+                checked={Boolean(f.value)}
+                onChange={(e) => f.onChange(e.target.checked)}
+              />
+              Freebie
+            </label>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {/* Quantity */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Quantity <span className="text-red-500">*</span>
+          </label>
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <NumericInput
+                integer
+                value={f.value}
+                onChange={(v) => f.onChange(v ?? 0)}
+                onBlur={f.onBlur}
+                placeholder="0"
+                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.quantity ? 'border-red-400' : 'border-zinc-200'}`}
+              />
+            )}
+          />
+          {errors.lines?.[index]?.quantity && (
+            <p className="mt-1 text-xs text-red-500">{errors.lines[index]?.quantity?.message}</p>
+          )}
+        </div>
+
+        {/* Supplier SRP */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier SRP</label>
+          <Controller
+            name={`lines.${index}.srp`}
+            control={control}
+            render={({ field: f }) => (
+              <NumericInput
+                value={f.value}
+                onChange={(v) => {
+                  f.onChange(v ?? undefined)
+                  recomputeUnitPrice(index)
+                }}
+                onBlur={f.onBlur}
+                placeholder="0.00"
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+            )}
+          />
+        </div>
+      </div>
+
+      {/* Discount chain (Scenario 29 PO-14 — carried over from the PR line) */}
+      <div className="mt-3 space-y-2">
+        <label className="block text-xs font-medium text-zinc-600">Discounts (off SRP)</label>
+        {discountFields.map((discountField, discountIndex) => (
+          <div key={discountField.id} className="flex items-center gap-2">
+            <div className="grid flex-1 grid-cols-2 gap-2">
+              <Controller
+                name={`lines.${index}.discounts.${discountIndex}.type`}
+                control={control}
+                render={({ field: f }) => (
+                  <select
+                    {...f}
+                    onChange={(e) => {
+                      f.onChange(e)
+                      recomputeUnitPrice(index)
+                    }}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="percentage">Percentage</option>
+                    <option value="amount">Flat amount</option>
+                  </select>
+                )}
+              />
+              <Controller
+                name={`lines.${index}.discounts.${discountIndex}.value`}
+                control={control}
+                render={({ field: f }) => (
+                  <NumericInput
+                    value={f.value}
+                    onChange={(v) => {
+                      f.onChange(v ?? 0)
+                      recomputeUnitPrice(index)
+                    }}
+                    onBlur={f.onBlur}
+                    placeholder="Percent or amount"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                removeDiscount(discountIndex)
+                recomputeUnitPrice(index)
+              }}
+              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+              aria-label="Remove discount"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => appendDiscount({ type: 'percentage', value: 0 })}
+          className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
+        >
+          <Plus className="h-3 w-3" />
+          Add another discount
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {/* Unit Price */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Unit Price <span className="text-red-500">*</span>
+          </label>
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <NumericInput
+                value={f.value}
+                onChange={(v) => f.onChange(v ?? 0)}
+                onBlur={f.onBlur}
+                placeholder="0.00"
+                className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${errors.lines?.[index]?.unitPrice ? 'border-red-400' : 'border-zinc-200'}`}
+              />
+            )}
+          />
+          {errors.lines?.[index]?.unitPrice && (
+            <p className="mt-1 text-xs text-red-500">{errors.lines[index]?.unitPrice?.message}</p>
+          )}
+        </div>
+
+        {/* Description (pricing breakdown) */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-600">
+            Description
+            <span className="ml-1 font-normal text-zinc-400">(pricing breakdown)</span>
+          </label>
+          <Controller
+            name={`lines.${index}.description`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="text"
+                placeholder='e.g. "(3,649 - 30% - 20%)"'
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+            )}
+          />
+        </div>
+
+        {/* Line Notes */}
+        <div className="col-span-2">
+          <label className="mb-1 block text-xs font-medium text-zinc-600">Notes</label>
+          <Controller
+            name={`lines.${index}.notes`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="text"
+                placeholder="Optional line notes"
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+            )}
+          />
+        </div>
       </div>
     </div>
   )

@@ -37,20 +37,12 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_ACCEPT: 'inventory:transfers:accept',
   TRANSFERS_REJECT: 'inventory:transfers:reject',
   TRANSFERS_DISPATCH: 'inventory:transfers:dispatch',
+  TRANSFERS_SERIAL_OVERRIDE: 'inventory:transfers:serial-override',
   TRANSFERS_RECEIVE: 'inventory:transfers:receive',
   TRANSFERS_HQ_APPROVE: 'inventory:transfers:hq-approve',
   TRANSFERS_HQ_REJECT: 'inventory:transfers:hq-reject',
   TRANSFERS_MANAGER_APPROVE: 'inventory:transfers:manager-approve',
   TRANSFERS_MANAGER_REJECT: 'inventory:transfers:manager-reject',
-
-  // ── Warehouse Requests (Scenario 27 Part 4) ───────────────────────────────
-  WAREHOUSE_REQUESTS_READ: 'inventory:warehouse-requests:read',
-  WAREHOUSE_REQUESTS_CREATE: 'inventory:warehouse-requests:create',
-  WAREHOUSE_REQUESTS_ACCEPT: 'inventory:warehouse-requests:accept',
-  WAREHOUSE_REQUESTS_REJECT: 'inventory:warehouse-requests:reject',
-  WAREHOUSE_REQUESTS_DISPATCH: 'inventory:warehouse-requests:dispatch',
-  WAREHOUSE_REQUESTS_RECEIVE: 'inventory:warehouse-requests:receive',
-  WAREHOUSE_REQUESTS_CANCEL: 'inventory:warehouse-requests:cancel',
 
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
@@ -78,10 +70,6 @@ export const INVENTORY_PERMISSIONS = {
   STOCK_COUNT_CREATE: 'inventory:stock-count:create',
   STOCK_COUNT_ADJUST: 'inventory:stock-count:adjust',
 
-  // ── Reorder ────────────────────────────────────────────────────────────────
-  REORDER_READ: 'inventory:reorder:read',
-  REORDER_MANAGE: 'inventory:reorder:manage',
-
   // ── Batch / Lot ────────────────────────────────────────────────────────────
   BATCH_READ: 'inventory:batch:read',
   BATCH_MANAGE: 'inventory:batch:manage',
@@ -89,6 +77,12 @@ export const INVENTORY_PERMISSIONS = {
   // ── Serial Numbers ─────────────────────────────────────────────────────────
   SERIAL_READ: 'inventory:serial:read',
   SERIAL_MANAGE: 'inventory:serial:manage',
+
+  // ── Manual Receiving Report (Scenario 29 RR-05) ─────────────────────────────
+  // Owner-only by default — submit, approve, reject, and read all share this
+  // one permission; self-approval is blocked server-side, not by a second
+  // permission string.
+  MANUAL_RR_CREATE: 'inventory:manual-rr:create',
 
   // ── Caravan (Scenario 08) ──────────────────────────────────────────────────
   CARAVAN_READ: 'inventory:caravan:read',
@@ -124,10 +118,6 @@ export const INVENTORY_PERMISSIONS = {
   PRICE_LISTS_DELETE: 'inventory:price-lists:delete',
   PRICE_LISTS_APPROVE: 'inventory:price-lists:approve',
   PRICE_LISTS_MANAGE_PRICE_USE_TYPES: 'inventory:price-lists:manage_price_use_types',
-
-  // ── Stock Level Boundaries (INV-33) ────────────────────────────────────────
-  STOCK_LEVELS_READ: 'inventory:stock-levels:read',
-  STOCK_LEVELS_MANAGE: 'inventory:stock-levels:manage',
 
   // ── Stock Reservations (INV-35) ────────────────────────────────────────────
   RESERVATIONS_READ: 'inventory:reservations:read',
@@ -212,6 +202,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:transfers:reject':
     'Reject an incoming transfer request on behalf of the source branch',
   'inventory:transfers:dispatch': 'Dispatch stock transfers',
+  'inventory:transfers:serial-override':
+    'Dispatch a transfer using a serial that fails the normal in-stock/source-warehouse check',
   'inventory:transfers:receive': 'Receive incoming stock transfers',
   'inventory:transfers:hq-approve': 'Approve stock transfer requests pending head-office review',
   'inventory:transfers:hq-reject': 'Reject stock transfer requests pending head-office review',
@@ -219,15 +211,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     "Approve a Stock-Controller-originated transfer request on behalf of the requester's own branch",
   'inventory:transfers:manager-reject':
     "Reject a Stock-Controller-originated transfer request on behalf of the requester's own branch",
-  'inventory:warehouse-requests:read': 'View warehouse requests (branch ↔ real warehouse)',
-  'inventory:warehouse-requests:create':
-    'Request stock from a warehouse (pull), or record a warehouse delivery to a branch (push)',
-  'inventory:warehouse-requests:accept': 'Warehouse-side: accept a pull request from a branch',
-  'inventory:warehouse-requests:reject': 'Warehouse-side: reject a pull request from a branch',
-  'inventory:warehouse-requests:dispatch': 'Warehouse-side: dispatch an accepted request',
-  'inventory:warehouse-requests:receive':
-    'Branch-side: confirm physical arrival of a warehouse request',
-  'inventory:warehouse-requests:cancel': 'Cancel a warehouse request before it has been dispatched',
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',
@@ -239,12 +222,12 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:stock-count:create': 'Initiate a stock count',
   'inventory:stock-count:adjust': 'Submit count variances as adjustments',
   'inventory:stock-adjustment:investigate': 'Move a confirmed stock adjustment into investigation',
-  'inventory:reorder:read': 'View reorder requests',
-  'inventory:reorder:manage': 'Configure reorder points and manage reorder requests',
   'inventory:batch:read': 'View batch / lot records',
   'inventory:batch:manage': 'Assign and manage batch numbers',
   'inventory:serial:read': 'View serial number records',
   'inventory:serial:manage': 'Assign and manage serial numbers',
+  'inventory:manual-rr:create':
+    'Submit or approve a manual receiving report that originates a serial with no PO/transfer/count context — owner-only by default',
   'inventory:caravan:read':
     'View caravan consignments (stock consigned to a host branch for an event)',
   'inventory:caravan:manage':
@@ -268,8 +251,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     'Approve or reject a pending price list (Sales/Finance Approver)',
   'inventory:price-lists:manage_price_use_types':
     'Create, rename, or delete price-use types (e.g. WIP, CR-BR, SSC)',
-  'inventory:stock-levels:read': 'View min / max stock level boundaries',
-  'inventory:stock-levels:manage': 'Configure min / max stock level boundaries',
   'inventory:reservations:read': 'View stock reservations',
   'inventory:reservations:create': 'Create stock reservations',
   'inventory:reservations:release': 'Release stock reservations',
