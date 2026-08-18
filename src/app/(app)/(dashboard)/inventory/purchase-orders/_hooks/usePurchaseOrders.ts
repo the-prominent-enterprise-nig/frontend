@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -19,6 +20,7 @@ import type {
 
 export function usePurchaseOrders() {
   const queryClient = useQueryClient()
+  const router = useRouter()
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
@@ -74,6 +76,10 @@ export function usePurchaseOrders() {
         })
         queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
         queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
+        // Same reasoning as the auto-convert-on-approve path in
+        // usePurchaseRequests.ts — the source PR just left the default
+        // (non-'converted') list, follow the new PO to where it landed.
+        router.replace('/inventory/purchase-orders?tab=orders')
       } else {
         showToast({
           title: 'Failed to create purchase order',

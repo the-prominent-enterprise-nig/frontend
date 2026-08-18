@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import {
   Loader2,
@@ -264,6 +265,7 @@ export function PurchaseOrderList({
    * force for a branch-scoped creator. */
   currentUserBranchId?: string | null
 }) {
+  const router = useRouter()
   const {
     items,
     pagination,
@@ -758,6 +760,11 @@ export function PurchaseOrderList({
         }}
         onCreate={async (data) => {
           await createPR(data)
+          // Creating here always drafts a Purchase Request, not a Purchase
+          // Order — this list never shows it, so without this it looks
+          // like the submission vanished. Switch to the tab that actually
+          // has it.
+          router.replace('/inventory/purchase-orders?tab=requests')
         }}
         isCreating={isCreating}
         po={editingPo}
