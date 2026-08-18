@@ -399,7 +399,6 @@ export default function TransferDetailModal({
       serialAssignments: [],
       driverName: '',
       driverPhone: '',
-      driverLicense: '',
       vehiclePlate: '',
       carrierName: '',
     },
@@ -520,7 +519,6 @@ export default function TransferDetailModal({
       serialAssignments,
       driverName: '',
       driverPhone: '',
-      driverLicense: '',
       vehiclePlate: '',
       carrierName: '',
     })
@@ -544,7 +542,6 @@ export default function TransferDetailModal({
         : undefined,
       driverName: data.driverName,
       driverPhone: data.driverPhone,
-      driverLicense: data.driverLicense,
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName,
     })
@@ -1152,23 +1149,6 @@ export default function TransferDetailModal({
                           {...field}
                           type="text"
                           placeholder="e.g. 09171234567"
-                          className={fieldClass}
-                        />
-                      )}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver License <span className="text-red-500">*</span>
-                    </label>
-                    <Controller
-                      name="driverLicense"
-                      control={dispatchForm.control}
-                      render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
-                          placeholder="License number"
                           className={fieldClass}
                         />
                       )}

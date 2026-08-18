@@ -60,7 +60,6 @@ export const DispatchTransferFormSchema = z.object({
   serialAssignments: z.array(DispatchSerialAssignmentSchema).optional(),
   driverName: z.string().min(1, "Driver's name is required").max(150),
   driverPhone: z.string().min(1, "Driver's contact number is required").max(50),
-  driverLicense: z.string().min(1, "Driver's license number is required").max(100),
   vehiclePlate: z.string().min(1, 'Vehicle plate number is required').max(50),
   carrierName: z.string().min(1, 'Carrier name is required').max(150),
 })
