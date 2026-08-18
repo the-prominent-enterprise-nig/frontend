@@ -15,8 +15,12 @@ import {
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import {
+  getAccounts,
+  getTaxRates,
+  type Account,
+  type TaxRate,
+} from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
@@ -77,7 +81,7 @@ export default function EditItemModal({
   const [confirmingClose, setConfirmingClose] = useState(false)
 
   useEffect(() => {
-    TaxRates.list(true).then((res) => {
+    getTaxRates().then((res) => {
       if (res.success && res.data) setTaxRates(res.data as TaxRate[])
     })
   }, [])
@@ -591,7 +595,7 @@ export default function EditItemModal({
                       .filter((t) => t.isActive)
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                          {t.name} ({Number(t.rate).toFixed(2)}%)
                         </option>
                       ))}
                   </select>

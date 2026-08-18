@@ -27,16 +27,15 @@ import {
   ARInvoices,
   CreditMemos,
   DebitMemos,
-  TaxRates,
   type ARInvoice,
   type ARInvoiceCustomerResult,
   type ARPayment,
-  type TaxRate,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
+import { getTaxRates, type TaxRate } from '@/src/libs/data/AccountingData'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import {
   buildCreateCreditMemoFormSchema,
@@ -307,6 +306,7 @@ export default function ARInvoicesList({
               <th className="px-3 py-2 text-right">Total</th>
               <th className="px-3 py-2 text-right">Paid</th>
               <th className="px-3 py-2 text-right">Outstanding</th>
+              <th className="px-3 py-2 text-right">Due</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
@@ -314,13 +314,13 @@ export default function ARInvoicesList({
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   No invoices.
                 </td>
               </tr>
@@ -349,6 +349,22 @@ export default function ARInvoicesList({
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {/* Scenario 29 ACC-05 — Outstanding above counts the
+                        balance regardless of maturity; Due only counts it
+                        once the invoice's own due date has passed. */}
+                    {new Date(i.dueDate) <= new Date() ? (
+                      <span
+                        className={
+                          i.totalAmount - i.amountPaid > 0 ? 'font-medium text-red-600' : undefined
+                        }
+                      >
+                        {fmtMoney(Math.max(i.totalAmount - i.amountPaid, 0))}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
@@ -1303,7 +1319,7 @@ function InvoiceFormDialog({
   // ACC-21 bridge: load tax rates so users can pick one instead of typing taxAmount manually
   const [taxRates, setTaxRates] = useState<TaxRate[]>([])
   useEffect(() => {
-    TaxRates.list(true).then((r) => setTaxRates(r.data ?? []))
+    getTaxRates().then((r) => setTaxRates(r.data ?? []))
   }, [])
 
   // Customer picker — search rather than a full-list <select>, and scoped
@@ -1331,19 +1347,19 @@ function InvoiceFormDialog({
   }, [customerSearch])
 
   // When subtotal or tax code changes, recompute tax automatically
-  const onTaxCodeChange = (code: string) => {
-    const rate = taxRates.find((r) => r.code === code)
+  const onTaxCodeChange = (id: string) => {
+    const rate = taxRates.find((r) => r.id === id)
     const subtotal = Number(form.subtotal) || 0
     const tax = rate
-      ? +(subtotal * (Number(rate.ratePercent) / 100)).toFixed(2)
+      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
       : Number(form.taxAmount) || 0
-    setForm({ ...form, taxCode: code, taxAmount: rate ? String(tax) : form.taxAmount })
+    setForm({ ...form, taxCode: id, taxAmount: rate ? String(tax) : form.taxAmount })
   }
   const onSubtotalChange = (val: string) => {
-    const rate = taxRates.find((r) => r.code === form.taxCode)
+    const rate = taxRates.find((r) => r.id === form.taxCode)
     const subtotal = Number(val) || 0
     const tax = rate
-      ? +(subtotal * (Number(rate.ratePercent) / 100)).toFixed(2)
+      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
       : Number(form.taxAmount) || 0
     setForm({ ...form, subtotal: val, taxAmount: rate ? String(tax) : form.taxAmount })
   }
@@ -1461,8 +1477,8 @@ function InvoiceFormDialog({
             >
               <option value="">— None / Manual entry —</option>
               {taxRates.map((t) => (
-                <option key={t.id} value={t.code}>
-                  {t.code} — {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                <option key={t.id} value={t.id}>
+                  {t.name} ({Number(t.rate).toFixed(2)}%)
                 </option>
               ))}
             </select>

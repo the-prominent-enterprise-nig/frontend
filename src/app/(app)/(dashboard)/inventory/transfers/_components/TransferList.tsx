@@ -93,6 +93,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const canAccept = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_ACCEPT)
   const canReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_REJECT)
   const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
+  const canOverrideSerial = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_SERIAL_OVERRIDE)
   const canReceive = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_RECEIVE)
   const canHqApprove = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_HQ_APPROVE)
   const canHqReject = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_HQ_REJECT)
@@ -503,6 +504,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canAccept={canAccept}
         canReject={canReject}
         canDispatch={canDispatch}
+        canOverrideSerial={canOverrideSerial}
         canReceive={canReceive}
         canHqApprove={canHqApprove}
         canHqReject={canHqReject}

@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
+import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields'
 
 type Props = {
@@ -20,6 +21,12 @@ type Props = {
   pr?: PurchaseRequestSummary | null
   onUpdate?: (id: string, data: CreatePoFormValues) => Promise<void>
   isSaving?: boolean
+  // Scenario 29 PO-06/PO-08 — editing an existing PO directly (draft, or
+  // approved/sent — the backend reverts those to draft and voids the prior
+  // approval). Mutually exclusive with pr/onUpdate above.
+  po?: PurchaseOrderSummary | null
+  onUpdatePo?: (id: string, data: CreatePoFormValues) => Promise<void>
+  isSavingPo?: boolean
   /** Sent as branchId attribution ("requested by this branch") — not a
    * visible form field, forced server-side (user.branchId ?? dto.branchId)
    * for a branch-scoped creator regardless of what's submitted.
@@ -27,27 +34,29 @@ type Props = {
   currentUserBranchId?: string | null
 }
 
-// Computes the form's default values for either create mode (no pr) or edit
-// mode (pr provided). On create, branchId defaults to the actor's own
-// branch (forced server-side regardless). On edit, the PR's existing
-// branchId is preserved as-is rather than silently reattributed.
+// Computes the form's default values for create mode (no pr/po), PR-edit
+// mode (pr provided), or PO-edit mode (po provided). On create, branchId
+// defaults to the actor's own branch (forced server-side regardless). On
+// edit, the existing record's branchId/fields are preserved as-is rather
+// than silently reattributed.
 function getDefaultValues(
   pr: PurchaseRequestSummary | null | undefined,
+  po: PurchaseOrderSummary | null | undefined,
   currentUserBranchId: string | null | undefined
 ): CreatePoFormValues {
-  if (pr) {
+  const source = po ?? pr
+  if (source) {
     return {
-      supplierId: pr.supplierId ?? '',
-      branchId: pr.branchId ?? undefined,
-      warehouseId: pr.warehouseId ?? '',
-      expectedDeliveryDate: pr.expectedDeliveryDate
-        ? pr.expectedDeliveryDate.slice(0, 10)
+      supplierId: source.supplierId ?? '',
+      branchId: (po ? po.branchId : pr?.branchId) ?? undefined,
+      warehouseId: source.warehouseId ?? '',
+      expectedDeliveryDate: source.expectedDeliveryDate
+        ? source.expectedDeliveryDate.slice(0, 10)
         : undefined,
-      deliveryInstructions: pr.deliveryInstructions ?? undefined,
-      paymentTerms: pr.paymentTerms ?? undefined,
-      shippingAddress: pr.shippingAddress ?? undefined,
-      notes: pr.notes ?? undefined,
-      lines: pr.lines.map((line) => ({
+      deliveryInstructions: source.deliveryInstructions ?? undefined,
+      paymentTerms: source.paymentTerms ?? undefined,
+      notes: source.notes ?? undefined,
+      lines: source.lines.map((line) => ({
         itemId: line.itemId,
         quantity: Number(line.quantity),
         unitPrice: line.unitPrice != null ? Number(line.unitPrice) : 0,
@@ -70,7 +79,6 @@ function getDefaultValues(
     expectedDeliveryDate: undefined,
     deliveryInstructions: undefined,
     paymentTerms: undefined,
-    shippingAddress: undefined,
     notes: undefined,
     lines: [
       {
@@ -95,10 +103,14 @@ export function CreatePoModal({
   pr,
   onUpdate,
   isSaving,
+  po,
+  onUpdatePo,
+  isSavingPo,
   currentUserBranchId,
 }: Props) {
-  const isEditMode = !!pr
-  const isBusy = isEditMode ? isSaving : isCreating
+  const isPrEditMode = !!pr
+  const isPoEditMode = !!po
+  const isBusy = isPoEditMode ? isSavingPo : isPrEditMode ? isSaving : isCreating
 
   const {
     register,
@@ -110,19 +122,21 @@ export function CreatePoModal({
     formState: { errors },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
-    defaultValues: getDefaultValues(pr, currentUserBranchId),
+    defaultValues: getDefaultValues(pr, po, currentUserBranchId),
   })
 
   useEffect(() => {
-    if (open && pr) {
-      reset(getDefaultValues(pr, currentUserBranchId))
+    if (open && (pr || po)) {
+      reset(getDefaultValues(pr, po, currentUserBranchId))
     } else if (!open) {
-      reset(getDefaultValues(null, currentUserBranchId))
+      reset(getDefaultValues(null, null, currentUserBranchId))
     }
-  }, [open, pr, currentUserBranchId, reset])
+  }, [open, pr, po, currentUserBranchId, reset])
 
   async function handleFormSubmit(data: CreatePoFormValues) {
-    if (pr) {
+    if (po) {
+      await onUpdatePo?.(po.id, data)
+    } else if (pr) {
       await onUpdate?.(pr.id, data)
     } else {
       await onCreate?.(data)
@@ -132,6 +146,23 @@ export function CreatePoModal({
 
   if (!open) return null
 
+  const title = isPoEditMode
+    ? 'Edit Purchase Order'
+    : isPrEditMode
+      ? 'Edit Purchase Request'
+      : 'New Purchase'
+  const submitLabel = isPoEditMode
+    ? isBusy
+      ? 'Saving…'
+      : 'Save Changes'
+    : isPrEditMode
+      ? isBusy
+        ? 'Saving…'
+        : 'Save Changes'
+      : isBusy
+        ? 'Creating…'
+        : 'Create Purchase Request'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl">
@@ -139,9 +170,7 @@ export function CreatePoModal({
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5 text-prominent-purple-600" />
-            <h2 className="text-lg font-semibold text-zinc-900">
-              {isEditMode ? 'Edit Purchase Request' : 'New Purchase'}
-            </h2>
+            <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
           </div>
           <button
             type="button"
@@ -152,6 +181,13 @@ export function CreatePoModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {isPoEditMode && (po?.status === 'approved' || po?.status === 'sent') && (
+          <div className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            This PO is already {po?.status}. Saving changes reverts it to Draft and voids the
+            existing approval — it will need to be approved again.
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit(handleFormSubmit)}
@@ -185,13 +221,7 @@ export function CreatePoModal({
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-700 disabled:opacity-60"
             >
               {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditMode
-                ? isBusy
-                  ? 'Saving…'
-                  : 'Save Changes'
-                : isBusy
-                  ? 'Creating…'
-                  : 'Create Purchase Request'}
+              {submitLabel}
             </button>
           </div>
         </form>

@@ -7,10 +7,17 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import ValuationReport from './ValuationReport'
 import TurnoverReport from './TurnoverReport'
+import AgingReport from './AgingReport'
+import ReconciliationReport from './ReconciliationReport'
 
 export default function ReportsDashboard({ session }: { session: SessionUser }) {
   const canViewValuation = hasPermission(session, INVENTORY_PERMISSIONS.REPORTS_VALUATION)
   const canViewTurnover = hasPermission(session, INVENTORY_PERMISSIONS.REPORTS_TURNOVER)
+  // Scenario 29 INV-02/INV-03 — the aging and reconciliation reports are
+  // both gated by the same permission as Turnover on the backend
+  // (@RequirePermissions('inventory:reports:turnover')), not separate ones.
+  const canViewAging = canViewTurnover
+  const canViewReconciliation = canViewTurnover
 
   const {
     tab: activeTab,
@@ -38,17 +45,49 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
     isTurnoverFetching,
     turnoverError,
     refetchTurnover,
+    agingBucketFilter,
+    setAgingBucketFilter,
+    agingData,
+    isAgingLoading,
+    isAgingFetching,
+    agingError,
+    refetchAging,
+    reconStartDate,
+    reconEndDate,
+    setReconStartDate,
+    setReconEndDate,
+    reconciliationData,
+    isReconciliationLoading,
+    isReconciliationFetching,
+    reconciliationError,
+    refetchReconciliation,
     warehouseOptions,
     categoryOptions,
   } = useInventoryReports()
 
   const hasFilters = !!warehouseFilter || !!categoryFilter || !!search
-  const isFetching = activeTab === 'valuation' ? isValuationFetching : isTurnoverFetching
-  const hasError = activeTab === 'valuation' ? valuationError : turnoverError
+  const isFetching =
+    activeTab === 'valuation'
+      ? isValuationFetching
+      : activeTab === 'turnover'
+        ? isTurnoverFetching
+        : activeTab === 'aging'
+          ? isAgingFetching
+          : isReconciliationFetching
+  const hasError =
+    activeTab === 'valuation'
+      ? valuationError
+      : activeTab === 'turnover'
+        ? turnoverError
+        : activeTab === 'aging'
+          ? agingError
+          : reconciliationError
 
   function handleRefresh() {
     if (activeTab === 'valuation') refetchValuation()
-    else refetchTurnover()
+    else if (activeTab === 'turnover') refetchTurnover()
+    else if (activeTab === 'aging') refetchAging()
+    else refetchReconciliation()
   }
 
   return (
@@ -98,76 +137,105 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
                   : 'text-zinc-600 hover:bg-zinc-100'
               }`}
             >
-              Turnover & Aging
+              Turnover
             </button>
           )}
-        </div>
-
-        {/* Shared Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <label htmlFor="report-search" className="sr-only">
-              Search item
-            </label>
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <input
-              id="report-search"
-              type="text"
-              placeholder="Search item…"
-              aria-label="Search item"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-4 text-sm outline-none focus:border-prominent-purple-500"
-            />
-          </div>
-
-          <label htmlFor="report-warehouse-filter" className="sr-only">
-            Filter by warehouse
-          </label>
-          <select
-            id="report-warehouse-filter"
-            aria-label="Filter by warehouse"
-            value={warehouseFilter ?? ''}
-            onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Branches</option>
-            {warehouseOptions.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.branch?.name ?? wh.name}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="report-category-filter" className="sr-only">
-            Filter by category
-          </label>
-          <select
-            id="report-category-filter"
-            aria-label="Filter by category"
-            value={categoryFilter ?? ''}
-            onChange={(e) => setCategoryFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Categories</option>
-            {categoryOptions.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
-
-          {hasFilters && (
+          {canViewAging && (
             <button
               type="button"
-              onClick={resetFilters}
-              className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
+              onClick={() => setActiveTab('aging')}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'aging'
+                  ? 'bg-prominent-purple-700 text-white'
+                  : 'text-zinc-600 hover:bg-zinc-100'
+              }`}
             >
-              <X className="h-4 w-4" />
-              Clear
+              Aging
+            </button>
+          )}
+          {canViewReconciliation && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('reconciliation')}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'reconciliation'
+                  ? 'bg-prominent-purple-700 text-white'
+                  : 'text-zinc-600 hover:bg-zinc-100'
+              }`}
+            >
+              Reconciliation
             </button>
           )}
         </div>
+
+        {/* Shared Filters — not applicable to Reconciliation, which has its
+            own date-range filter instead of item/warehouse/category. */}
+        {activeTab !== 'reconciliation' && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <label htmlFor="report-search" className="sr-only">
+                Search item
+              </label>
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+              <input
+                id="report-search"
+                type="text"
+                placeholder="Search item…"
+                aria-label="Search item"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-4 text-sm outline-none focus:border-prominent-purple-500"
+              />
+            </div>
+
+            <label htmlFor="report-warehouse-filter" className="sr-only">
+              Filter by warehouse
+            </label>
+            <select
+              id="report-warehouse-filter"
+              aria-label="Filter by warehouse"
+              value={warehouseFilter ?? ''}
+              onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Branches</option>
+              {warehouseOptions.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.branch?.name ?? wh.name}
+                </option>
+              ))}
+            </select>
+
+            <label htmlFor="report-category-filter" className="sr-only">
+              Filter by category
+            </label>
+            <select
+              id="report-category-filter"
+              aria-label="Filter by category"
+              value={categoryFilter ?? ''}
+              onChange={(e) => setCategoryFilter(e.target.value || undefined)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
+            >
+              <option value="">All Categories</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
+              >
+                <X className="h-4 w-4" />
+                Clear
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {hasError && (
@@ -198,6 +266,30 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             setStatusFilter={setStatusFilter}
             page={page}
             setPage={setPage}
+          />
+        )}
+
+        {activeTab === 'aging' && canViewAging && (
+          <AgingReport
+            data={agingData}
+            isLoading={isAgingLoading}
+            isFetching={isAgingFetching}
+            bucketFilter={agingBucketFilter}
+            setBucketFilter={setAgingBucketFilter}
+            page={page}
+            setPage={setPage}
+          />
+        )}
+
+        {activeTab === 'reconciliation' && canViewReconciliation && (
+          <ReconciliationReport
+            data={reconciliationData}
+            isLoading={isReconciliationLoading}
+            isFetching={isReconciliationFetching}
+            startDate={reconStartDate}
+            endDate={reconEndDate}
+            setStartDate={setReconStartDate}
+            setEndDate={setReconEndDate}
           />
         )}
       </div>

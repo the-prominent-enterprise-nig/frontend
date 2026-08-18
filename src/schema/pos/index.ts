@@ -443,6 +443,11 @@ export interface CollectionsCustomer {
   phone: string | null
   outstandingCount: number
   outstandingAmount: number
+  // Scenario 29 ACC-05 — the collector's number: only installment lines
+  // whose own due date has actually passed, unlike outstandingAmount
+  // above (which counts every open line regardless of maturity).
+  dueCount: number
+  dueAmount: number
   nextDueDate: string
 }
 

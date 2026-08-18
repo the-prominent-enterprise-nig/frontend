@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
+import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
 import type {
@@ -25,7 +26,19 @@ import type {
   Reminder,
   InstallmentAccount,
 } from '@/src/schema/crm/types'
-import type { InstallmentSchedule } from '@/src/schema/pos'
+import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
+
+// Same mapping TransactionsList.tsx uses for its own transaction rows —
+// kept local rather than imported since that file doesn't export it.
+const txTypeColor: Record<string, string> = {
+  sale: 'bg-blue-100 text-blue-700',
+  refund: 'bg-orange-100 text-orange-700',
+  exchange: 'bg-purple-100 text-purple-700',
+}
+const txStatusColor: Record<string, string> = {
+  completed: 'bg-green-100 text-green-700',
+  voided: 'bg-red-100 text-red-700',
+}
 
 type CustomerView = Customer & {
   leads: Lead[]
@@ -69,6 +82,12 @@ export default function Customer360({
   const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState<string | null>(null)
+
+  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId)
+  // — covers cash/full-payment sales too, unlike Installment Plans above.
+  const [transactionHistory, setTransactionHistory] = useState<PosTransaction[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   const upcomingPayables = useMemo(
     () => flattenUpcomingPayables(installmentSchedules),
@@ -117,6 +136,14 @@ export default function Customer360({
       if (res.success && res.data) setInstallmentAccounts(res.data.data)
       else setAccountsError(res.error ?? 'Failed to load CRM accounts')
       setAccountsLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    getCustomerTransactions(id).then((res) => {
+      if (res.success && res.data) setTransactionHistory(res.data)
+      else setHistoryError(res.error ?? 'Failed to load transaction history')
+      setHistoryLoading(false)
     })
   }, [id])
 
@@ -423,6 +450,70 @@ export default function Customer360({
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) => (
+                  <li
+                    key={tx.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-gray-800">
+                        {tx.transactionNumber}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.transactionType}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.status}
+                      </span>
+                    </div>
+                    <span className="flex items-center gap-3 text-gray-600">
+                      <span>
+                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                      <span>
+                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {transactionHistory.length >= 20 && (
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  Showing the most recent 20 transactions.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      </div>
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
