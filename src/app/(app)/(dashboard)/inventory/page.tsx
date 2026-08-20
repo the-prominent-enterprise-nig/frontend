@@ -899,6 +899,7 @@ export default function InventoryPage() {
                                   type: 'item360',
                                   itemId: alert.item.id,
                                   itemName: alert.item.name,
+                                  context: 'stock',
                                 })
                               }
                               className="block w-full text-left"

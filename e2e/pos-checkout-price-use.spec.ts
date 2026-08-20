@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, sweepE2EPriceUseTypes } from './utils'
+
+const NAME_PREFIX = 'E2E Checkout Active Type — '
 
 // TPE x NIG meeting notes (07/31/26): checkout must defer pricing to the
 // selected Price Use (WIP/CR-BR/SSC/PROMO/ZI) instead of a flat item price,
@@ -125,5 +127,44 @@ test.describe('POS Checkout — Price Use', () => {
     await expect(page.getByText('Click an item above to add it to the cart')).toBeVisible({
       timeout: 10_000,
     })
+  })
+
+  test('a price use type toggled inactive disappears from the Price Use dropdown, and reappears when reactivated (Scenario 37)', async ({
+    page,
+    request,
+  }) => {
+    await sweepE2EPriceUseTypes(request, NAME_PREFIX)
+    const name = `${NAME_PREFIX}${Date.now()}`
+    const created = await request.post('/api/inventory/price-use-types', { data: { name } })
+    expect(created.ok()).toBeTruthy()
+    const typeId = (await created.json()).id as string
+
+    await ensureManilaSession(page)
+    const priceUseSelect = page.getByLabel('Price Use')
+    await expect(priceUseSelect.locator('option', { hasText: name })).toHaveCount(1, {
+      timeout: 10_000,
+    })
+
+    const toggledOff = await request.patch(`/api/inventory/price-use-types/${typeId}`, {
+      data: { isActive: false },
+    })
+    expect(toggledOff.ok()).toBeTruthy()
+
+    await gotoReady(page, '/pos/checkout')
+    await expect(priceUseSelect.locator('option', { hasText: name })).toHaveCount(0, {
+      timeout: 10_000,
+    })
+
+    const toggledOn = await request.patch(`/api/inventory/price-use-types/${typeId}`, {
+      data: { isActive: true },
+    })
+    expect(toggledOn.ok()).toBeTruthy()
+
+    await gotoReady(page, '/pos/checkout')
+    await expect(priceUseSelect.locator('option', { hasText: name })).toHaveCount(1, {
+      timeout: 10_000,
+    })
+
+    await sweepE2EPriceUseTypes(request, NAME_PREFIX)
   })
 })

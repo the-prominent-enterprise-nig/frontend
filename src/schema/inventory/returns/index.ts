@@ -9,7 +9,6 @@ export const CreateReturnFormSchema = z.object({
   condition: ReturnConditionSchema,
   originalSaleId: z.string().optional(),
   notes: z.string().max(1000).optional(),
-  variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
   serialNumberId: z.string().optional(),

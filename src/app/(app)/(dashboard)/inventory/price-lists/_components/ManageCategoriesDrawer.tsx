@@ -57,6 +57,10 @@ export default function ManageCategoriesDrawer({ isOpen, onClose, session }: Pro
     setDeletingType(null)
   }
 
+  async function handleToggleActive(type: PriceUseType) {
+    await updatePriceUseType({ id: type.id, data: { isActive: !type.isActive } })
+  }
+
   return (
     <>
       <Drawer isOpen={isOpen} onClose={onClose} title="Price Use Types" width="md">
@@ -119,6 +123,9 @@ export default function ManageCategoriesDrawer({ isOpen, onClose, session }: Pro
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Description
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Status
+                    </th>
                     {canManage && (
                       <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                         Actions
@@ -128,9 +135,39 @@ export default function ManageCategoriesDrawer({ isOpen, onClose, session }: Pro
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {priceUseTypes.map((type) => (
-                    <tr key={type.id} className="hover:bg-zinc-50">
+                    <tr
+                      key={type.id}
+                      className={`hover:bg-zinc-50 ${type.isActive ? '' : 'opacity-60'}`}
+                    >
                       <td className="px-4 py-3 font-medium text-zinc-900">{type.name}</td>
                       <td className="px-4 py-3 text-zinc-600">{type.description || '—'}</td>
+                      <td className="px-4 py-3">
+                        {canManage ? (
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={type.isActive}
+                            title={
+                              type.isActive
+                                ? 'Active — visible in POS checkout'
+                                : 'Inactive — hidden from POS checkout'
+                            }
+                            onClick={() => handleToggleActive(type)}
+                            disabled={isUpdating}
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${type.isActive ? 'bg-prominent-orange-500' : 'bg-gray-200'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${type.isActive ? 'translate-x-4' : 'translate-x-0'}`}
+                            />
+                          </button>
+                        ) : (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${type.isActive ? 'bg-green-50 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}
+                          >
+                            {type.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        )}
+                      </td>
                       {canManage && (
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">

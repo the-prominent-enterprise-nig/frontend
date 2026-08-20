@@ -20,6 +20,8 @@ import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 
 type Props = {
   isOpen: boolean
@@ -62,6 +64,9 @@ function TransferLineRow({
   quantityError,
 }: LineRowProps) {
   const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+  const fromWarehouseId = useWatch({ control, name: 'fromWarehouseId' })
+  const quantityWatched = useWatch({ control, name: `lines.${index}.quantity` })
+  const quantityValue = Number(quantityWatched) || 0
 
   // ItemSearchCombobox searches the catalog server-side rather than from a
   // fixed pre-fetched list, so the selected item's own isSerialTracked flag
@@ -74,18 +79,57 @@ function TransferLineRow({
   })
   const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
 
+  // Availability at the chosen source — informational only, never blocks
+  // submit. The source's own accept/dispatch step is the real check, since
+  // actual stock can shift between a request and its dispatch (the same
+  // reasoning the codebase already uses for picking serials at dispatch
+  // time rather than request time).
+  const serialAvailabilityQuery = useQuery({
+    queryKey: ['inventory-serials-in-stock-count', fromWarehouseId, selectedItemId],
+    queryFn: () =>
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId: selectedItemId,
+        status: 'in_stock',
+        limit: 1,
+      }),
+    enabled: itemDetailQuery.isSuccess && isSerialTracked && !!fromWarehouseId && !!selectedItemId,
+    staleTime: 30 * 1000,
+  })
+  const crossBranchStockQuery = useQuery({
+    queryKey: ['inventory-cross-branch-stock', selectedItemId],
+    queryFn: () => getCrossBranchStock(selectedItemId),
+    enabled: itemDetailQuery.isSuccess && !isSerialTracked && !!selectedItemId,
+    staleTime: 30 * 1000,
+  })
+  const available = isSerialTracked
+    ? serialAvailabilityQuery.data?.data?.total
+    : crossBranchStockQuery.isSuccess
+      ? (crossBranchStockQuery.data?.data?.find((b) => b.warehouse.id === fromWarehouseId)
+          ?.availableQty ?? 0)
+      : undefined
+  const showAvailability = !!fromWarehouseId && !!selectedItemId && available !== undefined
+  const exceedsAvailable = showAvailability && quantityValue > (available ?? 0)
+
   // The requester never picks a specific serial — they can't know what's
   // physically on the shelf at the other branch/warehouse. The specific unit
   // is chosen later by whoever's dispatching (see TransferDetailModal's
-  // dispatch form). All this side needs is "1 unit" per line, matching the
-  // backend's own per-line invariant for a serial-tracked line.
+  // dispatch form). The requester can still say how many units they want;
+  // on submit, a serial-tracked line's quantity gets silently split into
+  // that many separate 1-unit lines (see handleFormSubmit below), matching
+  // the backend's per-line invariant without the requester having to click
+  // "Add Item" once per unit themselves.
   const quantityController = useController({ control, name: `lines.${index}.quantity` })
+
+  // Form-only field carrying whether this line's item is serial-tracked,
+  // so handleFormSubmit knows which lines to split without re-deriving it.
+  const isTrackedController = useController({
+    control,
+    name: `lines.${index}.isSerialTracked`,
+  })
   useEffect(() => {
-    if (isSerialTracked && quantityController.field.value !== 1) {
-      quantityController.field.onChange(1)
-    }
-    // Only re-run when the tracked-ness flips — not on every quantity edit,
-    // which would fight a non-serial-tracked line's own quantity input.
+    isTrackedController.field.onChange(isSerialTracked)
+    // Only re-run when the tracked-ness itself changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSerialTracked])
 
@@ -104,31 +148,17 @@ function TransferLineRow({
         </div>
 
         <div className="w-28 shrink-0">
-          {isSerialTracked ? (
-            <input
-              value={1}
-              disabled
-              readOnly
-              className={`${fieldClass} bg-zinc-50 text-zinc-500`}
-            />
-          ) : (
-            <input
-              value={quantityController.field.value}
-              name={quantityController.field.name}
-              onBlur={quantityController.field.onBlur}
-              ref={quantityController.field.ref}
-              type="number"
-              min="1"
-              step="1"
-              placeholder="Qty"
-              className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-              onChange={(e) =>
-                quantityController.field.onChange(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-            />
-          )}
+          <input
+            {...quantityController.field}
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Qty"
+            className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+            onChange={(e) =>
+              quantityController.field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+            }
+          />
           {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
         </div>
 
@@ -144,8 +174,18 @@ function TransferLineRow({
 
       {isSerialTracked && (
         <p className="mt-2 pl-0.5 text-xs text-zinc-400">
-          Serial-tracked — 1 unit per line. The source branch/warehouse picks the specific serial
+          Serial-tracked — the source branch/warehouse will assign a specific serial to each unit
           when they dispatch it.
+        </p>
+      )}
+
+      {showAvailability && (
+        <p
+          className={`mt-1 pl-0.5 text-xs ${exceedsAvailable ? 'font-medium text-amber-600' : 'text-zinc-400'}`}
+        >
+          {exceedsAvailable
+            ? `Only ${available} available at the source (requesting ${quantityValue}).`
+            : `Available at the source: ${available}`}
         </p>
       )}
     </div>
@@ -243,8 +283,23 @@ export default function CreateTransferModal({
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateTransferFormValues) {
+    // A serial-tracked line's quantity is a requester-facing convenience —
+    // the backend still requires exactly 1 unit per serial-tracked line
+    // (the specific serial is picked later, at dispatch). Split any such
+    // line with quantity > 1 into that many separate 1-unit lines here,
+    // building plain {itemId, quantity} objects so the form-only
+    // isSerialTracked field never reaches the API.
+    const expandedLines = data.lines.flatMap((line) => {
+      const qty = Math.max(1, Math.floor(Number(line.quantity) || 1))
+      if (line.isSerialTracked && qty > 1) {
+        return Array.from({ length: qty }, () => ({ itemId: line.itemId, quantity: 1 }))
+      }
+      return [{ itemId: line.itemId, quantity: line.quantity }]
+    })
+
     const result = await onSubmit({
       ...data,
+      lines: expandedLines,
       // Fields are defaulted to '' (not undefined) so their inputs stay
       // controlled from mount — but the backend DTO's @IsOptional() only
       // skips validation for undefined, not '', so an empty expectedArrival

@@ -306,6 +306,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                                         type: 'item360',
                                         itemId: balance.item!.id,
                                         itemName: balance.item?.name,
+                                        context: 'stock',
                                       })
                                     }
                                     className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-prominent-purple-700"

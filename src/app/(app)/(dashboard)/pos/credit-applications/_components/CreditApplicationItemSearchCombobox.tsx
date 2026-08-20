@@ -4,7 +4,6 @@ import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 
 export type CreditApplicationItemMeta = {
-  hasVariants: boolean
   sellingPrice: number | null
   modelNumber: string | null
 }
@@ -12,9 +11,9 @@ export type CreditApplicationItemMeta = {
 type Props = {
   value: string
   onChange: (id: string) => void
-  /** Fires with the picked item's variant/price info — lets the parent form
-   * decide whether to show a variant selector and preview an amount. Not
-   * fired for a value arriving via `initialLabel` (edit-mode prefill). */
+  /** Fires with the picked item's price info — lets the parent form preview
+   * an amount. Not fired for a value arriving via `initialLabel` (edit-mode
+   * prefill). */
   onSelectItem?: (meta: CreditApplicationItemMeta) => void
   error?: string
   initialLabel?: string
@@ -50,7 +49,6 @@ export function CreditApplicationItemSearchCombobox({
             primary: item.name,
             secondary: item.modelNumber ?? item.sku,
             meta: {
-              hasVariants: item.hasVariants ?? false,
               sellingPrice: item.sellingPrice ?? null,
               modelNumber: item.modelNumber ?? null,
             } satisfies CreditApplicationItemMeta,

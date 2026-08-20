@@ -1,51 +1,12 @@
 'use client'
 
-import { Fragment, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  RefreshCw,
-  Search,
-  AlertTriangle,
-  Package,
-  X,
-  Filter,
-  ChevronDown,
-  ChevronRight,
-} from 'lucide-react'
+import { RefreshCw, Search, AlertTriangle, Package, X, Filter } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
-import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { useUIShell } from '@/src/stores/ui-shell.store'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
-function SerialsPanel({ itemId, warehouseId }: { itemId?: string; warehouseId?: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['inventory-stock-balance-serials', itemId, warehouseId],
-    queryFn: () => getSerialNumbers({ itemId, warehouseId, status: 'in_stock', limit: 200 }),
-    enabled: !!itemId && !!warehouseId,
-    staleTime: 30 * 1000,
-  })
-
-  const serials = data?.data?.data ?? []
-
-  if (isLoading) return <p className="text-xs text-zinc-400">Loading serial numbers…</p>
-  if (serials.length === 0)
-    return (
-      <p className="text-xs text-zinc-400">No individual serial numbers on file for this item.</p>
-    )
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {serials.map((s) => (
-        <span
-          key={s.id}
-          className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 font-mono text-xs text-zinc-700"
-        >
-          {s.serialNumber}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 export default function StockBalanceList({ session: _session }: { session: SessionUser }) {
+  const { pushPanel } = useUIShell()
   const {
     balances,
     pagination,
@@ -66,16 +27,6 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
     warehouseOptions,
     refetch,
   } = useStockBalance()
-
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-  function toggleExpanded(id: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
 
   const hasFilters = !!warehouseFilter || !!search || belowReorder
 
@@ -224,9 +175,6 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Status
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Serials
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -234,83 +182,69 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
                     const isBelowReorder =
                       bal.reorderPoint != null && bal.availableQty < bal.reorderPoint
                     const isOutOfStock = bal.availableQty <= 0
-                    const isExpanded = expandedIds.has(bal.id)
 
                     return (
-                      <Fragment key={bal.id}>
-                        <tr className="hover:bg-zinc-50">
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-zinc-800">{bal.item?.name ?? '—'}</p>
-                            <p className="mt-0.5 text-xs text-zinc-400 font-mono">
-                              {bal.item?.sku}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3 hidden md:table-cell">
-                            <span className="text-zinc-600">{bal.warehouse?.name ?? '—'}</span>
-                            {bal.warehouse?.code && (
-                              <span className="ml-1.5 text-xs text-zinc-400">
-                                ({bal.warehouse.code})
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-zinc-700">
-                            {bal.onHandQty.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right text-zinc-500 hidden sm:table-cell">
-                            {bal.reservedQty.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span
-                              className={`font-semibold ${
-                                isOutOfStock
-                                  ? 'text-red-600'
-                                  : isBelowReorder
-                                    ? 'text-orange-600'
-                                    : 'text-green-700'
-                              }`}
-                            >
-                              {bal.availableQty.toLocaleString()}
+                      <tr
+                        key={bal.id}
+                        className="cursor-pointer hover:bg-zinc-50"
+                        onClick={() =>
+                          bal.item?.id &&
+                          pushPanel({
+                            type: 'item360',
+                            itemId: bal.item.id,
+                            itemName: bal.item.name,
+                            context: 'stock',
+                          })
+                        }
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-zinc-800">{bal.item?.name ?? '—'}</p>
+                          <p className="mt-0.5 text-xs text-zinc-400 font-mono">{bal.item?.sku}</p>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <span className="text-zinc-600">{bal.warehouse?.name ?? '—'}</span>
+                          {bal.warehouse?.code && (
+                            <span className="ml-1.5 text-xs text-zinc-400">
+                              ({bal.warehouse.code})
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-center hidden lg:table-cell">
-                            {isOutOfStock ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                                Out of Stock
-                              </span>
-                            ) : isBelowReorder ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">
-                                <AlertTriangle className="h-3 w-3" />
-                                Low Stock
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                                In Stock
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => toggleExpanded(bal.id)}
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              ) : (
-                                <ChevronRight className="h-3.5 w-3.5" />
-                              )}
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={7} className="bg-zinc-50 px-4 py-3">
-                              <SerialsPanel itemId={bal.item?.id} warehouseId={bal.warehouse?.id} />
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-zinc-700">
+                          {bal.onHandQty.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-zinc-500 hidden sm:table-cell">
+                          {bal.reservedQty.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span
+                            className={`font-semibold ${
+                              isOutOfStock
+                                ? 'text-red-600'
+                                : isBelowReorder
+                                  ? 'text-orange-600'
+                                  : 'text-green-700'
+                            }`}
+                          >
+                            {bal.availableQty.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center hidden lg:table-cell">
+                          {isOutOfStock ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                              Out of Stock
+                            </span>
+                          ) : isBelowReorder ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">
+                              <AlertTriangle className="h-3 w-3" />
+                              Low Stock
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                              In Stock
+                            </span>
+                          )}
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>

@@ -318,7 +318,6 @@ function BillForm({
     description: initial?.description ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -486,7 +485,7 @@ function BillForm({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
                 required
@@ -503,13 +502,6 @@ function BillForm({
                 step="0.01"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>

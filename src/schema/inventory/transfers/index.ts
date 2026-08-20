@@ -16,10 +16,20 @@ export const TransferStatusSchema = z.enum([
 // only know they need one (or more, one line each) of a serial-tracked item.
 // The physical serial is chosen later by whoever's dispatching, at dispatch
 // time (see DispatchTransferFormSchema's serialAssignments below).
-export const CreateTransferLineSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-})
+export const CreateTransferLineSchema = z
+  .object({
+    itemId: z.string().min(1, 'Item is required'),
+    quantity: z.number().positive('Quantity must be greater than 0'),
+    // Form-only — never sent to the server. Lets the create form know at
+    // submit time which lines to split into N quantity-1 lines (the backend
+    // still enforces exactly 1 unit per serial-tracked line; see
+    // CreateTransferModal's handleFormSubmit).
+    isSerialTracked: z.boolean().optional(),
+  })
+  .refine((line) => !line.isSerialTracked || Number.isInteger(line.quantity), {
+    message: 'Serial-tracked items must be a whole number of units',
+    path: ['quantity'],
+  })
 
 export const CreateTransferFormSchema = z
   .object({
@@ -47,6 +57,11 @@ export const DispatchSerialAssignmentSchema = z.object({
   itemId: z.string().optional(),
   itemLabel: z.string().optional(),
   serialNumberId: z.string().min(1, 'Select a serial number'),
+  // Form-only — never sent to the server. The dispatch form groups every
+  // serial-tracked slot for the same item under one search box; a picked
+  // serial's own display string is captured here purely so it can render as
+  // a pill without a second lookup (see TransferDetailModal's ItemSerialGroup).
+  serialLabel: z.string().optional(),
   // Scenario 29 SN-01 — supervisor override: dispatch this serial even
   // though it fails the normal in-stock/source-warehouse check. Requires
   // inventory:transfers:serial-override and overrideReason server-side.

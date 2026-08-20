@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Trash2, ChevronDown, Layers, Palette } from 'lucide-react'
+import { Pencil, Trash2, ChevronDown, Layers } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -70,7 +70,6 @@ type Props = {
   onDelete: (item: ItemSummary) => void
   onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
   onViewBundle?: (item: ItemSummary) => void
-  onViewVariants?: (item: ItemSummary) => void
   // Scenario 16 — Item Master Governance
   canSubmitReview: boolean
   canConfirmAccounting: boolean
@@ -164,7 +163,6 @@ export default function ItemMasterTable({
   onDelete,
   onLifecycleChange,
   onViewBundle,
-  onViewVariants,
   canSubmitReview,
   canConfirmAccounting,
   canApproveItem,
@@ -180,7 +178,6 @@ export default function ItemMasterTable({
     canUpdate ||
     canDelete ||
     !!onViewBundle ||
-    !!onViewVariants ||
     canSubmitReview ||
     canConfirmAccounting ||
     canApproveItem
@@ -243,7 +240,14 @@ export default function ItemMasterTable({
               <tr
                 key={item.id}
                 className="cursor-pointer hover:bg-zinc-50"
-                onClick={() => pushPanel({ type: 'item360', itemId: item.id, itemName: item.name })}
+                onClick={() =>
+                  pushPanel({
+                    type: 'item360',
+                    itemId: item.id,
+                    itemName: item.name,
+                    context: 'catalog',
+                  })
+                }
               >
                 <td className="px-4 py-3">
                   <div className="flex flex-col gap-1">
@@ -252,11 +256,6 @@ export default function ItemMasterTable({
                       {item.isBundle === true && (
                         <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
                           Bundle
-                        </span>
-                      )}
-                      {item.hasVariants === true && (
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
-                          Variants
                         </span>
                       )}
                       {item.isService === true && (
@@ -352,15 +351,6 @@ export default function ItemMasterTable({
                                   label: 'Components',
                                   icon: Layers,
                                   onClick: () => onViewBundle(item),
-                                },
-                              ]
-                            : []),
-                          ...(!item.isBundle && onViewVariants
-                            ? [
-                                {
-                                  label: 'Variants',
-                                  icon: Palette,
-                                  onClick: () => onViewVariants(item),
                                 },
                               ]
                             : []),

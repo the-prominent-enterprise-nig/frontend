@@ -47,11 +47,10 @@ export type CreateCountFormValues = z.infer<typeof CreateCountFormSchema>
 
 export const CountLineSubmitSchema = z.object({
   itemId: z.string(),
-  variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
   // Scenario 19 Part 5 — present only for a serial-level line; matches by
-  // serial instead of item/variant/batch/location.
+  // serial instead of item/batch/location.
   serialNumberId: z.string().optional(),
   countedQty: z.number().min(0, 'Counted quantity cannot be negative'),
 })
@@ -68,8 +67,6 @@ export const CountLineSnapshotSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
-  variantId: z.string().optional().nullable(),
-  variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
   batchId: z.string().optional().nullable(),
   batch: z.object({ id: z.string(), batchNumber: z.string() }).optional().nullable(),
   locationId: z.string().optional().nullable(),
@@ -98,7 +95,6 @@ export const CountLinesResponseSchema = z.array(CountLineSnapshotSchema)
 // submitting a countedQty for an unlisted item at submit() time.
 export const AddCountLineFormSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  variantId: z.string().optional(),
   batchId: z.string().optional(),
   locationId: z.string().optional(),
   serialNumberId: z.string().optional(),
@@ -142,7 +138,6 @@ export const CreateAdjustmentFormSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1),
-        variantId: z.string().optional(),
         batchId: z.string().optional(),
         locationId: z.string().optional(),
         serialNumberId: z.string().optional(),

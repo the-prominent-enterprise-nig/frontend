@@ -216,6 +216,12 @@ export const Reports = {
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
     api.get<any>(`/reports/aging/${type}`, asOf ? { asOf } : undefined),
+  // Scenario 36 Gap 2 — receipts already posted to the GL but not yet
+  // matched to a supplier bill/invoice.
+  grni: () => api.get<any>('/reports/grni'),
+  // Scenario 36 Gap 11 — every receiving report, matched or not (unlike
+  // GRNI above) — Accounting had no way to browse these at all before this.
+  receivingReports: () => api.get<any>('/reports/receiving-reports'),
   customerStatement: (id: string) => api.get<any>(`/reports/customer-statement/${id}`),
   supplierStatement: (id: string) => api.get<any>(`/reports/supplier-statement/${id}`),
   biSummary: () => api.get<any>('/reports/bi-summary'),

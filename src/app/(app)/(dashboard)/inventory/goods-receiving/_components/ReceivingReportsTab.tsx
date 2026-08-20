@@ -13,71 +13,10 @@ import {
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { getReceivingDocument } from '../_actions/get-receiving-document'
-import {
-  printInventoryDocument,
-  type PrintDocumentEnvelope,
-} from '@/src/libs/print/printInventoryDocument'
-
-function receiptPoCode(lines: Array<Record<string, unknown>>): string | null {
-  for (const l of lines) {
-    const pol = l.purchaseOrderLine as Record<string, unknown> | undefined
-    const po = pol?.purchaseOrder as Record<string, unknown> | undefined
-    if (po?.code) return po.code as string
-  }
-  return null
-}
-
-function renderGoodsReceiptBody(doc: PrintDocumentEnvelope): string {
-  const d = doc.document as Record<string, unknown>
-  const lines = (d.lines as Array<Record<string, unknown>>) ?? []
-  const supplier = d.supplier as Record<string, unknown> | undefined
-  const poCode = receiptPoCode(lines)
-
-  const detailsHtml = `<h2>Receiving Details</h2><div class="meta">
-      <div><p class="label">Supplier</p><p>${supplier?.name ?? '—'}</p></div>
-      ${poCode ? `<div><p class="label">PO Reference</p><p>${poCode}</p></div>` : d.purchaseOrderNumber ? `<div><p class="label">PO No.</p><p>${d.purchaseOrderNumber}</p></div>` : ''}
-      ${d.poDate ? `<div><p class="label">PO Date</p><p>${new Date(d.poDate as string).toLocaleDateString('en-PH')}</p></div>` : ''}
-      ${d.deliveryReceiptNumber ? `<div><p class="label">Delivery Receipt No.</p><p>${d.deliveryReceiptNumber}</p></div>` : ''}
-      ${d.supplierInvoiceNumber ? `<div><p class="label">Supplier Invoice No.</p><p>${d.supplierInvoiceNumber}</p></div>` : ''}
-      ${d.withholding === 'pct_1' ? `<div><p class="label">Withholding</p><p>1% (₱${Number(d.withheldAmount ?? 0).toFixed(2)})</p></div>` : ''}
-    </div>`
-
-  const rows = lines
-    .map((l) => {
-      const item = l.item as Record<string, unknown> | undefined
-      const discrepancy = l.discrepancy as Record<string, unknown> | undefined
-      const itemLabel = item?.sku ? `${item.name ?? '—'} (${item.sku})` : (item?.name ?? '—')
-      const serials = (l.serialNumbers as string[] | undefined) ?? []
-      return `<tr>
-        <td>${itemLabel}</td>
-        <td style="text-align:right">${discrepancy?.qtyOrdered ?? '—'}</td>
-        <td style="text-align:right">${l.quantityReceived}</td>
-        <td>${l.batchNumber ?? '—'}</td>
-        <td>${serials.length > 0 ? serials.join(', ') : '—'}</td>
-        <td>${l.qualityHold ? 'QC Hold' : 'OK'}</td>
-        <td>${l.isFreebie ? 'Freebie' : '—'}</td>
-      </tr>`
-    })
-    .join('')
-
-  return `${detailsHtml}
-    <h2>Items</h2>
-    <table>
-      <thead><tr>
-        <th>Item</th>
-        <th style="text-align:right">Qty Ordered</th>
-        <th style="text-align:right">Qty Received</th>
-        <th>Batch</th>
-        <th>Serial #s</th>
-        <th>Condition</th>
-        <th>Freebie</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`
-}
+import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 
 function printDocument(data: unknown) {
-  printInventoryDocument(data, 'Receiving Report', renderGoodsReceiptBody)
+  printReceivingReportDocument(data)
 }
 
 // The real linked PO's code (when this receipt came from Receive Against
@@ -190,6 +129,12 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
                 <span className="font-medium text-amber-600">
                   1% (₱{(report.withheldAmount ?? 0).toFixed(2)})
                 </span>
+              </span>
+            )}
+            {report.vatAmount != null && (
+              <span>
+                Input VAT:{' '}
+                <span className="font-medium text-zinc-700">₱{report.vatAmount.toFixed(2)}</span>
               </span>
             )}
             <span>
