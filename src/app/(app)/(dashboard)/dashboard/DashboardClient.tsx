@@ -5,6 +5,7 @@ import { useRef } from 'react'
 import { RotateCcw, X, Pencil, Loader2 } from 'lucide-react'
 import { useDashboardLayout } from '@/src/hooks/useDashboardLayout'
 import DashboardWidgetSelector from '@/src/components/dashboard/DashboardWidgetSelector'
+import { DashboardBranchSwitcher } from '@/src/components/dashboard/DashboardBranchSwitcher'
 import {
   widgetsByRole,
   fitLayoutToContent,
@@ -68,7 +69,7 @@ export default function DashboardClient({ userName, roles, primaryRole }: Dashbo
     <div className="min-h-full bg-zinc-50 px-4 py-5 sm:px-6">
       <div className="mx-auto max-w-350 space-y-4">
         {/* Top bar: greeting + edit controls */}
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-zinc-900">Welcome back, {userName}</h1>
             <p className="text-sm text-zinc-500">
@@ -81,7 +82,8 @@ export default function DashboardClient({ userName, roles, primaryRole }: Dashbo
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <DashboardBranchSwitcher />
             {layout.isEditing ? (
               <>
                 <button

@@ -463,6 +463,11 @@ export default function CheckoutPage() {
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  // Down payment is a flat 10%-of-sale-amount floor, never a function of the
+  // chosen term — shown by default as a fixed stat so it doesn't read as an
+  // editable box that mysteriously never changes. Keyed by line.lineId (the
+  // same key the displayGroups card uses) so each item's reveal is independent.
+  const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
   // not-yet-used CreditApplication for the selected customer. Corrected
@@ -930,9 +935,15 @@ export default function CheckoutPage() {
           serialMatchedItemIds.has(item.id)
       )
     }
-    // Priced items first — unpriced parts (needing a manager override) sort
-    // to the bottom instead of interrupting the browsable, sellable catalog.
-    return [...filtered].sort((a, b) => (a.price > 0 ? 0 : 1) - (b.price > 0 ? 0 : 1))
+    // In-stock items first, out-of-stock after — the browsable catalog should
+    // lead with what's actually sellable right now. Within each stock group,
+    // priced items still sort before unpriced parts (needing a manager
+    // override) so they don't interrupt the browsable, sellable catalog.
+    return [...filtered].sort((a, b) => {
+      const stockDelta = ((a.stockQty ?? 0) > 0 ? 0 : 1) - ((b.stockQty ?? 0) > 0 ? 0 : 1)
+      if (stockDelta !== 0) return stockDelta
+      return (a.price > 0 ? 0 : 1) - (b.price > 0 ? 0 : 1)
+    })
   }, [catalogItems, searchQuery, serialSearchResults])
 
   const rawSubtotal = cart.reduce((s, l) => s + lineTotal(l), 0)
@@ -1050,6 +1061,18 @@ export default function CheckoutPage() {
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
 
+  // The Payment section used to start on an empty "+ Add payment method"
+  // placeholder for every sale, reading as a missing/broken step rather than
+  // an optional one. Pre-open one payment row the moment there's something
+  // to collect, same defaulting addPaymentRow already does on a manual
+  // click — reserve mode's deposit stays untouched since it's genuinely
+  // optional there.
+  useEffect(() => {
+    if (saleMode !== 'sale' || tenderTarget <= 0 || payments.length > 0) return
+    addPaymentRow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, tenderTarget, payments.length])
+
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
   useEffect(() => {
@@ -1101,22 +1124,31 @@ export default function CheckoutPage() {
     }
     setCreditApplicationsLoading(true)
     getCreditApplications({
-      status: 'approved',
+      checkoutEligible: true, // Scenario 29 POS-02 — approved or partially_approved
       applicantCustomerId: selectedCustomer.id,
       unconsumed: true,
       limit: 50,
     })
       .then((res) => {
         setApprovedCreditApplications(
-          (res.data?.data ?? []).map((a) => ({
-            id: a.id,
-            applicationNumber: a.applicationNumber,
-            requestedAmount: a.requestedAmount,
-            items: (a.items ?? []).map((i) => ({
-              itemName: i.item?.name ?? '—',
-              variantLabel: i.variant?.variantSku ?? null,
-            })),
-          }))
+          (res.data?.data ?? [])
+            .map((a) => {
+              // Only the approved items are ever usable — a
+              // partially_approved application's declined items are never
+              // includable, so neither the displayed scope nor the total
+              // should count them.
+              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                requestedAmount: approvedOnly.reduce((sum, i) => sum + i.requestedAmount, 0),
+                items: approvedOnly.map((i) => ({
+                  itemName: i.item?.name ?? '—',
+                  variantLabel: i.variant?.variantSku ?? null,
+                })),
+              }
+            })
+            .filter((a) => a.items.length > 0)
         )
       })
       .finally(() => setCreditApplicationsLoading(false))
@@ -1406,6 +1438,10 @@ export default function CheckoutPage() {
   function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
     setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, downPaymentInput } : l)))
+  }
+
+  function toggleDownPaymentEdit(lineId: string) {
+    setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
   }
 
   function setQty(itemId: string, qty: number) {
@@ -2747,7 +2783,7 @@ export default function CheckoutPage() {
 
         {/* ── Right: Customer + Summary + Payment ─────────────────────────────── */}
         <div
-          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-96 lg:w-[420px] md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
+          className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-110 lg:w-120 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
@@ -2771,7 +2807,7 @@ export default function CheckoutPage() {
                           <p className="text-xs text-gray-700">{selectedCustomer.phone}</p>
                         )}
                         {loyaltyAccount && (
-                          <p className="text-[10px] font-medium text-purple-500">
+                          <p className="text-xs font-medium text-purple-500">
                             {loyaltyAccount.currentPoints} pts
                           </p>
                         )}
@@ -2782,7 +2818,7 @@ export default function CheckoutPage() {
                     {customerHistory.length > 0 && (
                       <button
                         onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-[10px] font-medium text-purple-400 hover:text-purple-700"
+                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
                       >
                         {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                         {customerHistory.length} past
@@ -2856,7 +2892,7 @@ export default function CheckoutPage() {
                           <User size={11} className="shrink-0 text-gray-700" />
                           <div>
                             <p className="font-medium text-gray-900">{customerDisplayName(c)}</p>
-                            {c.phone && <p className="text-[10px] text-gray-700">{c.phone}</p>}
+                            {c.phone && <p className="text-xs text-gray-700">{c.phone}</p>}
                           </div>
                         </button>
                       ))
@@ -2942,9 +2978,7 @@ export default function CheckoutPage() {
                             <User size={11} className="shrink-0 text-gray-700" />
                             <div>
                               <p className="font-medium text-gray-900">{a.name}</p>
-                              <p className="text-[10px] text-gray-700">
-                                {a.phone || a.email || ''}
-                              </p>
+                              <p className="text-xs text-gray-700">{a.phone || a.email || ''}</p>
                             </div>
                           </button>
                         ))
@@ -3146,7 +3180,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Sale
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   Cash / charge / installment per item
                 </span>
               </button>
@@ -3159,7 +3193,7 @@ export default function CheckoutPage() {
                 }`}
               >
                 Reserve
-                <span className="mt-0.5 block text-[10px] font-normal opacity-70">
+                <span className="mt-0.5 block text-xs font-normal opacity-70">
                   No serial yet, optional deposit
                 </span>
               </button>
@@ -3185,7 +3219,7 @@ export default function CheckoutPage() {
 
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                   Item Payment Mode
                 </p>
                 {displayGroups.map((group) => {
@@ -3194,6 +3228,13 @@ export default function CheckoutPage() {
                   const groupLineIds = group.map((l) => l.lineId)
                   const groupMode = line.invoiceType ?? 'cash'
                   const groupProvider = line.installmentProvider ?? 'inhouse'
+                  const lineSaleAmount =
+                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity
+                  const minDownPayment = 0.1 * lineSaleAmount
+                  const downPaymentValue = line.downPaymentInput
+                    ? parseFloat(line.downPaymentInput) || 0
+                    : minDownPayment
+                  const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -3213,7 +3254,7 @@ export default function CheckoutPage() {
                           <button
                             key={mode}
                             onClick={() => setLineInvoiceType(groupLineIds, mode)}
-                            className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${
+                            className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                               groupMode === mode
                                 ? mode === 'installment'
                                   ? 'bg-prominent-purple-100 text-prominent-purple-700'
@@ -3231,7 +3272,7 @@ export default function CheckoutPage() {
                             <button
                               key={method}
                               onClick={() => setLinePayNowMethod(groupLineIds, method)}
-                              className={`flex-1 rounded-lg px-2 py-1 text-[10px] font-medium transition-colors ${
+                              className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
                                 (line.payNowMethod ?? 'cash') === method
                                   ? 'bg-purple-100 text-purple-700'
                                   : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
@@ -3249,7 +3290,7 @@ export default function CheckoutPage() {
                               <button
                                 key={provider}
                                 onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                className={`flex-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors ${
+                                className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
                                   groupProvider === provider
                                     ? 'bg-prominent-purple-200 text-prominent-purple-800'
                                     : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
@@ -3261,50 +3302,80 @@ export default function CheckoutPage() {
                           </div>
                           {groupProvider === 'inhouse' && (
                             <>
-                              <div className="flex items-center gap-1.5">
-                                <div className="relative flex-1">
-                                  <select
-                                    value={line.financingTermId ?? ''}
-                                    onChange={(e) =>
-                                      setLineFinancingTermId(groupLineIds, e.target.value)
-                                    }
-                                    className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[11px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  >
-                                    <option value="">Select a term…</option>
-                                    {financingTerms.map((t) => (
-                                      <option key={t.id} value={t.id}>
-                                        {t.termMonths} months · {Number(t.factorRate).toFixed(2)}x
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <ChevronDown
-                                    size={11}
-                                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                                  />
-                                </div>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.01}
-                                  placeholder="Down payment"
-                                  value={line.downPaymentInput ?? ''}
+                              <div className="relative">
+                                <select
+                                  value={line.financingTermId ?? ''}
                                   onChange={(e) =>
-                                    setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    setLineFinancingTermId(groupLineIds, e.target.value)
                                   }
-                                  className="w-28 rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[11px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                >
+                                  <option value="">Select a term…</option>
+                                  {financingTerms.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.termMonths} months
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown
+                                  size={11}
+                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
                                 />
                               </div>
-                              <p className="text-[10px] text-gray-500">
-                                Min{' '}
-                                {fmt(
-                                  0.1 *
-                                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                                    line.quantity
-                                )}{' '}
-                                (10% of sale amount)
+                              {downPaymentEditingThisLine ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    placeholder="Down payment"
+                                    autoFocus
+                                    value={line.downPaymentInput ?? ''}
+                                    onChange={(e) =>
+                                      setLineDownPaymentInput(groupLineIds, e.target.value)
+                                    }
+                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                  />
+                                  <p className="text-xs text-gray-500">
+                                    Must be at least {fmt(minDownPayment)} and no more than{' '}
+                                    {fmt(lineSaleAmount)}.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    Use the minimum instead
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between gap-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
+                                      Down payment{' '}
+                                      <span className="font-mono font-bold text-prominent-purple-800">
+                                        {fmt(downPaymentValue)}
+                                      </span>
+                                    </span>
+                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+                                      10% min
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                  >
+                                    Use a different amount
+                                  </button>
+                                </>
+                              )}
+                              <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                                <span className="text-prominent-purple-400">●</span>
+                                Fixed at 10% of the sale amount — the same for every term.
                               </p>
                               {line.financingTermId && (
-                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[11px] text-prominent-purple-700">
+                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
                                   {installmentPreviewLoading[line.lineId] ? (
                                     <span className="flex items-center gap-1.5">
                                       <Loader2 size={10} className="animate-spin" /> Calculating…
@@ -3330,7 +3401,7 @@ export default function CheckoutPage() {
                             </>
                           )}
                           {groupProvider === 'tpf' && (
-                            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-[10px] text-gray-500">
+                            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
                               Financed by a third party — the financier's details are entered once
                               below, under Payment.
                             </p>
@@ -3368,13 +3439,13 @@ export default function CheckoutPage() {
                       {inhouseInstallmentCartLines.length} item
                       {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
                     </p>
-                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
                       Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
                       financed into each item&apos;s own AR schedule.
                     </p>
                     {selectedCustomer && (
                       <div className="mt-2.5">
-                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           Approved Credit Application
                         </label>
                         <div className="relative">
@@ -3414,7 +3485,7 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-700">
+                          <p className="mt-1 text-[13px] text-amber-700">
                             Every installment sale requires an approved credit application — open
                             one in Credit Applications first.
                           </p>
@@ -3429,13 +3500,13 @@ export default function CheckoutPage() {
                       {tpfInstallmentCartLines.length} item
                       {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
                     </p>
-                    <p className="mt-1 text-[11px] text-prominent-purple-500">
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
                       {fmt(tpfLinesTotal)} collected now from the financier — no down payment, no
                       local schedule.
                     </p>
                     <div className="mt-2.5 space-y-2">
                       <div>
-                        <label className="mb-1 block text-[11px] text-prominent-purple-700">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
                           TPF Provider
                         </label>
                         <div className="relative">
@@ -3461,7 +3532,7 @@ export default function CheckoutPage() {
                           />
                         </div>
                         {tpfProviders.length === 0 && (
-                          <p className="mt-1 text-[11px] text-amber-700">
+                          <p className="mt-1 text-[13px] text-amber-700">
                             Add a TPF provider under POS Settings first.
                           </p>
                         )}
@@ -3583,7 +3654,7 @@ export default function CheckoutPage() {
                 {/* Quick cash denomination buttons */}
                 {payments.some((p) => p.method === 'cash') && (
                   <div className="mt-1">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-700">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700">
                       Quick Amount
                     </p>
                     <div className="flex flex-wrap gap-1">

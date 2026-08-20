@@ -114,7 +114,6 @@ function CollectionsCustomerRow({
   customer: CollectionsCustomer
   onSelect: () => void
 }) {
-  const overdue = customer.outstandingCount > 0 && new Date(customer.nextDueDate) < new Date()
   return (
     <li>
       <button
@@ -137,11 +136,13 @@ function CollectionsCustomerRow({
         <span className="shrink-0 text-right">
           <span className="block text-[13px] font-semibold text-zinc-900">
             {fmtMoney(customer.outstandingAmount)}
+            <span className="ml-1 text-[11px] font-normal text-zinc-400">outstanding</span>
           </span>
           <span
-            className={`block text-[12px] ${overdue ? 'font-medium text-red-600' : 'text-zinc-500'}`}
+            className={`block text-[12px] ${customer.dueAmount > 0 ? 'font-medium text-red-600' : 'text-zinc-500'}`}
           >
-            {customer.outstandingCount} due · next {fmtDate(customer.nextDueDate)}
+            {customer.dueAmount > 0 ? `${fmtMoney(customer.dueAmount)} due now` : 'Nothing due yet'}{' '}
+            · next {fmtDate(customer.nextDueDate)}
           </span>
         </span>
       </button>

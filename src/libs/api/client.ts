@@ -106,13 +106,23 @@ export async function apiClient<T = any>(
         ...(clientIp ? { 'x-forwarded-for': clientIp } : {}),
         ...headers,
       },
-      // Use next options if tags/revalidate provided, otherwise fall back to cache
-      ...(Object.keys(nextOptions).length > 0 ? { next: nextOptions } : { cache }),
+      // `tags` alone doesn't opt a request into Next.js's persistent Data
+      // Cache in any useful way here — nothing in this codebase reliably
+      // pairs every tag with a matching revalidateTag() call, so a request
+      // that dropped `cache` in favor of `next: { tags }` could get stuck
+      // serving a stale/wrong cached response forever. Always keep `cache`
+      // in effect; `next` (tags/revalidate) rides alongside it rather than
+      // replacing it.
+      cache,
+      ...(Object.keys(nextOptions).length > 0 ? { next: nextOptions } : {}),
       signal: AbortSignal.timeout(30_000),
     }
 
-    // Add body for POST, PUT, PATCH
-    if (body && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    // Add body for POST, PUT, PATCH, DELETE (a DELETE-with-body is a valid
+    // REST pattern — e.g. the price-lists bulk-remove endpoint — and was
+    // previously silently dropped here, sending an empty body no matter what
+    // callers passed).
+    if (body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       requestOptions.body = JSON.stringify(body)
     }
 

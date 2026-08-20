@@ -158,7 +158,7 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                         {app.applicantCustomer.name}
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                        {app.coMaker.name}
+                        {app.coMaker?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-zinc-900">
                         ₱{app.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}

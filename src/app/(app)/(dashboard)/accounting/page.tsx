@@ -996,7 +996,7 @@ export default function AccountingPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-900 truncate">
-                          {bill.vendor?.name ?? bill.vendorId}
+                          {bill.supplier?.name ?? bill.supplierId}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {bill.billNumber} · {fmtDate(bill.billDate)}
@@ -1167,7 +1167,7 @@ export default function AccountingPage() {
                   return (
                     <div key={i} className="rounded-lg border border-rose-100 bg-rose-50 p-2.5">
                       <p className="text-xs font-semibold text-gray-900 truncate">
-                        {bill.vendor?.name ?? bill.vendorId}
+                        {bill.supplier?.name ?? bill.supplierId}
                       </p>
                       <p className="text-[11px] text-gray-500">
                         {bill.billNumber} · Due {fmtDate(bill.dueDate)}

@@ -22,6 +22,7 @@ type FormState = {
   agingBucket: string
   arrears: string
   penalty: string
+  insuranceCharge: string
 }
 
 const empty: FormState = {
@@ -33,6 +34,7 @@ const empty: FormState = {
   agingBucket: '',
   arrears: '',
   penalty: '',
+  insuranceCharge: '',
 }
 
 type AccountSummary = {
@@ -112,6 +114,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
           agingBucket: a.agingBucket ?? '',
           arrears: String(a.arrears ?? 0),
           penalty: String(a.penalty ?? 0),
+          insuranceCharge: a.insuranceCharge != null ? String(a.insuranceCharge) : '',
         })
 
         const suggestion = await installmentAccountsApi.suggestCollector(a.customerId)
@@ -147,6 +150,7 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       agingBucket: form.agingBucket || undefined,
       arrears: form.arrears === '' ? undefined : Number(form.arrears),
       penalty: form.penalty === '' ? undefined : Number(form.penalty),
+      insuranceCharge: form.insuranceCharge === '' ? undefined : Number(form.insuranceCharge),
     }
 
     const parsed = updateInstallmentAccountSchema.safeParse(payload)
@@ -365,6 +369,26 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
             {errors.penalty && <p className="mt-1 text-[12px] text-red-600">{errors.penalty}</p>}
+          </div>
+          <div>
+            <label
+              htmlFor="insuranceCharge"
+              className="block text-[13px] font-medium text-gray-700"
+            >
+              IC (Insurance charge) (₱)
+            </label>
+            <input
+              id="insuranceCharge"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.insuranceCharge}
+              onChange={(e) => setField('insuranceCharge', e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            />
+            {errors.insuranceCharge && (
+              <p className="mt-1 text-[12px] text-red-600">{errors.insuranceCharge}</p>
+            )}
           </div>
         </div>
 

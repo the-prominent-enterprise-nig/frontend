@@ -43,6 +43,10 @@ export default async function PurchaseOrdersPage() {
   const canClose =
     can(session, PROCUREMENT_PERMISSIONS.PO_UPDATE) ||
     can(session, PROCUREMENT_PERMISSIONS.WILDCARD)
+  // Scenario 29 PO-06/PO-08 — same PO_UPDATE permission as canClose above
+  // (the edit PATCH and the close PATCH are the same endpoint/gate),
+  // named separately for clarity at the two distinct UI call sites.
+  const canEdit = canClose
   // "Receive stock" submits through the same inventory:receive:create-gated
   // endpoint as the standalone Goods Receiving flow — procurement:goods-receipts:*
   // isn't actually enforced anywhere server-side, so gate on the real permission.
@@ -65,6 +69,7 @@ export default async function PurchaseOrdersPage() {
         canSend={canSend}
         canCancel={canCancel}
         canClose={canClose}
+        canEdit={canEdit}
         canReceive={canReceive}
         canViewCost={canViewCost}
         currentUserBranchId={session.branchId}

@@ -8,7 +8,11 @@ import { gotoReady } from './utils'
  * completely different metric that dumps any zero-sales item (including
  * freshly received stock) into the same "90+ days stale" bucket as
  * genuinely dead stock. The chart now sources from the real, previously-
- * orphaned `/inventory/reports/aging` endpoint (lastMovementAt-based).
+ * orphaned `/inventory/reports/aging` endpoint. That endpoint was itself
+ * rebuilt under Scenario 29 INV-02 (per-serial, 5 buckets keyed
+ * `0_30`/`31_60`/`61_90`/`91_180`/`180_plus`, aged from goods-receipt date)
+ * after this fix originally landed — the dashboard wiring here was updated
+ * to match.
  */
 test.describe('Inventory — Aging Analysis reflects real last-movement data', () => {
   test('aging chart is sourced from /inventory/reports/aging, not the turnover projection', async ({
@@ -18,7 +22,7 @@ test.describe('Inventory — Aging Analysis reflects real last-movement data', (
     expect(apiRes.ok()).toBeTruthy()
     const body = await apiRes.json()
     expect(body.summary).toHaveProperty('0_30')
-    expect(body.summary).toHaveProperty('90_plus')
+    expect(body.summary).toHaveProperty('180_plus')
 
     const consoleErrors: string[] = []
     page.on('console', (msg) => {

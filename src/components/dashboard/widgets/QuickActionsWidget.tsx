@@ -9,14 +9,14 @@ export const QUICK_ACTIONS = [
     id: 'new-sale',
     label: 'New Sale',
     icon: ShoppingCart,
-    href: '/point-of-sale/checkout',
+    href: '/pos/checkout',
     color: 'bg-green-100 text-green-700 hover:bg-green-200',
   },
   {
     id: 'new-invoice',
     label: 'New Invoice',
     icon: FileText,
-    href: '/accounting/invoices/new',
+    href: '/accounting/ar-invoices',
     color: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
   },
   {
@@ -37,7 +37,7 @@ export const QUICK_ACTIONS = [
     id: 'stock-receive',
     label: 'Receive Stock',
     icon: Package,
-    href: '/inventory/receiving',
+    href: '/inventory/operations?tab=receiving',
     color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
   },
   {

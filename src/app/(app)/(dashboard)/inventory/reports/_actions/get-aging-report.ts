@@ -1,33 +1,30 @@
 'use server'
 
 import { api } from '@/src/libs/api/client'
-import { AgingReportResponseSchema } from '@/src/schema/inventory/reports'
+import type { AgingReportResponse, SerialAgingBucket } from '@/src/schema/inventory/reports'
 
 type Params = {
   warehouseId?: string
   categoryId?: string
+  itemId?: string
+  search?: string
+  bucket?: SerialAgingBucket
+  page?: number
+  limit?: number
 }
 
 export async function getAgingReport(params: Params = {}) {
-  const query: Record<string, string | undefined> = {
+  const query: Record<string, string | number | undefined> = {
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
+    itemId: params.itemId,
+    search: params.search,
+    bucket: params.bucket,
+    page: params.page,
+    limit: params.limit,
   }
 
-  const result = await api.get('/inventory/reports/aging', query, {
+  return api.get<AgingReportResponse>('/inventory/reports/aging', query, {
     tags: ['inventory-report-aging'],
   })
-  if (!result.success) return result
-
-  const parsed = AgingReportResponseSchema.safeParse(result.data)
-  if (!parsed.success) {
-    console.error('Aging report response shape mismatch:', parsed.error.flatten())
-    return {
-      success: false as const,
-      error: 'Unexpected response shape',
-      message: 'Failed to parse aging report response',
-    }
-  }
-
-  return { success: true as const, data: parsed.data }
 }

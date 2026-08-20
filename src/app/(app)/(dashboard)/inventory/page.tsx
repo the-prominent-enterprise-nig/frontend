@@ -8,7 +8,6 @@ import {
   Package,
   TrendingDown,
   TrendingUp,
-  AlertTriangle,
   RefreshCw,
   Clock,
   ArrowUpRight,
@@ -25,16 +24,13 @@ import {
   Warehouse,
   Tag,
   ClipboardCheck,
-  Tags,
 } from 'lucide-react'
 
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
 import { getAgingReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-report'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
-import { getProjection } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-projection'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
 import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
 import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
@@ -307,11 +303,8 @@ const INIT = {
   reservedQty: 0,
   totalOnHand: 0,
   totalAvailableQty: 0,
-  lowStockCount: 0,
-  outOfStockCount: 0,
   expiringSoonCount: 0,
   projectedStockouts: 0,
-  trendingTowardReorderCount: 0,
   slowMovingCount: 0,
   deadStockCount: 0,
   inTransitCount: 0,
@@ -324,9 +317,7 @@ const INIT = {
   valuationByWarehouse: [] as { label: string; value: number; color: string; badge?: string }[],
   agingBreakdown: [] as { label: string; value: number; color: string }[],
   abcSegments: [] as { label: string; value: number; color: string }[],
-  reorderAlertsList: [] as any[],
   stockoutAlertsList: [] as any[],
-  trendingTowardReorderList: [] as any[],
   expiringBatchesList: [] as any[],
   recentTransfersList: [] as any[],
   transferStatusCounts: {} as Record<string, number>,
@@ -344,23 +335,21 @@ export default function InventoryPage() {
   const load = useCallback(async () => {
     const settled = await Promise.allSettled([
       getItems({ limit: 1 }), // 0
-      getReorderAlerts({ limit: 200 }), // 1
-      getValuationReport({ limit: 1 }), // 2 — only the pre-aggregated `summary` is used, not `data`
-      getTurnoverReport({ periodDays: 90 }), // 3
-      getTransfers({ limit: 20 }), // 4
-      getProjection({ days: 30 }), // 5
-      getStockoutAlerts({ days: 30 }), // 6
-      getExpiringBatches({ days: 30, limit: 20 }), // 7
-      getStockBalances({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
-      getWarehouses({ status: 'active', limit: 50 }), // 9
-      getReservations({ limit: 1 }), // 10 — only the pre-aggregated `summary` is used, not `data`
-      getNegativeStockViolations({ limit: 50 }), // 11
-      getBackorders({ limit: 50 }), // 12
-      getReturns({ limit: 20 }), // 13
-      getAgingReport(), // 14
-      getPurchaseRequests({ limit: 50 }), // 15
-      getPurchaseOrders({ limit: 50 }), // 16
-      getAdjustments({ limit: 50 }), // 17
+      getValuationReport({ limit: 1 }), // 1 — only the pre-aggregated `summary` is used, not `data`
+      getTurnoverReport({ periodDays: 90 }), // 2
+      getTransfers({ limit: 20 }), // 3
+      getStockoutAlerts({ days: 30 }), // 4
+      getExpiringBatches({ days: 30, limit: 20 }), // 5
+      getStockBalances({ limit: 1 }), // 6 — only the pre-aggregated `summary` is used, not `data`
+      getWarehouses({ status: 'active', limit: 50 }), // 7
+      getReservations({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
+      getNegativeStockViolations({ limit: 50 }), // 9
+      getBackorders({ limit: 50 }), // 10
+      getReturns({ limit: 20 }), // 11
+      getAgingReport(), // 12
+      getPurchaseRequests({ limit: 50 }), // 13
+      getPurchaseOrders({ limit: 50 }), // 14
+      getAdjustments({ limit: 50 }), // 15
     ])
 
     function pick(i: number): any {
@@ -391,15 +380,10 @@ export default function InventoryPage() {
     const itemsRaw = pick(0)
     const totalSkus = itemsRaw?.total ?? itemsRaw?.meta?.total ?? 0
 
-    // Reorder alerts
-    const alertList = arr(1)
-    const lowStockCount = total(1)
-    const outOfStockCount = alertList.filter((a) => a.currentAvailableQty === 0).length
-
     // Valuation — category/warehouse breakdown now comes pre-aggregated from
     // the backend (reports.service.ts's groupValuationRows), so this no
     // longer needs to fetch every row just to reduce it client-side.
-    const valuationRaw = pick(2)
+    const valuationRaw = pick(1)
     const totalValue = valuationRaw?.summary?.totalValue ?? valuationRaw?.grandTotal ?? 0
 
     const valuationByCategory = ((valuationRaw?.summary?.byCategory ?? []) as any[])
@@ -419,7 +403,7 @@ export default function InventoryPage() {
       }))
 
     // Turnover / ABC classification
-    const turnoverRaw = pick(3)
+    const turnoverRaw = pick(2)
     const turnoverItems = turnoverRaw?.data ?? []
     const slowMovingCount =
       turnoverRaw?.summary?.slowMoving ??
@@ -429,14 +413,16 @@ export default function InventoryPage() {
       turnoverItems.filter((t: any) => t.status === 'dead_stock').length
     const healthyCount = turnoverItems.filter((t: any) => t.status === 'healthy').length
 
-    // Real days-since-last-movement aging (distinct from Turnover's
-    // projected days-of-supply, which was being mislabeled as this before).
-    const agingRaw = pick(14)?.summary ?? {}
+    // Real per-serial aging (Scenario 29 INV-02 shape: data + a bucket-keyed
+    // summary record), distinct from Turnover's projected days-of-supply,
+    // which was being mislabeled as this before.
+    const agingRaw = pick(12)?.summary ?? {}
     const agingBreakdown = [
       { label: '0–30 days', value: agingRaw['0_30']?.count ?? 0, color: '#10b981' },
       { label: '31–60 days', value: agingRaw['31_60']?.count ?? 0, color: '#f59e0b' },
       { label: '61–90 days', value: agingRaw['61_90']?.count ?? 0, color: '#f97316' },
-      { label: '90+ days', value: agingRaw['90_plus']?.count ?? 0, color: '#ef4444' },
+      { label: '91–180 days', value: agingRaw['91_180']?.count ?? 0, color: '#f97316' },
+      { label: '180+ days', value: agingRaw['180_plus']?.count ?? 0, color: '#ef4444' },
     ]
     const abcSegments = [
       { label: 'Healthy', value: healthyCount, color: '#10b981' },
@@ -447,7 +433,7 @@ export default function InventoryPage() {
     // Transfers — counted from the full fetched list, not the sliced
     // "recent 8" used for the list below, so the pill strip covers every
     // transfer regardless of how many are shown underneath.
-    const transferList = arr(4)
+    const transferList = arr(3)
     const inTransitCount = transferList.filter((t) => t.status === 'in_transit').length
     const transferStatusCounts: Record<string, number> = {}
     transferList.forEach((t) => {
@@ -455,64 +441,51 @@ export default function InventoryPage() {
     })
 
     // Stockouts
-    const stockoutList = arr(6)
-    const projectedStockouts = total(6)
-
-    // Trending toward reorder — the full forward projection (distinct from
-    // both Low Stock Items, which flags items already below their reorder
-    // point today, and Projected Stockouts above, which flags items headed
-    // to zero). This flags items projected to cross their reorder point
-    // within the window but not already stocked out — an earlier warning
-    // tier that was previously computed and simply never surfaced anywhere.
-    const projectionRaw = pick(5)
-    const projectionItems = (projectionRaw?.items ?? []) as any[]
-    const trendingTowardReorderList = projectionItems.filter(
-      (i) => i.atReorderLevel && !i.projectedStockout
-    )
-    const trendingTowardReorderCount = trendingTowardReorderList.length
+    const stockoutList = arr(4)
+    const projectedStockouts = total(4)
 
     // Expiry
-    const expiryList = arr(7)
-    const expiringSoonCount = total(7)
+    const expiryList = arr(5)
+    const expiringSoonCount = total(5)
 
     // Stock balances — totals now come pre-aggregated from the backend
     // (stock.service.ts's getBalances `summary` block), computed from the
     // full filtered set before pagination, so this no longer needs to fetch
     // every row just to sum them client-side.
-    const balanceRaw = pick(8)
+    const balanceRaw = pick(6)
     const totalOnHand = balanceRaw?.summary?.totalOnHandQty ?? 0
     const totalAvailableQty = balanceRaw?.summary?.totalAvailableQty ?? 0
 
     // Warehouses
-    const warehouseList = arr(9)
-    const activeWarehouses = total(9) || warehouseList.length
+    const warehouseList = arr(7)
+    const activeWarehouses = total(7) || warehouseList.length
 
     // Reservations — primary source for reserved qty (stock balance field is
     // often unpopulated). Backend ignores pagination and always returns
     // every reservation, so the summary (computed from the full set in
     // get-reservations.ts) is used instead of fetching+summing rows here.
-    const reservedFromReservations = pick(10)?.summary?.totalReservedQty ?? 0
+    const reservedFromReservations = pick(8)?.summary?.totalReservedQty ?? 0
     const reservedFromBalances = balanceRaw?.summary?.totalReservedQty ?? 0
-    const reservedQty = reservedFromReservations || reservedFromBalances || total(10)
+    const reservedQty = reservedFromReservations || reservedFromBalances || total(8)
 
     // Negative stock
-    const negativeList = arr(11)
-    const negativeViolations = total(11)
+    const negativeList = arr(9)
+    const negativeViolations = total(9)
 
     // Backorders
-    const backorderList = arr(12)
-    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(12)
+    const backorderList = arr(10)
+    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(10)
 
     // Returns
-    const returnsCount = total(13)
+    const returnsCount = total(11)
 
     // Purchasing — open PRs (awaiting approval or approved-but-not-yet-
     // converted) and open POs (not yet fully received/closed/cancelled).
     // Real volume is small (single digits today), so a plain fetch + client
     // filter is fine here — no need for a backend aggregate at this scale.
-    const prList = arr(15)
+    const prList = arr(13)
     const openPrList = prList.filter((pr) => ['submitted', 'approved'].includes(pr.status))
-    const poList = arr(16)
+    const poList = arr(14)
     const openPoList = poList.filter(
       (po) => !['fully_received', 'closed', 'cancelled'].includes(po.status)
     )
@@ -540,7 +513,7 @@ export default function InventoryPage() {
     // Stock Adjustments awaiting resolution — a real approve/reject/
     // investigate workflow (Scenario 19) that had zero dashboard visibility.
     // "Pending" = anywhere before the terminal approved/rejected states.
-    const adjustmentList = arr(17)
+    const adjustmentList = arr(15)
     const pendingAdjustmentsList = adjustmentList.filter((a) =>
       ['submitted', 'confirmed', 'investigating'].includes(a.status)
     )
@@ -554,11 +527,8 @@ export default function InventoryPage() {
       reservedQty,
       totalOnHand,
       totalAvailableQty,
-      lowStockCount,
-      outOfStockCount,
       expiringSoonCount,
       projectedStockouts,
-      trendingTowardReorderCount,
       slowMovingCount,
       deadStockCount,
       inTransitCount,
@@ -571,9 +541,7 @@ export default function InventoryPage() {
       valuationByWarehouse,
       agingBreakdown,
       abcSegments,
-      reorderAlertsList: alertList.slice(0, 10),
       stockoutAlertsList: stockoutList.slice(0, 8),
-      trendingTowardReorderList: trendingTowardReorderList.slice(0, 8),
       expiringBatchesList: expiryList.slice(0, 8),
       recentTransfersList: transferList.slice(0, 8),
       transferStatusCounts,
@@ -679,17 +647,7 @@ export default function InventoryPage() {
         </div>
 
         {/* Row 2: Risk KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Low Stock Items"
-            value={loading ? '—' : fmtNum(s.lowStockCount)}
-            sub={loading ? '' : `${s.outOfStockCount} out of stock`}
-            icon={AlertTriangle}
-            iconBg="bg-amber-500"
-            href="/inventory/reorder"
-            loading={loading}
-            urgent={s.lowStockCount > 0}
-          />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <KpiCard
             label="Expiring Soon"
             value={loading ? '—' : fmtNum(s.expiringSoonCount)}
@@ -772,13 +730,6 @@ export default function InventoryPage() {
                 href: '/inventory/returns',
                 accent: 'text-blue-700',
                 bg: 'bg-blue-50 border-blue-100',
-              },
-              {
-                label: 'Out of Stock',
-                val: s.outOfStockCount,
-                href: '/inventory/stock-levels',
-                accent: 'text-red-700',
-                bg: 'bg-red-50 border-red-100',
               },
             ] as const
           ).map((m, i) => (
@@ -962,7 +913,7 @@ export default function InventoryPage() {
             <ShieldAlert className="h-4 w-4 text-red-500" />
             <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -1039,151 +990,6 @@ export default function InventoryPage() {
                       />
                     )
                   })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-yellow-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-yellow-500" />
-                  Trending Toward Reorder
-                </h3>
-                <Link
-                  href="/inventory/projection"
-                  className="text-xs text-yellow-700 hover:underline tabular-nums"
-                >
-                  {loading ? '…' : s.trendingTowardReorderCount} total
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.trendingTowardReorderList.length === 0 ? (
-                <EmptyState message="No items trending toward reorder" />
-              ) : (
-                <div className="space-y-2">
-                  {s.trendingTowardReorderList.map((item, i) => (
-                    <AlertRow
-                      key={i}
-                      urgency="warning"
-                      left={
-                        <div className="min-w-0">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              item.itemId &&
-                              pushPanel({
-                                type: 'item360',
-                                itemId: item.itemId,
-                                itemName: item.name,
-                              })
-                            }
-                            className="block w-full text-left"
-                          >
-                            <p className="text-xs font-semibold text-gray-900 truncate hover:text-yellow-700 hover:underline">
-                              {item.name ?? 'Unknown'}
-                            </p>
-                          </button>
-                          <p className="text-[11px] text-gray-500 truncate">
-                            {item.sku} · {item.warehouseName ?? '—'}
-                          </p>
-                        </div>
-                      }
-                      right={
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-sm font-bold text-yellow-700">
-                            {item.projectedMinBalance}
-                          </span>
-                          <p className="text-[10px] text-gray-400">min projected bal.</p>
-                        </div>
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Low Stock Warnings
-                </h3>
-                <Link
-                  href="/inventory/reorder"
-                  className="text-xs text-amber-600 hover:underline tabular-nums"
-                >
-                  {loading ? '…' : s.lowStockCount} total
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-14 w-full" />
-                  ))}
-                </div>
-              ) : s.reorderAlertsList.length === 0 ? (
-                <EmptyState message="All stock levels are healthy" />
-              ) : (
-                <div className="space-y-2">
-                  {s.reorderAlertsList.map((alert, i) => (
-                    <AlertRow
-                      key={i}
-                      urgency={alert.currentAvailableQty === 0 ? 'critical' : 'warning'}
-                      left={
-                        <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              alert.item?.id &&
-                              pushPanel({
-                                type: 'item360',
-                                itemId: alert.item.id,
-                                itemName: alert.item.name,
-                              })
-                            }
-                            className="block w-full text-left"
-                          >
-                            <p className="text-xs font-semibold text-gray-900 truncate hover:text-amber-700 hover:underline">
-                              {alert.item?.name ?? 'Unknown'}
-                            </p>
-                          </button>
-                          <p className="text-[11px] text-gray-500">
-                            {alert.item?.sku} ·{' '}
-                            {alert.warehouse?.branch?.name ?? alert.warehouse?.name ?? '—'}
-                          </p>
-                          <div className="mt-1.5 h-1 rounded-full bg-amber-200 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-amber-500"
-                              style={{
-                                width: `${Math.min((alert.currentAvailableQty / Math.max(alert.reorderPoint, 1)) * 100, 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      }
-                      right={
-                        <div className="flex flex-col items-end gap-1">
-                          <span
-                            className={`text-sm font-bold ${alert.currentAvailableQty === 0 ? 'text-red-600' : 'text-amber-700'}`}
-                          >
-                            {alert.currentAvailableQty}
-                          </span>
-                          <p className="text-[10px] text-gray-400">reorder: {alert.reorderPoint}</p>
-                          <Link
-                            href="/inventory/operations?tab=receiving"
-                            className="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
-                          >
-                            Receive
-                          </Link>
-                        </div>
-                      }
-                    />
-                  ))}
                 </div>
               )}
             </div>
@@ -1624,7 +1430,6 @@ export default function InventoryPage() {
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
-                { label: 'Price Use Types', href: '/inventory/price-use-types', icon: Tags },
               ] as const
             ).map(({ label, href, icon: Icon }, i) => (
               <Link

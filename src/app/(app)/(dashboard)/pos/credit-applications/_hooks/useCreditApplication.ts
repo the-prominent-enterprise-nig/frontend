@@ -12,13 +12,12 @@ import { attachCreditApplicationDocument } from '../_actions/attach-document'
 import { removeCreditApplicationDocument } from '../_actions/remove-document'
 import { startCreditInvestigation } from '../_actions/start-investigation'
 import { recordCreditInvestigation } from '../_actions/record-investigation'
-import { approveCreditApplication } from '../_actions/approve-application'
-import { declineCreditApplication } from '../_actions/decline-application'
+import { decideCreditApplicationItems } from '../_actions/decide-application'
 import type {
   AttachCreditApplicationDocumentFormValues,
   CancelCreditApplicationFormValues,
   RecordCreditInvestigationFormValues,
-  DeclineCreditApplicationFormValues,
+  DecideCreditApplicationItemsFormValues,
   UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
@@ -143,23 +142,12 @@ export function useCreditApplication(id: string) {
     },
   })
 
-  const approveMutation = useMutation({
-    mutationFn: () => approveCreditApplication(id),
+  const decideMutation = useMutation({
+    mutationFn: (data: DecideCreditApplicationItemsFormValues) =>
+      decideCreditApplicationItems(id, data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Approved', description: result.message, status: 'success' })
-        invalidate()
-      } else {
-        showToast({ title: 'Failed', description: result.message, status: 'error' })
-      }
-    },
-  })
-
-  const declineMutation = useMutation({
-    mutationFn: (data: DeclineCreditApplicationFormValues) => declineCreditApplication(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({ title: 'Declined', description: result.message, status: 'success' })
+        showToast({ title: 'Decision recorded', description: result.message, status: 'success' })
         invalidate()
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
@@ -196,11 +184,8 @@ export function useCreditApplication(id: string) {
     recordInvestigation: recordInvestigationMutation.mutateAsync,
     isRecordingInvestigation: recordInvestigationMutation.isPending,
 
-    approve: approveMutation.mutateAsync,
-    isApproving: approveMutation.isPending,
-
-    decline: declineMutation.mutateAsync,
-    isDeclining: declineMutation.isPending,
+    decideItems: decideMutation.mutateAsync,
+    isDeciding: decideMutation.isPending,
 
     goToList: () => router.push('/pos/credit-applications'),
   }

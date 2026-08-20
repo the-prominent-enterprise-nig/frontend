@@ -92,15 +92,21 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     const branches = ((await branchesRes.json()).data ?? []) as { id: string; name: string }[]
     const branchId = branches.find((b) => b.name === 'Bago')!.id
 
+    const itemsRes = await page.request.get('/api/inventory/items', {
+      params: { search: 'Universal Remote Control', limit: '1' },
+    })
+    const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
+
     const appRes = await page.request.post('/api/credit/applications', {
       data: {
         branchId,
         applicantCustomerId: customer.id,
         coMakerId: customer.coMakers[0].id,
-        requestedAmount: 40000,
+        items: [{ itemId: items[0].id }],
       },
     })
     const application = await appRes.json()
+    const creditApplicationItemId = application.items[0].id as string
 
     const uploadRes = await page.request.post('/api/files/upload', {
       multipart: {
@@ -116,7 +122,10 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     await page.request.post(`/api/credit/applications/${application.id}/investigation`, {
       data: { affordabilityOutcome: 'recommend_approve', notes: 'Looks fine' },
     })
-    await page.request.patch(`/api/credit/applications/${application.id}/approve`)
+    // Scenario 29 POS-02 — decideItems() replaced the old whole-application approve().
+    await page.request.patch(`/api/credit/applications/${application.id}/decide`, {
+      data: { approveItemIds: [creditApplicationItemId], declineItemIds: [] },
+    })
 
     await gotoReady(page, '/pos/checkout')
     await addInstallmentLine(page)

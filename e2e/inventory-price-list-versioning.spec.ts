@@ -32,33 +32,59 @@ async function createPendingPriceList(page: Page, name: string) {
   })
 }
 
+// Scenario 34 — "Manage Items" now navigates to a dedicated page instead of
+// opening a modal.
 async function addItemToList(
   page: Page,
   row: Locator,
   opts: { price: string; floorPrice?: string }
 ) {
-  await clickStable(
-    row.getByRole('button', { name: 'Manage Items' }),
-    page.getByRole('heading', { name: 'Manage Items' })
-  )
-  await clickStable(
-    page.getByRole('button', { name: 'Add Item' }),
-    page.getByPlaceholder('Search item by name or SKU…')
-  )
-  await page.getByPlaceholder('Search item by name or SKU…').fill('TV Stand')
-  await page
-    .getByRole('button', { name: /TV Stand/ })
-    .first()
-    .click()
-  await fillStable(page.getByPlaceholder('0.00').first(), opts.price)
+  // Plain click, not clickStable — these are real <a href> Links, so a
+  // single click always navigates even pre-hydration; clickStable's retry
+  // would re-click a link that's no longer there once the first click
+  // already navigated away, and just hang out the rest of its budget.
+  await row.getByRole('link', { name: 'Manage Items' }).click()
+  await expect(page.getByLabel('Search items to add')).toBeVisible({ timeout: 10_000 })
+
+  await fillStable(page.getByLabel('Search items to add'), 'TV Stand')
+  const result = page.getByRole('button', { name: /TV Stand/ })
+  await expect(result.first()).toBeVisible({ timeout: 10_000 })
+  await result.first().click()
+
+  // Scoped to the Add panel's own table (identified by its always-present
+  // "Apply to all" row) rather than page-wide "tbody tr" — once the list
+  // already has an item, the (separate, non-editable) items table also has
+  // rows, and a page-wide .last() can land there instead. Within the Add
+  // panel's table specifically, the last row is always the just-staged item.
+  const stagedRow = page
+    .locator('table')
+    .filter({ hasText: 'Apply to all' })
+    .locator('tbody tr')
+    .last()
+  await fillStable(stagedRow.getByPlaceholder('0.00').first(), opts.price)
   if (opts.floorPrice) {
-    await fillStable(page.getByPlaceholder('0.00').nth(1), opts.floorPrice)
+    await fillStable(stagedRow.getByPlaceholder('0.00').nth(1), opts.floorPrice)
   }
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByRole('button', { name: /^Add 1 Item$/ }).click()
+  // Wait for the Add panel's own staged table to clear (it unmounts on a
+  // successful add) before inspecting the items table — a toast isn't a
+  // reliable signal here since sonner toasts stack/linger, so the "1 item
+  // added" toast from THIS add can't be told apart from one left over from
+  // the previous add still fading out. Until this clears, the still-staged
+  // row and the items table's own row (from the earlier add) both match "TV
+  // Stand" at once, a transient strict-mode violation.
+  await expect(page.locator('table').filter({ hasText: 'Apply to all' })).not.toBeVisible({
+    timeout: 15_000,
+  })
+
   const itemRow = page.locator('tbody tr').filter({ hasText: 'TV Stand' })
   await expect(itemRow).toContainText(opts.price, { timeout: 10_000 })
-  await page.getByRole('button', { name: 'Close' }).click()
-  await expect(page.getByRole('heading', { name: 'Manage Items' })).not.toBeVisible()
+
+  await page.getByRole('link', { name: 'Back to Price Lists' }).click()
+  await expect(page.getByRole('heading', { name: 'Price Lists' })).toBeVisible({
+    timeout: 10_000,
+  })
+  await expect(page).toHaveURL('/inventory/price-lists', { timeout: 10_000 })
 }
 
 test.describe('Inventory — Price List Floor Price & Price Use Type Selector', () => {

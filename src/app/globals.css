@@ -149,6 +149,17 @@
   }
 }
 
+/* ── Number inputs: no spinner arrows ─────────────────────────────────────── */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
 /* ── React Grid Layout overrides ──────────────────────────────────────────── */
 .react-grid-item > .react-resizable-handle::after {
   border-right-color: #a855f7;

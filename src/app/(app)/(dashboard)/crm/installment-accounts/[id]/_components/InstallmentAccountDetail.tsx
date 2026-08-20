@@ -62,6 +62,25 @@ const STATUS_COLORS: Record<string, string> = {
   written_off: 'bg-red-50 text-red-700 ring-red-200',
 }
 
+// Scenario 32 item 5 — same status set/labels as Customer360's
+// InstallmentStatusBadge, restyled to match this page's ring-inset badges.
+const INVOICE_STATUS_COLORS: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-500',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  CANCELLED: 'bg-gray-100 text-gray-400',
+}
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  SENT: 'Due',
+  PARTIAL: 'Partially paid',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  CANCELLED: 'Cancelled',
+}
+
 function Badge({ value, colors }: { value?: string | null; colors: Record<string, string> }) {
   if (!value) return <span className="text-gray-400">—</span>
   return (
@@ -372,6 +391,7 @@ export default function InstallmentAccountDetail({
                   : '—'
               }
             />
+            <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
           </dl>
 
           <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Collection tags</h2>
@@ -487,8 +507,39 @@ export default function InstallmentAccountDetail({
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Unit</h2>
+          {account.unitItems.length > 0 ? (
+            <ul className="mb-5 divide-y divide-gray-100 text-[13px]" data-testid="unit-items">
+              {account.unitItems.map((unit) => (
+                <li key={unit.id} className="flex items-start justify-between gap-3 py-1.5">
+                  <span className="text-gray-700">
+                    {unit.itemName
+                      ? unit.brand
+                        ? `${unit.itemName} (${unit.brand})`
+                        : unit.itemName
+                      : '—'}
+                  </span>
+                  <span className="text-right text-gray-500">
+                    {unit.modelNumber && <div>Model: {unit.modelNumber}</div>}
+                    {unit.serialNumber && (
+                      <div className="font-mono text-[11px] text-purple-600">
+                        SN: {unit.serialNumber}
+                        {unit.secondarySerialNumber && ` / ${unit.secondarySerialNumber}`}
+                      </div>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mb-5 text-[13px] text-gray-400">
+              Not available for hand-entered/imported accounts.
+            </p>
+          )}
+
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Financing</h2>
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+            <Row label="Scheme" value={account.priceUseType?.name ?? '—'} />
             <Row label="Listed cash price" value={peso(account.listedCashPrice)} />
             <Row label="Down payment" value={peso(account.downPayment)} />
             <Row label="Amount financed" value={peso(account.amountFinanced)} />
@@ -499,6 +550,14 @@ export default function InstallmentAccountDetail({
             <Row label="Total price" value={peso(account.totalPrice)} />
             <Row label="Interest differential" value={peso(account.interestDifferential)} />
             <Row label="PPD" value={peso(account.ppd)} />
+            <Row
+              label="IC (Insurance charge)"
+              value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
+            />
+            <Row
+              label="TMI (Total monthly income)"
+              value={account.totalMonthlyIncome != null ? peso(account.totalMonthlyIncome) : '—'}
+            />
           </div>
 
           <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Ledger balances</h2>
@@ -512,6 +571,13 @@ export default function InstallmentAccountDetail({
             <Row label="Total due" value={peso(account.totalDue)} />
             <Row label="MI due" value={peso(account.miDue)} />
             <Row label="Uncollected" value={peso(account.uncollected)} />
+          </div>
+
+          <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Running totals</h2>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+            <Row label="Total billing" value={peso(account.totalBilling)} />
+            <Row label="Total payments" value={peso(account.totalPayments)} />
+            <Row label="Total rebates" value={peso(account.totalRebates)} />
           </div>
 
           <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Last OR</h2>
@@ -528,6 +594,49 @@ export default function InstallmentAccountDetail({
           </div>
         </section>
       </div>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Billing history</h2>
+        {account.billingHistory.length > 0 ? (
+          <ul className="divide-y divide-gray-100" data-testid="billing-history">
+            {account.billingHistory.map((bill) => (
+              <li key={bill.arInvoiceId} className="py-1.5 text-[13px]">
+                <Link
+                  href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
+                  className="-mx-1 flex items-center justify-between gap-2 rounded-lg px-1 hover:bg-gray-50"
+                >
+                  <span className="text-gray-700">
+                    <span className="font-mono text-[11px] text-gray-400">
+                      {bill.invoiceNumber}
+                    </span>
+                    {' · '}
+                    Payment {bill.lineNumber} of {account.billingHistory.length} · due{' '}
+                    {new Date(bill.dueDate).toLocaleDateString()}
+                    {bill.paidOn && (
+                      <span className="text-emerald-600">
+                        {' '}
+                        · paid {new Date(bill.paidOn).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium text-gray-800">{peso(bill.totalAmount)}</span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${INVOICE_STATUS_COLORS[bill.status] ?? 'bg-gray-100 text-gray-600'}`}
+                    >
+                      {INVOICE_STATUS_LABELS[bill.status] ?? bill.status}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-gray-400">
+            Not available for hand-entered/imported accounts.
+          </p>
+        )}
+      </section>
 
       {account.inDam && (
         <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
