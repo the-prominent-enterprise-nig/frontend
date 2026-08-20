@@ -456,7 +456,7 @@ export default function LoyaltyClient({
 
         {/* History */}
         {account && (
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-5 py-4">
               <p className="text-sm font-semibold text-gray-700">Point History</p>
             </div>

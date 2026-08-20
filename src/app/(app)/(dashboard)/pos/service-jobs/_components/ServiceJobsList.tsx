@@ -176,7 +176,7 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
             <p className="text-sm text-zinc-500">No service jobs found</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="scroll-fade-x overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50">

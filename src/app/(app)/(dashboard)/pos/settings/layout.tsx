@@ -20,7 +20,7 @@ export default async function PosSettingsLayout({ children }: { children: React.
         </div>
         <PosBranchSwitcher />
       </div>
-      <div className="flex">
+      <div className="flex flex-col md:flex-row">
         <PosSettingsTabs />
         <div className="flex-1 min-w-0">{children}</div>
       </div>

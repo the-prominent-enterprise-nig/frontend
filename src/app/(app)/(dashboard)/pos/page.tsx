@@ -208,7 +208,7 @@ export default function PosOverviewPage() {
               View all
             </button>
           </div>
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             {txLoading ? (
               <div className="space-y-3 p-6">
                 {[...Array(5)].map((_, i) => (
