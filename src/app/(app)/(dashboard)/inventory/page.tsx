@@ -19,11 +19,11 @@ import {
   Truck,
   DollarSign,
   ShieldAlert,
-  Snowflake,
   ChevronRight,
   Warehouse,
   Tag,
   ClipboardCheck,
+  RotateCcw,
 } from 'lucide-react'
 
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
@@ -371,8 +371,9 @@ export default function InventoryPage() {
       const raw = pick(i)
       if (!raw) return 0
       if (typeof raw.total === 'number') return raw.total
+      if (typeof raw.meta?.total === 'number') return raw.meta.total
       if (Array.isArray(raw)) return raw.length
-      if (Array.isArray(raw.data)) return raw.total ?? raw.data.length
+      if (Array.isArray(raw.data)) return raw.total ?? raw.meta?.total ?? raw.data.length
       return 0
     }
 
@@ -680,26 +681,13 @@ export default function InventoryPage() {
           />
         </div>
 
-        {/* Row 3: Movement KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Slow Moving"
-            value={loading ? '—' : fmtNum(s.slowMovingCount)}
-            sub="Low velocity items (90d)"
-            icon={Snowflake}
-            iconBg="bg-sky-500"
-            href="/inventory/reports"
-            loading={loading}
-          />
-          <KpiCard
-            label="Dead Stock"
-            value={loading ? '—' : fmtNum(s.deadStockCount)}
-            sub="No recent movement"
-            icon={Activity}
-            iconBg="bg-gray-500"
-            href="/inventory/reports"
-            loading={loading}
-          />
+        {/* Row 3: Movement KPIs — Slow Moving/Dead Stock dropped here (2026-08-20):
+        same slowMovingCount/deadStockCount feed the Stock Classification donut
+        below as proportions of the full catalog, which is the more useful view
+        of that data than a bare count card. Returns Recorded folded in from
+        the old "Secondary metrics strip" (2026-08-20), which was a
+        grid-cols-4 layout holding just this one orphaned metric. */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <KpiCard
             label="In Transit"
             value={loading ? '—' : fmtNum(s.inTransitCount)}
@@ -718,32 +706,15 @@ export default function InventoryPage() {
             href="/inventory/backorders"
             loading={loading}
           />
-        </div>
-
-        {/* Secondary metrics strip */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {(
-            [
-              {
-                label: 'Returns Recorded',
-                val: s.returnsCount,
-                href: '/inventory/returns',
-                accent: 'text-blue-700',
-                bg: 'bg-blue-50 border-blue-100',
-              },
-            ] as const
-          ).map((m, i) => (
-            <Link
-              key={i}
-              href={m.href}
-              className={`rounded-xl border px-4 py-3 flex items-center justify-between hover:shadow-sm transition-all ${m.bg}`}
-            >
-              <span className="text-xs text-gray-600 font-medium">{m.label}</span>
-              <span className={`text-sm font-bold tabular-nums ${m.accent}`}>
-                {loading ? '—' : fmtNum(m.val)}
-              </span>
-            </Link>
-          ))}
+          <KpiCard
+            label="Returns Recorded"
+            value={loading ? '—' : fmtNum(s.returnsCount)}
+            sub="All recorded returns"
+            icon={RotateCcw}
+            iconBg="bg-blue-500"
+            href="/inventory/returns"
+            loading={loading}
+          />
         </div>
 
         {/* Inventory Health */}
@@ -1150,8 +1121,7 @@ export default function InventoryPage() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs text-gray-900 truncate">
-                          {t.fromWarehouse?.branch?.name ?? t.fromWarehouse?.name ?? '?'} →{' '}
-                          {t.toWarehouse?.branch?.name ?? t.toWarehouse?.name ?? '?'}
+                          {t.fromWarehouse?.name ?? '?'} → {t.toWarehouse?.name ?? '?'}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {t._count?.lines ?? 0} line{t._count?.lines !== 1 ? 's' : ''} ·{' '}
