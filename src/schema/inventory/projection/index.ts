@@ -1,43 +1,43 @@
 import { z } from 'zod'
 
-export const ItemSummarySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  sku: z.string(),
-})
-
-export const WarehouseSummarySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  code: z.string(),
+export const DailyProjectionEntrySchema = z.object({
+  date: z.string(),
+  incomingQty: z.number(),
+  outgoingQty: z.number(),
+  endBalance: z.number(),
 })
 
 export const ProjectionItemSchema = z.object({
   itemId: z.string(),
-  item: ItemSummarySchema.optional(),
-  warehouseId: z.string().optional(),
-  warehouse: WarehouseSummarySchema.optional(),
-  currentOnHand: z.number(),
-  incomingQty: z.number(),
-  reservedQty: z.number(),
-  projectedAvailable: z.number(),
-  projectedStockoutDate: z.string().optional(),
-  daysUntilStockout: z.number().optional(),
+  sku: z.string(),
+  name: z.string(),
+  warehouseId: z.string(),
+  warehouseName: z.string(),
+  startQty: z.number(),
+  activeReservations: z.number(),
+  projectedMinBalance: z.number(),
+  projectedStockout: z.boolean(),
+  stockoutDate: z.string().optional(),
+  atReorderLevel: z.boolean(),
+  dailyProjections: z.array(DailyProjectionEntrySchema),
 })
 
 export const ProjectionListResponseSchema = z.object({
-  data: z.array(ProjectionItemSchema),
-  total: z.number().optional(),
+  projectionDays: z.number(),
+  projectionDate: z.string(),
+  stockoutCount: z.number(),
+  reorderCount: z.number(),
+  items: z.array(ProjectionItemSchema),
 })
 
 export const StockoutAlertSchema = z.object({
   itemId: z.string(),
-  item: ItemSummarySchema.optional(),
-  warehouseId: z.string().optional(),
-  warehouse: WarehouseSummarySchema.optional(),
-  currentOnHand: z.number(),
-  daysUntilStockout: z.number().optional(),
-  projectedStockoutDate: z.string().optional(),
+  sku: z.string(),
+  name: z.string(),
+  warehouseId: z.string(),
+  warehouseName: z.string(),
+  currentQty: z.number(),
+  stockoutDate: z.string().optional(),
 })
 
 export const StockoutAlertListResponseSchema = z.object({
