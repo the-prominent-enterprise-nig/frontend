@@ -84,14 +84,21 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   }[]
   const item = items[0]
 
+  // CreateCreditApplicationDto now requires items[] (ArrayMinSize(1)) —
+  // the old requestedAmount-only shape this test used pre-dates that and
+  // silently 400'd (never checked), leaving every subsequent call chained
+  // off application.id hitting `/undefined/...`. Scenario 29 POS-02 also
+  // replaced the old whole-application PATCH .../approve with
+  // PATCH .../decide (approveItemIds/declineItemIds) — both fixed here.
   const appRes = await page.request.post('/api/credit/applications', {
     data: {
       branchId,
       applicantCustomerId: customer.id,
       coMakerId: customer.coMakers[0].id,
-      requestedAmount: item.sellingPrice * 2,
+      items: [{ itemId: item.id }],
     },
   })
+  expect(appRes.ok()).toBeTruthy()
   const application = await appRes.json()
   const uploadRes = await page.request.post('/api/files/upload', {
     multipart: {
@@ -107,7 +114,11 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await page.request.post(`/api/credit/applications/${application.id}/investigation`, {
     data: { affordabilityOutcome: 'recommend_approve', notes: 'E2E fixture' },
   })
-  await page.request.patch(`/api/credit/applications/${application.id}/approve`)
+  const creditApplicationItemIds = (application.items as { id: string }[]).map((i) => i.id)
+  const decideRes = await page.request.patch(`/api/credit/applications/${application.id}/decide`, {
+    data: { approveItemIds: creditApplicationItemIds, declineItemIds: [] },
+  })
+  expect(decideRes.ok()).toBeTruthy()
 
   const cartSubtotal = item.sellingPrice
   // Scenario 01 Gap 4 — installment sales require a down payment of at
@@ -146,6 +157,28 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await gotoReady(page, `/accounting/ar-invoices?customerId=${customer.id}`)
   const row = page.locator('table tbody tr', { has: page.getByText(invoice.invoiceNumber) })
   await expect(row).toBeVisible({ timeout: 10_000 })
+  // Scenario 29 ACC-05 — a freshly-created installment due is always in
+  // the future, so the new Due column (Invoice# 0, Customer 1, Invoice
+  // Date 2, Due Date 3, Total 4, Paid 5, Outstanding 6, Due 7, Status 8,
+  // Actions 9) shows "—" (nothing due yet) even though Outstanding is the
+  // real balance.
+  await expect(row.locator('td').nth(7)).toHaveText('—')
+
+  // Scenario 31 Part 1 — "Sale: <transactionNumber>" link under the
+  // invoice number, deep-linking into a prefilled search on the
+  // Transactions page.
+  const saleLink = row.getByRole('link', { name: new RegExp(transaction.transactionNumber) })
+  await expect(saleLink).toBeVisible()
+  await saleLink.click()
+  await expect(page).toHaveURL(
+    new RegExp(`/pos/transactions\\?search=${transaction.transactionNumber}`)
+  )
+  await expect(page.getByText(transaction.transactionNumber, { exact: true }).first()).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.goBack()
+  await expect(row).toBeVisible({ timeout: 10_000 })
+
   // Click a non-invoice-number cell (customer name) — the whole row must
   // navigate, not just the invoice number text.
   await row.getByText(applicantName).click()
@@ -158,6 +191,32 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await expect(page.getByText(applicantName)).toBeVisible()
   await expect(page.getByText(item.name, { exact: false }).first()).toBeVisible()
   await expect(page.getByText('Rebate on this due date', { exact: false })).toBeVisible()
+
+  // Scenario 31 Part 1 — "Source sale" row, same link/deep-link behavior
+  // as the list.
+  const sourceSaleRow = page.locator('dl > div', { hasText: 'Source sale' })
+  await expect(sourceSaleRow).toBeVisible()
+  const detailSaleLink = sourceSaleRow.getByRole('link', { name: transaction.transactionNumber })
+  await expect(detailSaleLink).toBeVisible()
+  await detailSaleLink.click()
+  await expect(page).toHaveURL(
+    new RegExp(`/pos/transactions\\?search=${transaction.transactionNumber}`)
+  )
+  await expect(page.getByText(transaction.transactionNumber, { exact: true }).first()).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: invoice.invoiceNumber })).toBeVisible({
+    timeout: 10_000,
+  })
+
+  // Scenario 29 ACC-05 — "Due now" sits right below "Outstanding" and, for
+  // this not-yet-matured due, shows "—" even though Outstanding is real.
+  const outstandingRow = page.locator('dl > div', { hasText: 'Outstanding' })
+  await expect(outstandingRow).toBeVisible()
+  const dueNowRow = page.locator('dl > div', { hasText: 'Due now' })
+  await expect(dueNowRow).toBeVisible()
+  await expect(dueNowRow).toHaveText('Due now—')
 
   // Print/Download opens a popup with the right content — same
   // printInventoryDocument() shell Purchase Orders already use.
@@ -184,4 +243,15 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await expect(page.getByRole('heading', { name: invoice.invoiceNumber })).toBeVisible({
     timeout: 10_000,
   })
+
+  // Scenario 29 ACC-05 — POS Collections' customer list shows the same
+  // Outstanding-vs-Due split, aggregated per customer. This fixture's
+  // earliest due date is still a month out, so the collector's number
+  // (dueAmount) is zero even though outstandingAmount is real.
+  await gotoReady(page, '/pos/collections')
+  await page.getByPlaceholder('Filter by name or phone…').fill(applicantName)
+  const collectionsRow = page.locator('li', { hasText: applicantName })
+  await expect(collectionsRow).toBeVisible({ timeout: 10_000 })
+  await expect(collectionsRow).toContainText('outstanding')
+  await expect(collectionsRow).toContainText('Nothing due yet')
 })

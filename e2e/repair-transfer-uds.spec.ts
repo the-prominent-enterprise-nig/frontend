@@ -198,9 +198,9 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
   })
 
   // Part 2: raising a repair UDS at a non-main branch auto-pairs a draft
-  // stock transfer to the tenant's main branch (Manila HQ, seeded as
-  // Branch.isMainBranch) — this test picks Cebu's warehouse explicitly by
-  // filtering the option text, rather than assuming an index, specifically
+  // stock transfer to the tenant's main branch (Bago, seeded as
+  // Branch.isMainBranch) — this test picks Binalbagan's warehouse explicitly
+  // by filtering the option text, rather than assuming an index, specifically
   // to exercise the non-main path.
   test('issuing a repair UDS at a non-main branch surfaces the auto-paired draft transfer', async ({
     page,
@@ -216,10 +216,10 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
       .getByText('Warehouse', { exact: true })
       .locator('..')
       .locator('select')
-    const cebuOption = warehouseSelect.locator('option').filter({ hasText: 'Cebu' })
-    await expect(cebuOption).toHaveCount(1)
-    const cebuLabel = await cebuOption.innerText()
-    await warehouseSelect.selectOption({ label: cebuLabel })
+    const binalbaganOption = warehouseSelect.locator('option').filter({ hasText: 'Binalbagan' })
+    await expect(binalbaganOption).toHaveCount(1)
+    const binalbaganLabel = await binalbaganOption.innerText()
+    await warehouseSelect.selectOption({ label: binalbaganLabel })
 
     const serialInput = form.locator('input[placeholder="Search serial number…"]')
     const serialCombobox = serialInput.locator('..').locator('..')

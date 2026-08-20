@@ -11,6 +11,9 @@ type Params = {
   applicantCustomerId?: string
   /** Scenario 17 Part 6 — only return applications not yet consumed by a POS sale */
   unconsumed?: boolean
+  /** Scenario 29 POS-02 — only return applications checkout can actually use
+   * (approved or partially_approved). Use instead of status='approved'. */
+  checkoutEligible?: boolean
 }
 
 export async function getCreditApplications(params: Params = {}) {
@@ -21,6 +24,7 @@ export async function getCreditApplications(params: Params = {}) {
     branchId: params.branchId,
     applicantCustomerId: params.applicantCustomerId,
     unconsumed: params.unconsumed,
+    checkoutEligible: params.checkoutEligible,
   }
 
   return api.get<CreditApplicationListResponse>('/credit/applications', query)

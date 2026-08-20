@@ -39,6 +39,7 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
     companyTradingName: profile?.companyTradingName ?? '',
     contactPerson: profile?.contactPerson ?? '',
     mobileNumber: profile?.mobileNumber ?? '',
+    address: profile?.address ?? '',
     fiscalYearStartMonth: profile?.fiscalYearStartMonth ?? 1,
   })
 
@@ -53,6 +54,7 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
       companyTradingName: form.companyTradingName || undefined,
       contactPerson: form.contactPerson || undefined,
       mobileNumber: form.mobileNumber || undefined,
+      address: form.address || undefined,
     })
     setSaving(false)
     if (result.success) {
@@ -78,6 +80,7 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
       companyTradingName: profile?.companyTradingName ?? '',
       contactPerson: profile?.contactPerson ?? '',
       mobileNumber: profile?.mobileNumber ?? '',
+      address: profile?.address ?? '',
       fiscalYearStartMonth: profile?.fiscalYearStartMonth ?? 1,
     })
     setIsEditing(false)
@@ -151,6 +154,18 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
                 className="mt-1.5 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400"
               />
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-zinc-700">
+                Address <span className="text-xs font-normal text-zinc-400">(optional)</span>
+              </label>
+              <textarea
+                rows={2}
+                value={form.address}
+                onChange={(e) => set('address', e.target.value)}
+                placeholder="Company mailing address, shown on printable documents"
+                className="mt-1.5 w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-zinc-700">Fiscal Year Start</label>
               <select
@@ -190,6 +205,7 @@ export default function CompanyProfileSection({ profile }: { profile: BusinessPr
           <ReadField label="Trading Name" value={profile?.companyTradingName} />
           <ReadField label="Contact Person" value={profile?.contactPerson} />
           <ReadField label="Mobile Number" value={profile?.mobileNumber} />
+          <ReadField label="Address" value={profile?.address} />
           <ReadField
             label="Fiscal Year Start"
             value={profile?.fiscalYearStartMonth ? MONTHS[profile.fiscalYearStartMonth - 1] : null}

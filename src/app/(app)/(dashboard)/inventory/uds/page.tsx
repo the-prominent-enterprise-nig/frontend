@@ -6,7 +6,7 @@ import UdsList from './_components/UdsList'
 
 export const metadata = {
   title: 'Unit Document Sheets | Prominent Enterprise',
-  description: 'Track units leaving the warehouse for repair, pull-out, maintenance, or loan.',
+  description: 'Track units leaving the branch for repair, pull-out, maintenance, or loan.',
 }
 
 export default async function UdsPage() {

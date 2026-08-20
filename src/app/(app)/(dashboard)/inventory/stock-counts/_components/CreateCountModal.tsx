@@ -11,7 +11,12 @@ import {
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
 
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  branch?: { id: string; name: string } | null
+}
 
 type Props = {
   isOpen: boolean
@@ -94,7 +99,7 @@ export default function CreateCountModal({
               {onlyWarehouse ? (
                 <>
                   <p className={`${fieldClass} border-transparent bg-zinc-50 text-zinc-600`}>
-                    {onlyWarehouse.code} — {onlyWarehouse.name}
+                    {onlyWarehouse.branch?.name ?? onlyWarehouse.name}
                   </p>
                   <Controller
                     name="warehouseId"
@@ -111,7 +116,7 @@ export default function CreateCountModal({
                       <option value="">Select warehouse…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.code} — {wh.name}
+                          {wh.branch?.name ?? wh.name}
                         </option>
                       ))}
                     </select>

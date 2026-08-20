@@ -60,7 +60,7 @@ export default function CategoryFormModal(props: Props) {
     defaultValues: isEdit
       ? {
           name: props.node.name,
-          description: props.node.description ?? undefined,
+          description: props.node.description ?? '',
           parentCategoryId: props.node.parentCategoryId ?? undefined,
           displayOrder: props.node.displayOrder ?? 0,
           status: props.node.status ?? 'active',
@@ -69,6 +69,8 @@ export default function CategoryFormModal(props: Props) {
           coverImageFileId: props.node.coverImageFileId ?? undefined,
         }
       : {
+          name: '',
+          description: '',
           parentCategoryId:
             props.mode === 'create' ? (props.parentPreset?.id ?? undefined) : undefined,
           displayOrder: 0,
@@ -240,7 +242,14 @@ export default function CategoryFormModal(props: Props) {
                     type="number"
                     min={0}
                     value={field.value}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
+                    // Number('') === 0, so coercing on every keystroke snapped
+                    // the field back to "0" the instant it was cleared,
+                    // making it impossible to backspace and type a new value.
+                    // Same fix already used for quantity inputs elsewhere
+                    // (e.g. CreateTransferModal) — let it hold '' transiently.
+                    onChange={(e) =>
+                      field.onChange(e.target.value === '' ? '' : Number(e.target.value))
+                    }
                     className={fieldClass}
                   />
                 )}

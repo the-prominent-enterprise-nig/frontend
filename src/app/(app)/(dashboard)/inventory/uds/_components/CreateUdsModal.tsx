@@ -15,7 +15,19 @@ import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
-type WarehouseOption = { id: string; name: string; code: string; branchId?: string | null }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  branchId?: string | null
+  // Each branch has exactly one warehouse — display this branch name rather
+  // than the warehouse's auto-generated "{branch} Warehouse" name.
+  branch?: { id: string; name: string } | null
+}
+
+function branchLabel(wh: WarehouseOption): string {
+  return wh.branch?.name ?? wh.name
+}
 type SerialOption = {
   id: string
   serialNumber: string
@@ -31,11 +43,11 @@ type Props = {
   warehouseOptions: WarehouseOption[]
   serialOptions: SerialOption[]
   supplierOptions: SupplierOption[]
-  // A Branch Manager only ever issues a UDS against their own branch's
-  // warehouse — the list is scoped (and locked outright when it resolves to
-  // one warehouse) exactly like CreateTransferModal's "To Warehouse" field.
-  // null/undefined (head office / Business Owner) leaves the field fully
-  // open, matching this project's role-hierarchy convention.
+  // A Branch Manager only ever issues a UDS against their own branch — the
+  // list is scoped (and locked outright when it resolves to one warehouse)
+  // exactly like CreateTransferModal's "To Branch" field. null/undefined
+  // (head office / Business Owner) leaves the field fully open, matching
+  // this project's role-hierarchy convention.
   currentUserBranchId?: string | null
 }
 
@@ -145,7 +157,7 @@ export default function CreateUdsModal({
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Issue Unit Document Sheet</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              Track units leaving the warehouse for repair, pull-out, or maintenance.
+              Track units leaving the branch for repair, pull-out, or maintenance.
             </p>
           </div>
           <button
@@ -159,7 +171,7 @@ export default function CreateUdsModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {/* Reason + Warehouse */}
+            {/* Reason + Branch */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
@@ -184,7 +196,7 @@ export default function CreateUdsModal({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
                 <Controller
                   name="warehouseId"
                   control={control}
@@ -196,7 +208,7 @@ export default function CreateUdsModal({
                         className={`${fieldClass} bg-zinc-50 text-zinc-500`}
                       >
                         <option value={lockedToWarehouseId}>
-                          {ownBranchWarehouses[0].code} — {ownBranchWarehouses[0].name}
+                          {branchLabel(ownBranchWarehouses[0])}
                         </option>
                       </select>
                     ) : (
@@ -204,7 +216,7 @@ export default function CreateUdsModal({
                         <option value="">— None —</option>
                         {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
                           <option key={w.id} value={w.id}>
-                            {w.code} — {w.name}
+                            {branchLabel(w)}
                           </option>
                         ))}
                       </select>
@@ -213,7 +225,7 @@ export default function CreateUdsModal({
                 />
                 {lockedToWarehouseId && (
                   <p className="mt-1 text-xs text-zinc-400">
-                    UDS are always issued from your own branch&apos;s warehouse.
+                    UDS are always issued from your own branch.
                   </p>
                 )}
               </div>

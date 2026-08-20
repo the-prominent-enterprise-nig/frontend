@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm, useFieldArray, Controller } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch, Controller, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import {
   X,
   Loader2,
@@ -40,6 +41,12 @@ import {
 } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { SerialSearchCombobox } from './SerialSearchCombobox'
+import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
+import { searchVehicles } from '../_actions/search-vehicles'
+import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
 
 const STATUS_CONFIG = {
   pending_manager_approval: {
@@ -92,6 +99,154 @@ function formatDateOnly(iso?: string | null) {
     month: 'short',
     day: 'numeric',
   })
+}
+
+// Each branch has exactly one warehouse, so a transfer's fromWarehouse/
+// toWarehouse is really a branch — display the branch's own name rather than
+// the warehouse's auto-generated "{branch} Warehouse" name.
+function branchLabel(
+  wh: { name: string; branch?: { name: string } | null } | null | undefined,
+  fallback = '—'
+): string {
+  return wh?.branch?.name ?? wh?.name ?? fallback
+}
+
+// One row per serial-tracked line being dispatched — the person dispatching
+// physically has the stock in front of them, so this fetches in-stock
+// serials live, scoped to that item + the source warehouse, and lets them
+// pick the exact unit being sent. Distinct from CreateTransferModal's old
+// (removed) serial picker: that ran at request time, before the requester
+// could possibly know what's on the shelf at the other branch.
+function DispatchSerialAssignmentRow({
+  control,
+  index,
+  fromWarehouseId,
+  itemId,
+  itemLabel,
+  error,
+  canOverride,
+}: {
+  control: Control<DispatchTransferFormValues>
+  index: number
+  fromWarehouseId: string | undefined
+  itemId: string | undefined
+  itemLabel: string | undefined
+  error?: string
+  canOverride: boolean
+}) {
+  // Everyone defaults to the narrow, safe picker — in-stock at the source
+  // warehouse only — same as before override existed. Only once the
+  // "Supervisor override" checkbox itself is ticked does it widen to a
+  // tenant-wide live search; merely HOLDING the permission isn't enough to
+  // change what a normal dispatch shows, since that would surface every
+  // other branch's serials on every single dispatch and make the common
+  // case harder to use for exactly the people this feature is for.
+  const overrideChecked = Boolean(
+    useWatch({ control, name: `serialAssignments.${index}.override` })
+  )
+  const widened = canOverride && overrideChecked
+
+  const serialsQuery = useQuery({
+    queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
+    queryFn: () =>
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId,
+        status: 'in_stock',
+        limit: 500,
+      }),
+    enabled: !widened && !!fromWarehouseId && !!itemId,
+    staleTime: 30 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-zinc-600">
+        {itemLabel ?? 'Item'} <span className="text-red-500">*</span>
+      </label>
+      <Controller
+        name={`serialAssignments.${index}.serialNumberId`}
+        control={control}
+        render={({ field: f }) =>
+          widened ? (
+            <SearchCombobox
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              error={error}
+              queryKey={`dispatch-serial-override-search-${itemId}`}
+              placeholder="Search any serial number…"
+              typeToSearchMessage="Type a serial number to search across every branch…"
+              emptyMessage="No matching serial numbers"
+              search={async (query) => {
+                const res = await getSerialNumbers({
+                  itemId,
+                  search: query || undefined,
+                  limit: 25,
+                  scope: 'override',
+                })
+                return (res.data?.data ?? []).map((s) => ({
+                  id: s.id,
+                  primary: s.serialNumber,
+                  secondary:
+                    [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+                }))
+              }}
+            />
+          ) : (
+            <SerialSearchCombobox
+              value={f.value ?? ''}
+              onChange={f.onChange}
+              options={serialOptions}
+              queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}`}
+              disabled={serialsQuery.isLoading}
+              placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              error={error}
+            />
+          )
+        }
+      />
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+
+      {/* Scenario 29 SN-01 — if the picked serial fails the in-stock/
+          source-warehouse check (stale system record, physically correct
+          unit), a supervisor can force it through with a reason. Hidden
+          entirely for anyone without the override permission. */}
+      {canOverride && (
+        <Controller
+          name={`serialAssignments.${index}.override`}
+          control={control}
+          render={({ field: overrideField }) => (
+            <div className="mt-1.5">
+              <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                <input
+                  type="checkbox"
+                  checked={Boolean(overrideField.value)}
+                  onChange={(e) => overrideField.onChange(e.target.checked)}
+                />
+                Supervisor override — force this serial past the in-stock/warehouse check
+              </label>
+              {overrideField.value && (
+                <Controller
+                  name={`serialAssignments.${index}.overrideReason`}
+                  control={control}
+                  render={({ field: reasonField }) => (
+                    <input
+                      {...reasonField}
+                      value={reasonField.value ?? ''}
+                      type="text"
+                      placeholder="Reason for the override (required)"
+                      className="mt-1 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
+                    />
+                  )}
+                />
+              )}
+            </div>
+          )}
+        />
+      )}
+    </div>
+  )
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -151,12 +306,20 @@ type Props = {
   canAccept: boolean
   canReject: boolean
   canDispatch: boolean
+  /** Scenario 29 SN-01 — dispatch a mismatched serial past the normal
+   * in-stock/source-warehouse check, with a required reason. */
+  canOverrideSerial: boolean
   canReceive: boolean
   canHqApprove: boolean
   canHqReject: boolean
   canManagerApprove: boolean
   canManagerReject: boolean
   currentUserBranchId?: string | null
+  // The region of the caller's own branch — drives whether they can act on
+  // a transfer touching a real standalone warehouse (branchId: null,
+  // Scenario 27), which exact branch-ownership can never match. null/
+  // undefined for an unrestricted caller, or a branch with no region set.
+  currentUserRegion?: string | null
   onAccept: (id: string) => Promise<ApiResponse<unknown>>
   onReject: (id: string, data: RejectTransferFormValues) => Promise<ApiResponse<unknown>>
   onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
@@ -188,12 +351,14 @@ export default function TransferDetailModal({
   canAccept,
   canReject,
   canDispatch,
+  canOverrideSerial,
   canReceive,
   canHqApprove,
   canHqReject,
   canManagerApprove,
   canManagerReject,
   currentUserBranchId,
+  currentUserRegion,
   onAccept,
   onReject,
   onDispatch,
@@ -231,12 +396,16 @@ export default function TransferDetailModal({
     defaultValues: {
       expectedArrival: '',
       notes: '',
+      serialAssignments: [],
       driverName: '',
       driverPhone: '',
-      driverLicense: '',
       vehiclePlate: '',
       carrierName: '',
     },
+  })
+  const { fields: serialAssignmentFields } = useFieldArray({
+    control: dispatchForm.control,
+    name: 'serialAssignments',
   })
 
   const receiveForm = useForm<ReceiveTransferFormValues>({
@@ -287,21 +456,34 @@ export default function TransferDetailModal({
   // branch-only on the backend — so the permission alone isn't enough to
   // decide whether THIS transfer is actually theirs to act on. head office /
   // Business Owner (currentUserBranchId null) stays unrestricted.
-  const inScope = (warehouseBranchId: string | null | undefined) =>
-    !currentUserBranchId || warehouseBranchId === currentUserBranchId
-  const canAcceptThis = canAccept && inScope(transfer?.fromWarehouse?.branchId)
-  const canRejectThis = canReject && inScope(transfer?.fromWarehouse?.branchId)
-  const canDispatchThis = canDispatch && inScope(transfer?.fromWarehouse?.branchId)
-  const canReceiveThis = canReceive && inScope(transfer?.toWarehouse?.branchId)
+  // A real standalone warehouse (branchId: null — Scenario 27, ported from
+  // Warehouse Request) falls back to region match instead of exact branch
+  // ownership, since ownership can never be satisfied for one.
+  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+    !currentUserBranchId ||
+    warehouseBranchId === currentUserBranchId ||
+    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
+  const canAcceptThis =
+    canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canRejectThis =
+    canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canDispatchThis =
+    canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canReceiveThis =
+    canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
-  const canManagerApproveThis = canManagerApprove && inScope(transfer?.toWarehouse?.branchId)
-  const canManagerRejectThis = canManagerReject && inScope(transfer?.toWarehouse?.branchId)
+  const canManagerApproveThis =
+    canManagerApprove && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canManagerRejectThis =
+    canManagerReject && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   // Cancelling withdraws YOUR OWN request — scoped to the requester's own
   // branch (TO warehouse), same direction as manager-approval above. The
   // source branch has its own dedicated decline path (Reject/Reject HQ),
   // which captures a reason, so it doesn't get a "Cancel" button here too.
-  const canCancelThis = CANCELLABLE_STATUSES.has(status) && inScope(transfer?.toWarehouse?.branchId)
+  const canCancelThis =
+    CANCELLABLE_STATUSES.has(status) &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -314,14 +496,52 @@ export default function TransferDetailModal({
   // all of them, not just the first.
   const extraLinesReceived = (transfer?.goodsReceipts ?? []).flatMap((grn) => grn.lines ?? [])
 
+  // A repair transfer auto-paired by the UDS module tracks its specific
+  // serial separately (the UDS's own line) — never require an assignment
+  // here for one of those, even for a serial-tracked line.
+  const isUdsLinked = (transfer?.linkedUds?.length ?? 0) > 0
+
+  function openDispatchForm() {
+    if (!transfer) return
+    const serialAssignments = isUdsLinked
+      ? []
+      : (transfer.lines ?? [])
+          .filter((line) => line.item?.isSerialTracked)
+          .map((line) => ({
+            lineId: line.id ?? '',
+            itemId: line.itemId ?? line.item?.id ?? '',
+            itemLabel: line.item?.name,
+            serialNumberId: '',
+          }))
+    dispatchForm.reset({
+      expectedArrival: '',
+      notes: '',
+      serialAssignments,
+      driverName: '',
+      driverPhone: '',
+      vehiclePlate: '',
+      carrierName: '',
+    })
+    setShowDispatchForm(true)
+  }
+
   async function handleDispatchSubmit(data: DispatchTransferFormValues) {
     if (!transfer) return
     const result = await onDispatch(transfer.id, {
       expectedArrival: data.expectedArrival,
       notes: data.notes || undefined,
+      serialAssignments: data.serialAssignments?.length
+        ? data.serialAssignments.map((a) => ({
+            lineId: a.lineId,
+            serialNumberId: a.serialNumberId,
+            ...(a.override && {
+              override: true,
+              overrideReason: a.overrideReason,
+            }),
+          }))
+        : undefined,
       driverName: data.driverName,
       driverPhone: data.driverPhone,
-      driverLicense: data.driverLicense,
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName,
     })
@@ -421,6 +641,22 @@ export default function TransferDetailModal({
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
+  // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
+  // the source branch a vehicle is on file for, same as the branch the
+  // dispatching stock is leaving from.
+  const dispatchFromBranchId = transfer?.fromWarehouse?.branch?.id
+  async function searchDispatchVehicles(query: string) {
+    const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
+    return result.success && result.data ? result.data : []
+  }
+  // Picking a roster entry from either field fills both — driverName and
+  // vehiclePlate are the only two fields the Vehicle model actually carries
+  // (phone/license/carrier stay manual, they're not in the fleet sheet).
+  function pickDispatchVehicle(vehicle: VehicleSummary) {
+    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
+    dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
@@ -469,9 +705,8 @@ export default function TransferDetailModal({
                   From
                 </p>
                 <p className="mt-0.5 font-semibold text-zinc-900">
-                  {transfer.fromWarehouse?.name ?? '—'}
+                  {branchLabel(transfer.fromWarehouse)}
                 </p>
-                <p className="font-mono text-xs text-zinc-500">{transfer.fromWarehouse?.code}</p>
               </div>
               <ArrowRight className="h-5 w-5 shrink-0 text-zinc-400" />
               <div className="flex-1 min-w-0 text-right">
@@ -479,9 +714,8 @@ export default function TransferDetailModal({
                   To
                 </p>
                 <p className="mt-0.5 font-semibold text-zinc-900">
-                  {transfer.toWarehouse?.name ?? '—'}
+                  {branchLabel(transfer.toWarehouse)}
                 </p>
-                <p className="font-mono text-xs text-zinc-500">{transfer.toWarehouse?.code}</p>
               </div>
             </div>
 
@@ -782,7 +1016,7 @@ export default function TransferDetailModal({
                 {(status === 'in_transit' || isReceivedStatus) && (
                   <LedgerEvent
                     icon={<Truck className="h-3.5 w-3.5" />}
-                    label={`Dispatched — stock deducted from ${transfer.fromWarehouse?.name ?? 'source'}`}
+                    label={`Dispatched — stock deducted from ${branchLabel(transfer.fromWarehouse, 'source')}`}
                     timestamp={transfer.dispatchedAt ?? transfer.transferDate}
                     color="text-blue-700 bg-blue-100"
                   />
@@ -790,7 +1024,7 @@ export default function TransferDetailModal({
                 {status === 'received' && (
                   <LedgerEvent
                     icon={<CheckCircle className="h-3.5 w-3.5" />}
-                    label={`Received — stock added to ${transfer.toWarehouse?.name ?? 'destination'}`}
+                    label={`Received — stock added to ${branchLabel(transfer.toWarehouse, 'destination')}`}
                     timestamp={transfer.receivedAt}
                     color="text-green-700 bg-green-100"
                   />
@@ -849,6 +1083,35 @@ export default function TransferDetailModal({
                   />
                 </div>
 
+                {serialAssignmentFields.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                      Assign Serial Numbers
+                    </p>
+                    <p className="mb-2 text-xs text-zinc-500">
+                      Pick the exact unit being sent for each serial-tracked item — the requester
+                      couldn&apos;t know what&apos;s on your shelf, so it&apos;s chosen here.
+                    </p>
+                    <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-3">
+                      {serialAssignmentFields.map((f, idx) => (
+                        <DispatchSerialAssignmentRow
+                          key={f.id}
+                          control={dispatchForm.control}
+                          index={idx}
+                          fromWarehouseId={transfer?.fromWarehouse?.id}
+                          itemId={f.itemId}
+                          itemLabel={f.itemLabel}
+                          error={
+                            dispatchForm.formState.errors.serialAssignments?.[idx]?.serialNumberId
+                              ?.message
+                          }
+                          canOverride={canOverrideSerial}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   Logistics / Driver
                 </p>
@@ -862,11 +1125,14 @@ export default function TransferDetailModal({
                       name="driverName"
                       control={dispatchForm.control}
                       render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
+                        <VehicleAutocompleteInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          onPickVehicle={pickDispatchVehicle}
+                          search={searchDispatchVehicles}
+                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
-                          className={fieldClass}
+                          error={dispatchForm.formState.errors.driverName?.message}
                         />
                       )}
                     />
@@ -890,34 +1156,20 @@ export default function TransferDetailModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-600">
-                      Driver License <span className="text-red-500">*</span>
-                    </label>
-                    <Controller
-                      name="driverLicense"
-                      control={dispatchForm.control}
-                      render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
-                          placeholder="License number"
-                          className={fieldClass}
-                        />
-                      )}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-zinc-600">
                       Vehicle Plate <span className="text-red-500">*</span>
                     </label>
                     <Controller
                       name="vehiclePlate"
                       control={dispatchForm.control}
                       render={({ field }) => (
-                        <input
-                          {...field}
-                          type="text"
+                        <VehicleAutocompleteInput
+                          value={field.value}
+                          onChange={field.onChange}
+                          onPickVehicle={pickDispatchVehicle}
+                          search={searchDispatchVehicles}
+                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. ABC 1234"
-                          className={fieldClass}
+                          error={dispatchForm.formState.errors.vehiclePlate?.message}
                         />
                       )}
                     />
@@ -1420,7 +1672,7 @@ export default function TransferDetailModal({
                 {status === 'draft' && canDispatchThis && (
                   <button
                     type="button"
-                    onClick={() => setShowDispatchForm(true)}
+                    onClick={openDispatchForm}
                     className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                   >
                     <Truck className="h-4 w-4" />

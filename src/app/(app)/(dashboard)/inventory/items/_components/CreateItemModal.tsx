@@ -7,12 +7,22 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ItemTagLabel, ClassificationOption } from '@/src/schema/inventory/items'
-import { ALL_TAGS, DIMENSION_FIELDS, NumericInput, FormSection } from './item-form-shared'
+import {
+  ALL_TAGS,
+  DIMENSION_FIELDS,
+  NumericInput,
+  FormSection,
+  AccountField,
+} from './item-form-shared'
 import { formatClassificationLabel } from '@/src/libs/format/text'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import {
+  getAccounts,
+  getTaxRates,
+  type Account,
+  type TaxRate,
+} from '@/src/libs/data/AccountingData'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
@@ -212,7 +222,7 @@ export default function CreateItemModal({
   useEffect(() => {
     if (!isOpen) return
     ;(async () => {
-      const [a, t] = await Promise.all([getAccounts({ limit: 500 }), TaxRates.list(true)])
+      const [a, t] = await Promise.all([getAccounts({ limit: 500 }), getTaxRates()])
       const aData = a.data as any
       setAccounts((aData?.items ?? aData ?? []) as Account[])
       const activeTaxRates = (t.data ?? []).filter((r) => r.isActive)
@@ -603,7 +613,7 @@ export default function CreateItemModal({
                       .filter((t) => t.isActive)
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                          {t.name} ({Number(t.rate).toFixed(2)}%)
                         </option>
                       ))}
                   </select>
@@ -742,9 +752,9 @@ export default function CreateItemModal({
               from a legacy stock sheet. Leave blank to create the item with no stock.
             </div>
 
-            {/* Warehouse */}
+            {/* Branch */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Warehouse</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
               <Controller
                 name="initialWarehouseId"
                 control={control}
@@ -757,7 +767,7 @@ export default function CreateItemModal({
                     <option value="">— None —</option>
                     {warehouses.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name}
+                        {w.branch?.name ?? w.name}
                       </option>
                     ))}
                   </select>
@@ -960,7 +970,7 @@ export default function CreateItemModal({
                         <option value="">— Use default —</option>
                         {taxRates.map((t) => (
                           <option key={t.id} value={t.id}>
-                            {t.code} — {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                            {t.name} ({Number(t.rate).toFixed(2)}%)
                           </option>
                         ))}
                       </select>
@@ -1034,49 +1044,6 @@ function PendingThumbnail({
       >
         <X className="h-3 w-3" />
       </button>
-    </div>
-  )
-}
-
-// ACC-21: dropdown of accounts filtered by type, controlled by react-hook-form
-function AccountField({
-  label,
-  name,
-  control,
-  accounts,
-  filter,
-}: {
-  label: string
-  name: 'revenueAccountId' | 'cogsAccountId' | 'inventoryAccountId'
-  control: any
-  accounts: Account[]
-  filter?: string
-}) {
-  const filtered = filter
-    ? accounts.filter((a) => String((a as any).type).toUpperCase() === filter)
-    : accounts
-  return (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-zinc-700">{label}</label>
-      <Controller
-        name={name}
-        control={control}
-        render={({ field }) => (
-          <select
-            {...field}
-            value={field.value != null ? String(field.value) : ''}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-          >
-            <option value="">— Use default mapping —</option>
-            {filtered.map((a) => (
-              <option key={a.id} value={a.id}>
-                {(a as any).number ?? a.code} — {a.name}
-              </option>
-            ))}
-          </select>
-        )}
-      />
-      \{' '}
     </div>
   )
 }

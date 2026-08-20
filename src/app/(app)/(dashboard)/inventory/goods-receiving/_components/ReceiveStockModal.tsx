@@ -46,7 +46,6 @@ const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
   batchNumber: '',
   expiryDate: '',
   qualityHold: false,
-  autoGenerateSerials: false,
   notes: '',
 })
 
@@ -62,6 +61,8 @@ const defaultValues: ReceiveStockFormValues = {
   nndpCost: undefined,
   receivedAt: '',
   notes: '',
+  deliveryReceiptNumber: '',
+  supplierInvoiceNumber: '',
   lines: [],
 }
 
@@ -137,10 +138,9 @@ export default function ReceiveStockModal({
     setValue(`lines.${idx}.itemId`, itemId)
     const item = pickedItems[itemId] ?? items.find((i) => i.id === itemId)
     if (item?.costPrice != null) setValue(`lines.${idx}.unitCost`, item.costPrice)
+    const fieldId = fields[idx]?.id
     if (!item?.isSerialTracked) {
-      setValue(`lines.${idx}.autoGenerateSerials`, false)
       setValue(`lines.${idx}.serialNumbers`, undefined)
-      const fieldId = fields[idx]?.id
       if (fieldId) {
         setSerialText((prev) => ({ ...prev, [fieldId]: '' }))
         setExpandedSerialRows((prev) => {
@@ -149,6 +149,10 @@ export default function ReceiveStockModal({
           return next
         })
       }
+    } else if (fieldId) {
+      // Serial-tracked items require a serial per unit — surface the entry
+      // field immediately rather than making staff hunt for a toggle.
+      setExpandedSerialRows((prev) => new Set(prev).add(fieldId))
     }
   }
 
@@ -167,14 +171,13 @@ export default function ReceiveStockModal({
       .filter(Boolean)
   }
 
-  function toggleSerialEntry(fieldId: string, idx: number): void {
+  function toggleSerialEntry(fieldId: string): void {
     setExpandedSerialRows((prev) => {
       const next = new Set(prev)
       if (next.has(fieldId)) {
         next.delete(fieldId)
       } else {
         next.add(fieldId)
-        setValue(`lines.${idx}.autoGenerateSerials`, false)
       }
       return next
     })
@@ -186,19 +189,6 @@ export default function ReceiveStockModal({
     setValue(`lines.${idx}.serialNumbers`, parsed.length > 0 ? parsed : undefined, {
       shouldValidate: true,
     })
-  }
-
-  function handleAutoGenerateToggle(fieldId: string, idx: number, checked: boolean): void {
-    setValue(`lines.${idx}.autoGenerateSerials`, checked)
-    if (checked) {
-      setValue(`lines.${idx}.serialNumbers`, undefined)
-      setSerialText((prev) => ({ ...prev, [fieldId]: '' }))
-      setExpandedSerialRows((prev) => {
-        const next = new Set(prev)
-        next.delete(fieldId)
-        return next
-      })
-    }
   }
 
   return (
@@ -240,7 +230,7 @@ export default function ReceiveStockModal({
                   )}
                 />
                 <p className="mt-0.5 text-xs text-zinc-400">
-                  Leave blank to auto-generate (GRN-YYYYMMDD-NNNN)
+                  Leave blank to auto-generate (RR-YYYYMMDD-NNNN)
                 </p>
               </div>
 
@@ -288,6 +278,50 @@ export default function ReceiveStockModal({
               </div>
             </div>
 
+            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
+                Receiving Report */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Delivery Receipt No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
+                </label>
+                <Controller
+                  name="deliveryReceiptNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. DR-00123"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Supplier Invoice No.
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
+                </label>
+                <Controller
+                  name="supplierInvoiceNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. SI-00456"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+              </div>
+            </div>
+
             {/* Supplier */}
             <div className="sm:w-1/2">
               <label className="mb-1 block text-sm font-medium text-zinc-700">
@@ -322,7 +356,7 @@ export default function ReceiveStockModal({
                     <option value="">Select warehouse…</option>
                     {warehouses.map((wh) => (
                       <option key={wh.id} value={wh.id}>
-                        {wh.code} — {wh.name}
+                        {wh.name}
                       </option>
                     ))}
                   </select>
@@ -599,25 +633,10 @@ export default function ReceiveStockModal({
                             </td>
                             <td className="px-3 py-2">
                               {isLineSerialTracked(idx) ? (
-                                <div className="flex flex-col items-center gap-1">
-                                  <Controller
-                                    name={`lines.${idx}.autoGenerateSerials`}
-                                    control={control}
-                                    render={({ field: f }) => (
-                                      <input
-                                        type="checkbox"
-                                        checked={f.value ?? false}
-                                        onChange={(e) =>
-                                          handleAutoGenerateToggle(field.id, idx, e.target.checked)
-                                        }
-                                        title="Auto-assign a serial number & barcode per unit received"
-                                        className="h-4 w-4 rounded border-zinc-300 accent-prominent-purple-700"
-                                      />
-                                    )}
-                                  />
+                                <div className="flex justify-center">
                                   <button
                                     type="button"
-                                    onClick={() => toggleSerialEntry(field.id, idx)}
+                                    onClick={() => toggleSerialEntry(field.id)}
                                     className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
                                   >
                                     {expandedSerialRows.has(field.id) ? (

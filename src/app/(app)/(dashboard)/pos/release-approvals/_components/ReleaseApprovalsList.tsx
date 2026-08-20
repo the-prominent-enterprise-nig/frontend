@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   ShieldCheck,
   ShieldOff,
@@ -14,7 +15,6 @@ import {
   Printer,
   AlertTriangle,
   History,
-  ArrowLeft,
   FileSignature,
 } from 'lucide-react'
 import {
@@ -93,6 +93,15 @@ function shortId(id?: string | null): string {
   return id.length > 8 ? `${id.slice(0, 8)}…` : id
 }
 
+/** The identifier a cashier actually recognizes — the real transaction
+ * number once approved (matches this request's resolution notification
+ * title exactly, see ReleaseFormRequestsService.notifyResolved on the
+ * backend), or a short request-id-derived code before that (no transaction
+ * exists yet for a pending/rejected request). */
+function referenceLabel(req: PosReleaseFormRequest): string {
+  return req.createdTransaction?.transactionNumber ?? `#${req.id.slice(0, 8).toUpperCase()}`
+}
+
 function cashierLabel(req: PosReleaseFormRequest): string {
   return req.requestedBy?.name ?? req.session?.cashier?.name ?? shortId(req.requestedById)
 }
@@ -125,7 +134,7 @@ function promissoryNoteBlocksRelease(req: PosReleaseFormRequest): boolean {
 function RequestRowSkeleton() {
   return (
     <tr>
-      {Array.from({ length: 10 }).map((_, i) => (
+      {Array.from({ length: 11 }).map((_, i) => (
         <td key={i} className="px-5 py-3">
           <Skeleton className="h-3.5 w-16" />
         </td>
@@ -136,6 +145,10 @@ function RequestRowSkeleton() {
 
 export default function ReleaseApprovalsList({ isManager }: Props) {
   const { branchId } = usePosBranchContext()
+  // A resolved-notification click-through lands here with ?tab=history —
+  // the item it's pointing at is already actioned and won't be in Pending.
+  const searchParams = useSearchParams()
+  const initialTab = searchParams.get('tab') === 'history' ? 'history' : 'pending'
   const [requests, setRequests] = useState<PosReleaseFormRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -153,11 +166,13 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
   const [signingPromissoryNote, setSigningPromissoryNote] = useState(false)
   const [signPromissoryNoteError, setSignPromissoryNoteError] = useState('')
 
-  // History view
-  const [showHistory, setShowHistory] = useState(false)
+  // Pending / History are tabs on one page, not separate views — see
+  // activeTab below.
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>(initialTab)
   const [historyRequests, setHistoryRequests] = useState<PosReleaseFormRequest[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState('')
+  const [historyLoaded, setHistoryLoaded] = useState(false)
 
   async function load() {
     const res = isManager
@@ -183,6 +198,13 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId])
 
+  // Landed directly on the History tab (e.g. via a resolved-notification
+  // click-through) — load it up front instead of waiting for a tab click.
+  useEffect(() => {
+    if (initialTab === 'history') loadHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function loadHistory() {
     setHistoryLoading(true)
     const res = isManager
@@ -195,15 +217,12 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
       setHistoryError(res.error ?? 'Failed to load history.')
     }
     setHistoryLoading(false)
+    setHistoryLoaded(true)
   }
 
-  function openHistory() {
-    setShowHistory(true)
-    loadHistory()
-  }
-
-  function closeHistory() {
-    setShowHistory(false)
+  function switchTab(tab: 'pending' | 'history') {
+    setActiveTab(tab)
+    if (tab === 'history' && !historyLoaded) loadHistory()
   }
 
   function openReview(req: PosReleaseFormRequest) {
@@ -429,50 +448,51 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          {showHistory ? (
-            <>
-              <button
-                onClick={closeHistory}
-                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-              >
-                <ArrowLeft size={15} />
-                Back to Queue
-              </button>
-              <h1 className="mt-1 text-xl font-bold text-gray-900">
-                Release &amp; Application Form History
-              </h1>
-              <p className="mt-0.5 text-sm text-gray-500">
-                Approved and rejected release form requests.
-              </p>
-            </>
-          ) : (
-            <>
-              <h1 className="text-xl font-bold text-gray-900">
-                Release &amp; Application Form Approvals
-              </h1>
-              <p className="mt-0.5 text-sm text-gray-500">
-                Serial-tracked sales and credit (charge) sales awaiting manager approval before
-                their invoice is created.
-              </p>
-            </>
-          )}
-        </div>
-        {!showHistory && (
-          <button
-            onClick={openHistory}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            <History size={13} />
-            History
-          </button>
-        )}
+    <div className="mx-auto max-w-7xl space-y-6 p-6">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">
+          Release &amp; Application Form Approvals
+        </h1>
+        <p className="mt-0.5 text-sm text-gray-500">
+          Serial-tracked sales and credit (charge) sales awaiting manager approval before their
+          invoice is created.
+        </p>
       </div>
 
-      {/* ── History view ─────────────────────────────────────────────────── */}
-      {showHistory && (
+      {/* Tabs — Pending and History live on this one page, not a separate
+          click-through view. */}
+      <div className="flex gap-1 border-b border-gray-100">
+        <button
+          onClick={() => switchTab('pending')}
+          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'pending'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          <Clock size={13} />
+          Pending
+          {requests.length > 0 && (
+            <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
+              {requests.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => switchTab('history')}
+          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'history'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          }`}
+        >
+          <History size={13} />
+          History
+        </button>
+      </div>
+
+      {/* ── History tab ──────────────────────────────────────────────────── */}
+      {activeTab === 'history' && (
         <>
           {historyError && (
             <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -498,6 +518,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
                       {[
+                        'Ref #',
                         'Type',
                         'Item / Serial',
                         'Cashier',
@@ -526,6 +547,12 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                           onClick={() => setDetailTarget(req)}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                         >
+                          <td
+                            className="whitespace-nowrap px-5 py-3 font-mono text-xs text-gray-500"
+                            title={req.id}
+                          >
+                            {referenceLabel(req)}
+                          </td>
                           <td className="px-5 py-3">
                             <RequestTypeBadge requestType={req.requestType} />
                           </td>
@@ -566,8 +593,8 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
         </>
       )}
 
-      {/* ── Pending view ─────────────────────────────────────────────────── */}
-      {!showHistory && (
+      {/* ── Pending tab ──────────────────────────────────────────────────── */}
+      {activeTab === 'pending' && (
         <>
           {loadError && (
             <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -582,6 +609,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
                       {[
+                        'Ref #',
                         'Type',
                         'Item / Serial',
                         'Cashier',
@@ -668,6 +696,12 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                           onClick={() => setDetailTarget(req)}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                         >
+                          <td
+                            className="whitespace-nowrap px-5 py-3 font-mono text-xs text-gray-500"
+                            title={req.id}
+                          >
+                            {referenceLabel(req)}
+                          </td>
                           <td className="px-5 py-3">
                             <RequestTypeBadge requestType={req.requestType} />
                           </td>

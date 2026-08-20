@@ -5,25 +5,24 @@ import type { LucideIcon } from 'lucide-react'
 import {
   BarChart2,
   LayoutGrid,
-  Clock,
   Bell,
   Gift,
   Activity,
   Zap,
   AlertTriangle,
-  ListChecks,
   Calendar,
   ShoppingCart,
   TrendingUp,
   Trophy,
   Package,
   FileWarning,
-  Truck,
+  Bookmark,
   Store,
   Building,
   Layers,
   ClipboardList,
   Calculator,
+  UserPlus,
 } from 'lucide-react'
 
 export type DashboardRole = 'admin' | 'hr' | 'accounting' | 'inventory' | 'sales' | 'default'
@@ -110,17 +109,26 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minH: 3,
     roles: ['admin'],
   },
-  {
-    id: 'pending-requests',
-    label: 'Pending Requests',
-    icon: Clock,
-    description: 'Items awaiting your action',
-    defaultW: 4,
-    defaultH: 3,
-    minW: 3,
-    minH: 3,
-    roles: ['admin', 'hr', 'accounting', 'inventory'],
-  },
+  // Not registered: Leave/Overtime counts call the same dead HR endpoints
+  // (/leave-management/summary, /attendance/overtime-requests) as the HR
+  // widgets above — no HR backend module exists. Its other two fields
+  // ("Document Requests"/"Flagged Items") were always hardcoded to 0 with a
+  // "Soon" label — no backend concept for either exists yet, so there's
+  // nothing real to wire even once HR exists. Uncomment once both are
+  // resolved (also re-add Clock to the lucide-react import above, and this
+  // id back into EditableDashboard.tsx + the hr/accounting/inventory/default
+  // role defaults below).
+  // {
+  //   id: 'pending-requests',
+  //   label: 'Pending Requests',
+  //   icon: Clock,
+  //   description: 'Items awaiting your action',
+  //   defaultW: 4,
+  //   defaultH: 3,
+  //   minW: 3,
+  //   minH: 3,
+  //   roles: ['admin', 'hr', 'accounting', 'inventory'],
+  // },
   {
     id: 'reminders',
     label: 'Reminders',
@@ -176,17 +184,23 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minH: 3,
     roles: ['admin'],
   },
-  {
-    id: 'task-overview',
-    label: 'Task Overview',
-    icon: ListChecks,
-    description: 'Task completion and progress',
-    defaultW: 6,
-    defaultH: 3,
-    minW: 4,
-    minH: 3,
-    roles: ['admin', 'hr', 'accounting', 'inventory'],
-  },
+  // Not registered: no Task concept exists anywhere in the backend (no
+  // model, no controller) — this was pure hardcoded mock with nothing real
+  // to wire. Uncomment once a real Task backend feature exists (also re-add
+  // ListChecks to the lucide-react import above, and this id back into
+  // EditableDashboard.tsx + the admin/hr/accounting/inventory role defaults
+  // below).
+  // {
+  //   id: 'task-overview',
+  //   label: 'Task Overview',
+  //   icon: ListChecks,
+  //   description: 'Task completion and progress',
+  //   defaultW: 6,
+  //   defaultH: 3,
+  //   minW: 4,
+  //   minH: 3,
+  //   roles: ['admin', 'hr', 'accounting', 'inventory'],
+  // },
   {
     id: 'calendar',
     label: 'Calendar',
@@ -203,7 +217,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     id: 'sales-stats',
     label: 'Sales Overview',
     icon: ShoppingCart,
-    description: 'Total sales, revenue, and order metrics',
+    description: 'Total sales, transactions, and refunds this month',
     defaultW: 12,
     defaultH: 3,
     minW: 4,
@@ -214,7 +228,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     id: 'sales-trend',
     label: 'Sales Trend',
     icon: TrendingUp,
-    description: 'Monthly revenue trend',
+    description: 'Monthly sales trend',
     defaultW: 6,
     defaultH: 4,
     minW: 4,
@@ -225,7 +239,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     id: 'top-customers',
     label: 'Top Customers',
     icon: Trophy,
-    description: 'Highest-revenue customers this period',
+    description: 'Highest-revenue customers, last 90 days',
     defaultW: 6,
     defaultH: 4,
     minW: 3,
@@ -234,9 +248,9 @@ export const ALL_WIDGETS: WidgetDef[] = [
   },
   {
     id: 'recent-orders',
-    label: 'Recent Orders',
+    label: 'Recent Transactions',
     icon: Package,
-    description: 'Latest sales orders and status',
+    description: 'Latest POS transactions and status',
     defaultW: 6,
     defaultH: 4,
     minW: 3,
@@ -256,9 +270,9 @@ export const ALL_WIDGETS: WidgetDef[] = [
   },
   {
     id: 'pending-deliveries',
-    label: 'Pending Deliveries',
-    icon: Truck,
-    description: 'Orders awaiting dispatch or delivery',
+    label: 'Pending Reservations',
+    icon: Bookmark,
+    description: 'SKU reservations awaiting customer pickup',
     defaultW: 6,
     defaultH: 3,
     minW: 3,
@@ -320,6 +334,89 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minH: 3,
     roles: ['admin', 'accounting'],
   },
+  {
+    id: 'recent-leads',
+    label: 'Recent Leads',
+    icon: UserPlus,
+    description: 'Newest CRM leads, stage, and estimated value',
+    defaultW: 6,
+    defaultH: 4,
+    minW: 3,
+    minH: 3,
+    roles: ['admin', 'sales'],
+  },
+  // ── HR widgets ───────────────────────────────────────────────────────────────
+  // Not registered: there is no HR module on the backend (no employees/leave-management/
+  // attendance/payroll controllers), so every one of these widgets' API calls 404s. Uncomment
+  // once a real HR backend module exists (also re-add ClipboardCheck, Users2, CalendarClock,
+  // Timer, Wallet, Receipt to the lucide-react import above, and their entries in
+  // EditableDashboard.tsx, defaultWidgetsByRole.hr, and defaultLayoutsByRole.hr).
+  // {
+  //   id: 'attendance-summary',
+  //   label: 'Attendance Summary',
+  //   icon: ClipboardCheck,
+  //   description: 'Present, absent, late, and on-leave counts',
+  //   defaultW: 6,
+  //   defaultH: 3,
+  //   minW: 3,
+  //   minH: 3,
+  //   roles: ['admin', 'hr'],
+  // },
+  // {
+  //   id: 'department-summary',
+  //   label: 'Department Summary',
+  //   icon: Users2,
+  //   description: 'Headcount and active employees per department',
+  //   defaultW: 6,
+  //   defaultH: 4,
+  //   minW: 3,
+  //   minH: 3,
+  //   roles: ['admin', 'hr'],
+  // },
+  // {
+  //   id: 'leave-requests',
+  //   label: 'Leave Requests',
+  //   icon: CalendarClock,
+  //   description: 'Pending leave requests awaiting review',
+  //   defaultW: 4,
+  //   defaultH: 4,
+  //   minW: 3,
+  //   minH: 3,
+  //   roles: ['admin', 'hr'],
+  // },
+  // {
+  //   id: 'overtime-requests',
+  //   label: 'Overtime Requests',
+  //   icon: Timer,
+  //   description: 'Overtime requests and their status',
+  //   defaultW: 4,
+  //   defaultH: 4,
+  //   minW: 3,
+  //   minH: 3,
+  //   roles: ['admin', 'hr'],
+  // },
+  // {
+  //   id: 'payroll-summary',
+  //   label: 'Payroll Summary',
+  //   icon: Wallet,
+  //   description: 'Current payroll period breakdown and net pay',
+  //   defaultW: 4,
+  //   defaultH: 5,
+  //   minW: 3,
+  //   minH: 4,
+  //   roles: ['admin', 'hr'],
+  // },
+  // {
+  //   id: 'payslip-status',
+  //   label: 'Payslip Status',
+  //   icon: Receipt,
+  //   description: 'Payslip pipeline: computed, approved, generated, released',
+  //   defaultW: 5,
+  //   defaultH: 5,
+  //   minW: 3,
+  //   minH: 4,
+  //   roles: ['admin', 'hr'],
+  // },
 ]
 
 export const widgetById: Record<string, WidgetDef> = Object.fromEntries(
@@ -403,16 +500,18 @@ export const widgetsByRole: Record<DashboardRole, WidgetDef[]> = {
 // ── Default visible widget lists per role ─────────────────────────────────────
 
 export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
-  admin: ['calendar', 'module-stats', 'sales-by-branch', 'pending-approvals', 'recent-activity'],
-  hr: ['stats', 'pending-requests', 'recent-activity', 'employee-birthdays', 'calendar'],
-  accounting: [
-    'stats',
-    'outstanding-invoices',
+  admin: [
+    'calendar',
+    'module-stats',
+    'cogs-gaps',
     'pending-approvals',
-    'pending-requests',
+    'outstanding-invoices',
     'recent-activity',
+    'sales-by-branch',
   ],
-  inventory: ['stats', 'task-overview', 'recent-activity', 'quick-actions', 'system-alerts'],
+  hr: ['stats', 'recent-activity', 'employee-birthdays', 'calendar'],
+  accounting: ['stats', 'outstanding-invoices', 'pending-approvals', 'recent-activity'],
+  inventory: ['stats', 'recent-activity', 'quick-actions', 'system-alerts'],
   sales: [
     'sales-stats',
     'sales-trend',
@@ -421,7 +520,7 @@ export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
     'outstanding-invoices',
     'pending-deliveries',
   ],
-  default: ['pending-requests', 'reminders', 'calendar', 'recent-activity'],
+  default: ['reminders', 'calendar', 'recent-activity'],
 }
 
 // ── Default grid layouts per role ─────────────────────────────────────────────
@@ -430,14 +529,15 @@ export const defaultLayoutsByRole: Record<DashboardRole, LayoutItem[]> = {
   admin: [
     { i: 'calendar', x: 0, y: 0, w: 12, h: 5, minW: 4, minH: 3 },
     { i: 'module-stats', x: 0, y: 7, w: 12, h: 4, minW: 6, minH: 3 },
-    { i: 'sales-by-branch', x: 0, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'cogs-gaps', x: 0, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
     { i: 'pending-approvals', x: 6, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'recent-activity', x: 0, y: 15, w: 12, h: 4, minW: 3, minH: 3 },
+    { i: 'outstanding-invoices', x: 0, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'recent-activity', x: 6, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
+    { i: 'sales-by-branch', x: 0, y: 19, w: 6, h: 3, minW: 3, minH: 3 },
   ],
   hr: [
     { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'pending-requests', x: 0, y: 3, w: 6, h: 3, minW: 3, minH: 3 },
-    { i: 'recent-activity', x: 6, y: 3, w: 6, h: 3, minW: 3, minH: 3 },
+    { i: 'recent-activity', x: 0, y: 3, w: 12, h: 3, minW: 3, minH: 3 },
     { i: 'employee-birthdays', x: 0, y: 6, w: 4, h: 3, minW: 3, minH: 3 },
     { i: 'calendar', x: 4, y: 6, w: 8, h: 5, minW: 4, minH: 3 },
   ],
@@ -445,19 +545,16 @@ export const defaultLayoutsByRole: Record<DashboardRole, LayoutItem[]> = {
     { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
     { i: 'outstanding-invoices', x: 0, y: 3, w: 6, h: 3, minW: 4, minH: 3 },
     { i: 'pending-approvals', x: 6, y: 3, w: 6, h: 3, minW: 4, minH: 3 },
-    { i: 'pending-requests', x: 0, y: 6, w: 4, h: 3, minW: 3, minH: 3 },
-    { i: 'recent-activity', x: 4, y: 6, w: 8, h: 3, minW: 3, minH: 3 },
+    { i: 'recent-activity', x: 0, y: 6, w: 12, h: 3, minW: 3, minH: 3 },
   ],
   inventory: [
     { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'task-overview', x: 0, y: 3, w: 6, h: 3, minW: 4, minH: 3 },
-    { i: 'recent-activity', x: 6, y: 3, w: 6, h: 3, minW: 3, minH: 3 },
-    { i: 'quick-actions', x: 0, y: 6, w: 3, h: 3, minW: 2, minH: 3 },
-    { i: 'system-alerts', x: 3, y: 6, w: 4, h: 3, minW: 3, minH: 3 },
+    { i: 'recent-activity', x: 0, y: 3, w: 6, h: 3, minW: 3, minH: 3 },
+    { i: 'quick-actions', x: 6, y: 3, w: 3, h: 3, minW: 2, minH: 3 },
+    { i: 'system-alerts', x: 9, y: 3, w: 3, h: 3, minW: 3, minH: 3 },
   ],
   default: [
-    { i: 'pending-requests', x: 0, y: 0, w: 6, h: 3, minW: 3, minH: 3 },
-    { i: 'reminders', x: 6, y: 0, w: 6, h: 3, minW: 2, minH: 3 },
+    { i: 'reminders', x: 0, y: 0, w: 6, h: 3, minW: 2, minH: 3 },
     { i: 'calendar', x: 0, y: 3, w: 8, h: 5, minW: 4, minH: 3 },
     { i: 'recent-activity', x: 8, y: 3, w: 4, h: 3, minW: 3, minH: 3 },
   ],

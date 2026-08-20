@@ -41,11 +41,6 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
         heading: 'Financing Terms',
       },
       {
-        label: 'Queue Categories',
-        path: '/pos/settings/queue-categories',
-        heading: 'Queue Categories',
-      },
-      {
         label: 'Customer Display',
         path: '/pos/settings/customer-display',
         heading: 'Customer Display',
@@ -72,7 +67,6 @@ test.describe('POS Settings — consolidated shell (Part 1)', () => {
     // standalone page): no bar renders, not even an empty one.
     for (const path of [
       '/pos/settings/general',
-      '/pos/settings/queue-categories',
       '/pos/settings/financing-terms',
       '/pos/settings/terminals',
     ]) {

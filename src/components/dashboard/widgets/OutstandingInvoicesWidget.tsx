@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { ARInvoices, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 const STATUS_STYLES: Record<string, string> = {
   SENT: 'bg-amber-100 text-amber-700',
@@ -30,11 +31,12 @@ export default function OutstandingInvoicesWidget() {
   const isCompact = variant === 'xs'
   const limit = isCompact ? 3 : 4
   const [invoices, setInvoices] = useState<ARInvoice[] | null>(null)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const res = await ARInvoices.list()
+      const res = await ARInvoices.list({ branchId: branchId ?? undefined })
       if (cancelled) return
       const all = res.data?.items ?? []
       // Outstanding = not fully paid, sorted by due date ascending
@@ -46,7 +48,7 @@ export default function OutstandingInvoicesWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   if (invoices === null) {
     return <div className="text-xs text-zinc-400 p-2">Loading...</div>

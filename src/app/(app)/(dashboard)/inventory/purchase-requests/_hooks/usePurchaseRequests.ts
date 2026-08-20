@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { STALE } from '@/src/libs/query/stale-times'
@@ -20,6 +21,7 @@ import type {
 
 export function usePurchaseRequests() {
   const queryClient = useQueryClient()
+  const router = useRouter()
 
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
@@ -35,6 +37,13 @@ export function usePurchaseRequests() {
     queryFn: () => getPurchaseRequests(queryParams),
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
+    // Scenario 26 — same gap found live in credit applications, item
+    // master, and stock adjustments: this is a maker-checker handoff
+    // across different people's browser tabs (Stock Controller submits,
+    // Branch Manager approves/rejects), and staleTime alone only refetches
+    // on THIS tab's own refocus/remount, not when someone else's action
+    // changes the record.
+    refetchInterval: 10 * 1000,
   })
 
   const createMutation = useMutation({
@@ -108,7 +117,21 @@ export function usePurchaseRequests() {
           description: result.message,
           status: 'success',
         })
+        // Approving a fully-specified PR's final tier auto-converts it into
+        // a real PO server-side (PurchaseRequestService.approve()) — the
+        // Purchase Orders tab's own cache has no way to know that happened
+        // unless it's invalidated too, same as the explicit convertFromPr
+        // mutation in usePurchaseOrders.ts already does.
         queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
+        // The PR itself also drops out of the default (non-'converted')
+        // list the instant this happens (purchase-request.service.ts's
+        // findAll excludes status:'converted' by design) — follow it to
+        // where it actually lives now instead of leaving the approver
+        // looking at a list it just vanished from.
+        if (result.data?.convertedToPo) {
+          router.replace('/inventory/purchase-orders?tab=orders')
+        }
       } else {
         showToast({
           title: 'Failed to approve purchase request',

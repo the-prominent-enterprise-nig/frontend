@@ -10,6 +10,29 @@ import {
 
 const NAME_PREFIX = 'E2E Price Use Type — '
 
+// Price Use Types no longer has its own route (Scenario 34) — it's a drawer
+// opened from the Price Lists page, so every test starts there and opens it.
+// Returns the drawer's own dialog locator: the underlying Price Lists table
+// stays mounted (just backdrop-covered) while the drawer is open, and a price
+// list referencing the same category renders that category's name in its own
+// row too — an unscoped page-wide row query can match both, so callers that
+// look up a category's row must search within this scope, not the whole page.
+async function openPriceUseTypesDrawer(page: import('@playwright/test').Page) {
+  await gotoReady(page, '/inventory/price-lists')
+  // The drawer anchors its content to the right edge of the screen, which
+  // lands on top of the React Query Devtools toggle button's oversized
+  // hover-glow hit region (dev-mode only, bottom-right corner) — hide it so
+  // it can't swallow clicks meant for the drawer's row actions.
+  await page.addStyleTag({ content: '.tsqd-parent-container { display: none !important; }' })
+  const heading = page.getByRole('heading', { name: 'Price Use Types' })
+  await clickStable(page.getByRole('button', { name: 'Price Use Types' }), heading)
+  // The drawer's panel stays mounted off-screen (translate-x-full) even while
+  // closed, so its heading reads as toBeVisible() before the slide-in
+  // transition actually brings it on screen — confirm real position too.
+  await expect(heading).toBeInViewport({ timeout: 10_000 })
+  return page.getByRole('dialog', { name: 'Price Use Types' })
+}
+
 test.describe('Inventory — Price Use Types', () => {
   test.beforeAll(async ({ request }) => {
     await sweepE2EPriceUseTypes(request, NAME_PREFIX)
@@ -21,7 +44,7 @@ test.describe('Inventory — Price Use Types', () => {
 
   test('creates, renames, and deletes a price use type', async ({ page }) => {
     const name = `${NAME_PREFIX}${Date.now()}`
-    await gotoReady(page, '/inventory/price-use-types')
+    const drawer = await openPriceUseTypesDrawer(page)
 
     await clickStable(
       page.getByRole('button', { name: 'New Price Use Type' }),
@@ -33,7 +56,7 @@ test.describe('Inventory — Price Use Types', () => {
       timeout: 10_000,
     })
 
-    const row = page.getByRole('row').filter({ hasText: name })
+    const row = drawer.getByRole('row').filter({ hasText: name })
     await expect(row).toBeVisible()
 
     const renamed = `${name} (renamed)`
@@ -47,7 +70,7 @@ test.describe('Inventory — Price Use Types', () => {
       timeout: 10_000,
     })
 
-    const renamedRow = page.getByRole('row').filter({ hasText: renamed })
+    const renamedRow = drawer.getByRole('row').filter({ hasText: renamed })
     await expect(renamedRow).toBeVisible()
 
     await clickStable(
@@ -58,7 +81,7 @@ test.describe('Inventory — Price Use Types', () => {
     // name "Delete" with the row's own trash-icon button (same convention as
     // Approve/Reject in inventory-price-list-approval-workflow.spec.ts).
     await page.getByRole('button', { name: 'Delete', exact: true }).last().click()
-    await expect(page.getByRole('row').filter({ hasText: renamed })).toHaveCount(0, {
+    await expect(drawer.getByRole('row').filter({ hasText: renamed })).toHaveCount(0, {
       timeout: 10_000,
     })
   })
@@ -70,7 +93,7 @@ test.describe('Inventory — Price Use Types', () => {
     })
     expect(create.ok()).toBeTruthy()
 
-    await gotoReady(page, '/inventory/price-use-types')
+    await openPriceUseTypesDrawer(page)
     await clickStable(
       page.getByRole('button', { name: 'New Price Use Type' }),
       page.getByRole('heading', { name: 'New Price Use Type' })
@@ -86,7 +109,7 @@ test.describe('Inventory — Price Use Types', () => {
     page,
   }) => {
     const name = `${NAME_PREFIX}${Date.now()}`
-    await gotoReady(page, '/inventory/price-use-types')
+    await openPriceUseTypesDrawer(page)
     await clickStable(
       page.getByRole('button', { name: 'New Price Use Type' }),
       page.getByRole('heading', { name: 'New Price Use Type' })
@@ -97,7 +120,15 @@ test.describe('Inventory — Price Use Types', () => {
       timeout: 10_000,
     })
 
-    await gotoReady(page, '/inventory/price-lists')
+    // The drawer's backdrop covers the underlying Price Lists page — close it
+    // before reaching for "New Price List". Same toBeInViewport() caveat as
+    // openPriceUseTypesDrawer: the panel stays mounted off-screen when
+    // closed, so position (not plain visibility) is what proves it's shut.
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('heading', { name: 'Price Use Types' })).not.toBeInViewport({
+      timeout: 10_000,
+    })
+
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
@@ -178,8 +209,8 @@ test.describe('Inventory — Price Use Types', () => {
     expect(list.ok()).toBeTruthy()
     const listId = (await list.json()).id as string
 
-    await gotoReady(page, '/inventory/price-use-types')
-    const row = page.getByRole('row').filter({ hasText: name })
+    const drawer = await openPriceUseTypesDrawer(page)
+    const row = drawer.getByRole('row').filter({ hasText: name })
     await clickStable(
       row.getByRole('button', { name: 'Delete' }),
       page.getByRole('heading', { name: 'Delete price use type?' })
@@ -201,19 +232,20 @@ test.describe('Inventory — Price Use Types', () => {
 })
 
 test.describe('Inventory — Price Use Types — RBAC', () => {
-  // A user with zero inventory permissions must never even see this page —
-  // opts out of the shared Business Owner storageState every other test in
-  // this file inherits, same convention as cit-monitor.spec.ts.
+  // A user with zero inventory permissions must never even reach the Price
+  // Lists page the categories drawer lives in — opts out of the shared
+  // Business Owner storageState every other test in this file inherits, same
+  // convention as cit-monitor.spec.ts.
   test.use({ storageState: { cookies: [], origins: [] } })
 
   const ACCOUNTANT_EMAIL = process.env.E2E_ACCOUNTANT_EMAIL ?? 'technova.b1.accounting@test.com'
   const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
-  test('a user with no inventory permissions is redirected away from the page', async ({
+  test('a user with no inventory permissions is redirected away from the Price Lists page', async ({
     page,
   }) => {
     await loginAs(page, ACCOUNTANT_EMAIL, PASSWORD)
-    await gotoReady(page, '/inventory/price-use-types')
+    await gotoReady(page, '/inventory/price-lists')
     await expect(page).toHaveURL(/\/403$/, { timeout: 10_000 })
   })
 })

@@ -26,7 +26,7 @@ test.describe('Inventory — Price List Branch Scoping', () => {
 
     await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
     await pickFromCustomSelect(page, 'Select price use type…', 'SSC')
-    await page.getByLabel('Manila HQ').check()
+    await page.getByLabel('Bago').check()
     await page.getByRole('button', { name: 'Create Price List' }).click()
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
@@ -34,7 +34,7 @@ test.describe('Inventory — Price List Branch Scoping', () => {
 
     const row = page.getByRole('row').filter({ hasText: name })
     await expect(row).toBeVisible()
-    await expect(row).toContainText('Manila HQ')
+    await expect(row).toContainText('Bago')
     await expect(row).not.toContainText('All branches')
 
     // Edit lives in the row's overflow menu now, not as a direct button. Not
@@ -44,15 +44,15 @@ test.describe('Inventory — Price List Branch Scoping', () => {
       page.getByRole('button', { name: 'Edit' }),
       page.getByRole('heading', { name: 'Edit Price List' })
     )
-    await page.getByLabel('Cebu Office').check()
+    await page.getByLabel('Binalbagan').check()
     await page.getByRole('button', { name: 'Save Changes' }).click()
     await expect(page.getByRole('heading', { name: 'Edit Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
 
     const updatedRow = page.getByRole('row').filter({ hasText: name })
-    await expect(updatedRow).toContainText('Manila HQ')
-    await expect(updatedRow).toContainText('Cebu Office')
+    await expect(updatedRow).toContainText('Bago')
+    await expect(updatedRow).toContainText('Binalbagan')
 
     const id = await findPriceListIdByName(request, name)
     await request.delete(`/api/inventory/price-lists/${id}`)

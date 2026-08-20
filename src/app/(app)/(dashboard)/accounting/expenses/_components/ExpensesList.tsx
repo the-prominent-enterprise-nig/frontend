@@ -2,8 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Pencil, Trash2, CheckCircle, Ban, X, Search } from 'lucide-react'
-import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, getVendors, type Account, type Vendor } from '@/src/libs/data/AccountingData'
+import {
+  Expenses,
+  APBillSuppliers,
+  type BusinessExpense,
+  type APBillSupplierOption,
+  fmtMoney,
+  fmtDate,
+} from '@/src/libs/data/AccountingV2Data'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
 
@@ -16,7 +23,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function ExpensesList() {
   const [items, setItems] = useState<BusinessExpense[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -44,7 +51,7 @@ export default function ExpensesList() {
     getAccounts({ limit: 500 }).then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
     )
-    getVendors().then((r) => setVendors(((r.data as any)?.items ?? r.data ?? []) as Vendor[]))
+    APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
   }, [])
 
   const del = async (id: string) => {
@@ -159,7 +166,7 @@ export default function ExpensesList() {
                 <tr key={x.id}>
                   <td className="px-3 py-2 font-mono text-xs">{x.expenseNumber}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(x.expenseDate)}</td>
-                  <td className="px-3 py-2">{x.vendor?.name ?? x.payee ?? '—'}</td>
+                  <td className="px-3 py-2">{x.supplier?.name ?? x.payee ?? '—'}</td>
                   <td className="px-3 py-2">{x.categoryAccount?.name ?? '—'}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(x.subtotal)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(x.taxAmount)}</td>
@@ -220,7 +227,7 @@ export default function ExpensesList() {
       {(creating || editing) && (
         <ExpenseForm
           initial={editing}
-          vendors={vendors}
+          suppliers={suppliers}
           expenseAccounts={expenseAccounts}
           onClose={() => {
             setCreating(false)
@@ -239,20 +246,20 @@ export default function ExpensesList() {
 
 function ExpenseForm({
   initial,
-  vendors,
+  suppliers,
   expenseAccounts,
   onClose,
   onSaved,
 }: {
   initial: BusinessExpense | null
-  vendors: Vendor[]
+  suppliers: APBillSupplierOption[]
   expenseAccounts: Account[]
   onClose: () => void
   onSaved: () => void
 }) {
   const [form, setForm] = useState({
     expenseDate: initial?.expenseDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    vendorId: initial?.vendorId ?? '',
+    supplierId: initial?.supplierId ?? '',
     payee: initial?.payee ?? '',
     description: initial?.description ?? '',
     categoryAccountId: initial?.categoryAccountId ?? '',
@@ -272,7 +279,7 @@ function ExpenseForm({
     setError(null)
     const payload = {
       ...form,
-      vendorId: form.vendorId || undefined,
+      supplierId: form.supplierId || undefined,
       payee: form.payee || undefined,
       subtotal: Number(form.subtotal),
       taxAmount: Number(form.taxAmount || 0),
@@ -325,21 +332,21 @@ function ExpenseForm({
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Vendor">
+            <Field label="Supplier">
               <select
-                value={form.vendorId}
-                onChange={(e) => setForm({ ...form, vendorId: e.target.value })}
+                value={form.supplierId}
+                onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               >
                 <option value="">— None —</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.code} — {s.name}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Payee (when no vendor)">
+            <Field label="Payee (when no supplier)">
               <input
                 value={form.payee}
                 onChange={(e) => setForm({ ...form, payee: e.target.value })}

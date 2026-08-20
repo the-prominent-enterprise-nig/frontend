@@ -2,23 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type SalesOrder = {
-  id: string
-  orderNumber?: string
-  customerName?: string
-  totalAmount?: number | string | null
-  status?: string
-  orderDate?: string
-}
+import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { customersApi } from '@/src/libs/api/crm'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import type { PosTransaction } from '@/src/schema/pos'
 
 const STATUS_STYLES: Record<string, string> = {
-  draft: 'bg-amber-100 text-amber-700',
-  confirmed: 'bg-blue-100 text-blue-700',
-  processing: 'bg-blue-100 text-blue-700',
-  delivered: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-600',
+  completed: 'bg-emerald-100 text-emerald-700',
+  voided: 'bg-red-100 text-red-600',
 }
 
 function fmtDate(dateStr?: string): string {
@@ -39,16 +30,22 @@ export default function RecentOrdersWidget() {
   const isCompact = variant === 'xs'
   const limit = isCompact ? 3 : 5
 
-  const [orders, setOrders] = useState<SalesOrder[]>([])
+  const [transactions, setTransactions] = useState<PosTransaction[]>([])
+  const [customerNames, setCustomerNames] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
-    api
-      .get<{ data?: SalesOrder[] }>('/sales/orders', { limit: 5 })
-      .then((res) => {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    Promise.all([
+      getTransactions({ dateFrom: thirtyDaysAgo.toISOString(), branchId: branchId ?? undefined }),
+      customersApi.list({ limit: 200 }),
+    ])
+      .then(([txRes, custRes]) => {
         if (cancelled) return
-        setOrders(res.data?.data ?? [])
+        setTransactions(txRes.data ?? [])
+        setCustomerNames(new Map((custRes.data?.data ?? []).map((c) => [c.id, c.name] as const)))
         setLoading(false)
       })
       .catch(() => {
@@ -57,7 +54,7 @@ export default function RecentOrdersWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   if (loading) {
     return (
@@ -74,43 +71,39 @@ export default function RecentOrdersWidget() {
     )
   }
 
-  if (orders.length === 0) {
+  if (transactions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-4 text-center">
-        <p className="text-xs text-zinc-400">No orders yet</p>
+        <p className="text-xs text-zinc-400">No transactions yet</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-0.5">
-      {orders.slice(0, limit).map((order) => {
-        const status = order.status ?? 'draft'
+      {transactions.slice(0, limit).map((t) => {
+        const customerName = t.customerId
+          ? (customerNames.get(t.customerId) ?? 'Customer')
+          : 'Walk-in Customer'
         return (
           <div
-            key={order.id}
+            key={t.id}
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50 transition"
           >
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-zinc-800">
-                {order.orderNumber ?? order.id}
-              </p>
-              {!isCompact && (
-                <p className="truncate text-[10px] text-zinc-500">{order.customerName ?? '—'}</p>
-              )}
+              <p className="truncate text-xs font-semibold text-zinc-800">{t.transactionNumber}</p>
+              {!isCompact && <p className="truncate text-[10px] text-zinc-500">{customerName}</p>}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {!isCompact && (
-                <span className="text-[10px] text-zinc-400">{fmtDate(order.orderDate)}</span>
+                <span className="text-[10px] text-zinc-400">{fmtDate(t.occurredAt)}</span>
               )}
               <span
-                className={`rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${STATUS_STYLES[status] ?? 'bg-zinc-100 text-zinc-600'}`}
+                className={`rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${STATUS_STYLES[t.status] ?? 'bg-zinc-100 text-zinc-600'}`}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {t.status.charAt(0).toUpperCase() + t.status.slice(1)}
               </span>
-              <span className="text-xs font-semibold text-zinc-700">
-                {fmtMoney(order.totalAmount)}
-              </span>
+              <span className="text-xs font-semibold text-zinc-700">{fmtMoney(t.totalAmount)}</span>
             </div>
           </div>
         )

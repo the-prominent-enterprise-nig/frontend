@@ -228,9 +228,6 @@ export default function ItemMasterTable({
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Brand / Model
               </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Cost Price
-              </th>
               <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Status
               </th>
@@ -279,11 +276,6 @@ export default function ItemMasterTable({
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
                 <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
-                <td className="px-4 py-3 text-right text-zinc-700">
-                  {item.costPrice != null
-                    ? `₱${Number(item.costPrice).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
-                    : '—'}
-                </td>
                 <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                   {/* Scenario 16: lifecycle (active/discontinued/archived) is a
                       post-publish concept — showing it alongside "Pending

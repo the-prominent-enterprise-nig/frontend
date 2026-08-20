@@ -48,6 +48,7 @@ export async function updatePurchaseRequest(
     }
   }
 
+  revalidatePath('/inventory/purchase-orders')
   revalidatePath('/inventory/purchase-requests')
 
   return {

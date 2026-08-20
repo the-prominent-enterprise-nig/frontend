@@ -7,7 +7,6 @@ import {
   Package,
   TrendingDown,
   TrendingUp,
-  AlertTriangle,
   RefreshCw,
   Clock,
   ArrowUpRight,
@@ -24,11 +23,9 @@ import {
   Warehouse,
   Tag,
   ClipboardCheck,
-  Tags,
 } from 'lucide-react'
 
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
@@ -302,8 +299,6 @@ const INIT = {
   reservedQty: 0,
   totalOnHand: 0,
   totalAvailableQty: 0,
-  lowStockCount: 0,
-  outOfStockCount: 0,
   expiringSoonCount: 0,
   projectedStockouts: 0,
   slowMovingCount: 0,
@@ -316,7 +311,6 @@ const INIT = {
   valuationByWarehouse: [] as { label: string; value: number; color: string; badge?: string }[],
   agingBreakdown: [] as { label: string; value: number; color: string }[],
   abcSegments: [] as { label: string; value: number; color: string }[],
-  reorderAlertsList: [] as any[],
   stockoutAlertsList: [] as any[],
   expiringBatchesList: [] as any[],
   recentTransfersList: [] as any[],
@@ -336,19 +330,18 @@ export default function InventoryPage() {
 
     const settled = await Promise.allSettled([
       getItems({ limit: 1 }), // 0
-      getReorderAlerts({ limit: 200 }), // 1
-      getValuationReport(), // 2
-      getTurnoverReport({ periodDays: 90 }), // 3
-      getTransfers({ limit: 20 }), // 4
-      getProjection({ days: 30 }), // 5
-      getStockoutAlerts({ days: 30 }), // 6
-      getExpiringBatches({ days: 30, limit: 20 }), // 7
-      getStockBalances({ limit: 500 }), // 8
-      getWarehouses({ status: 'active', limit: 50 }), // 9
-      getReservations({ limit: 500 }), // 10
-      getNegativeStockViolations({ limit: 50 }), // 11
-      getBackorders({ limit: 50 }), // 12
-      getReturns({ limit: 20 }), // 13
+      getValuationReport(), // 1
+      getTurnoverReport({ periodDays: 90 }), // 2
+      getTransfers({ limit: 20 }), // 3
+      getProjection({ days: 30 }), // 4
+      getStockoutAlerts({ days: 30 }), // 5
+      getExpiringBatches({ days: 30, limit: 20 }), // 6
+      getStockBalances({ limit: 500 }), // 7
+      getWarehouses({ status: 'active', limit: 50 }), // 8
+      getReservations({ limit: 500 }), // 9
+      getNegativeStockViolations({ limit: 50 }), // 10
+      getBackorders({ limit: 50 }), // 11
+      getReturns({ limit: 20 }), // 12
     ])
 
     function pick(i: number): any {
@@ -379,13 +372,8 @@ export default function InventoryPage() {
     const itemsRaw = pick(0)
     const totalSkus = itemsRaw?.total ?? itemsRaw?.meta?.total ?? 0
 
-    // Reorder alerts
-    const alertList = arr(1)
-    const lowStockCount = total(1)
-    const outOfStockCount = alertList.filter((a) => a.currentQty === 0).length
-
     // Valuation
-    const valuationRaw = pick(2)
+    const valuationRaw = pick(1)
     const valuationItems = valuationRaw?.data ?? []
     const totalValue = valuationRaw?.summary?.totalValue ?? valuationRaw?.grandTotal ?? 0
 
@@ -412,7 +400,7 @@ export default function InventoryPage() {
       }))
 
     // Turnover / ABC classification
-    const turnoverRaw = pick(3)
+    const turnoverRaw = pick(2)
     const turnoverItems = turnoverRaw?.data ?? []
     const slowMovingCount =
       turnoverRaw?.summary?.slowMoving ??
@@ -435,28 +423,28 @@ export default function InventoryPage() {
     ]
 
     // Transfers
-    const transferList = arr(4)
+    const transferList = arr(3)
     const inTransitCount = transferList.filter((t) => t.status === 'in_transit').length
 
     // Stockouts
-    const stockoutList = arr(6)
-    const projectedStockouts = total(6)
+    const stockoutList = arr(5)
+    const projectedStockouts = total(5)
 
     // Expiry
-    const expiryList = arr(7)
-    const expiringSoonCount = total(7)
+    const expiryList = arr(6)
+    const expiringSoonCount = total(6)
 
     // Stock balances
-    const balanceList = arr(8)
+    const balanceList = arr(7)
     const totalOnHand = balanceList.reduce((sum, b) => sum + (b.onHandQty ?? 0), 0)
     const totalAvailableQty = balanceList.reduce((sum, b) => sum + (b.availableQty ?? 0), 0)
 
     // Warehouses
-    const warehouseList = arr(9)
-    const activeWarehouses = total(9) || warehouseList.length
+    const warehouseList = arr(8)
+    const activeWarehouses = total(8) || warehouseList.length
 
     // Reservations — primary source for reserved qty (stock balance field is often unpopulated)
-    const reservationList = arr(10)
+    const reservationList = arr(9)
     const reservedFromReservations = reservationList.reduce(
       (sum, r) => sum + (Number(r.reservedQty ?? r.reserved_qty) || 0),
       0
@@ -465,18 +453,18 @@ export default function InventoryPage() {
       (sum, b) => sum + (Number(b.reservedQty ?? b.reserved_qty) || 0),
       0
     )
-    const reservedQty = reservedFromReservations || reservedFromBalances || total(10)
+    const reservedQty = reservedFromReservations || reservedFromBalances || total(9)
 
     // Negative stock
-    const negativeList = arr(11)
-    const negativeViolations = total(11)
+    const negativeList = arr(10)
+    const negativeViolations = total(10)
 
     // Backorders
-    const backorderList = arr(12)
-    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(12)
+    const backorderList = arr(11)
+    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(11)
 
     // Returns
-    const returnsCount = total(13)
+    const returnsCount = total(12)
 
     setS({
       loaded: true,
@@ -487,8 +475,6 @@ export default function InventoryPage() {
       reservedQty,
       totalOnHand,
       totalAvailableQty,
-      lowStockCount,
-      outOfStockCount,
       expiringSoonCount,
       projectedStockouts,
       slowMovingCount,
@@ -501,7 +487,6 @@ export default function InventoryPage() {
       valuationByWarehouse,
       agingBreakdown,
       abcSegments,
-      reorderAlertsList: alertList.slice(0, 10),
       stockoutAlertsList: stockoutList.slice(0, 8),
       expiringBatchesList: expiryList.slice(0, 8),
       recentTransfersList: transferList.slice(0, 8),
@@ -607,17 +592,7 @@ export default function InventoryPage() {
         </div>
 
         {/* Row 2: Risk KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Low Stock Items"
-            value={loading ? '—' : fmtNum(s.lowStockCount)}
-            sub={loading ? '' : `${s.outOfStockCount} out of stock`}
-            icon={AlertTriangle}
-            iconBg="bg-amber-500"
-            href="/inventory/reorder"
-            loading={loading}
-            urgent={s.lowStockCount > 0}
-          />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <KpiCard
             label="Expiring Soon"
             value={loading ? '—' : fmtNum(s.expiringSoonCount)}
@@ -700,13 +675,6 @@ export default function InventoryPage() {
                 href: '/inventory/returns',
                 accent: 'text-blue-700',
                 bg: 'bg-blue-50 border-blue-100',
-              },
-              {
-                label: 'Out of Stock',
-                val: s.outOfStockCount,
-                href: '/inventory/stock-levels',
-                accent: 'text-red-700',
-                bg: 'bg-red-50 border-red-100',
               },
             ] as const
           ).map((m, i) => (
@@ -890,7 +858,7 @@ export default function InventoryPage() {
             <ShieldAlert className="h-4 w-4 text-red-500" />
             <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -940,7 +908,8 @@ export default function InventoryPage() {
                               </p>
                             </button>
                             <p className="text-[11px] text-gray-500 truncate">
-                              {alert.item?.sku} · {alert.warehouse?.name ?? '—'}
+                              {alert.item?.sku} ·{' '}
+                              {alert.warehouse?.branch?.name ?? alert.warehouse?.name ?? '—'}
                             </p>
                           </div>
                         }
@@ -965,86 +934,6 @@ export default function InventoryPage() {
                       />
                     )
                   })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Low Stock Warnings
-                </h3>
-                <Link
-                  href="/inventory/reorder"
-                  className="text-xs text-amber-600 hover:underline tabular-nums"
-                >
-                  {loading ? '…' : s.lowStockCount} total
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-14 w-full" />
-                  ))}
-                </div>
-              ) : s.reorderAlertsList.length === 0 ? (
-                <EmptyState message="All stock levels are healthy" />
-              ) : (
-                <div className="space-y-2">
-                  {s.reorderAlertsList.map((alert, i) => (
-                    <AlertRow
-                      key={i}
-                      urgency={alert.currentQty === 0 ? 'critical' : 'warning'}
-                      left={
-                        <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              alert.item?.id &&
-                              pushPanel({
-                                type: 'item360',
-                                itemId: alert.item.id,
-                                itemName: alert.item.name,
-                              })
-                            }
-                            className="block w-full text-left"
-                          >
-                            <p className="text-xs font-semibold text-gray-900 truncate hover:text-amber-700 hover:underline">
-                              {alert.item?.name ?? 'Unknown'}
-                            </p>
-                          </button>
-                          <p className="text-[11px] text-gray-500">
-                            {alert.item?.sku} · {alert.warehouse?.name ?? '—'}
-                          </p>
-                          <div className="mt-1.5 h-1 rounded-full bg-amber-200 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-amber-500"
-                              style={{
-                                width: `${Math.min((alert.currentQty / Math.max(alert.reorderPoint, 1)) * 100, 100)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      }
-                      right={
-                        <div className="flex flex-col items-end gap-1">
-                          <span
-                            className={`text-sm font-bold ${alert.currentQty === 0 ? 'text-red-600' : 'text-amber-700'}`}
-                          >
-                            {alert.currentQty}
-                          </span>
-                          <p className="text-[10px] text-gray-400">reorder: {alert.reorderPoint}</p>
-                          <Link
-                            href="/inventory/operations?tab=receiving"
-                            className="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 hover:bg-amber-200"
-                          >
-                            Receive
-                          </Link>
-                        </div>
-                      }
-                    />
-                  ))}
                 </div>
               )}
             </div>
@@ -1175,7 +1064,8 @@ export default function InventoryPage() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs text-gray-900 truncate">
-                          {t.fromWarehouse?.name ?? '?'} → {t.toWarehouse?.name ?? '?'}
+                          {t.fromWarehouse?.branch?.name ?? t.fromWarehouse?.name ?? '?'} →{' '}
+                          {t.toWarehouse?.branch?.name ?? t.toWarehouse?.name ?? '?'}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {t._count?.lines ?? 0} line{t._count?.lines !== 1 ? 's' : ''} ·{' '}
@@ -1336,7 +1226,6 @@ export default function InventoryPage() {
                 { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                 { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
-                { label: 'Price Use Types', href: '/inventory/price-use-types', icon: Tags },
               ] as const
             ).map(({ label, href, icon: Icon }, i) => (
               <Link

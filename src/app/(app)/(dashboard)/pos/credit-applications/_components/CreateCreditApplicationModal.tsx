@@ -11,17 +11,19 @@ import {
 } from '@/src/schema/credit/applications'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
+import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { getApplicantCustomer } from '../_actions/search-applicants'
-
-type BranchOption = { id: string; name: string }
 
 type Props = {
   isOpen: boolean
   onClose: () => void
   onSubmit: (data: CreateCreditApplicationFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
+  /** Sent as branchId when set (a branch-locked actor). Left unsent
+   * otherwise — the backend defaults to the enterprise's main branch. Not
+   * a usage restriction, just which branch the application is recorded
+   * against for audit purposes (see CreditApplicationService.create()). */
   sessionBranchId?: string | null
-  branchOptions: BranchOption[]
 }
 
 const fieldClass =
@@ -33,7 +35,6 @@ export default function CreateCreditApplicationModal({
   onSubmit,
   isSubmitting,
   sessionBranchId,
-  branchOptions,
 }: Props) {
   const {
     control,
@@ -44,7 +45,10 @@ export default function CreateCreditApplicationModal({
     formState: { errors },
   } = useForm<CreateCreditApplicationFormValues>({
     resolver: zodResolver(CreateCreditApplicationFormSchema),
-    defaultValues: { branchId: sessionBranchId ?? '', requestedAmount: 0 },
+    defaultValues: {
+      branchId: sessionBranchId ?? undefined,
+      items: [{ itemId: '', variantId: undefined }],
+    },
   })
 
   const applicantCustomerId = watch('applicantCustomerId')
@@ -62,7 +66,12 @@ export default function CreateCreditApplicationModal({
   }, [applicantCustomerId, setValue])
 
   useEffect(() => {
-    if (!isOpen) reset({ branchId: sessionBranchId ?? '', requestedAmount: 0 })
+    if (!isOpen) {
+      reset({
+        branchId: sessionBranchId ?? undefined,
+        items: [{ itemId: '', variantId: undefined }],
+      })
+    }
   }, [isOpen, sessionBranchId, reset])
 
   const [serverError, setServerError] = useState<string | undefined>(undefined)
@@ -71,7 +80,10 @@ export default function CreateCreditApplicationModal({
 
   async function handleFormSubmit(data: CreateCreditApplicationFormValues) {
     setServerError(undefined)
-    const result = await onSubmit(data)
+    // The <select>'s "No co-maker" option is value="" — the backend's
+    // optional coMakerId expects the field omitted entirely, not an empty
+    // string (which would fail its @IsUUID() check).
+    const result = await onSubmit({ ...data, coMakerId: data.coMakerId || undefined })
     if (result.success) {
       onClose()
     } else {
@@ -100,31 +112,6 @@ export default function CreateCreditApplicationModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
-            {!sessionBranchId && (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Branch <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="branchId"
-                  control={control}
-                  render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select branch…</option>
-                      {branchOptions.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                />
-                {errors.branchId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.branchId.message}</p>
-                )}
-              </div>
-            )}
-
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Applicant <span className="text-red-500">*</span>
@@ -144,7 +131,7 @@ export default function CreateCreditApplicationModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Co-Maker <span className="text-red-500">*</span>
+                Co-Maker <span className="text-zinc-400">(optional)</span>
               </label>
               <Controller
                 name="coMakerId"
@@ -162,7 +149,7 @@ export default function CreateCreditApplicationModal({
                           ? 'Loading co-makers…'
                           : coMakers.length === 0
                             ? 'No co-maker on file'
-                            : 'Select co-maker…'}
+                            : 'No co-maker'}
                     </option>
                     {coMakers.map((cm) => (
                       <option key={cm.id} value={cm.id}>
@@ -172,46 +159,17 @@ export default function CreateCreditApplicationModal({
                   </select>
                 )}
               />
-              {applicantCustomerId && !applicantQuery.isLoading && coMakers.length === 0 && (
-                <p className="mt-1 text-xs text-amber-600">
-                  This customer has no co-maker on file — add one via their CRM profile first.
-                </p>
-              )}
               {errors.coMakerId && (
                 <p className="mt-1 text-xs text-red-600">{errors.coMakerId.message}</p>
               )}
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Requested Amount <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="requestedAmount"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={field.value === 0 ? '' : field.value}
-                    className={fieldClass}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) =>
-                      field.onChange(e.target.value === '' ? 0 : Number(e.target.value))
-                    }
-                  />
-                )}
-              />
-              {errors.requestedAmount && (
-                <p className="mt-1 text-xs text-red-600">{errors.requestedAmount.message}</p>
-              )}
-            </div>
+            <CreditApplicationItemFields control={control} setValue={setValue} errors={errors} />
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Item / Purpose</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Notes (optional)
+              </label>
               <Controller
                 name="itemDescription"
                 control={control}
@@ -220,7 +178,7 @@ export default function CreateCreditApplicationModal({
                     {...field}
                     value={field.value ?? ''}
                     rows={2}
-                    placeholder="e.g. Split-type aircon 1.5HP"
+                    placeholder="e.g. with installation, specific color preference"
                     className={fieldClass}
                   />
                 )}

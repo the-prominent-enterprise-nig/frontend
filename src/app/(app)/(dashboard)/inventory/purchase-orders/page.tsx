@@ -1,13 +1,14 @@
 import { redirect } from 'next/navigation'
+import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { PurchaseOrderList } from './_components/PurchaseOrderList'
+import { ProcurementHub } from './_components/ProcurementHub'
 
 export const metadata = {
   title: 'Purchase Orders | Prominent Enterprise',
-  description: 'View and manage purchase orders',
+  description: 'View and manage purchase orders and purchase requests',
 }
 
 export default async function PurchaseOrdersPage() {
@@ -17,12 +18,18 @@ export default async function PurchaseOrdersPage() {
     redirect('/login')
   }
 
-  if (!can(session, PROCUREMENT_PERMISSIONS.PO_READ)) {
+  const canReadOrders = can(session, PROCUREMENT_PERMISSIONS.PO_READ)
+  const canReadRequests = can(session, PROCUREMENT_PERMISSIONS.PR_READ)
+
+  if (!canReadOrders && !canReadRequests) {
     redirect('/403')
   }
 
+  // The "+ New Purchase" button always drafts a Purchase Request now (there's
+  // no more "skip the draft, create a live PO" path) — gate on PR_CREATE,
+  // not PO_CREATE.
   const canCreate =
-    can(session, PROCUREMENT_PERMISSIONS.PO_CREATE) ||
+    can(session, PROCUREMENT_PERMISSIONS.PR_CREATE) ||
     can(session, PROCUREMENT_PERMISSIONS.WILDCARD)
   const canApprove =
     can(session, PROCUREMENT_PERMISSIONS.PO_APPROVE) ||
@@ -36,6 +43,10 @@ export default async function PurchaseOrdersPage() {
   const canClose =
     can(session, PROCUREMENT_PERMISSIONS.PO_UPDATE) ||
     can(session, PROCUREMENT_PERMISSIONS.WILDCARD)
+  // Scenario 29 PO-06/PO-08 — same PO_UPDATE permission as canClose above
+  // (the edit PATCH and the close PATCH are the same endpoint/gate),
+  // named separately for clarity at the two distinct UI call sites.
+  const canEdit = canClose
   // "Receive stock" submits through the same inventory:receive:create-gated
   // endpoint as the standalone Goods Receiving flow — procurement:goods-receipts:*
   // isn't actually enforced anywhere server-side, so gate on the real permission.
@@ -48,16 +59,21 @@ export default async function PurchaseOrdersPage() {
   const canViewCost = can(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
 
   return (
-    <div className="min-h-screen bg-zinc-50">
-      <PurchaseOrderList
+    <Suspense fallback={<div className="min-h-screen bg-zinc-50" />}>
+      <ProcurementHub
+        session={session}
+        canReadOrders={canReadOrders}
+        canReadRequests={canReadRequests}
         canCreate={canCreate}
         canApprove={canApprove}
         canSend={canSend}
         canCancel={canCancel}
         canClose={canClose}
+        canEdit={canEdit}
         canReceive={canReceive}
         canViewCost={canViewCost}
+        currentUserBranchId={session.branchId}
       />
-    </div>
+    </Suspense>
   )
 }

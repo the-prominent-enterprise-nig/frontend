@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady } from './utils'
 
-// Scenario 10 (Purchasing & AP) Part 1 — APBill.supplierId. Verifies the
-// "New Bill" form has an optional Supplier field alongside the existing
-// required Vendor field, and that a bill created with a supplier shows it
-// in the list. Self-cleaning: deletes the DRAFT bill it creates.
+// Scenario 33 (Supplier/Vendor merge) Part 3 — collapsed the old separate
+// required Vendor + optional Supplier fields into one required Supplier
+// field. Verifies the "New Bill" form now has a single required Supplier
+// select, and that a bill created through it shows the supplier in the
+// list. Self-cleaning: deletes the DRAFT bill it creates.
 test.describe('Accounting — AP Bills supplier link', () => {
-  test('creates a bill with a linked supplier and shows it in the list', async ({ page }) => {
+  test('creates a bill with a required supplier and shows it in the list', async ({ page }) => {
     await gotoReady(page, '/accounting/ap-bills')
 
     // The list sorts by billDate desc — a date-only field every bill
@@ -22,14 +23,11 @@ test.describe('Accounting — AP Bills supplier link', () => {
     await page.getByRole('button', { name: 'New Bill' }).click()
     await expect(page.getByRole('heading', { name: 'New Bill' })).toBeVisible({ timeout: 10_000 })
 
-    const vendorSelect = page.locator('select').first()
-    await vendorSelect.selectOption({ index: 1 })
-
     // The supplier list loads asynchronously (fetched by the parent page,
     // passed down as a prop) — give a real second option a chance to attach
     // before deciding whether to skip, or a slow fetch reads as "no
     // suppliers" even though some exist.
-    const supplierSelect = page.getByLabel('Supplier (if this bill is for a PO/RR delivery)')
+    const supplierSelect = page.getByLabel('Supplier *')
     await supplierSelect
       .locator('option')
       .nth(1)

@@ -8,14 +8,18 @@ import {
   CreateSupplierFormSchema,
   SUPPLIER_ONBOARDING_STATUSES,
   SUPPLIER_STATUSES,
+  SUPPLIER_TYPES,
   type CreateSupplierFormValues,
   type SupplierDetail,
 } from '@/src/schema/inventory/suppliers'
+
+type AccountOption = { id: string; name: string; number?: string }
 
 type Props = {
   open: boolean
   mode: 'create' | 'edit'
   initialData?: SupplierDetail | null
+  accountOptions?: AccountOption[]
   onClose: () => void
   onSubmit: (data: CreateSupplierFormValues) => Promise<void>
   isSubmitting?: boolean
@@ -38,6 +42,12 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   onboardingStatus: undefined,
   status: undefined,
   notes: undefined,
+  type: undefined,
+  businessType: undefined,
+  alphanumericTaxCode: undefined,
+  taxRate: undefined,
+  defaultPayableAccountId: undefined,
+  defaultExpenseAccountId: undefined,
 }
 
 function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
@@ -63,7 +73,24 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
     onboardingStatus: supplier.onboardingStatus,
     status: supplier.status,
     notes: supplier.notes ?? undefined,
+    type: supplier.type,
+    businessType: supplier.businessType ?? undefined,
+    alphanumericTaxCode: supplier.alphanumericTaxCode ?? undefined,
+    taxRate: supplier.taxRate ?? undefined,
+    defaultPayableAccountId: supplier.defaultPayableAccountId ?? undefined,
+    defaultExpenseAccountId: supplier.defaultExpenseAccountId ?? undefined,
   }
+}
+
+const TYPE_LABELS: Record<(typeof SUPPLIER_TYPES)[number], string> = {
+  SUPPLIER: 'Supplier',
+  CONTRACTOR: 'Contractor',
+  CONSULTANT: 'Consultant',
+  OFFICER: 'Officer',
+  EMPLOYEE: 'Employee',
+  CONSTRUCTION: 'Construction',
+  FOUNDER: 'Founder',
+  OTHER: 'Other',
 }
 
 const ONBOARDING_LABELS: Record<(typeof SUPPLIER_ONBOARDING_STATUSES)[number], string> = {
@@ -83,6 +110,7 @@ export function SupplierFormModal({
   open,
   mode,
   initialData,
+  accountOptions = [],
   onClose,
   onSubmit,
   isSubmitting,
@@ -191,6 +219,67 @@ export function SupplierFormModal({
                 />
                 {errors.taxId && (
                   <p className="mt-1 text-xs text-red-500">{errors.taxId.message}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Type + Business Type — Scenario 33: a Supplier row can now stand
+                in for any AP payee, not just an inventory supplier. */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Type</label>
+                <select
+                  {...register('type')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="">Default (Supplier)</option>
+                  {SUPPLIER_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {TYPE_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Business Type
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Corporation"
+                  {...register('businessType')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
+                {errors.businessType && (
+                  <p className="mt-1 text-xs text-red-500">{errors.businessType.message}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Tax Code + Tax Rate */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Tax Code</label>
+                <input
+                  type="text"
+                  placeholder="e.g. VAT, NON-VAT"
+                  {...register('alphanumericTaxCode')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
+                {errors.alphanumericTaxCode && (
+                  <p className="mt-1 text-xs text-red-500">{errors.alphanumericTaxCode.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Tax Rate</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 12%, Exempt"
+                  {...register('taxRate')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
+                {errors.taxRate && (
+                  <p className="mt-1 text-xs text-red-500">{errors.taxRate.message}</p>
                 )}
               </div>
             </div>
@@ -305,7 +394,12 @@ export function SupplierFormModal({
                   min={0}
                   step={0.01}
                   placeholder="0.00"
-                  {...register('creditLimit', { valueAsNumber: true })}
+                  {...register('creditLimit', {
+                    // A blank input becomes NaN under valueAsNumber, which
+                    // z.number().optional() doesn't treat as absent — coerce
+                    // it to undefined so leaving this field blank validates.
+                    setValueAs: (v) => (v === '' ? undefined : Number(v)),
+                  })}
                   className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
                 />
                 {errors.creditLimit && (
@@ -338,6 +432,44 @@ export function SupplierFormModal({
                   {SUPPLIER_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Default GL Accounts — Scenario 33, merged in from Vendor. Routes
+                this supplier's AP bills to their own accounts instead of the
+                shared AP_PAYABLE/DEFAULT_EXPENSE mappings. */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Default AP Payable Account
+                </label>
+                <select
+                  {...register('defaultPayableAccountId')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="">Use default mapping</option>
+                  {accountOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.number ? `${a.number} — ${a.name}` : a.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Default Expense Account
+                </label>
+                <select
+                  {...register('defaultExpenseAccountId')}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="">Use default mapping</option>
+                  {accountOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.number ? `${a.number} — ${a.name}` : a.name}
                     </option>
                   ))}
                 </select>

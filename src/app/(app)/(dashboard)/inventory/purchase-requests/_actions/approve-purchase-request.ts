@@ -7,10 +7,19 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
+export interface ApprovePurchaseRequestResult {
+  id: string
+  status: string
+  // Set only when this approval was the final tier AND the PR already had
+  // a supplier + fully priced lines, so the backend auto-converted it to a
+  // real PO in the same request (PurchaseRequestService.approve()).
+  convertedToPo: { id: string; code: string; status: string } | null
+}
+
 export async function approvePurchaseRequest(
   id: string,
   input: unknown
-): Promise<ApiResponse<{ id: string }>> {
+): Promise<ApiResponse<ApprovePurchaseRequestResult>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -32,7 +41,7 @@ export async function approvePurchaseRequest(
     }
   }
 
-  const result = await api.post<{ id: string }>(
+  const result = await api.post<ApprovePurchaseRequestResult>(
     `/procurement/purchase-requests/${id}/approve`,
     parsed.data
   )
@@ -48,6 +57,7 @@ export async function approvePurchaseRequest(
     }
   }
 
+  revalidatePath('/inventory/purchase-orders')
   revalidatePath('/inventory/purchase-requests')
 
   return {

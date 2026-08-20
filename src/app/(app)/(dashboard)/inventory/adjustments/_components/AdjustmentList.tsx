@@ -82,8 +82,8 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
 
         <div className="flex flex-wrap gap-3">
           {/* A branch-scoped user's warehouse list is already backend-filtered
-              down to their own branch — with only one possible warehouse,
-              "All Warehouses" vs. picking it are the same result, so the
+              down to their own branch — with only one possible branch,
+              "All Branches" vs. picking it are the same result, so the
               filter adds nothing. HQ/Business Owner sees every branch and
               keeps it. */}
           {warehouseOptions.length > 1 && (
@@ -92,10 +92,10 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Warehouses</option>
+              <option value="">All Branches</option>
               {warehouseOptions.map((wh) => (
                 <option key={wh.id} value={wh.id}>
-                  {wh.code} — {wh.name}
+                  {wh.branch?.name ?? wh.name}
                 </option>
               ))}
             </select>

@@ -34,6 +34,10 @@ export const createInstallmentAccountSchema = z.object({
     .min(1, 'Term must be at least 1 month')
     .max(12, 'Term cannot exceed 12 months'),
   miFactor: z.coerce.number().min(0, 'MI factor must be 0 or more'),
+  // Scenario 32 item 6 — IC on the paper card. A plain financing-terms
+  // value, editable for either origin (unlike priceUseTypeId/sellingAgentId,
+  // which are POS-checkout-only and never appear in this form).
+  insuranceCharge: z.coerce.number().min(0, 'Insurance charge must be 0 or more').optional(),
   lastOrNumber: z.string().optional().or(z.literal('')),
   lastOrDate: z.string().optional().or(z.literal('')),
   lastOrAmount: z.coerce.number().min(0).optional(),
@@ -65,6 +69,7 @@ export const recordPaymentSchema = z.object({
   dueDate: z.string().min(1, 'Due date is required'),
   paidAt: z.string().min(1, 'Paid date is required'),
   orNumber: z.string().max(50).optional().or(z.literal('')),
+  rebateAmount: z.coerce.number().min(0, 'Rebate must be 0 or more').optional(),
 })
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>

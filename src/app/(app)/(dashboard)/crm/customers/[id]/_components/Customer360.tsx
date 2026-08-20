@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -16,20 +16,26 @@ import {
   X,
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
+import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
-import type {
-  Customer,
-  Lead,
-  Interaction,
-  Reminder,
-  InstallmentAccount,
-} from '@/src/schema/crm/types'
-import type { InstallmentSchedule } from '@/src/schema/pos'
+import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
+import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
+
+// Same mapping TransactionsList.tsx uses for its own transaction rows —
+// kept local rather than imported since that file doesn't export it.
+const txTypeColor: Record<string, string> = {
+  sale: 'bg-blue-100 text-blue-700',
+  refund: 'bg-orange-100 text-orange-700',
+  exchange: 'bg-purple-100 text-purple-700',
+}
+const txStatusColor: Record<string, string> = {
+  completed: 'bg-green-100 text-green-700',
+  voided: 'bg-red-100 text-red-700',
+}
 
 type CustomerView = Customer & {
   leads: Lead[]
-  interactions: Interaction[]
   reminders: Reminder[]
 }
 
@@ -69,6 +75,17 @@ export default function Customer360({
   const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState<string | null>(null)
+
+  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId)
+  // — covers cash/full-payment sales too, unlike Installment Plans above.
+  const [transactionHistory, setTransactionHistory] = useState<PosTransaction[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  const upcomingPayables = useMemo(
+    () => flattenUpcomingPayables(installmentSchedules),
+    [installmentSchedules]
+  )
 
   async function handleDelete() {
     if (!data) return
@@ -112,6 +129,14 @@ export default function Customer360({
       if (res.success && res.data) setInstallmentAccounts(res.data.data)
       else setAccountsError(res.error ?? 'Failed to load CRM accounts')
       setAccountsLoading(false)
+    })
+  }, [id])
+
+  useEffect(() => {
+    getCustomerTransactions(id).then((res) => {
+      if (res.success && res.data) setTransactionHistory(res.data)
+      else setHistoryError(res.error ?? 'Failed to load transaction history')
+      setHistoryLoading(false)
     })
   }, [id])
 
@@ -208,6 +233,37 @@ export default function Customer360({
         </div>
       </header>
 
+      {upcomingPayables.length > 0 && (
+        <div
+          className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 ${
+            URGENCY_STRIP_CLASSES[
+              payableUrgency(upcomingPayables[0].status, upcomingPayables[0].dueDate)
+            ]
+          }`}
+        >
+          <div className="text-[13px]">
+            <span className="text-gray-500">Next payment due </span>
+            <span className="font-semibold text-gray-900">
+              {formatPeso(upcomingPayables[0].amountDue)}
+            </span>
+            <span className="text-gray-500">
+              {' '}
+              on {new Date(upcomingPayables[0].dueDate).toLocaleDateString()}
+            </span>
+          </div>
+          <div className="text-[12px] text-gray-500">
+            {upcomingPayables.length} upcoming ·{' '}
+            {formatPeso(upcomingPayables.reduce((sum, p) => sum + p.amountDue, 0))} total
+            <a
+              href="#upcoming-payables"
+              className="ml-2 font-medium text-prominent-orange-700 hover:underline"
+            >
+              View all ↓
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Full width (lg:col-span-3) — the Address row wraps to several
             lines for a real PH address, and cramming that into a 1/3-width
@@ -223,21 +279,65 @@ export default function Customer360({
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Activity feed</h2>
-          {data.interactions.length === 0 && (
-            <p className="py-6 text-center text-[13px] text-gray-400">No interactions logged.</p>
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) => (
+                  <li
+                    key={tx.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-gray-800">
+                        {tx.transactionNumber}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.transactionType}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.status}
+                      </span>
+                    </div>
+                    <span className="flex items-center gap-3 text-gray-600">
+                      <span>
+                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                      <span>
+                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {transactionHistory.length >= 20 && (
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  Showing the most recent 20 transactions.
+                </p>
+              )}
+            </>
           )}
-          <ul className="divide-y divide-gray-100">
-            {data.interactions.map((i) => (
-              <li key={i.id} className="py-3">
-                <div className="flex justify-between text-[12px] text-gray-500">
-                  <span className="font-medium text-gray-700">{i.interactionType}</span>
-                  <span>{new Date(i.occurredAt).toLocaleString()}</span>
-                </div>
-                <p className="mt-1 text-[13px] text-gray-800">{i.summary}</p>
-              </li>
-            ))}
-          </ul>
         </section>
       </div>
 
@@ -279,6 +379,70 @@ export default function Customer360({
               </li>
             ))}
           </ul>
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section id="upcoming-payables" className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Upcoming Payables</h2>
+          {installmentLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading upcoming payables…</p>
+          ) : installmentError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
+          ) : upcomingPayables.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No upcoming payables for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {upcomingPayables.slice(0, 10).map((p) => (
+                  <li key={p.invoiceId} className="py-2.5 text-[13px]">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleDetailTarget(p.schedule)}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
+                    >
+                      <span className="text-gray-700">
+                        <span className="font-medium text-gray-800">
+                          {productLabel(p.schedule.posTransactionLines)}
+                        </span>
+                        {' · '}
+                        <span className="font-mono text-[11px] text-gray-400">
+                          {p.invoiceNumber}
+                        </span>
+                        {' · '}
+                        Payment {p.lineNumber} of {p.totalLines} · due{' '}
+                        <span className={URGENCY_TEXT_CLASSES[payableUrgency(p.status, p.dueDate)]}>
+                          {new Date(p.dueDate).toLocaleDateString()}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-medium text-gray-800">{formatPeso(p.amountDue)}</span>
+                        <InstallmentStatusBadge status={p.status} />
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {upcomingPayables.length > 10 && (
+                <Link
+                  href={`/accounting/ar-invoices?customerId=${id}`}
+                  className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
+                >
+                  +{upcomingPayables.length - 10} more — View full AR ledger →
+                </Link>
+              )}
+            </>
+          )}
+          {!accountsLoading && installmentAccounts.length > 0 && (
+            <p className="mt-3 border-t border-gray-100 pt-3 text-[12px] text-gray-400">
+              This list only includes itemized due dates from POS-originated installment plans. This
+              customer also has {installmentAccounts.length} CRM collections account
+              {installmentAccounts.length !== 1 ? 's' : ''} on file — see aggregate balances in CRM
+              Collections Accounts below.
+            </p>
+          )}
         </section>
       </div>
 
@@ -530,6 +694,68 @@ function productLabel(
   return rest.length > 0 ? `${label} +${rest.length} more` : label
 }
 
+// "Upcoming Payables" — a flattened, cross-plan view of every unpaid due
+// date across ALL of a customer's installment schedules (the existing
+// Installment Plans section only shows one schedule's due dates at a time,
+// behind a click). Reuses the exact same installmentSchedules fetch — no
+// new endpoint — just reshaped client-side: filter out settled/void lines,
+// flatten every schedule's lines into one array, sort by due date.
+type UpcomingPayable = {
+  schedule: InstallmentSchedule
+  invoiceId: string
+  invoiceNumber: string
+  lineNumber: number
+  totalLines: number
+  dueDate: string
+  amountDue: number
+  status: string
+}
+
+function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPayable[] {
+  const payables: UpcomingPayable[] = []
+  for (const schedule of schedules) {
+    for (const line of schedule.lines) {
+      if (['PAID', 'CANCELLED', 'DRAFT'].includes(line.arInvoice.status)) continue
+      payables.push({
+        schedule,
+        invoiceId: line.arInvoice.id,
+        invoiceNumber: line.arInvoice.invoiceNumber,
+        lineNumber: line.lineNumber,
+        totalLines: schedule.lines.length,
+        dueDate: line.arInvoice.dueDate,
+        amountDue: line.arInvoice.totalAmount - line.arInvoice.amountPaid,
+        status: line.arInvoice.status,
+      })
+    }
+  }
+  return payables.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+}
+
+// Due-date proximity accent — distinct from InstallmentStatusBadge (which
+// already covers OVERDUE in red) and from AgingColorBadge (a different axis
+// entirely: InstallmentAccount-level "months since last activity", not
+// per-due-date proximity). The 7-day "due soon" threshold is a reasonable
+// default, not a client-confirmed business rule.
+type PayableUrgency = 'overdue' | 'dueSoon' | 'upcoming'
+
+function payableUrgency(status: string, dueDate: string): PayableUrgency {
+  if (status === 'OVERDUE') return 'overdue'
+  const daysUntilDue = (new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  return daysUntilDue <= 7 ? 'dueSoon' : 'upcoming'
+}
+
+const URGENCY_TEXT_CLASSES: Record<PayableUrgency, string> = {
+  overdue: 'font-semibold text-red-600',
+  dueSoon: 'font-semibold text-orange-600',
+  upcoming: 'text-gray-700',
+}
+
+const URGENCY_STRIP_CLASSES: Record<PayableUrgency, string> = {
+  overdue: 'border-red-200 bg-red-50',
+  dueSoon: 'border-orange-200 bg-orange-50',
+  upcoming: 'border-gray-200 bg-gray-50',
+}
+
 // ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/
 // PAID/OVERDUE/CANCELLED) — "SENT" means "posted, awaiting payment", not that
 // a notification went out. Relabeled to the Paid/Due/Overdue language a
@@ -605,8 +831,8 @@ function InstallmentScheduleDetailModal({
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items in this plan</p>
             <ul className="divide-y divide-gray-100" data-testid="installment-plan-items">
               {schedule.posTransactionLines.map((line) => (
-                <li key={line.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-gray-700">
+                <li key={line.id} className="flex items-start justify-between py-1.5">
+                  <div className="text-gray-700">
                     {line.item
                       ? line.item.brand
                         ? `${line.item.name} (${line.item.brand.name})`
@@ -615,7 +841,14 @@ function InstallmentScheduleDetailModal({
                     {line.quantity !== 1 && (
                       <span className="text-gray-400"> ×{line.quantity}</span>
                     )}
-                  </span>
+                    {line.serialNumber && (
+                      <p className="font-mono text-[10px] text-purple-500">
+                        SN: {line.serialNumber.serialNumber}
+                        {line.secondarySerialNumber &&
+                          ` / ${line.secondarySerialNumber.serialNumber}`}
+                      </p>
+                    )}
+                  </div>
                   <span className="font-medium text-gray-800">{formatPeso(line.lineTotal)}</span>
                 </li>
               ))}

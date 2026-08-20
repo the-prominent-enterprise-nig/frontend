@@ -102,6 +102,9 @@ const UdsWarehouseSchema = z.object({
   id: z.string(),
   code: z.string(),
   name: z.string(),
+  // Each branch has exactly one warehouse — the UI displays this branch name
+  // rather than the warehouse's own "{branch} Warehouse" name.
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const UdsRfsFormFileSchema = z.object({

@@ -32,6 +32,7 @@ export async function submitPurchaseRequest(id: string): Promise<ApiResponse<{ i
     }
   }
 
+  revalidatePath('/inventory/purchase-orders')
   revalidatePath('/inventory/purchase-requests')
 
   return {
