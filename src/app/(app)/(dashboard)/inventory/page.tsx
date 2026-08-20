@@ -884,7 +884,7 @@ export default function InventoryPage() {
             <ShieldAlert className="h-4 w-4 text-red-500" />
             <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -1016,6 +1016,50 @@ export default function InventoryPage() {
                       />
                     )
                   })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  Negative Stock Violations
+                </h3>
+                <Link
+                  href="/inventory/negative-stock"
+                  className="text-xs text-red-600 hover:underline tabular-nums"
+                >
+                  {loading ? '…' : s.negativeViolations} total
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.negativeViolationsList.length === 0 ? (
+                <EmptyState message="No negative stock violations" />
+              ) : (
+                <div className="space-y-2">
+                  {s.negativeViolationsList.map((v, i) => (
+                    <AlertRow
+                      key={i}
+                      urgency="critical"
+                      left={
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-gray-900 truncate">
+                            {v.itemName ?? 'Unknown'}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            {v.warehouseName ?? '—'} · {v.sku ?? ''}
+                          </p>
+                        </div>
+                      }
+                      right={<span className="text-sm font-bold text-red-600">{v.onHandQty}</span>}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -1218,162 +1262,124 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Planning */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-purple-500" />
-                Active Backorders
-              </h3>
-              <Link
-                href="/inventory/backorders"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                View all <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            </div>
-            {loading ? (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-12 w-full" />
-                ))}
+        {/* Pending Actions — items awaiting resolution, not really "planning" */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-purple-500" />
+            <h2 className="text-base font-semibold text-gray-900">Pending Actions</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-purple-500" />
+                  Active Backorders
+                </h3>
+                <Link
+                  href="/inventory/backorders"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  View all <ArrowUpRight className="h-3 w-3" />
+                </Link>
               </div>
-            ) : s.backordersList.length === 0 ? (
-              <EmptyState message="No active backorders" />
-            ) : (
-              <div className="space-y-2">
-                {s.backordersList.map((b, i) => {
-                  const days = daysFromNow(b.commitmentDate)
-                  const overdue = days != null && days < 0
-                  return (
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.backordersList.length === 0 ? (
+                <EmptyState message="No active backorders" />
+              ) : (
+                <div className="space-y-2">
+                  {s.backordersList.map((b, i) => {
+                    const days = daysFromNow(b.commitmentDate)
+                    const overdue = days != null && days < 0
+                    return (
+                      <AlertRow
+                        key={i}
+                        urgency={overdue ? 'critical' : 'neutral'}
+                        left={
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-900 truncate">
+                              {b.item?.name ?? 'Unknown'}
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                              SO {b.salesOrderId.slice(0, 8)}… · {b.backorderedQty} units
+                            </p>
+                          </div>
+                        }
+                        right={
+                          <>
+                            <span
+                              className={`text-xs font-bold ${overdue ? 'text-red-600' : 'text-gray-700'}`}
+                            >
+                              {overdue
+                                ? `${Math.abs(days!)}d overdue`
+                                : days != null
+                                  ? `${days}d`
+                                  : '—'}
+                            </span>
+                            <p className="text-[10px] text-gray-400 capitalize">
+                              {b.status.replace('_', ' ')}
+                            </p>
+                          </>
+                        }
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <ClipboardCheck className="h-4 w-4 text-teal-500" />
+                  Adjustments Pending Investigation
+                </h3>
+                <Link
+                  href="/inventory/counting"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  View all <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.pendingAdjustmentsList.length === 0 ? (
+                <EmptyState message="No adjustments pending investigation" />
+              ) : (
+                <div className="space-y-2">
+                  {s.pendingAdjustmentsList.map((a, i) => (
                     <AlertRow
                       key={i}
-                      urgency={overdue ? 'critical' : 'neutral'}
+                      urgency={a.status === 'submitted' ? 'warning' : 'critical'}
                       left={
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-gray-900 truncate">
-                            {b.item?.name ?? 'Unknown'}
+                            {a.adjustmentNumber ?? 'Unknown'}
                           </p>
-                          <p className="text-[11px] text-gray-500">
-                            SO {b.salesOrderId.slice(0, 8)}… · {b.backorderedQty} units
+                          <p className="text-[11px] text-gray-500 truncate">
+                            {a.warehouse?.name ?? '—'} ·{' '}
+                            {String(a.reasonCode ?? '').replace('_', ' ')}
                           </p>
                         </div>
                       }
                       right={
-                        <>
-                          <span
-                            className={`text-xs font-bold ${overdue ? 'text-red-600' : 'text-gray-700'}`}
-                          >
-                            {overdue
-                              ? `${Math.abs(days!)}d overdue`
-                              : days != null
-                                ? `${days}d`
-                                : '—'}
-                          </span>
-                          <p className="text-[10px] text-gray-400 capitalize">
-                            {b.status.replace('_', ' ')}
-                          </p>
-                        </>
+                        <span className="text-[11px] font-medium capitalize text-teal-700">
+                          {a.status}
+                        </span>
                       }
                     />
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-red-500" />
-                Negative Stock Violations
-              </h3>
-              <Link
-                href="/inventory/negative-stock"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                View all <ArrowUpRight className="h-3 w-3" />
-              </Link>
+                  ))}
+                </div>
+              )}
             </div>
-            {loading ? (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : s.negativeViolationsList.length === 0 ? (
-              <EmptyState message="No negative stock violations" />
-            ) : (
-              <div className="space-y-2">
-                {s.negativeViolationsList.map((v, i) => (
-                  <AlertRow
-                    key={i}
-                    urgency="critical"
-                    left={
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-gray-900 truncate">
-                          {v.itemName ?? 'Unknown'}
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          {v.warehouseName ?? '—'} · {v.sku ?? ''}
-                        </p>
-                      </div>
-                    }
-                    right={<span className="text-sm font-bold text-red-600">{v.onHandQty}</span>}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <ClipboardCheck className="h-4 w-4 text-teal-500" />
-                Adjustments Pending Investigation
-              </h3>
-              <Link
-                href="/inventory/counting"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                View all <ArrowUpRight className="h-3 w-3" />
-              </Link>
-            </div>
-            {loading ? (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : s.pendingAdjustmentsList.length === 0 ? (
-              <EmptyState message="No adjustments pending investigation" />
-            ) : (
-              <div className="space-y-2">
-                {s.pendingAdjustmentsList.map((a, i) => (
-                  <AlertRow
-                    key={i}
-                    urgency={a.status === 'submitted' ? 'warning' : 'critical'}
-                    left={
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-gray-900 truncate">
-                          {a.adjustmentNumber ?? 'Unknown'}
-                        </p>
-                        <p className="text-[11px] text-gray-500 truncate">
-                          {a.warehouse?.name ?? '—'} ·{' '}
-                          {String(a.reasonCode ?? '').replace('_', ' ')}
-                        </p>
-                      </div>
-                    }
-                    right={
-                      <span className="text-[11px] font-medium capitalize text-teal-700">
-                        {a.status}
-                      </span>
-                    }
-                  />
-                ))}
-              </div>
-            )}
           </div>
         </div>
 
