@@ -240,6 +240,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
+        label: 'Receiving Reports',
+        href: '/accounting/receiving-reports',
+        icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      {
         label: 'Expenses',
         href: '/accounting/expenses',
         icon: Coins,

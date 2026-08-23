@@ -84,7 +84,6 @@ import {
   getAvailableSerialNumbers,
   getCompanyWideSerialAvailability,
   requestStockFromBranch,
-  getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
   cancelReleaseFormRequest,
@@ -362,14 +361,6 @@ export default function CheckoutPage() {
   // client-side, but serials aren't (there can be thousands), so this is a
   // separate debounced backend call merged into displayItems.
   const [serialSearchResults, setSerialSearchResults] = useState<SerialNumberRecord[]>([])
-
-  // Selling agent — CRM-owned agent list, not system User accounts
-  const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
-  const [sellingAgentSearch, setSellingAgentSearch] = useState('')
-  const [sellingAgents, setSellingAgents] = useState<
-    { id: string; name: string; phone?: string | null; email?: string | null }[]
-  >([])
-  const [sellingAgentOpen, setSellingAgentOpen] = useState(false)
 
   // Serial number picker
   const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
@@ -739,13 +730,6 @@ export default function CheckoutPage() {
         setAllowNegativeStock(res.data.allowNegativeStock ?? false)
         setInclusivePricing(res.data.defaultPricingMode === 'inclusive')
       }
-    })
-  }, [])
-
-  // Load CRM sales agent list for the selling-agent typeahead
-  useEffect(() => {
-    getSellingAgents().then((res) => {
-      if (res.success && Array.isArray(res.data)) setSellingAgents(res.data)
     })
   }, [])
 
@@ -1922,7 +1906,6 @@ export default function CheckoutPage() {
           managerOverride: managerOverrideApproved || undefined,
           managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
-          sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -3020,86 +3003,6 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Selling Agent */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Selling Agent{' '}
-              <span className="font-normal normal-case tracking-normal text-gray-500">
-                — optional
-              </span>
-            </p>
-            {sellingAgent ? (
-              <div className="flex items-center justify-between rounded-lg bg-purple-200 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-200">
-                    <User size={13} className="text-purple-600" />
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900">{sellingAgent.name}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSellingAgent(null)
-                    setSellingAgentSearch('')
-                  }}
-                  className="text-purple-300 hover:text-purple-600"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search
-                  size={12}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700"
-                />
-                <input
-                  className="w-full rounded-lg border border-purple-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                  placeholder="Search agents…"
-                  value={sellingAgentSearch}
-                  onChange={(e) => {
-                    setSellingAgentSearch(e.target.value)
-                    setSellingAgentOpen(true)
-                  }}
-                  onBlur={() => setTimeout(() => setSellingAgentOpen(false), 150)}
-                  onFocus={() => sellingAgentSearch && setSellingAgentOpen(true)}
-                />
-                {sellingAgentOpen && sellingAgentSearch && (
-                  <div className="absolute z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
-                    {(() => {
-                      const filtered = sellingAgents.filter(
-                        (a) =>
-                          a.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
-                          a.phone?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
-                          a.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
-                      )
-                      return filtered.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-700">No agents found</p>
-                      ) : (
-                        filtered.slice(0, 8).map((a) => (
-                          <button
-                            key={a.id}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
-                            onMouseDown={() => {
-                              setSellingAgent({ id: a.id, name: a.name })
-                              setSellingAgentSearch('')
-                              setSellingAgentOpen(false)
-                            }}
-                          >
-                            <User size={11} className="shrink-0 text-gray-700" />
-                            <div>
-                              <p className="font-medium text-gray-900">{a.name}</p>
-                              <p className="text-xs text-gray-700">{a.phone || a.email || ''}</p>
-                            </div>
-                          </button>
-                        ))
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* QMS tab origin banner */}
           {fromTab && (
             <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-200">
@@ -3108,6 +3011,22 @@ export default function CheckoutPage() {
                 From QMS — Table {fromTab.tableName}. Table will be set to Needs Bussing after
                 payment.
               </p>
+            </div>
+          )}
+
+          {/* Price Use — sale-level selector, drives every line's price.
+              Rendered above Order Summary since it determines the totals shown there. */}
+          {saleMode !== 'reserve' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Price Use
+              </p>
+              <PriceUseSelector
+                priceUseTypes={priceUseTypes}
+                value={priceUseTypeId}
+                onChange={setPriceUseTypeId}
+                isLoading={isResolvingPrices}
+              />
             </div>
           )}
 
@@ -3185,21 +3104,6 @@ export default function CheckoutPage() {
               />
             )}
           </div>
-
-          {/* Price Use — sale-level selector, drives every line's price */}
-          {saleMode !== 'reserve' && (
-            <div className="border-b border-purple-200 p-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Price Use
-              </p>
-              <PriceUseSelector
-                priceUseTypes={priceUseTypes}
-                value={priceUseTypeId}
-                onChange={setPriceUseTypeId}
-                isLoading={isResolvingPrices}
-              />
-            </div>
-          )}
 
           {/* Promo code */}
           <div className="border-b border-purple-200 p-5">

@@ -18,7 +18,6 @@ type Tab =
   | 'ar-aging'
   | 'ap-aging'
   | 'grni'
-  | 'receiving-reports'
   | 'customer-statement'
   | 'cost-center'
   | 'bi'
@@ -32,7 +31,6 @@ const VALID_TABS: Tab[] = [
   'ar-aging',
   'ap-aging',
   'grni',
-  'receiving-reports',
   'customer-statement',
   'cost-center',
   'bi',
@@ -79,7 +77,6 @@ export default function ReportsHub() {
     else if (tab === 'ar-aging') res = await Reports.aging('ar', asOf)
     else if (tab === 'ap-aging') res = await Reports.aging('ap', asOf)
     else if (tab === 'grni') res = await Reports.grni()
-    else if (tab === 'receiving-reports') res = await Reports.receivingReports()
     else if (tab === 'customer-statement') {
       if (!customerId) {
         setLoading(false)
@@ -131,7 +128,6 @@ export default function ReportsHub() {
             ['ar-aging', 'AR Aging'],
             ['ap-aging', 'AP Aging'],
             ['grni', 'GRNI'],
-            ['receiving-reports', 'Receiving Reports'],
             ['customer-statement', 'Customer Statement'],
             ['cost-center', 'Cost Center'],
             ['bi', 'BI Summary'],
@@ -270,8 +266,6 @@ export default function ReportsHub() {
           <AgingView data={data} type="ap" />
         ) : tab === 'grni' ? (
           <GrniView data={data} />
-        ) : tab === 'receiving-reports' ? (
-          <ReceivingReportsView data={data} />
         ) : tab === 'cost-center' ? (
           <CostCenterView data={data} />
         ) : tab === 'bi' ? (
@@ -621,49 +615,6 @@ function GrniView({ data }: { data: any }) {
             >
               {r.daysOutstanding}d
             </span>
-          </td>
-        </tr>
-      ))}
-    </Table>
-  )
-}
-
-// Scenario 36 Gap 11 — every receiving report, matched or not (unlike
-// GRNI). Newest-first (backend-sorted) — general browse view, not a
-// chase-list.
-function ReceivingReportsView({ data }: { data: any }) {
-  const rows = Array.isArray(data) ? data : []
-  if (rows.length === 0) {
-    return <div className="text-center text-gray-400 py-8">No receiving reports.</div>
-  }
-  return (
-    <Table
-      headers={[
-        'Receipt #',
-        'Supplier',
-        'Warehouse',
-        'Received',
-        'Amount',
-        'GL Posted',
-        'Matched Bill',
-      ]}
-    >
-      {rows.map((r: any) => (
-        <tr key={r.id}>
-          <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
-          <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
-          <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
-          <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
-          <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
-          <td className="px-3 py-2 text-center">
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs ${r.journalEntryId ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}
-            >
-              {r.journalEntryId ? 'Posted' : 'Not posted'}
-            </span>
-          </td>
-          <td className="px-3 py-2 text-xs">
-            {r.matchedBill ? `${r.matchedBill.billNumber} (${r.matchedBill.status})` : '—'}
           </td>
         </tr>
       ))}
