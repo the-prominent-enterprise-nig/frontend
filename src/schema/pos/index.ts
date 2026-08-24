@@ -510,6 +510,10 @@ export interface AddPaymentInput {
   cardTxnMode?: PosCardTxnMode
   /** Months (3/6/9/12/18/24) — required when cardTxnMode is 'installment'. */
   cardInstallmentTerm?: number
+  /** Scenario 38 Gap 7 — bank_transfer only. The cashier confirmed the
+   * credit already landed at the register, so this posts straight to Cash
+   * in Bank instead of the usual clearing account. */
+  bankTransferVerifiedAtRegister?: boolean
   currency?: string
   fxRate?: number
   notes?: string

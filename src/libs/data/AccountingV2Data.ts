@@ -296,6 +296,11 @@ export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] =
 ]
 
 export type WithholdingCertificateStatus = 'pending' | 'received'
+// Scenario 38 Gap 5 — "none" until a certificate is received; "flagged" when
+// its stated amount doesn't match withholdingAmount (needs Accounting/CPA
+// review); "resolved" once a reviewer has logged a decision. Never gates or
+// adjusts the GL — see MarkCertificateReceivedDto's backend doc comment.
+export type WithholdingVarianceStatus = 'none' | 'flagged' | 'resolved'
 
 export interface ARPayment {
   id: string
@@ -304,6 +309,14 @@ export interface ARPayment {
   withholdingAmount: number
   withholdingCertificateNo?: string | null
   withholdingCertificateStatus?: WithholdingCertificateStatus | null
+  withholdingAtc?: string | null
+  withholdingTaxableBase?: number | null
+  withholdingTaxPeriod?: string | null
+  withholdingCertificateDate?: string | null
+  withholdingCertificateAmount?: number | null
+  withholdingVarianceStatus?: WithholdingVarianceStatus | null
+  withholdingVarianceNote?: string | null
+  withholdingReviewerId?: string | null
   rebateAmount: number
   paymentDate: string
   method?: PaymentMethod | null
@@ -318,6 +331,25 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
+}
+
+// Scenario 38 Gap 5 — row shape for the Pending 2307 / CWT Variance lists,
+// each ARPayment plus just enough of its parent invoice to identify it.
+export interface WithholdingPaymentListItem extends ARPayment {
+  arInvoice: { invoiceNumber: string; customer: { name: string } }
+}
+
+export interface MarkCertificateReceivedInput {
+  certificateNo?: string
+  certificateDate?: string
+  certificateAmount: number
+  atc?: string
+  taxableBase?: number
+  taxPeriod?: string
+}
+
+export interface ResolveWithholdingVarianceInput {
+  notes?: string
 }
 
 export interface RecordArPaymentInput {
@@ -444,6 +476,25 @@ export const ARInvoices = {
   // outside an external scheduler.
   sweepOverdueNotifications: () =>
     api.post<{ notified: number }>('/ar-invoices/sweep-overdue-notifications', {}),
+  // Scenario 38 Gap 5 — CWT/2307 reconciliation.
+  listPendingCertificates: () =>
+    api.get<WithholdingPaymentListItem[]>('/ar-invoices/withholding/pending-certificates'),
+  listFlaggedVariances: () =>
+    api.get<WithholdingPaymentListItem[]>('/ar-invoices/withholding/variances'),
+  markCertificateReceived: (
+    invoiceId: string,
+    paymentId: string,
+    body: MarkCertificateReceivedInput
+  ) => api.post<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}/certificate`, body),
+  resolveWithholdingVariance: (
+    invoiceId: string,
+    paymentId: string,
+    body: ResolveWithholdingVarianceInput
+  ) =>
+    api.post<ARPayment>(
+      `/ar-invoices/${invoiceId}/payments/${paymentId}/certificate/resolve-variance`,
+      body
+    ),
 }
 
 // ============ Credit Memos ============

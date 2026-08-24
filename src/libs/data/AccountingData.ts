@@ -23,26 +23,8 @@ export interface Account {
    * LIABILITY/EQUITY/REVENUE = credit-normal) rather than reading this. */
   normalBalance?: NormalBalance
   parentId?: string | null
-  currencyId?: string | null
   description?: string | null
   isActive: boolean
-  createdAt?: string
-  updatedAt?: string
-}
-
-export interface Currency {
-  id: string
-  code: string
-  name: string
-  // Backend fields (Prisma model)
-  rate?: number
-  mainCurrency?: boolean
-  visibility?: boolean
-  // Legacy aliases — kept so existing components that read these still compile
-  symbol?: string | null
-  exchangeRate?: number | null
-  isBase?: boolean
-  isActive?: boolean
   createdAt?: string
   updatedAt?: string
 }
@@ -90,7 +72,6 @@ export interface JournalEntry {
   journalType: JournalType
   payee?: string | null
   status: JournalEntryStatus
-  currencyId?: string | null
   sourceModule?: string | null
   sourceDocumentNo?: string | null
   sourceDocumentId?: string | null
@@ -153,34 +134,6 @@ export function deleteAccount(id: string) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Currencies                                                         */
-/* ------------------------------------------------------------------ */
-
-export function getCurrencies(params?: ListParams) {
-  return api.get<PaginatedResponse<Currency>>('/currencies', params, {
-    tags: ['accounting-currencies'],
-  })
-}
-
-export function getCurrencyById(id: string) {
-  return api.get<Currency>(`/currencies/${id}`, undefined, {
-    tags: ['accounting-currencies', `accounting-currency-${id}`],
-  })
-}
-
-export function createCurrency(data: Omit<Currency, 'id' | 'createdAt' | 'updatedAt'>) {
-  return api.post<Currency>('/currencies', data)
-}
-
-export function updateCurrency(id: string, data: Partial<Currency>) {
-  return api.patch<Currency>(`/currencies/${id}`, data)
-}
-
-export function deleteCurrency(id: string) {
-  return api.delete(`/currencies/${id}`)
-}
-
-/* ------------------------------------------------------------------ */
 /* General Ledgers                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -230,7 +183,6 @@ export interface JournalEntryInput {
   description?: string | null
   journalType?: JournalType | string
   payee?: string | null
-  currencyId?: string | null
   transactions: Array<{
     accountId: string
     item?: string | null
@@ -290,12 +242,17 @@ export interface Customer {
   email?: string | null
   phone?: string | null
   address?: string | null
+  barangayCode?: string | null
   notes?: string | null
   groupId?: string | null
   lifecycleStatus?: CustomerLifecycleStatus
   deletedAt?: string | null
   createdAt?: string
   updatedAt?: string
+  // Scenario 38 Gap 5 — informational/control tagging only, not a posting gate.
+  isWithholdingAgent?: boolean
+  defaultWithholdingRate?: number | null
+  defaultWithholdingAtc?: string | null
 }
 
 /** Create/update accepts firstName/lastName split — the backend joins them
@@ -306,10 +263,14 @@ export interface CustomerInput {
   email?: string | null
   phoneNumber?: string | null
   address?: string | null
+  barangayCode?: string | null
   note?: string | null
   customerType?: CustomerType
   groupId?: string | null
   lifecycleStatus?: CustomerLifecycleStatus
+  isWithholdingAgent?: boolean
+  defaultWithholdingRate?: number | null
+  defaultWithholdingAtc?: string | null
 }
 
 export function getCustomers(params?: ListParams) {

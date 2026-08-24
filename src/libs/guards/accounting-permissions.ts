@@ -26,11 +26,6 @@ export const ACCOUNTING_PERMISSIONS = {
   TRANSACTION_UPDATE: 'accounting:transaction:update',
   TRANSACTION_DELETE: 'accounting:transaction:delete',
 
-  CURRENCY_READ: 'accounting:currency:read',
-  CURRENCY_CREATE: 'accounting:currency:create',
-  CURRENCY_UPDATE: 'accounting:currency:update',
-  CURRENCY_DELETE: 'accounting:currency:delete',
-
   DISBURSEMENT_READ: 'accounting:disbursement:read',
   DISBURSEMENT_CREATE: 'accounting:disbursement:create',
   DISBURSEMENT_UPDATE: 'accounting:disbursement:update',
@@ -177,10 +172,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:transaction:create': 'Create transactions',
   'accounting:transaction:update': 'Edit transactions',
   'accounting:transaction:delete': 'Delete transactions',
-  'accounting:currency:read': 'View currencies',
-  'accounting:currency:create': 'Create currencies',
-  'accounting:currency:update': 'Edit currencies',
-  'accounting:currency:delete': 'Delete currencies',
   'accounting:disbursement:read': 'View disbursements',
   'accounting:disbursement:create': 'Create disbursements',
   'accounting:disbursement:update': 'Edit disbursements and change status',
