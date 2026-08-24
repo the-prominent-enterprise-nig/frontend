@@ -984,6 +984,110 @@ export const BankAdjusting = {
   }) => api.post<any>('/bank-accounts/adjusting-entry', body),
 }
 
+// ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============
+export type ClearingSettlementType = 'card' | 'ewallet' | 'bank_transfer' | 'tpf'
+
+export interface ClearingSettlement {
+  id: string
+  clearingType: ClearingSettlementType
+  tpfProviderId?: string | null
+  tpfProvider?: { id: string; name: string } | null
+  bankAccountId: string
+  bankAccount?: BankAccount
+  amount: number
+  feeAmount: number
+  referenceNo?: string | null
+  settledAt: string
+  journalEntryId?: string | null
+  createdAt: string
+}
+
+export interface UnidentifiedBankCredit {
+  id: string
+  bankAccountId: string
+  bankAccount?: BankAccount
+  amount: number
+  creditDate: string
+  bankRef?: string | null
+  status: 'unmatched' | 'reclassified'
+  reclassifiedNote?: string | null
+  reclassifiedAt?: string | null
+  journalEntryId?: string | null
+  reclassJournalEntryId?: string | null
+  createdAt: string
+}
+
+export const ClearingSettlements = {
+  list: (filters?: { clearingType?: ClearingSettlementType; tpfProviderId?: string }) =>
+    api.get<ClearingSettlement[]>('/bank-accounts/clearing-settlements', filters as any),
+  record: (body: {
+    bankAccountId: string
+    clearingType: ClearingSettlementType
+    tpfProviderId?: string
+    amount: number
+    feeAmount?: number
+    referenceNo?: string
+    settledAt: string
+  }) => api.post<ClearingSettlement>('/bank-accounts/clearing-settlements', body),
+  activeTpfProviders: () => api.get<{ id: string; name: string }[]>('/bank-accounts/tpf-providers'),
+}
+
+// ============ Unapplied Customer Collections (Scenario 38 Gap 4) ============
+export type UnappliedCollectionStatus = 'UNMATCHED' | 'APPLIED' | 'REFUNDED'
+
+export interface UnappliedCustomerCollection {
+  id: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string | null }
+  branchId: string
+  branch?: { id: string; name: string; code?: string | null }
+  amount: number
+  unappliedAmount: number
+  paymentMethod?: string | null
+  reference?: string | null
+  notes?: string | null
+  status: UnappliedCollectionStatus
+  journalEntryId?: string | null
+  createdAt: string
+}
+
+export const UnappliedCollections = {
+  list: (filters?: {
+    status?: UnappliedCollectionStatus
+    customerId?: string
+    branchId?: string
+  }) => api.get<UnappliedCustomerCollection[]>('/accounting/unapplied-collections', filters as any),
+  get: (id: string) =>
+    api.get<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}`),
+  record: (body: {
+    customerId: string
+    amount: number
+    paymentMethod?: string
+    reference?: string
+    notes?: string
+    branchId?: string
+  }) => api.post<UnappliedCustomerCollection>('/accounting/unapplied-collections', body),
+  apply: (id: string, body: { arInvoiceId: string; amount?: number; paymentDate?: string }) =>
+    api.post<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}/apply`, body),
+  refund: (id: string, body: { amount?: number; reason?: string }) =>
+    api.post<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}/refund`, body),
+}
+
+export const UnidentifiedBankCredits = {
+  list: (status?: 'unmatched' | 'reclassified') =>
+    api.get<UnidentifiedBankCredit[]>(
+      '/bank-accounts/unidentified-bank-credits',
+      status ? { status } : undefined
+    ),
+  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
+    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
+    api.post<UnidentifiedBankCredit>(
+      `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
+      body
+    ),
+}
+
 // ============ Helpers ============
 export function fmtMoney(n: number | string | undefined | null): string {
   if (n === null || n === undefined || n === '') return '—'

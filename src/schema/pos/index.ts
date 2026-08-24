@@ -70,6 +70,10 @@ export interface CloseSessionInput {
   declaredClosingCash: number
   notes?: string
   denominationBreakdown?: Record<string, number>
+  /** Scenario 38 Gap 3 — required only when declaredClosingCash differs from
+   *  the accounting-expected amount; posts the shortage/overage to the GL. */
+  managerOverride?: boolean
+  managerUserId?: string
 }
 
 export interface SessionReconciliation {

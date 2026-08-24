@@ -257,6 +257,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Users,
         requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
       },
+      {
+        label: 'Unapplied Collections',
+        href: '/accounting/unapplied-collections',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
+      },
       // ── Operational / periodic ──
       {
         label: 'Bank Reconciliation',
