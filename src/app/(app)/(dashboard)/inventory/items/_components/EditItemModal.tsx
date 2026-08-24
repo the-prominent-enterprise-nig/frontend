@@ -119,7 +119,6 @@ export default function EditItemModal({
       requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
-      hasVariants: false,
       isService: false,
       taxRateId: undefined,
       revenueAccountId: undefined,
@@ -151,7 +150,6 @@ export default function EditItemModal({
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
-        hasVariants: item.hasVariants ?? false,
         isService: item.isService ?? false,
         taxRateId: item.taxRateId ?? undefined,
         revenueAccountId: item.revenueAccountId ?? undefined,
@@ -509,38 +507,6 @@ export default function EditItemModal({
                     placeholder="e.g. KFM36E0W"
                     className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   />
-                )}
-              />
-            </div>
-
-            {/* Has Variants */}
-            <div className="sm:col-span-2">
-              <Controller
-                name="hasVariants"
-                control={control}
-                render={({ field }) => (
-                  <label className="flex cursor-pointer items-center gap-3">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
-                      />
-                      <div
-                        className={`h-5 w-9 rounded-full transition-colors ${field.value ? 'bg-prominent-purple-600' : 'bg-zinc-200'}`}
-                      />
-                      <div
-                        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${field.value ? 'translate-x-4' : 'translate-x-0'}`}
-                      />
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-zinc-700">Has Variants</span>
-                      <p className="text-xs text-zinc-400">
-                        Enable to manage size, color, or style variants under this item
-                      </p>
-                    </div>
-                  </label>
                 )}
               />
             </div>

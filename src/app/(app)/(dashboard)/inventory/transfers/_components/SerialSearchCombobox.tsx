@@ -1,11 +1,14 @@
 'use client'
 
-import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 
 type Props = {
   value: string
   onChange: (id: string) => void
+  /** Fires alongside onChange with the full picked option — for callers
+   * that need the serial's display label too, not just its id. */
+  onSelect?: (option: SearchComboboxOption) => void
   options: SerialNumberSummary[]
   queryKey: string
   disabled?: boolean
@@ -20,6 +23,7 @@ type Props = {
 export function SerialSearchCombobox({
   value,
   onChange,
+  onSelect,
   options,
   queryKey,
   disabled,
@@ -30,6 +34,7 @@ export function SerialSearchCombobox({
     <SearchCombobox
       value={value}
       onChange={onChange}
+      onSelect={onSelect}
       error={error}
       disabled={disabled}
       queryKey={queryKey}

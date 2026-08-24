@@ -84,7 +84,6 @@ import {
   getAvailableSerialNumbers,
   getCompanyWideSerialAvailability,
   requestStockFromBranch,
-  getSellingAgents,
   submitCancellationRequest,
   getCancellationRequestStatus,
   cancelReleaseFormRequest,
@@ -109,6 +108,7 @@ import { usePriceResolution } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import type {
   PosPaymentMethod,
+  PosCardTxnMode,
   PosInvoiceType,
   InstallmentProvider,
   PayNowMethod,
@@ -205,6 +205,10 @@ interface PaymentRow {
   refFieldLabel?: string
   refRequired?: boolean
   refRegex?: string
+  // Scenario 37 — bank for bank_transfer, gateway for qr. Card's terminal
+  // choice comes from the transaction-scoped cardTerminalOptionId state
+  // instead (set via Item Payment Mode), not stored per-row.
+  paymentMethodOptionId?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -219,6 +223,7 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
   loyalty_points: 'Loyalty Points',
   bank_transfer: 'Bank Transfer',
   tpf: 'TPF Settlement',
+  qr: 'QR',
   custom: 'Custom',
 }
 
@@ -229,6 +234,7 @@ const REF_METHODS: PosPaymentMethod[] = [
   'gcash',
   'maya',
   'tpf',
+  'qr',
 ]
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000]
@@ -356,14 +362,6 @@ export default function CheckoutPage() {
   // separate debounced backend call merged into displayItems.
   const [serialSearchResults, setSerialSearchResults] = useState<SerialNumberRecord[]>([])
 
-  // Selling agent — CRM-owned agent list, not system User accounts
-  const [sellingAgent, setSellingAgent] = useState<{ id: string; name: string } | null>(null)
-  const [sellingAgentSearch, setSellingAgentSearch] = useState('')
-  const [sellingAgents, setSellingAgents] = useState<
-    { id: string; name: string; phone?: string | null; email?: string | null }[]
-  >([])
-  const [sellingAgentOpen, setSellingAgentOpen] = useState(false)
-
   // Serial number picker
   const [serialPickerTarget, setSerialPickerTarget] = useState<CartLine | null>(null)
   const [serialPickerStage, setSerialPickerStage] = useState<'primary' | 'secondary'>('primary')
@@ -428,6 +426,19 @@ export default function CheckoutPage() {
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
+  // Scenario 37 — card details captured once via Item Payment Mode's
+  // Credit Card toggle (transaction-scoped, see hasCreditCardLine), then
+  // carried into whatever Card payment row gets added below.
+  const [cardTerminalOptionId, setCardTerminalOptionId] = useState<string | undefined>()
+  const [cardTxnMode, setCardTxnMode] = useState<PosCardTxnMode>('straight')
+  const [cardInstallmentTerm, setCardInstallmentTerm] = useState<number | undefined>()
+  // Scenario 37 — same treatment for Cash's own sub-choice (Cash on Hand /
+  // Bank Transfer / QR), captured once via Item Payment Mode (transaction-
+  // scoped, see hasCashLine), carried into whatever payment row gets added.
+  const [cashSubMode, setCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
+    'cash_on_hand'
+  )
+  const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
   // Configured payment methods from API — falls back to hardcoded list if not loaded
   const [configuredMethods, setConfiguredMethods] = useState<
     import('@/src/schema/pos').PaymentMethodConfig[]
@@ -469,6 +480,13 @@ export default function CheckoutPage() {
   // same key the displayGroups card uses) so each item's reveal is independent.
   const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
 
+  // Scenario 37 — the tender row's method already comes from Item Payment
+  // Mode by default (see preferredPaymentMethodKey) — showing an always-open
+  // dropdown for the same choice reads as asking twice. Default to a plain
+  // label instead, same "reveal on demand" pattern as downPaymentEditOpen
+  // above. Keyed by row index.
+  const [paymentMethodEditOpen, setPaymentMethodEditOpen] = useState<Record<number, boolean>>({})
+
   // Scenario 17 Part 6 — every installment sale requires an approved,
   // not-yet-used CreditApplication for the selected customer. Corrected
   // 2026-08-15, second pass — applications can cover a bundle of models;
@@ -479,7 +497,7 @@ export default function CheckoutPage() {
       id: string
       applicationNumber: string
       requestedAmount: number
-      items: { itemName: string; variantLabel: string | null }[]
+      items: { itemName: string }[]
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
@@ -712,13 +730,6 @@ export default function CheckoutPage() {
         setAllowNegativeStock(res.data.allowNegativeStock ?? false)
         setInclusivePricing(res.data.defaultPricingMode === 'inclusive')
       }
-    })
-  }, [])
-
-  // Load CRM sales agent list for the selling-agent typeahead
-  useEffect(() => {
-    getSellingAgents().then((res) => {
-      if (res.success && Array.isArray(res.data)) setSellingAgents(res.data)
     })
   }, [])
 
@@ -993,6 +1004,14 @@ export default function CheckoutPage() {
     (l) => l.installmentProvider !== 'tpf'
   )
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
+  // Scenario 37 — whether any cash-mode line is marked "pay by Credit Card"
+  // (Item Payment Mode's per-line toggle). Transaction-scoped, not per-line:
+  // one card swipe covers whatever's being paid by card in this sale, so the
+  // POS Terminal/Straight-Installment/Term fields render once, not per line.
+  const hasCreditCardLine = cashCartLines.some((l) => l.payNowMethod === 'credit_card')
+  // Scenario 37 — same for Cash's own sub-choice (Cash on Hand/Bank
+  // Transfer/QR), same transaction-scoped reasoning.
+  const hasCashLine = cashCartLines.some((l) => (l.payNowMethod ?? 'cash') === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -1073,6 +1092,37 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleMode, tenderTarget, payments.length])
 
+  // Scenario 37 — keep every payment row that's still on its default (not
+  // "Use a different method"-opened) live-synced with Item Payment Mode's
+  // current selection. Without this, switching Item Payment Mode after a
+  // row already exists leaves the row silently showing a stale method —
+  // the whole point of dropping the always-visible dropdown was to trust
+  // Item Payment Mode as the source of truth, so it has to stay current.
+  useEffect(() => {
+    const preferredKey = preferredPaymentMethodKey()
+    if (!preferredKey) return
+    const cfg = configuredMethods.find((m) => m.key === preferredKey)
+    setPayments((prev) => {
+      let changed = false
+      const next = prev.map((p, i) => {
+        if (paymentMethodEditOpen[i]) return p
+        if (p.method === preferredKey && p.configId === cfg?.id) return p
+        changed = true
+        return {
+          ...p,
+          method: preferredKey,
+          configId: cfg?.id,
+          referenceNumber: '',
+          refFieldLabel: cfg?.referenceFieldLabel ?? undefined,
+          refRequired: cfg?.referenceIsRequired,
+          refRegex: cfg?.referenceFieldRegex ?? undefined,
+        }
+      })
+      return changed ? next : prev
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasCreditCardLine, hasCashLine, cashSubMode, configuredMethods, paymentMethodEditOpen])
+
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
   useEffect(() => {
@@ -1144,7 +1194,6 @@ export default function CheckoutPage() {
                 requestedAmount: approvedOnly.reduce((sum, i) => sum + i.requestedAmount, 0),
                 items: approvedOnly.map((i) => ({
                   itemName: i.item?.name ?? '—',
-                  variantLabel: i.variant?.variantSku ?? null,
                 })),
               }
             })
@@ -1444,6 +1493,10 @@ export default function CheckoutPage() {
     setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
   }
 
+  function togglePaymentMethodEdit(idx: number) {
+    setPaymentMethodEditOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
   function setQty(itemId: string, qty: number) {
     const line = cart.find((l) => l.itemId === itemId)
     if (line?.isSerialTracked) {
@@ -1579,6 +1632,23 @@ export default function CheckoutPage() {
 
   // ─── Payment actions ───────────────────────────────────────────────────────
 
+  // Scenario 37 — a new payment row defaults to whatever Item Payment Mode
+  // already decided (Credit Card → card; Cash's own sub-choice → cash/
+  // bank_transfer/qr), so the cashier isn't asked to re-pick a method that
+  // was already chosen above. Still just a default — freely changeable via
+  // the row's own dropdown for split-tender or anything else.
+  function preferredPaymentMethodKey(): PosPaymentMethod | null {
+    if (hasCreditCardLine) return 'card'
+    if (hasCashLine) {
+      return cashSubMode === 'cash_on_hand'
+        ? 'cash'
+        : cashSubMode === 'bank_transfer'
+          ? 'bank_transfer'
+          : 'qr'
+    }
+    return null
+  }
+
   function addPaymentRow() {
     if (configuredMethods.length > 0) {
       const eligible = configuredMethods.filter((m) => {
@@ -1587,7 +1657,9 @@ export default function CheckoutPage() {
           ? enabledPaymentMethods.includes('custom')
           : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
       })
-      const first = eligible[0]
+      const preferredKey = preferredPaymentMethodKey()
+      const preferred = preferredKey ? eligible.find((m) => m.key === preferredKey) : undefined
+      const first = preferred ?? eligible[0]
       if (first) {
         setPayments((prev) => [
           ...prev,
@@ -1605,7 +1677,8 @@ export default function CheckoutPage() {
         return
       }
     }
-    const defaultMethod = isOffline ? 'cash' : (enabledPaymentMethods[0] ?? 'cash')
+    const preferredKey = preferredPaymentMethodKey()
+    const defaultMethod = isOffline ? 'cash' : (preferredKey ?? enabledPaymentMethods[0] ?? 'cash')
     setPayments((prev) => [...prev, { method: defaultMethod, amount: 0, referenceNumber: '' }])
   }
 
@@ -1740,6 +1813,11 @@ export default function CheckoutPage() {
         setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
       }
+      const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
+      if (cardPaymentPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
+        setError('Select a Term for the card installment payment (Item Payment Mode).')
+        return
+      }
     }
 
     if (loyaltyOverBalance && loyaltyAccount) {
@@ -1828,7 +1906,6 @@ export default function CheckoutPage() {
           managerOverride: managerOverrideApproved || undefined,
           managerUserId: managerOverrideApproved ? overrideManagerId : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
-          sellingAgentId: sellingAgent?.id,
           lines: cart.map((l) => ({
             itemId: l.itemId,
             itemName: l.itemName,
@@ -1981,6 +2058,17 @@ export default function CheckoutPage() {
             amount: actualAmount,
             referenceNumber: p.referenceNumber || undefined,
             paymentMethodConfigId: p.configId,
+            // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
+            // bank/gateway, all come from Item Payment Mode's transaction-scoped
+            // state now, not this row.
+            paymentMethodOptionId:
+              p.method === 'card'
+                ? cardTerminalOptionId
+                : p.method === 'bank_transfer' || p.method === 'qr'
+                  ? cashPaymentOptionId
+                  : p.paymentMethodOptionId,
+            cardTxnMode: p.method === 'card' ? cardTxnMode : undefined,
+            cardInstallmentTerm: p.method === 'card' ? cardInstallmentTerm : undefined,
           })
           if (!payRes.success) {
             const isRefFail =
@@ -2148,6 +2236,11 @@ export default function CheckoutPage() {
     )
     if (missingRef) {
       setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+      return
+    }
+    const cardDepositPending = payments.some((p) => p.method === 'card' && p.amount > 0)
+    if (cardDepositPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
+      setError('Select a Term for the card installment payment (Item Payment Mode).')
       return
     }
 
@@ -2910,86 +3003,6 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Selling Agent */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Selling Agent{' '}
-              <span className="font-normal normal-case tracking-normal text-gray-500">
-                — optional
-              </span>
-            </p>
-            {sellingAgent ? (
-              <div className="flex items-center justify-between rounded-lg bg-purple-200 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-200">
-                    <User size={13} className="text-purple-600" />
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900">{sellingAgent.name}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSellingAgent(null)
-                    setSellingAgentSearch('')
-                  }}
-                  className="text-purple-300 hover:text-purple-600"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search
-                  size={12}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700"
-                />
-                <input
-                  className="w-full rounded-lg border border-purple-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
-                  placeholder="Search agents…"
-                  value={sellingAgentSearch}
-                  onChange={(e) => {
-                    setSellingAgentSearch(e.target.value)
-                    setSellingAgentOpen(true)
-                  }}
-                  onBlur={() => setTimeout(() => setSellingAgentOpen(false), 150)}
-                  onFocus={() => sellingAgentSearch && setSellingAgentOpen(true)}
-                />
-                {sellingAgentOpen && sellingAgentSearch && (
-                  <div className="absolute z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-xl border border-purple-200 bg-white shadow-lg">
-                    {(() => {
-                      const filtered = sellingAgents.filter(
-                        (a) =>
-                          a.name?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
-                          a.phone?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase()) ||
-                          a.email?.toLowerCase()?.includes(sellingAgentSearch.toLowerCase())
-                      )
-                      return filtered.length === 0 ? (
-                        <p className="px-3 py-2 text-xs text-gray-700">No agents found</p>
-                      ) : (
-                        filtered.slice(0, 8).map((a) => (
-                          <button
-                            key={a.id}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-purple-50"
-                            onMouseDown={() => {
-                              setSellingAgent({ id: a.id, name: a.name })
-                              setSellingAgentSearch('')
-                              setSellingAgentOpen(false)
-                            }}
-                          >
-                            <User size={11} className="shrink-0 text-gray-700" />
-                            <div>
-                              <p className="font-medium text-gray-900">{a.name}</p>
-                              <p className="text-xs text-gray-700">{a.phone || a.email || ''}</p>
-                            </div>
-                          </button>
-                        ))
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* QMS tab origin banner */}
           {fromTab && (
             <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-200">
@@ -2998,6 +3011,22 @@ export default function CheckoutPage() {
                 From QMS — Table {fromTab.tableName}. Table will be set to Needs Bussing after
                 payment.
               </p>
+            </div>
+          )}
+
+          {/* Price Use — sale-level selector, drives every line's price.
+              Rendered above Order Summary since it determines the totals shown there. */}
+          {saleMode !== 'reserve' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Price Use
+              </p>
+              <PriceUseSelector
+                priceUseTypes={priceUseTypes}
+                value={priceUseTypeId}
+                onChange={setPriceUseTypeId}
+                isLoading={isResolvingPrices}
+              />
             </div>
           )}
 
@@ -3075,21 +3104,6 @@ export default function CheckoutPage() {
               />
             )}
           </div>
-
-          {/* Price Use — sale-level selector, drives every line's price */}
-          {saleMode !== 'reserve' && (
-            <div className="border-b border-purple-200 p-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Price Use
-              </p>
-              <PriceUseSelector
-                priceUseTypes={priceUseTypes}
-                value={priceUseTypeId}
-                onChange={setPriceUseTypeId}
-                isLoading={isResolvingPrices}
-              />
-            </div>
-          )}
 
           {/* Promo code */}
           <div className="border-b border-purple-200 p-5">
@@ -3249,40 +3263,37 @@ export default function CheckoutPage() {
                           )}
                         </span>
                       </div>
-                      <div className="flex gap-1.5">
-                        {(['cash', 'installment'] as PosInvoiceType[]).map((mode) => (
-                          <button
-                            key={mode}
-                            onClick={() => setLineInvoiceType(groupLineIds, mode)}
-                            className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                              groupMode === mode
-                                ? mode === 'installment'
-                                  ? 'bg-prominent-purple-100 text-prominent-purple-700'
-                                  : 'bg-purple-200 text-purple-700'
-                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                            }`}
-                          >
-                            {mode === 'cash' ? 'Pay Now' : 'Installment'}
-                          </button>
-                        ))}
+                      {/* Cash / Installment / Debit-Credit Card, Cash default. Cash and
+                          Credit Card both set invoiceType: 'cash', differing only in
+                          payNowMethod; Installment is the separate financing path. */}
+                      <div className="relative">
+                        <select
+                          aria-label="Item Payment Mode"
+                          value={
+                            groupMode === 'installment'
+                              ? 'installment'
+                              : (line.payNowMethod ?? 'cash')
+                          }
+                          onChange={(e) => {
+                            const topMode = e.target.value as 'cash' | 'credit_card' | 'installment'
+                            if (topMode === 'installment') {
+                              setLineInvoiceType(groupLineIds, 'installment')
+                            } else {
+                              setLineInvoiceType(groupLineIds, 'cash')
+                              setLinePayNowMethod(groupLineIds, topMode)
+                            }
+                          }}
+                          className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] font-semibold text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="installment">Installment</option>
+                          <option value="credit_card">Debit/Credit Card</option>
+                        </select>
+                        <ChevronDown
+                          size={11}
+                          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                        />
                       </div>
-                      {groupMode === 'cash' && (
-                        <div className="mt-1.5 flex gap-1.5">
-                          {(['cash', 'credit_card'] as PayNowMethod[]).map((method) => (
-                            <button
-                              key={method}
-                              onClick={() => setLinePayNowMethod(groupLineIds, method)}
-                              className={`flex-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors ${
-                                (line.payNowMethod ?? 'cash') === method
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
-                              }`}
-                            >
-                              {method === 'cash' ? 'Cash' : 'Credit Card'}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                       {groupMode === 'installment' && (
                         <div className="mt-2 space-y-1.5">
                           <div className="flex gap-1.5">
@@ -3411,6 +3422,130 @@ export default function CheckoutPage() {
                     </div>
                   )
                 })}
+                {hasCashLine && (
+                  <div
+                    data-testid="cash-sub-mode-toggle"
+                    className="rounded-lg border border-purple-100 p-2.5"
+                  >
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
+                    <div className="flex gap-1.5">
+                      {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => {
+                            setCashSubMode(mode)
+                            setCashPaymentOptionId(undefined)
+                          }}
+                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                            cashSubMode === mode
+                              ? 'bg-purple-200 text-purple-700'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          {mode === 'cash_on_hand'
+                            ? 'Cash on Hand'
+                            : mode === 'bank_transfer'
+                              ? 'Bank Transfer'
+                              : 'QR'}
+                        </button>
+                      ))}
+                    </div>
+                    {cashSubMode !== 'cash_on_hand' &&
+                      (() => {
+                        const config = configuredMethods.find((m) => m.key === cashSubMode)
+                        const options = config?.options.filter((o) => o.isEnabled) ?? []
+                        if (options.length === 0) return null
+                        const label = cashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
+                        return (
+                          <select
+                            aria-label={label}
+                            className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                            value={cashPaymentOptionId ?? ''}
+                            onChange={(e) => setCashPaymentOptionId(e.target.value || undefined)}
+                          >
+                            <option value="">{`Select ${label.toLowerCase()}…`}</option>
+                            {options.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                          </select>
+                        )
+                      })()}
+                  </div>
+                )}
+                {hasCreditCardLine && (
+                  <div
+                    data-testid="card-txn-mode-toggle"
+                    className="rounded-lg border border-purple-100 p-2.5"
+                  >
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Credit/Debit Card</p>
+                    {(() => {
+                      const cardConfig = configuredMethods.find((m) => m.key === 'card')
+                      const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
+                      return (
+                        <>
+                          {terminalOptions.length > 0 && (
+                            <select
+                              aria-label="POS Terminal"
+                              className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                              value={cardTerminalOptionId ?? ''}
+                              onChange={(e) => setCardTerminalOptionId(e.target.value || undefined)}
+                            >
+                              <option value="">Select pos terminal…</option>
+                              {terminalOptions.map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <div className="flex gap-1.5">
+                            {(['straight', 'installment'] as const).map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => {
+                                  setCardTxnMode(mode)
+                                  if (mode === 'straight') setCardInstallmentTerm(undefined)
+                                }}
+                                className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                                  cardTxnMode === mode
+                                    ? mode === 'installment'
+                                      ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                                      : 'bg-purple-200 text-purple-700'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                }`}
+                              >
+                                {mode === 'straight' ? 'Straight' : 'Installment'}
+                              </button>
+                            ))}
+                          </div>
+                          {cardTxnMode === 'installment' && (
+                            <select
+                              aria-label="Term"
+                              className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!cardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                              value={cardInstallmentTerm ?? ''}
+                              onChange={(e) =>
+                                setCardInstallmentTerm(
+                                  e.target.value ? Number(e.target.value) : undefined
+                                )
+                              }
+                            >
+                              <option value="">Select term… * required</option>
+                              {[3, 6, 9, 12, 18, 24].map((m) => (
+                                <option key={m} value={m}>
+                                  {m} months
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3464,14 +3599,7 @@ export default function CheckoutPage() {
                             </option>
                             {approvedCreditApplications.map((a) => (
                               <option key={a.id} value={a.id}>
-                                {a.applicationNumber} ·{' '}
-                                {a.items
-                                  .map((i) =>
-                                    i.variantLabel
-                                      ? `${i.itemName} (${i.variantLabel})`
-                                      : i.itemName
-                                  )
-                                  .join(', ')}{' '}
+                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
                                 · ₱
                                 {a.requestedAmount.toLocaleString('en-PH', {
                                   minimumFractionDigits: 2,
@@ -3573,83 +3701,122 @@ export default function CheckoutPage() {
               </button>
             ) : (
               <div className="space-y-2">
-                {payments.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="relative min-w-0 flex-1">
-                      <select
-                        className="w-full appearance-none cursor-pointer rounded-lg border border-purple-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                        value={p.configId ?? p.method}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          if (configuredMethods.length > 0) {
-                            const cfg = configuredMethods.find((m) => m.id === val)
-                            if (cfg) {
-                              updatePayment(i, {
-                                method:
-                                  cfg.type === 'custom'
-                                    ? 'custom'
-                                    : ((cfg.key as PosPaymentMethod) ?? 'custom'),
-                                configId: cfg.id,
-                                refFieldLabel: cfg.referenceFieldLabel ?? undefined,
-                                refRequired: cfg.referenceIsRequired,
-                                refRegex: cfg.referenceFieldRegex ?? undefined,
-                                referenceNumber: '',
-                              })
-                              return
-                            }
-                          }
-                          updatePayment(i, { method: val as PosPaymentMethod, configId: undefined })
-                        }}
+                {payments.map((p, i) => {
+                  const methodLabel =
+                    configuredMethods.find((m) => m.id === p.configId)?.name ??
+                    PAYMENT_LABELS[p.method] ??
+                    p.method
+                  const methodEditingThisRow = !!paymentMethodEditOpen[i]
+                  return (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        {methodEditingThisRow ? (
+                          <div className="relative min-w-0 flex-1">
+                            <select
+                              aria-label="Payment method"
+                              className="w-full appearance-none cursor-pointer rounded-lg border border-purple-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                              value={p.configId ?? p.method}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                if (configuredMethods.length > 0) {
+                                  const cfg = configuredMethods.find((m) => m.id === val)
+                                  if (cfg) {
+                                    updatePayment(i, {
+                                      method:
+                                        cfg.type === 'custom'
+                                          ? 'custom'
+                                          : ((cfg.key as PosPaymentMethod) ?? 'custom'),
+                                      configId: cfg.id,
+                                      refFieldLabel: cfg.referenceFieldLabel ?? undefined,
+                                      refRequired: cfg.referenceIsRequired,
+                                      refRegex: cfg.referenceFieldRegex ?? undefined,
+                                      referenceNumber: '',
+                                      paymentMethodOptionId: undefined,
+                                    })
+                                    return
+                                  }
+                                }
+                                updatePayment(i, {
+                                  method: val as PosPaymentMethod,
+                                  configId: undefined,
+                                  paymentMethodOptionId: undefined,
+                                })
+                              }}
+                            >
+                              {configuredMethods.length > 0
+                                ? configuredMethods
+                                    .filter((m) => {
+                                      if (isOffline) return m.key === 'cash'
+                                      return m.key === null
+                                        ? enabledPaymentMethods.includes('custom')
+                                        : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
+                                    })
+                                    .map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        {m.name}
+                                      </option>
+                                    ))
+                                : Object.entries(PAYMENT_LABELS)
+                                    .filter(([v]) => {
+                                      if (isOffline) return v === 'cash'
+                                      return enabledPaymentMethods.includes(v as PosPaymentMethod)
+                                    })
+                                    .map(([v, l]) => (
+                                      <option key={v} value={v}>
+                                        {l}
+                                      </option>
+                                    ))}
+                            </select>
+                            <ChevronDown
+                              size={11}
+                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            data-testid="payment-row-method-label"
+                            className="min-w-0 flex-1 truncate rounded-lg border border-transparent px-2 py-2 text-xs font-medium text-gray-800"
+                          >
+                            {methodLabel}
+                          </span>
+                        )}
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          className="w-28 rounded-lg border border-purple-200 px-2 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                          placeholder="0.00"
+                          value={p.amount === 0 ? '' : p.amount}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value)
+                            updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                          }}
+                        />
+                        <button
+                          aria-label="Remove payment method"
+                          onClick={() => removePaymentRow(i)}
+                          className="shrink-0 text-gray-500 hover:text-red-500"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      {/* Scenario 37 — the method already defaults from Item Payment
+                          Mode; only reveal the dropdown if the cashier explicitly
+                          needs something else (a split tender, or Gift
+                          Card/Store Credit/Loyalty Points, none of which Item
+                          Payment Mode covers). */}
+                      <button
+                        type="button"
+                        onClick={() => togglePaymentMethodEdit(i)}
+                        className="text-left text-[11px] font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
                       >
-                        {configuredMethods.length > 0
-                          ? configuredMethods
-                              .filter((m) => {
-                                if (isOffline) return m.key === 'cash'
-                                return m.key === null
-                                  ? enabledPaymentMethods.includes('custom')
-                                  : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
-                              })
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.name}
-                                </option>
-                              ))
-                          : Object.entries(PAYMENT_LABELS)
-                              .filter(([v]) => {
-                                if (isOffline) return v === 'cash'
-                                return enabledPaymentMethods.includes(v as PosPaymentMethod)
-                              })
-                              .map(([v, l]) => (
-                                <option key={v} value={v}>
-                                  {l}
-                                </option>
-                              ))}
-                      </select>
-                      <ChevronDown
-                        size={11}
-                        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
-                      />
+                        {methodEditingThisRow
+                          ? 'Use the default instead'
+                          : 'Use a different method'}
+                      </button>
                     </div>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      className="w-28 rounded-lg border border-purple-200 px-2 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                      placeholder="0.00"
-                      value={p.amount === 0 ? '' : p.amount}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                      }}
-                    />
-                    <button
-                      onClick={() => removePaymentRow(i)}
-                      className="flex-shrink-0 text-gray-500 hover:text-red-500"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
 
                 {/* Quick cash denomination buttons */}
                 {payments.some((p) => p.method === 'cash') && (
@@ -3698,14 +3865,31 @@ export default function CheckoutPage() {
                           ? `${PAYMENT_LABELS[p.method]} reference`
                           : 'Reference')
                       const isRequired = p.refRequired ?? REF_METHODS.includes(p.method)
+                      // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
+                      // Gateway (qr) all live in Item Payment Mode now (transaction-
+                      // scoped, see hasCreditCardLine/hasCashLine) — not repeated
+                      // here, just a pointer back so it doesn't read as missing.
+                      const optionPointer =
+                        p.method === 'card'
+                          ? 'Terminal/Straight-Installment/Term'
+                          : p.method === 'bank_transfer'
+                            ? 'Bank'
+                            : p.method === 'qr'
+                              ? 'Gateway'
+                              : null
                       return needsRef ? (
-                        <div key={i}>
+                        <div key={i} className="space-y-1.5">
                           <input
                             className={`w-full rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${isRequired && !p.referenceNumber.trim() ? 'border-amber-300 bg-amber-50 placeholder:text-amber-500' : 'border-purple-200'}`}
                             placeholder={`${label}${isRequired ? ' * required' : ''}`}
                             value={p.referenceNumber}
                             onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
                           />
+                          {optionPointer && (
+                            <p className="text-[11px] text-gray-400">
+                              {optionPointer} set via Item Payment Mode above.
+                            </p>
+                          )}
                         </div>
                       ) : null
                     })}

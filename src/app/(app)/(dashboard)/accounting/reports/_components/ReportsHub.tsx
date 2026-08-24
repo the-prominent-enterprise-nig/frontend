@@ -17,6 +17,7 @@ type Tab =
   | 'cash-flow'
   | 'ar-aging'
   | 'ap-aging'
+  | 'grni'
   | 'customer-statement'
   | 'cost-center'
   | 'bi'
@@ -29,6 +30,7 @@ const VALID_TABS: Tab[] = [
   'cash-flow',
   'ar-aging',
   'ap-aging',
+  'grni',
   'customer-statement',
   'cost-center',
   'bi',
@@ -74,6 +76,7 @@ export default function ReportsHub() {
     else if (tab === 'cash-flow') res = await Reports.cashFlow(startDate, endDate)
     else if (tab === 'ar-aging') res = await Reports.aging('ar', asOf)
     else if (tab === 'ap-aging') res = await Reports.aging('ap', asOf)
+    else if (tab === 'grni') res = await Reports.grni()
     else if (tab === 'customer-statement') {
       if (!customerId) {
         setLoading(false)
@@ -124,6 +127,7 @@ export default function ReportsHub() {
             ['cash-flow', 'Cash Flow'],
             ['ar-aging', 'AR Aging'],
             ['ap-aging', 'AP Aging'],
+            ['grni', 'GRNI'],
             ['customer-statement', 'Customer Statement'],
             ['cost-center', 'Cost Center'],
             ['bi', 'BI Summary'],
@@ -260,6 +264,8 @@ export default function ReportsHub() {
           <AgingView data={data} type="ar" />
         ) : tab === 'ap-aging' ? (
           <AgingView data={data} type="ap" />
+        ) : tab === 'grni' ? (
+          <GrniView data={data} />
         ) : tab === 'cost-center' ? (
           <CostCenterView data={data} />
         ) : tab === 'bi' ? (
@@ -562,6 +568,52 @@ function AgingView({ data, type }: { data: any; type: 'ar' | 'ap' }) {
               className={`px-2 py-0.5 rounded-full text-xs ${r.bucket === 'Current' ? 'bg-emerald-50 text-emerald-700' : r.bucket === '90+' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
             >
               {r.bucket}
+            </span>
+          </td>
+        </tr>
+      ))}
+    </Table>
+  )
+}
+
+// Scenario 36 Gap 2 — receipts already posted to the GL but not yet matched
+// to a supplier bill/invoice. Oldest-received-first (backend-sorted).
+function GrniView({ data }: { data: any }) {
+  const rows = Array.isArray(data) ? data : []
+  if (rows.length === 0) {
+    return (
+      <div className="text-center text-gray-400 py-8">
+        No receipts pending a matching supplier bill.
+      </div>
+    )
+  }
+  return (
+    <Table
+      headers={[
+        'Receipt #',
+        'Supplier',
+        'Warehouse',
+        'Received',
+        'DR #',
+        'SI #',
+        'Amount',
+        'Days Outstanding',
+      ]}
+    >
+      {rows.map((r: any) => (
+        <tr key={r.id}>
+          <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
+          <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
+          <td className="px-3 py-2 text-xs">{r.deliveryReceiptNumber ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{r.supplierInvoiceNumber ?? '—'}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
+          <td className="px-3 py-2 text-right">
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${r.daysOutstanding > 30 ? 'bg-red-50 text-red-700' : r.daysOutstanding > 7 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+            >
+              {r.daysOutstanding}d
             </span>
           </td>
         </tr>

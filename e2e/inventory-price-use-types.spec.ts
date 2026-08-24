@@ -229,6 +229,28 @@ test.describe('Inventory — Price Use Types', () => {
     // succeed (the same FK restriction this test is exercising).
     await request.delete(`/api/inventory/price-lists/${listId}`)
   })
+
+  test('toggles a price use type inactive/active via the Status switch (Scenario 37)', async ({
+    page,
+    request,
+  }) => {
+    const name = `${NAME_PREFIX}${Date.now()}`
+    const created = await request.post('/api/inventory/price-use-types', { data: { name } })
+    expect(created.ok()).toBeTruthy()
+
+    const drawer = await openPriceUseTypesDrawer(page)
+    const row = drawer.getByRole('row').filter({ hasText: name })
+    await expect(row).toBeVisible()
+
+    const toggle = row.getByRole('switch')
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-checked', 'false', { timeout: 10_000 })
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 })
+  })
 })
 
 test.describe('Inventory — Price Use Types — RBAC', () => {

@@ -47,7 +47,7 @@ export default function CreateCreditApplicationModal({
     resolver: zodResolver(CreateCreditApplicationFormSchema),
     defaultValues: {
       branchId: sessionBranchId ?? undefined,
-      items: [{ itemId: '', variantId: undefined }],
+      items: [{ itemId: '' }],
     },
   })
 
@@ -69,7 +69,7 @@ export default function CreateCreditApplicationModal({
     if (!isOpen) {
       reset({
         branchId: sessionBranchId ?? undefined,
-        items: [{ itemId: '', variantId: undefined }],
+        items: [{ itemId: '' }],
       })
     }
   }, [isOpen, sessionBranchId, reset])

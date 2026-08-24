@@ -118,7 +118,6 @@ export const CreateCreditApplicationFormSchema = z.object({
     .array(
       z.object({
         itemId: z.string().min(1, 'Item is required'),
-        variantId: z.string().optional(),
       })
     )
     .min(1, 'At least one item is required'),
@@ -126,7 +125,7 @@ export const CreateCreditApplicationFormSchema = z.object({
 })
 export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationFormSchema>
 
-// Editing a draft only ever touches item/variant/notes today (see
+// Editing a draft only ever touches item/notes today (see
 // CreditApplicationDetail's "Edit" action) — applicant/co-maker/branch
 // aren't exposed for edit, but the backend's PATCH accepts any subset via
 // PartialType(CreateCreditApplicationDto), so this stays a full .partial().
@@ -184,23 +183,13 @@ export interface CreditApplicationItemLite {
   name: string
   sku?: string | null
   modelNumber?: string | null
-  hasVariants?: boolean
   sellingPrice?: number | null
-}
-
-export interface CreditApplicationVariantLite {
-  id: string
-  variantSku: string
-  attributes?: Record<string, string> | null
-  priceOverride?: number | null
 }
 
 export interface CreditApplicationItemLine {
   id: string
   itemId: string
   item?: CreditApplicationItemLite | null
-  variantId?: string | null
-  variant?: CreditApplicationVariantLite | null
   requestedAmount: number
   status: CreditApplicationItemStatus
   decidedAt?: string | null

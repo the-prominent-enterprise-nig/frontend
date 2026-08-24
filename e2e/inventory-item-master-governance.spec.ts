@@ -20,7 +20,7 @@ import { gotoReady, clickStable, fillStable, loginAs } from './utils'
 // runs as Owner instead.
 
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
-const SEARCH_PLACEHOLDER = 'Search by name or SKU…'
+const SEARCH_PLACEHOLDER = 'Search by name, SKU, or serial number…'
 const STOCK_EMAIL = 'technova.b1.stock@test.com'
 const OWNER_EMAIL = 'technova.owner@test.com'
 const ACCOUNTING_EMAIL = 'technova.b1.accounting@test.com'

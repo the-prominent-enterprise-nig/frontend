@@ -107,10 +107,6 @@ export const INVENTORY_PERMISSIONS = {
   COSTING_READ: 'inventory:costing:read',
   COSTING_CONFIGURE: 'inventory:costing:configure',
 
-  // ── Variants ───────────────────────────────────────────────────────────────
-  VARIANTS_READ: 'inventory:variants:read',
-  VARIANTS_MANAGE: 'inventory:variants:manage',
-
   // ── Price Lists (INV-32) ───────────────────────────────────────────────────
   PRICE_LISTS_READ: 'inventory:price-lists:read',
   PRICE_LISTS_CREATE: 'inventory:price-lists:create',
@@ -241,8 +237,6 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:returns:create': 'Process returned items back into inventory',
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
-  'inventory:variants:read': 'View item variants',
-  'inventory:variants:manage': 'Create and manage item variants',
   'inventory:price-lists:read': 'View price lists',
   'inventory:price-lists:create': 'Create price lists',
   'inventory:price-lists:update': 'Edit price lists',

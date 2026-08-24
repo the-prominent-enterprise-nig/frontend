@@ -7,7 +7,6 @@ import type { ItemImageFile } from './item-images'
 export interface BulkImageMapping {
   sku: string
   fileId: string
-  variantId?: string
   sortOrder?: number
   isPrimary?: boolean
 }

@@ -6,25 +6,24 @@ import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
 import SerialsTab from './tabs/SerialsTab'
+import SerialMovementsTab from './tabs/SerialMovementsTab'
 import MovementsTab from './tabs/MovementsTab'
-import SubstitutesTab from './tabs/SubstitutesTab'
-import HistoryTab from './tabs/HistoryTab'
-import type { ItemSubstitute, ItemChangeLog } from '@/src/schema/inventory/items'
-import type { ItemLedgerEntry } from '@/src/schema/inventory/items/ledger'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { createPortal } from 'react-dom'
 
+type DrawerContext = 'catalog' | 'stock'
+
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'stock', label: 'Stock' },
-  { id: 'serials', label: 'Serials' },
-  { id: 'movements', label: 'Movements' },
-  { id: 'substitutes', label: 'Substitutes' },
-  { id: 'history', label: 'History' },
-] as const
+  { id: 'overview', label: 'Overview', context: 'catalog' },
+  { id: 'stock', label: 'Stock', context: 'stock' },
+  { id: 'serials', label: 'Serials', context: 'stock' },
+  { id: 'movements', label: 'Movements', context: 'stock' },
+] as const satisfies readonly { id: string; label: string; context: DrawerContext }[]
 
 type Tab = (typeof TABS)[number]['id']
+
+const DEFAULT_TAB: Record<DrawerContext, Tab> = { catalog: 'overview', stock: 'stock' }
 
 const LIFECYCLE_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -46,28 +45,23 @@ function DrawerSkeleton() {
   )
 }
 
-function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const { item, stock, substitutes, history, provenance, serials } = useItem360(itemId, activeTab)
+function Item360Content({
+  itemId,
+  context,
+  onClose,
+}: {
+  itemId: string
+  context: DrawerContext
+  onClose: () => void
+}) {
+  const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
+  const [selectedSerial, setSelectedSerial] = useState<SerialNumberSummary | null>(null)
+  const visibleTabs = TABS.filter((tab) => tab.context === context)
+  const { item, stock, serials } = useItem360(itemId, activeTab)
 
   type BalanceList = { data: import('@/src/schema/inventory/goods-receiving').StockBalance[] }
   const itemData = item.data?.success ? item.data.data : null
   const stockData = stock.data?.success ? (stock.data.data as unknown as BalanceList) : null
-  const substitutesData = substitutes.data?.success
-    ? ((substitutes.data.data as unknown as { data: ItemSubstitute[] })?.data ??
-      (substitutes.data.data as unknown as ItemSubstitute[]) ??
-      [])
-    : []
-  const historyData = history.data?.success
-    ? ((history.data.data as unknown as { data: ItemChangeLog[] })?.data ??
-      (history.data.data as unknown as ItemChangeLog[]) ??
-      [])
-    : []
-  const provenanceData: ItemLedgerEntry[] = provenance.data?.success
-    ? (provenance.data.data?.data.filter((e) =>
-        ['receipt', 'transfer_in', 'transfer_out'].includes(e.transactionType)
-      ) ?? [])
-    : []
   const serialsData: SerialNumberSummary[] = serials.data?.success
     ? (serials.data.data?.data ?? [])
     : []
@@ -117,8 +111,8 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
           </button>
         </div>
 
-        {/* Quick actions */}
-        {itemData && (
+        {/* Quick actions — operational, so Stock-context only */}
+        {itemData && context === 'stock' && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <a
               href={`/inventory/operations?tab=receiving`}
@@ -138,25 +132,31 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         )}
       </div>
 
-      {/* Tab nav */}
-      <div className="shrink-0 border-b border-zinc-200 bg-white">
-        <nav className="flex overflow-x-auto px-5" aria-label="Item 360 tabs">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 border-b-2 px-3 py-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.id
-                  ? 'border-prominent-purple-600 text-prominent-purple-700'
-                  : 'border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
+      {/* Tab nav — hidden when there's only one tab to switch between, or
+          while drilled into a single serial's own movement timeline */}
+      {visibleTabs.length > 1 && !selectedSerial && (
+        <div className="shrink-0 border-b border-zinc-200 bg-white">
+          <nav className="flex overflow-x-auto px-5" aria-label="Item 360 tabs">
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab.id)
+                  setSelectedSerial(null)
+                }}
+                className={`shrink-0 border-b-2 px-3 py-3 text-[13px] font-medium whitespace-nowrap transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-prominent-purple-600 text-prominent-purple-700'
+                    : 'border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
@@ -165,25 +165,21 @@ function Item360Content({ itemId, onClose }: { itemId: string; onClose: () => vo
         ) : !itemData ? (
           <div className="p-5 text-sm text-zinc-400">Failed to load item details.</div>
         ) : activeTab === 'overview' ? (
-          <OverviewTab item={itemData} serials={serialsData} />
+          <OverviewTab item={itemData} />
         ) : activeTab === 'stock' ? (
           <StockTab balances={stockData?.data ?? []} isLoading={stock.isLoading} />
         ) : activeTab === 'serials' ? (
-          <SerialsTab serials={serialsData} isLoading={serials.isLoading} />
+          selectedSerial ? (
+            <SerialMovementsTab serial={selectedSerial} onBack={() => setSelectedSerial(null)} />
+          ) : (
+            <SerialsTab
+              serials={serialsData}
+              isLoading={serials.isLoading}
+              onSelectSerial={setSelectedSerial}
+            />
+          )
         ) : activeTab === 'movements' ? (
           <MovementsTab itemId={itemId} />
-        ) : activeTab === 'substitutes' ? (
-          <SubstitutesTab
-            itemId={itemId}
-            substitutes={substitutesData}
-            isLoading={substitutes.isLoading}
-          />
-        ) : activeTab === 'history' ? (
-          <HistoryTab
-            changeEntries={historyData}
-            provenanceEntries={provenanceData}
-            isLoading={history.isLoading || provenance.isLoading}
-          />
         ) : null}
       </div>
     </>
@@ -196,6 +192,11 @@ export default function Item360Drawer() {
   const topPanel = panelStack[panelStack.length - 1]
   const isOpen = topPanel?.type === 'item360'
   const itemId = topPanel?.type === 'item360' ? topPanel.itemId : null
+  // Pre-existing call sites not yet updated to pass a context fall back to
+  // 'stock' (the broader, operational tab set) rather than 'catalog', so
+  // they keep working sensibly until they're migrated.
+  const context: DrawerContext =
+    topPanel?.type === 'item360' ? (topPanel.context ?? 'stock') : 'stock'
   const hasMultiple = panelStack.length > 1
 
   if (typeof window === 'undefined') return null
@@ -216,7 +217,7 @@ export default function Item360Drawer() {
         role="dialog"
         aria-modal="true"
         aria-label="Item Details"
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[960px] flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -235,7 +236,7 @@ export default function Item360Drawer() {
         )}
 
         {isOpen && itemId ? (
-          <Item360Content key={itemId} itemId={itemId} onClose={popPanel} />
+          <Item360Content key={itemId} itemId={itemId} context={context} onClose={popPanel} />
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <p className="text-sm text-zinc-400">Select an item to view details.</p>

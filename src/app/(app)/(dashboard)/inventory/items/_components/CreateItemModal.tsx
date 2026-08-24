@@ -90,7 +90,6 @@ export default function CreateItemModal({
       requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
-      hasVariants: false,
       isService: false,
       taxRateId: undefined,
       initialWarehouseId: '',

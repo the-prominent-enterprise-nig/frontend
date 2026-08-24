@@ -169,16 +169,25 @@ const ReceivingReportPoLineSchema = z.object({
   purchaseOrder: z.object({ code: z.string() }).optional().nullable(),
 })
 
+const ReceivingReportLineItemSchema = StockBalanceItemSchema.extend({
+  // Catalog-level classification, used to fill the printed Receiving
+  // Report's Brand / Model / Type columns.
+  modelNumber: z.string().optional().nullable(),
+  brand: z.object({ name: z.string() }).optional().nullable(),
+  type: z.object({ name: z.string() }).optional().nullable(),
+})
+
 const ReceivingReportLineSchema = z.object({
   id: z.string(),
   goodsReceiptId: z.string(),
   itemId: z.string(),
-  item: StockBalanceItemSchema.optional().nullable(),
+  item: ReceivingReportLineItemSchema.optional().nullable(),
   purchaseOrderLineId: z.string().optional().nullable(),
   purchaseOrderLine: ReceivingReportPoLineSchema.optional().nullable(),
   quantityReceived: z.number(),
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
+  unitCost: z.number().optional().nullable(),
   qualityHold: z.boolean(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
@@ -209,6 +218,8 @@ export const ReceivingReportSchema = z.object({
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  receivedById: z.string().optional().nullable(),
+  receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
@@ -216,6 +227,9 @@ export const ReceivingReportSchema = z.object({
   journalEntryId: z.string().optional().nullable(),
   withholding: z.enum(['none', 'pct_1']).optional(),
   withheldAmount: z.number().optional().nullable(),
+  // Scenario 36 Gap 4 — Input VAT, resolved from each line's item's own
+  // tax rate at receiving time.
+  vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
 })

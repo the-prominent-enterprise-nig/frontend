@@ -39,7 +39,7 @@ export function usePriceUseTypes() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: PriceUseTypeFormValues }) =>
+    mutationFn: ({ id, data }: { id: string; data: Partial<PriceUseTypeFormValues> }) =>
       updatePriceUseType(id, data),
     onSuccess: (result) => {
       if (result.success) {
