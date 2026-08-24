@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  FileCheck2,
   FilePlus,
   FileSpreadsheet,
   ClipboardCheck,
@@ -197,24 +198,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
     bottom: [],
   },
   accounting: {
+    // Reordered per developer request (2026-08-20): day-to-day
+    // transactional/operational screens first, reporting next, setup/
+    // configuration screens (touched rarely, once things are set up) last.
+    // Same items, same permissions — order only.
     main: [
+      // ── Core transactions ──
       {
         label: 'Journal Entries',
         href: '/accounting/journal-entries',
         icon: ReceiptText,
         requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
-      },
-      {
-        label: 'Chart of Accounts',
-        href: '/accounting/chart-of-accounts',
-        icon: BookOpen,
-        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
-      },
-      {
-        label: 'Account Mapping',
-        href: '/accounting/account-mapping',
-        icon: Key,
-        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
       },
       {
         label: 'General Ledger',
@@ -247,10 +241,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
-        label: 'AP Payment Methods',
-        href: '/accounting/ap-payment-methods',
-        icon: CreditCard,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
+        label: 'Receiving Reports',
+        href: '/accounting/receiving-reports',
+        icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       {
         label: 'Expenses',
@@ -259,22 +253,29 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
       },
       {
-        label: 'Bank Accounts',
-        href: '/accounting/bank-accounts',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+        label: 'Customers',
+        href: '/accounting/customers',
+        icon: Users,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
       },
+      {
+        label: 'Unapplied Collections',
+        href: '/accounting/unapplied-collections',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
+      },
+      {
+        label: 'Withholding Tax (CWT)',
+        href: '/accounting/withholding-tax',
+        icon: FileCheck2,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
+      },
+      // ── Operational / periodic ──
       {
         label: 'Bank Reconciliation',
         href: '/accounting/bank-reconciliation',
         icon: HandCoins,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      {
-        label: 'Fixed Assets',
-        href: '/accounting/fixed-assets',
-        icon: ShoppingBag,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
       },
       {
         label: 'Recurring Entries',
@@ -289,28 +290,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
       },
       {
-        label: 'Fiscal Periods',
-        href: '/accounting/fiscal-periods',
-        icon: CalendarDays,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
-      },
-      {
-        label: 'Customers',
-        href: '/accounting/customers',
-        icon: Users,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
-      },
-      {
-        label: 'Currencies',
-        href: '/accounting/currencies',
-        icon: Coins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CURRENCY_READ,
-      },
-      {
-        label: 'Tax',
-        href: '/accounting/tax',
-        icon: FileSpreadsheet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
+        label: 'Cash Forecast',
+        href: '/accounting/cash-forecast',
+        icon: TrendingUp,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
       },
       {
         label: 'Budgets',
@@ -319,16 +302,54 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.BUDGET_READ,
       },
       {
-        label: 'Cash Forecast',
-        href: '/accounting/cash-forecast',
-        icon: TrendingUp,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CASH_FORECAST_READ,
+        label: 'Fixed Assets',
+        href: '/accounting/fixed-assets',
+        icon: ShoppingBag,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
       },
+      // ── Reports ──
       {
         label: 'Reports',
         href: '/accounting/reports',
         icon: FileBarChart,
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+      },
+      // ── Setup / configuration ──
+      {
+        label: 'Chart of Accounts',
+        href: '/accounting/chart-of-accounts',
+        icon: BookOpen,
+        requiredPermission: ACCOUNTING_PERMISSIONS.ACCOUNT_READ,
+      },
+      {
+        label: 'Account Mapping',
+        href: '/accounting/account-mapping',
+        icon: Key,
+        requiredPermission: [ACCOUNTING_PERMISSIONS.ACCOUNT_READ, POS_PERMISSIONS.CONFIG_READ],
+      },
+      {
+        label: 'AP Payment Methods',
+        href: '/accounting/ap-payment-methods',
+        icon: CreditCard,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_PAYMENT_METHODS_READ,
+      },
+      {
+        label: 'Bank Accounts',
+        href: '/accounting/bank-accounts',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+      },
+      {
+        label: 'Fiscal Periods',
+        href: '/accounting/fiscal-periods',
+        icon: CalendarDays,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
+      },
+      {
+        label: 'Tax',
+        href: '/accounting/tax',
+        icon: FileSpreadsheet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
     ],
     bottom: [],
@@ -799,6 +820,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
     label: 'Business Policies',
     href: '/settings/business-policies',
     icon: ScrollText,
+  },
+  {
+    section: 'My Workspace',
+    label: 'Payment Methods',
+    href: '/settings/payment-methods',
+    icon: Wallet,
   },
   {
     section: 'My Workspace',

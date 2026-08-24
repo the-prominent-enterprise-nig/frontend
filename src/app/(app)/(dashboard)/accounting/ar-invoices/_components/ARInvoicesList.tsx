@@ -1329,7 +1329,6 @@ function InvoiceFormDialog({
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
     taxCode: (initial as any)?.taxCode ?? '',
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   // ACC-21 bridge: load tax rates so users can pick one instead of typing taxAmount manually
@@ -1502,7 +1501,7 @@ function InvoiceFormDialog({
               <p className="mt-1 text-xs text-gray-500">Tax auto-calculates as subtotal × rate.</p>
             )}
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
                 required
@@ -1522,14 +1521,6 @@ function InvoiceFormDialog({
                 disabled={!!form.taxCode}
                 className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${form.taxCode ? 'bg-gray-50 text-gray-600' : ''}`}
                 title={form.taxCode ? 'Auto-calculated from tax rate' : 'Enter tax amount manually'}
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                placeholder="Dept / Project"
               />
             </Field>
           </div>

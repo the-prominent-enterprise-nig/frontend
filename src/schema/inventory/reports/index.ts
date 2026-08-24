@@ -23,12 +23,29 @@ export const ValuationReportItemSchema = z.object({
   costingMethod: z.string().optional().nullable(),
 })
 
+export const ValuationCategoryBreakdownSchema = z.object({
+  category: z.string(),
+  totalValue: z.number(),
+  totalQty: z.number(),
+  itemCount: z.number(),
+})
+
+export const ValuationWarehouseBreakdownSchema = z.object({
+  warehouseId: z.string(),
+  warehouseName: z.string(),
+  totalValue: z.number(),
+  totalQty: z.number(),
+  itemCount: z.number(),
+})
+
 export const ValuationReportResponseSchema = z.object({
   data: z.array(ValuationReportItemSchema),
   summary: z.object({
     totalItems: z.number(),
     totalQty: z.number(),
     totalValue: z.number(),
+    byCategory: z.array(ValuationCategoryBreakdownSchema).optional(),
+    byWarehouse: z.array(ValuationWarehouseBreakdownSchema).optional(),
   }),
   meta: ReportPaginationMetaSchema.optional(),
   generatedAt: z.string().optional(),

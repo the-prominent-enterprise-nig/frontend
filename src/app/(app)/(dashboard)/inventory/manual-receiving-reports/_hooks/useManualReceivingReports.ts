@@ -9,6 +9,7 @@ import { submitManualReceivingReport } from '../_actions/submit-manual-receiving
 import { approveManualReceivingReport } from '../_actions/approve-manual-receiving-report'
 import { rejectManualReceivingReport } from '../_actions/reject-manual-receiving-report'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type {
   ManualReceivingReport,
   ManualReceivingReportStatus,
@@ -48,6 +49,13 @@ export function useManualReceivingReports() {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Scenario 36 Gap 3 — needed for the new unit-cost/supplier fields.
+  const suppliersQuery = useQuery({
+    queryKey: ['inventory-suppliers-lookup'],
+    queryFn: () => getSuppliers({ limit: 200 }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -129,6 +137,7 @@ export function useManualReceivingReports() {
     setShowCreateModal,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
+    supplierOptions: suppliersQuery.data?.data?.data ?? [],
 
     submit: submitMutation.mutateAsync,
     isSubmitting: submitMutation.isPending,

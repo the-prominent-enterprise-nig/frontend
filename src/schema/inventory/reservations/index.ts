@@ -45,6 +45,7 @@ export const ReservationListResponseSchema = z.object({
   total: z.number(),
   page: z.number(),
   limit: z.number(),
+  summary: z.object({ totalReservedQty: z.number() }).optional(),
 })
 
 export type Reservation = z.infer<typeof ReservationSchema>

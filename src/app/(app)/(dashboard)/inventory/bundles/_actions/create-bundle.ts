@@ -20,7 +20,6 @@ export async function createBundle(input: unknown): Promise<ApiResponse<{ id: st
   const itemPayload = {
     ...itemFields,
     isBundle: true,
-    hasVariants: false,
     isBatchTracked: false,
     isSerialTracked: isSerialTracked ?? false,
     isExpiryTracked: false,

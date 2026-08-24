@@ -103,6 +103,21 @@ export default function ManualRrDetailView({
             <InfoRow label="Warehouse" value={report.warehouse.name} />
             <InfoRow label="Serial Number" value={report.serialNumber} />
             <InfoRow label="Reason" value={ADJUSTMENT_REASON_LABELS[report.reasonCode]} />
+            {report.unitCost != null && (
+              <InfoRow
+                label="Unit Cost"
+                value={Number(report.unitCost).toLocaleString('en-PH', {
+                  style: 'currency',
+                  currency: 'PHP',
+                })}
+              />
+            )}
+            {report.supplier && (
+              <InfoRow
+                label="Supplier"
+                value={`${report.supplier.code} — ${report.supplier.name}`}
+              />
+            )}
             <InfoRow label="Submitted By" value={report.submittedByName ?? report.submittedById} />
             <InfoRow
               label="Submitted At"
@@ -127,6 +142,18 @@ export default function ManualRrDetailView({
                   Serial <span className="font-mono">{report.createdSerial.serialNumber}</span>{' '}
                   originated, now in stock.
                 </p>
+              )}
+              {report.journalEntryId ? (
+                <p className="mt-1 text-xs text-green-700">
+                  Journal entry posted (Dr Inventory / Cr AP
+                  {report.withheldAmount ? ' / Cr WHT Payable' : ''}).
+                </p>
+              ) : (
+                report.unitCost == null && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    No unit cost was given — this unit was received with no financial value.
+                  </p>
+                )
               )}
             </div>
           )}

@@ -603,6 +603,12 @@ function OpenSessionModal({
 
 const DENOMINATIONS = [1000, 500, 200, 100, 50, 20]
 
+// Scenario 38 Gap 3 — the backend rejects a non-zero cash variance with a
+// message naming these two required fields; matching on it (rather than a
+// dedicated error code) keeps this a plain string check, same shape as the
+// backend's own BadRequestException text.
+const VARIANCE_OVERRIDE_MARKER = 'managerOverride'
+
 function CloseSessionModal({
   session,
   error,
@@ -621,11 +627,73 @@ function CloseSessionModal({
   )
   const [notes, setNotes] = useState('')
 
+  // Manager approval, revealed only once the backend rejects a variance —
+  // same search+PIN shape as HandoverModal below.
+  const [search, setSearch] = useState('')
+  const [filtered, setFiltered] = useState<{ id: string; name: string; email: string }[]>([])
+  const [searching, setSearching] = useState(false)
+  const [usersError, setUsersError] = useState('')
+  const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null)
+  const [pin, setPin] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const [verifyError, setVerifyError] = useState('')
+  const [verified, setVerified] = useState<{ id: string; name: string } | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const branchId = session.terminal?.branchId
+  const needsOverride = error.includes(VARIANCE_OVERRIDE_MARKER)
+
   const total = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
 
   const denominationBreakdown = Object.fromEntries(
     DENOMINATIONS.filter((d) => (counts[d] ?? 0) > 0).map((d) => [String(d), counts[d]])
   )
+
+  useEffect(() => {
+    if (!search.trim()) {
+      setFiltered([])
+      setUsersError('')
+      return
+    }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true)
+      const res = await searchUsers(search.trim(), branchId ?? undefined)
+      if (res.success && Array.isArray(res.data)) {
+        setFiltered(res.data)
+        setUsersError('')
+      } else {
+        setFiltered([])
+        setUsersError(res.error ?? 'Unable to search managers')
+      }
+      setSearching(false)
+    }, 300)
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current)
+    }
+  }, [search, branchId])
+
+  async function handleVerify() {
+    if (!selectedUser) return
+    setVerifyError('')
+    setVerifying(true)
+    const res = await verifyCashierPin(selectedUser.id, pin.trim())
+    setVerifying(false)
+    if (!res.success || !res.data) {
+      setVerifyError(res.error ?? 'Invalid PIN')
+      return
+    }
+    setVerified({ id: res.data.id, name: res.data.name })
+  }
+
+  function submit() {
+    onSubmit({
+      declaredClosingCash: total,
+      notes: notes || undefined,
+      denominationBreakdown:
+        Object.keys(denominationBreakdown).length > 0 ? denominationBreakdown : undefined,
+      ...(verified && { managerOverride: true, managerUserId: verified.id }),
+    })
+  }
 
   return (
     <Overlay onClose={onClose}>
@@ -633,7 +701,13 @@ function CloseSessionModal({
       <p className="mb-4 text-sm text-gray-500">
         Terminal: {session.terminal?.name ?? session.terminalId}
       </p>
-      {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          {needsOverride
+            ? 'Declared cash does not match the expected amount — a manager must approve before this session can close.'
+            : error}
+        </p>
+      )}
       <div className="space-y-4">
         <div>
           <label className="mb-2 block text-xs font-semibold text-gray-600">
@@ -674,21 +748,101 @@ function CloseSessionModal({
             onChange={(e) => setNotes(e.target.value)}
           />
         </Field>
+
+        {needsOverride && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Manager Approval Required
+            </p>
+            {verified ? (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
+                <CheckCircle2 size={15} className="shrink-0 text-green-600" />
+                <span className="text-sm font-medium text-green-800">
+                  Approved by {verified.name}
+                </span>
+                <button
+                  onClick={() => {
+                    setVerified(null)
+                    setSelectedUser(null)
+                    setSearch('')
+                    setPin('')
+                  }}
+                  className="ml-auto text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Change
+                </button>
+              </div>
+            ) : selectedUser ? (
+              <>
+                <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                  <span className="text-sm font-medium text-gray-800">{selectedUser.name}</span>
+                  <button
+                    onClick={() => {
+                      setSelectedUser(null)
+                      setPin('')
+                      setVerifyError('')
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Change
+                  </button>
+                </div>
+                <Field label="Manager PIN">
+                  <input
+                    className="input"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="4–6 digit PIN"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
+                  />
+                </Field>
+                {verifyError && <p className="text-xs text-red-600">{verifyError}</p>}
+                <button
+                  onClick={handleVerify}
+                  disabled={verifying || !pin.trim()}
+                  className="w-full rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {verifying ? 'Verifying…' : 'Verify PIN'}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  className="input"
+                  placeholder="Search manager by name or email…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {searching && <p className="text-xs text-gray-400">Searching…</p>}
+                {usersError && <p className="text-xs text-red-600">{usersError}</p>}
+                {filtered.length > 0 && (
+                  <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                    {filtered.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => setSelectedUser({ id: u.id, name: u.name })}
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                      >
+                        {u.name} <span className="text-xs text-gray-400">{u.email}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
       <div className="mt-6 flex justify-end gap-3">
         <button onClick={onClose} className="btn-secondary">
           Cancel
         </button>
         <button
-          onClick={() =>
-            onSubmit({
-              declaredClosingCash: total,
-              notes: notes || undefined,
-              denominationBreakdown:
-                Object.keys(denominationBreakdown).length > 0 ? denominationBreakdown : undefined,
-            })
-          }
-          disabled={isLoading}
+          onClick={submit}
+          disabled={isLoading || (needsOverride && !verified)}
           className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
         >
           {isLoading ? 'Closing…' : `Close Session (₱${total.toLocaleString()})`}

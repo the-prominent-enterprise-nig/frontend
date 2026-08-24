@@ -20,7 +20,13 @@ export const ItemLedgerEntrySchema = z.object({
   referenceCode: z.string().nullable().optional(),
   reasonCode: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
-  warehouse: WarehouseRefSchema,
+  // Not a stock movement — a warehouse-less entry merged in from the item's
+  // field-edit change log, distinguished by transactionType: 'field_edit'.
+  warehouse: WarehouseRefSchema.nullable().optional(),
+  field: z.string().nullable().optional(),
+  oldValue: z.string().nullable().optional(),
+  newValue: z.string().nullable().optional(),
+  changedBy: z.string().nullable().optional(),
 })
 
 export const ItemLedgerResponseSchema = z.object({

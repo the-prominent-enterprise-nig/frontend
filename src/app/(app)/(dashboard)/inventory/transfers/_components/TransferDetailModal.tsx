@@ -1,7 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { useForm, useFieldArray, useWatch, Controller, type Control } from 'react-hook-form'
+import { useMemo, useState } from 'react'
+import {
+  useForm,
+  useFieldArray,
+  useWatch,
+  Controller,
+  type Control,
+  type UseFormSetValue,
+  type FieldErrors,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -43,10 +51,37 @@ import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { SerialSearchCombobox } from './SerialSearchCombobox'
-import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+
+// A serial-tracked item requested with quantity > 1 arrives here as several
+// separate quantity-1 StockTransferLine rows (see CreateTransferModal's
+// handleFormSubmit) — without this, the dispatch/receive forms would show
+// that item's name repeated with no way to tell the rows apart. Suffixes
+// "(i of N)" onto the label whenever a key repeats more than once.
+function labelWithOccurrence<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+  nameOf: (item: T) => string | undefined
+): string[] {
+  const totals = new Map<string, number>()
+  items.forEach((item) => {
+    const key = keyOf(item)
+    totals.set(key, (totals.get(key) ?? 0) + 1)
+  })
+  const seen = new Map<string, number>()
+  return items.map((item) => {
+    const key = keyOf(item)
+    const total = totals.get(key) ?? 1
+    const name = nameOf(item)
+    if (total <= 1) return name ?? ''
+    const index = (seen.get(key) ?? 0) + 1
+    seen.set(key, index)
+    return `${name ?? ''} (${index} of ${total})`
+  })
+}
 
 const STATUS_CONFIG = {
   pending_manager_approval: {
@@ -111,140 +146,201 @@ function branchLabel(
   return wh?.branch?.name ?? wh?.name ?? fallback
 }
 
-// One row per serial-tracked line being dispatched — the person dispatching
-// physically has the stock in front of them, so this fetches in-stock
-// serials live, scoped to that item + the source warehouse, and lets them
-// pick the exact unit being sent. Distinct from CreateTransferModal's old
-// (removed) serial picker: that ran at request time, before the requester
-// could possibly know what's on the shelf at the other branch.
-function DispatchSerialAssignmentRow({
+// One search box per DISTINCT serial-tracked item being dispatched (not one
+// per unit) — the person dispatching physically has the stock in front of
+// them, so this fetches in-stock serials live, scoped to that item + the
+// source warehouse. Each pick turns into a pill next to the box; the box
+// stays there so the next pick fills the next unit of that same item, until
+// every unit of the group has a pill. Underneath, the data model is
+// unchanged — still one `serialAssignments` array entry per StockTransferLine
+// (the backend's own per-line invariant) — this only changes how those N
+// slots for one item are grouped and filled in the UI. Distinct from
+// CreateTransferModal's old (removed) serial picker: that ran at request
+// time, before the requester could possibly know what's on the shelf at the
+// other branch.
+function ItemSerialGroup({
   control,
-  index,
-  fromWarehouseId,
+  setValue,
   itemId,
   itemLabel,
-  error,
+  fromWarehouseId,
+  slotIndices,
   canOverride,
+  errors,
 }: {
   control: Control<DispatchTransferFormValues>
-  index: number
+  setValue: UseFormSetValue<DispatchTransferFormValues>
+  itemId: string
+  itemLabel: string
   fromWarehouseId: string | undefined
-  itemId: string | undefined
-  itemLabel: string | undefined
-  error?: string
+  slotIndices: number[]
   canOverride: boolean
+  errors?: FieldErrors<DispatchTransferFormValues>['serialAssignments']
 }) {
-  // Everyone defaults to the narrow, safe picker — in-stock at the source
-  // warehouse only — same as before override existed. Only once the
-  // "Supervisor override" checkbox itself is ticked does it widen to a
-  // tenant-wide live search; merely HOLDING the permission isn't enough to
-  // change what a normal dispatch shows, since that would surface every
-  // other branch's serials on every single dispatch and make the common
-  // case harder to use for exactly the people this feature is for.
-  const overrideChecked = Boolean(
-    useWatch({ control, name: `serialAssignments.${index}.override` })
-  )
+  const allAssignments = useWatch({ control, name: 'serialAssignments' }) ?? []
+  const filledIndices = slotIndices.filter((i) => !!allAssignments[i]?.serialNumberId)
+  const firstEmptyIndex = slotIndices.find((i) => !allAssignments[i]?.serialNumberId)
+  const pickedSerialIds = filledIndices
+    .map((i) => allAssignments[i]?.serialNumberId)
+    .filter((id): id is string => !!id)
+
+  // Local, not form state — override applies to whichever pick happens next,
+  // not to an already-placed pill (see handlePick). Reset after every pick
+  // so it never silently carries over to the next unit of the same item.
+  const [overrideChecked, setOverrideChecked] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
   const widened = canOverride && overrideChecked
 
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock', fromWarehouseId, itemId],
     queryFn: () =>
-      getSerialNumbers({
-        warehouseId: fromWarehouseId,
-        itemId,
-        status: 'in_stock',
-        limit: 500,
-      }),
+      getSerialNumbers({ warehouseId: fromWarehouseId, itemId, status: 'in_stock', limit: 500 }),
     enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })
-  const serialOptions = serialsQuery.data?.data?.data ?? []
+  const serialOptions = (serialsQuery.data?.data?.data ?? []).filter(
+    (s) => !pickedSerialIds.includes(s.id)
+  )
+
+  function handlePick(option: SearchComboboxOption) {
+    if (firstEmptyIndex === undefined) return
+    setValue(`serialAssignments.${firstEmptyIndex}.serialNumberId`, option.id, {
+      shouldValidate: true,
+    })
+    setValue(`serialAssignments.${firstEmptyIndex}.serialLabel`, option.primary)
+    setValue(`serialAssignments.${firstEmptyIndex}.override`, widened)
+    setValue(`serialAssignments.${firstEmptyIndex}.overrideReason`, widened ? overrideReason : '')
+    setOverrideChecked(false)
+    setOverrideReason('')
+  }
+
+  function handleRemove(i: number) {
+    setValue(`serialAssignments.${i}.serialNumberId`, '')
+    setValue(`serialAssignments.${i}.serialLabel`, '')
+    setValue(`serialAssignments.${i}.override`, false)
+    setValue(`serialAssignments.${i}.overrideReason`, '')
+  }
+
+  const activeError =
+    firstEmptyIndex !== undefined ? errors?.[firstEmptyIndex]?.serialNumberId?.message : undefined
 
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
-        {itemLabel ?? 'Item'} <span className="text-red-500">*</span>
+        {itemLabel} <span className="text-red-500">*</span>{' '}
+        <span className="font-normal text-zinc-400">
+          ({filledIndices.length} of {slotIndices.length} assigned)
+        </span>
       </label>
-      <Controller
-        name={`serialAssignments.${index}.serialNumberId`}
-        control={control}
-        render={({ field: f }) =>
-          widened ? (
-            <SearchCombobox
-              value={f.value ?? ''}
-              onChange={f.onChange}
-              error={error}
-              queryKey={`dispatch-serial-override-search-${itemId}`}
-              placeholder="Search any serial number…"
-              typeToSearchMessage="Type a serial number to search across every branch…"
-              emptyMessage="No matching serial numbers"
-              search={async (query) => {
-                const res = await getSerialNumbers({
-                  itemId,
-                  search: query || undefined,
-                  limit: 25,
-                  scope: 'override',
-                })
-                return (res.data?.data ?? []).map((s) => ({
-                  id: s.id,
-                  primary: s.serialNumber,
-                  secondary:
-                    [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
-                }))
-              }}
-            />
-          ) : (
-            <SerialSearchCombobox
-              value={f.value ?? ''}
-              onChange={f.onChange}
-              options={serialOptions}
-              queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}`}
-              disabled={serialsQuery.isLoading}
-              placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
-              error={error}
-            />
-          )
-        }
-      />
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
 
-      {/* Scenario 29 SN-01 — if the picked serial fails the in-stock/
-          source-warehouse check (stale system record, physically correct
-          unit), a supervisor can force it through with a reason. Hidden
-          entirely for anyone without the override permission. */}
-      {canOverride && (
-        <Controller
-          name={`serialAssignments.${index}.override`}
-          control={control}
-          render={({ field: overrideField }) => (
-            <div className="mt-1.5">
-              <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-                <input
-                  type="checkbox"
-                  checked={Boolean(overrideField.value)}
-                  onChange={(e) => overrideField.onChange(e.target.checked)}
-                />
-                Supervisor override — force this serial past the in-stock/warehouse check
-              </label>
-              {overrideField.value && (
-                <Controller
-                  name={`serialAssignments.${index}.overrideReason`}
-                  control={control}
-                  render={({ field: reasonField }) => (
-                    <input
-                      {...reasonField}
-                      value={reasonField.value ?? ''}
-                      type="text"
-                      placeholder="Reason for the override (required)"
-                      className="mt-1 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
-                    />
-                  )}
-                />
-              )}
-            </div>
-          )}
-        />
-      )}
+      <div>
+        {firstEmptyIndex !== undefined && (
+          <div>
+            {widened ? (
+              <SearchCombobox
+                key={`override-${itemId}-${filledIndices.length}`}
+                value=""
+                onChange={() => {}}
+                onSelect={handlePick}
+                error={activeError}
+                queryKey={`dispatch-serial-override-search-${itemId}`}
+                placeholder="Search any serial number…"
+                typeToSearchMessage="Type a serial number to search across every branch…"
+                emptyMessage="No matching serial numbers"
+                search={async (query) => {
+                  const res = await getSerialNumbers({
+                    itemId,
+                    search: query || undefined,
+                    limit: 25,
+                    scope: 'override',
+                  })
+                  return (res.data?.data ?? []).map((s) => ({
+                    id: s.id,
+                    primary: s.serialNumber,
+                    secondary:
+                      [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+                  }))
+                }}
+              />
+            ) : serialsQuery.isSuccess && serialOptions.length === 0 ? (
+              // Distinct from an empty search result — this is "there is
+              // nothing here regardless of what you type," not "haven't
+              // searched yet," so say so plainly instead of leaving a
+              // dispatcher to guess whether the search box itself is broken.
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                No in-stock serial numbers found at this warehouse for this item.
+                {canOverride && ' Use supervisor override below to search other branches.'}
+              </p>
+            ) : (
+              <SerialSearchCombobox
+                key={`normal-${itemId}-${filledIndices.length}`}
+                value=""
+                onChange={() => {}}
+                onSelect={handlePick}
+                options={serialOptions}
+                queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}-${filledIndices.length}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+                error={activeError}
+              />
+            )}
+
+            {/* Scenario 29 SN-01 — if the next serial fails the in-stock/
+                source-warehouse check (stale system record, physically
+                correct unit), a supervisor can force it through with a
+                reason. Hidden entirely for anyone without the override
+                permission. */}
+            {canOverride && (
+              <div className="mt-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                  <input
+                    type="checkbox"
+                    checked={overrideChecked}
+                    onChange={(e) => setOverrideChecked(e.target.checked)}
+                  />
+                  Supervisor override — force this serial past the in-stock/warehouse check
+                </label>
+                {overrideChecked && (
+                  <input
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    type="text"
+                    placeholder="Reason for the override (required)"
+                    className="mt-1 w-full rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs outline-none focus:border-amber-400"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {filledIndices.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {filledIndices.map((i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-100 py-1 pl-3 pr-1.5 text-xs font-medium text-prominent-purple-700"
+              >
+                {allAssignments[i]?.serialLabel || allAssignments[i]?.serialNumberId}
+                {allAssignments[i]?.override && (
+                  <AlertTriangle
+                    className="h-3 w-3 text-amber-600"
+                    aria-label="Assigned via supervisor override"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(i)}
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-prominent-purple-500 transition hover:bg-prominent-purple-200 hover:text-prominent-purple-800"
+                  title="Remove"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -407,6 +503,25 @@ export default function TransferDetailModal({
     control: dispatchForm.control,
     name: 'serialAssignments',
   })
+  // itemId/itemLabel are set once in openDispatchForm() and never edited
+  // afterward, so grouping off the field-array snapshot (not a live watch)
+  // is enough — only which slots are filled changes, and ItemSerialGroup
+  // itself watches that.
+  const serialGroups = useMemo(() => {
+    const order: string[] = []
+    const byItemId = new Map<string, { itemLabel: string; slotIndices: number[] }>()
+    serialAssignmentFields.forEach((f, i) => {
+      const key = f.itemId ?? ''
+      const existing = byItemId.get(key)
+      if (existing) {
+        existing.slotIndices.push(i)
+      } else {
+        byItemId.set(key, { itemLabel: f.itemLabel ?? 'Item', slotIndices: [i] })
+        order.push(key)
+      }
+    })
+    return order.map((itemId) => ({ itemId, ...byItemId.get(itemId)! }))
+  }, [serialAssignmentFields])
 
   const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
@@ -489,6 +604,35 @@ export default function TransferDetailModal({
   // otherwise every row just shows a distracting "—".
   const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
   const isReceivedStatus = status === 'received' || status === 'partially_received'
+
+  // A serial-tracked item requested with quantity > 1 is stored as several
+  // separate quantity-1 lines (CreateTransferModal splits it so the backend's
+  // per-line invariant still holds) — before dispatch, none of those lines
+  // has a serial yet, so showing them as 4 identical "qty 1" rows is pure
+  // noise. Merge them back into one summary row here. Once dispatched, each
+  // line carries its own distinct serial (and, once received, its own
+  // received/lost status), so from that point on they're shown individually
+  // — this merge only ever applies pre-dispatch, since assignDispatchSerials
+  // requires every serial-tracked line to have a serialNumberId before the
+  // transfer can leave 'draft'.
+  const displayLines: NonNullable<TransferSummary['lines']> = []
+  const groupIndexByItemId = new Map<string, number>()
+  ;(transfer?.lines ?? []).forEach((line) => {
+    if (line.item?.isSerialTracked && !line.serialNumberId) {
+      const key = line.itemId ?? line.item?.id ?? ''
+      const existingIndex = groupIndexByItemId.get(key)
+      if (existingIndex !== undefined) {
+        const existing = displayLines[existingIndex]
+        displayLines[existingIndex] = {
+          ...existing,
+          quantity: Number(existing.quantity) + Number(line.quantity),
+        }
+        return
+      }
+      groupIndexByItemId.set(key, displayLines.length)
+    }
+    displayLines.push(line)
+  })
   // Unlisted items received alongside the transfer — GoodsReceiptLines with
   // no stockTransferLineId, i.e. not one of the reconciled dispatched lines.
   // A reopened partially_received transfer issues its own separate GRN per
@@ -503,16 +647,20 @@ export default function TransferDetailModal({
 
   function openDispatchForm() {
     if (!transfer) return
-    const serialAssignments = isUdsLinked
+    // One entry per serial-tracked StockTransferLine (the backend's own
+    // per-line invariant), but ItemSerialGroup below groups these by itemId
+    // and shows one search box per item — so no per-line "(i of N)" label
+    // is needed here, the group header's own "X of N assigned" count covers
+    // that instead.
+    const serialLines = isUdsLinked
       ? []
-      : (transfer.lines ?? [])
-          .filter((line) => line.item?.isSerialTracked)
-          .map((line) => ({
-            lineId: line.id ?? '',
-            itemId: line.itemId ?? line.item?.id ?? '',
-            itemLabel: line.item?.name,
-            serialNumberId: '',
-          }))
+      : (transfer.lines ?? []).filter((line) => line.item?.isSerialTracked)
+    const serialAssignments = serialLines.map((line) => ({
+      lineId: line.id ?? '',
+      itemId: line.itemId ?? line.item?.id ?? '',
+      itemLabel: line.item?.name,
+      serialNumberId: '',
+    }))
     dispatchForm.reset({
       expectedArrival: '',
       notes: '',
@@ -562,6 +710,16 @@ export default function TransferDetailModal({
     const outstanding = (transfer.lines ?? []).filter(
       (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
     )
+    // Only serial lines get split into several rows for the same item at
+    // create time — label just those with "(i of N)" so they're tellable
+    // apart; a non-serial line's itemLabel is left as-is.
+    const serialOutstanding = outstanding.filter((line) => !!line.serialNumberId)
+    const serialLabels = labelWithOccurrence(
+      serialOutstanding,
+      (line) => line.itemId ?? line.item?.id ?? '',
+      (line) => line.item?.name ?? line.itemId ?? undefined
+    )
+    const labelByLineId = new Map(serialOutstanding.map((line, i) => [line.id, serialLabels[i]]))
     receiveForm.reset({
       receivedDate: new Date().toISOString().split('T')[0],
       notes: '',
@@ -570,7 +728,8 @@ export default function TransferDetailModal({
         dispatchedQty: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
         isSerial: !!line.serialNumberId,
         serialLabel: line.serialNumber?.serialNumber,
-        itemLabel: line.item?.name ?? line.itemId ?? undefined,
+        itemLabel:
+          (line.id && labelByLineId.get(line.id)) || line.item?.name || line.itemId || undefined,
         quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
       })),
       extraLines: [],
@@ -880,7 +1039,7 @@ export default function TransferDetailModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {transfer.lines.map((line, i) => (
+                      {displayLines.map((line, i) => (
                         <tr key={line.id ?? i}>
                           <td className="px-3 py-2">
                             <p className="font-medium text-zinc-900">
@@ -1093,19 +1252,17 @@ export default function TransferDetailModal({
                       couldn&apos;t know what&apos;s on your shelf, so it&apos;s chosen here.
                     </p>
                     <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-3">
-                      {serialAssignmentFields.map((f, idx) => (
-                        <DispatchSerialAssignmentRow
-                          key={f.id}
+                      {serialGroups.map((g) => (
+                        <ItemSerialGroup
+                          key={g.itemId}
                           control={dispatchForm.control}
-                          index={idx}
+                          setValue={dispatchForm.setValue}
+                          itemId={g.itemId}
+                          itemLabel={g.itemLabel}
                           fromWarehouseId={transfer?.fromWarehouse?.id}
-                          itemId={f.itemId}
-                          itemLabel={f.itemLabel}
-                          error={
-                            dispatchForm.formState.errors.serialAssignments?.[idx]?.serialNumberId
-                              ?.message
-                          }
+                          slotIndices={g.slotIndices}
                           canOverride={canOverrideSerial}
+                          errors={dispatchForm.formState.errors.serialAssignments}
                         />
                       ))}
                     </div>

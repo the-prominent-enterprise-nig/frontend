@@ -123,7 +123,6 @@ export default function CreditApplicationDetail({
     resetEditForm({
       items: application.items.map((i) => ({
         itemId: i.itemId,
-        variantId: i.variantId ?? undefined,
       })),
       itemDescription: application.itemDescription ?? '',
     })
@@ -368,12 +367,7 @@ export default function CreditApplicationDetail({
                 ) : (
                   application.items.map((i) => (
                     <div key={i.id} className="flex items-center justify-between gap-3 py-0.5">
-                      <span className="font-medium text-zinc-900">
-                        {i.item?.name ?? '—'}
-                        {i.variant && (
-                          <span className="text-zinc-500"> ({i.variant.variantSku})</span>
-                        )}
-                      </span>
+                      <span className="font-medium text-zinc-900">{i.item?.name ?? '—'}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-zinc-500">
                           ₱{i.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
@@ -728,10 +722,8 @@ export default function CreditApplicationDetail({
                   errors={editErrors}
                   initialItems={application.items.map((i) => ({
                     itemId: i.itemId,
-                    variantId: i.variantId,
                     itemLabel: i.item?.name ?? '',
                     itemMeta: {
-                      hasVariants: i.item?.hasVariants ?? false,
                       sellingPrice: i.item?.sellingPrice ?? null,
                       modelNumber: i.item?.modelNumber ?? null,
                     },

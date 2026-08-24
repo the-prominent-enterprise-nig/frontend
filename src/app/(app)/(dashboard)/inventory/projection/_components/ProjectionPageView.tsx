@@ -95,24 +95,29 @@ export default function ProjectionPageView({ session: _session }: { session: Ses
               </h2>
             </div>
             <div className="flex flex-wrap gap-2">
-              {stockoutAlerts.map((alert, idx) => (
-                <div
-                  key={`${alert.itemId}-${alert.warehouseId ?? idx}`}
-                  className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 shadow-sm"
-                >
-                  <span className="text-sm font-medium text-zinc-900">
-                    {alert.item?.name ?? alert.itemId}
-                  </span>
-                  {alert.warehouse && (
-                    <span className="text-xs text-zinc-400">@ {alert.warehouse.name}</span>
-                  )}
-                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                    {alert.daysUntilStockout != null
-                      ? `Stockout in ${alert.daysUntilStockout} day${alert.daysUntilStockout === 1 ? '' : 's'}`
-                      : 'Stockout risk'}
-                  </span>
-                </div>
-              ))}
+              {stockoutAlerts.map((alert, idx) => {
+                const days = alert.stockoutDate
+                  ? Math.ceil((new Date(alert.stockoutDate).getTime() - Date.now()) / 86_400_000)
+                  : null
+                return (
+                  <div
+                    key={`${alert.itemId}-${alert.warehouseId ?? idx}`}
+                    className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 shadow-sm"
+                  >
+                    <span className="text-sm font-medium text-zinc-900">
+                      {alert.name ?? alert.itemId}
+                    </span>
+                    {alert.warehouseName && (
+                      <span className="text-xs text-zinc-400">@ {alert.warehouseName}</span>
+                    )}
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      {days != null
+                        ? `Stockout in ${days} day${days === 1 ? '' : 's'}`
+                        : 'Stockout risk'}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
@@ -157,7 +162,7 @@ export default function ProjectionPageView({ session: _session }: { session: Ses
                       Reserved
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Projected Avail.
+                      Min Projected Bal.
                     </th>
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
                       Stockout Date
@@ -165,47 +170,49 @@ export default function ProjectionPageView({ session: _session }: { session: Ses
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {projectionItems.map((item, idx) => (
-                    <tr
-                      key={`${item.itemId}-${item.warehouseId ?? idx}`}
-                      className="hover:bg-zinc-50"
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-900">
-                          {item.item?.name ?? item.itemId}
-                        </p>
-                      </td>
-                      <td className="hidden px-4 py-3 sm:table-cell">
-                        <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
-                          {item.item?.sku ?? '—'}
-                        </code>
-                      </td>
-                      <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
-                        {item.warehouse?.name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-zinc-700">{item.currentOnHand}</td>
-                      <td className="hidden px-4 py-3 text-right text-zinc-700 lg:table-cell">
-                        {item.incomingQty}
-                      </td>
-                      <td className="hidden px-4 py-3 text-right text-zinc-700 lg:table-cell">
-                        {item.reservedQty}
-                      </td>
-                      <td
-                        className={`px-4 py-3 text-right ${projectedAvailableColor(item.projectedAvailable)}`}
+                  {projectionItems.map((item, idx) => {
+                    const totalIncoming = item.dailyProjections.reduce(
+                      (sum, d) => sum + d.incomingQty,
+                      0
+                    )
+                    return (
+                      <tr
+                        key={`${item.itemId}-${item.warehouseId ?? idx}`}
+                        className="hover:bg-zinc-50"
                       >
-                        {item.projectedAvailable}
-                      </td>
-                      <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
-                        {item.projectedStockoutDate ? (
-                          <span className="text-red-600">
-                            {formatDate(item.projectedStockoutDate)}
-                          </span>
-                        ) : (
-                          <span className="text-zinc-400">N/A</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-zinc-900">{item.name ?? item.itemId}</p>
+                        </td>
+                        <td className="hidden px-4 py-3 sm:table-cell">
+                          <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
+                            {item.sku ?? '—'}
+                          </code>
+                        </td>
+                        <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
+                          {item.warehouseName ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-zinc-700">{item.startQty}</td>
+                        <td className="hidden px-4 py-3 text-right text-zinc-700 lg:table-cell">
+                          {totalIncoming}
+                        </td>
+                        <td className="hidden px-4 py-3 text-right text-zinc-700 lg:table-cell">
+                          {item.activeReservations}
+                        </td>
+                        <td
+                          className={`px-4 py-3 text-right ${projectedAvailableColor(item.projectedMinBalance)}`}
+                        >
+                          {item.projectedMinBalance}
+                        </td>
+                        <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
+                          {item.stockoutDate ? (
+                            <span className="text-red-600">{formatDate(item.stockoutDate)}</span>
+                          ) : (
+                            <span className="text-zinc-400">N/A</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

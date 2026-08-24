@@ -41,6 +41,7 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
     showCreateModal,
     setShowCreateModal,
     warehouseOptions,
+    supplierOptions,
     submit,
     isSubmitting,
     approve,
@@ -187,6 +188,9 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Reason
                     </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Cost
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Status
                     </th>
@@ -217,6 +221,14 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
                         <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
                           {ADJUSTMENT_REASON_LABELS[r.reasonCode]}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-700 hidden lg:table-cell">
+                        {r.unitCost != null
+                          ? Number(r.unitCost).toLocaleString('en-PH', {
+                              style: 'currency',
+                              currency: 'PHP',
+                            })
+                          : '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span
@@ -277,6 +289,7 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
         onSubmit={submit}
         isSubmitting={isSubmitting}
         warehouseOptions={warehouseOptions}
+        supplierOptions={supplierOptions}
       />
 
       <ManualRrDetailView

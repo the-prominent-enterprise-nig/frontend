@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 
-export type Panel = { type: 'item360'; itemId: string; itemName?: string }
+export type Panel = {
+  type: 'item360'
+  itemId: string
+  itemName?: string
+  // Scopes which tabs the drawer shows — 'catalog' (Overview, product
+  // definition) vs 'stock' (Stock/Serials/Movements/History, operational).
+  // Falls back to 'stock' when omitted so pre-existing call sites keep
+  // their current (operational) tab set until updated.
+  context?: 'catalog' | 'stock'
+}
 
 interface UIShellStore {
   panelStack: Panel[]

@@ -26,11 +26,6 @@ export const ACCOUNTING_PERMISSIONS = {
   TRANSACTION_UPDATE: 'accounting:transaction:update',
   TRANSACTION_DELETE: 'accounting:transaction:delete',
 
-  CURRENCY_READ: 'accounting:currency:read',
-  CURRENCY_CREATE: 'accounting:currency:create',
-  CURRENCY_UPDATE: 'accounting:currency:update',
-  CURRENCY_DELETE: 'accounting:currency:delete',
-
   DISBURSEMENT_READ: 'accounting:disbursement:read',
   DISBURSEMENT_CREATE: 'accounting:disbursement:create',
   DISBURSEMENT_UPDATE: 'accounting:disbursement:update',
@@ -120,6 +115,12 @@ export const ACCOUNTING_PERMISSIONS = {
   CUSTOMER_ADVANCES_APPLY: 'accounting:customer-advances:apply',
   CUSTOMER_ADVANCES_REFUND: 'accounting:customer-advances:refund',
 
+  // Scenario 38 Gap 4
+  UNAPPLIED_COLLECTIONS_READ: 'accounting:unapplied-collections:read',
+  UNAPPLIED_COLLECTIONS_CREATE: 'accounting:unapplied-collections:create',
+  UNAPPLIED_COLLECTIONS_APPLY: 'accounting:unapplied-collections:apply',
+  UNAPPLIED_COLLECTIONS_REFUND: 'accounting:unapplied-collections:refund',
+
   FISCAL_READ: 'accounting:fiscal:read',
   FISCAL_CREATE: 'accounting:fiscal:create',
   FISCAL_UPDATE: 'accounting:fiscal:update',
@@ -171,10 +172,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:transaction:create': 'Create transactions',
   'accounting:transaction:update': 'Edit transactions',
   'accounting:transaction:delete': 'Delete transactions',
-  'accounting:currency:read': 'View currencies',
-  'accounting:currency:create': 'Create currencies',
-  'accounting:currency:update': 'Edit currencies',
-  'accounting:currency:delete': 'Delete currencies',
   'accounting:disbursement:read': 'View disbursements',
   'accounting:disbursement:create': 'Create disbursements',
   'accounting:disbursement:update': 'Edit disbursements and change status',
@@ -249,6 +246,11 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:customer-advances:create': 'Record a customer advance (e.g. a reservation deposit)',
   'accounting:customer-advances:apply': 'Apply a customer advance against an invoice',
   'accounting:customer-advances:refund': 'Refund a customer advance',
+  'accounting:unapplied-collections:read': 'View unapplied customer collections',
+  'accounting:unapplied-collections:create':
+    'Record a payment from a known customer with no invoice decided yet',
+  'accounting:unapplied-collections:apply': 'Apply an unapplied collection against an invoice',
+  'accounting:unapplied-collections:refund': 'Refund an unapplied customer collection',
   'accounting:fiscal:read': 'View fiscal periods + close checklist',
   'accounting:fiscal:create': 'Create fiscal periods',
   'accounting:fiscal:update': 'Update fiscal period close-checklist items',

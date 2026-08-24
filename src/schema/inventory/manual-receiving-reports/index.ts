@@ -32,6 +32,12 @@ const ManualRrCreatedSerialSchema = z.object({
   status: z.string(),
 })
 
+const ManualRrSupplierSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+})
+
 export const ManualReceivingReportSchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -54,6 +60,16 @@ export const ManualReceivingReportSchema = z.object({
   createdSerialId: z.string().optional().nullable(),
   createdSerial: ManualRrCreatedSerialSchema.optional().nullable(),
   createdAt: z.string().optional(),
+  // Scenario 36 Gap 3 — a manually-originated unit is a real inbound stock
+  // event now: unitCost/withheldAmount are Decimal fields, so they come
+  // back as strings over the API (same convention as every other Decimal
+  // field in this codebase) — coerce with Number() at display time.
+  unitCost: z.union([z.string(), z.number()]).optional().nullable(),
+  supplierId: z.string().optional().nullable(),
+  supplier: ManualRrSupplierSchema.optional().nullable(),
+  withholding: z.string().optional(),
+  withheldAmount: z.union([z.string(), z.number()]).optional().nullable(),
+  journalEntryId: z.string().optional().nullable(),
 })
 export type ManualReceivingReport = z.infer<typeof ManualReceivingReportSchema>
 
@@ -70,13 +86,26 @@ export type ManualReceivingReportListResponse = z.infer<
   typeof ManualReceivingReportListResponseSchema
 >
 
-export const CreateManualReceivingReportFormSchema = z.object({
-  itemId: z.string().min(1, 'Item is required'),
-  warehouseId: z.string().min(1, 'Warehouse is required'),
-  serialNumber: z.string().min(1, 'Serial number is required').max(150),
-  reasonCode: AdjustmentReasonCodeSchema,
-  notes: z.string().max(1000).optional(),
-})
+export const CreateManualReceivingReportFormSchema = z
+  .object({
+    itemId: z.string().min(1, 'Item is required'),
+    warehouseId: z.string().min(1, 'Warehouse is required'),
+    serialNumber: z.string().min(1, 'Serial number is required').max(150),
+    reasonCode: AdjustmentReasonCodeSchema,
+    notes: z.string().max(1000).optional(),
+    // Scenario 36 Gap 3 — both optional: a report with no cost/supplier
+    // stays costless (no GL posting), same as a blank-cost line on normal
+    // receiving. Plain (not z.coerce) so react-hook-form's generic stays
+    // number|undefined — the input's onChange converts '' to undefined
+    // itself (see CreateManualRrModal.tsx) rather than relying on a
+    // preprocess step, which breaks zodResolver's input/output typing.
+    unitCost: z.number().positive().optional(),
+    supplierId: z.string().optional(),
+  })
+  .refine((data) => !data.unitCost || data.supplierId, {
+    message: 'A supplier is required when a unit cost is given.',
+    path: ['supplierId'],
+  })
 export type CreateManualReceivingReportFormValues = z.infer<
   typeof CreateManualReceivingReportFormSchema
 >
