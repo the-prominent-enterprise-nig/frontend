@@ -439,6 +439,12 @@ export default function CheckoutPage() {
     'cash_on_hand'
   )
   const [cashPaymentOptionId, setCashPaymentOptionId] = useState<string | undefined>()
+  // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
+  // the register (e.g. checked the business's own banking app in real
+  // time), so it posts straight to Cash in Bank instead of the usual
+  // clearing account. Same transaction-scoped treatment as cardTxnMode/
+  // cashSubMode above; only meaningful while cashSubMode is bank_transfer.
+  const [bankTransferVerifiedAtRegister, setBankTransferVerifiedAtRegister] = useState(false)
   // Configured payment methods from API — falls back to hardcoded list if not loaded
   const [configuredMethods, setConfiguredMethods] = useState<
     import('@/src/schema/pos').PaymentMethodConfig[]
@@ -655,16 +661,29 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Auto-select the only open session; clear stale sessionId when session is no longer open
+  // Auto-select the only open session; clear stale sessionId when session is
+  // no longer open OR when it belongs to a different branch than the one
+  // currently selected in the switcher. The second check matters because
+  // useSessions() keeps showing the previous branch's sessions (React
+  // Query's placeholderData: keepPreviousData) for a moment after
+  // switcherBranchId changes and before the refetch lands — without it, a
+  // sale made right after switching branches could silently reuse a session
+  // from the branch you just left, with nothing afterward ever catching the
+  // mismatch since it no longer looks "stale" once the refetch does land.
   useEffect(() => {
     if (!sessionsData) return
-    const isStale = sessionId && !openSessions.some((s) => s.id === sessionId)
+    const currentSession = openSessions.find((s) => s.id === sessionId)
+    const currentSessionBranchId =
+      currentSession?.terminal?.branchId ?? currentSession?.terminal?.branch?.id
+    const isStale =
+      sessionId &&
+      (!currentSession || (switcherBranchId && currentSessionBranchId !== switcherBranchId))
     if (isStale) {
       setSessionId(openSessions.length === 1 ? openSessions[0].id : '')
     } else if (openSessions.length === 1 && !sessionId) {
       setSessionId(openSessions[0].id)
     }
-  }, [openSessions, sessionsData, sessionId])
+  }, [openSessions, sessionsData, sessionId, switcherBranchId])
 
   // Load catalog when session is selected, then enrich with UOM data
   useEffect(() => {
@@ -1746,6 +1765,30 @@ export default function CheckoutPage() {
       return handleConfirmReserve()
     }
 
+    const anySerialMissing = cart.some(
+      (l) =>
+        (l.isSerialTracked && !l.serialNumberId) ||
+        (l.requiresSecondarySerial && !l.secondarySerialNumberId)
+    )
+    if (anySerialMissing) {
+      setError('Select serial numbers for every serialized item to continue.')
+      return
+    }
+    if (!priceUseTypeId) {
+      setError('Select a Price Use before checking out.')
+      return
+    }
+    if (cart.some((l) => !l.priceResolved)) {
+      setError(
+        'One or more items have no price for the selected Price Use — set an override price for them or pick a different Price Use.'
+      )
+      return
+    }
+    if (needsManagerOverride && !managerOverrideApproved) {
+      setError('This discount needs a manager override before checking out.')
+      return
+    }
+
     if (isTaxExempt && !taxExemptionRef.trim()) {
       setError('Enter a certificate or exemption reference for tax-exempt sales.')
       return
@@ -1765,18 +1808,28 @@ export default function CheckoutPage() {
       return
     }
 
-    const lineMissingTerm = installmentCartLines.find((l) => !l.financingTermId)
+    const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
       return
     }
-    if (installmentCartLines.length > 0 && !creditApplicationId) {
+    if (inhouseInstallmentCartLines.length > 0 && !creditApplicationId) {
       setError(
         'Select the approved credit application for this customer — every installment sale requires one.'
       )
       return
     }
-    for (const l of installmentCartLines) {
+    if (tpfInstallmentCartLines.length > 0) {
+      if (!tpfProviderId) {
+        setError('Select a TPF provider for the TPF-financed item(s).')
+        return
+      }
+      if (!tpfReferenceNumber.trim()) {
+        setError("Enter the financier's reference number for the TPF-financed item(s).")
+        return
+      }
+    }
+    for (const l of inhouseInstallmentCartLines) {
       const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
@@ -2069,6 +2122,8 @@ export default function CheckoutPage() {
                   : p.paymentMethodOptionId,
             cardTxnMode: p.method === 'card' ? cardTxnMode : undefined,
             cardInstallmentTerm: p.method === 'card' ? cardInstallmentTerm : undefined,
+            bankTransferVerifiedAtRegister:
+              p.method === 'bank_transfer' ? bankTransferVerifiedAtRegister : undefined,
           })
           if (!payRes.success) {
             const isRefFail =
@@ -3436,6 +3491,7 @@ export default function CheckoutPage() {
                           onClick={() => {
                             setCashSubMode(mode)
                             setCashPaymentOptionId(undefined)
+                            if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
                           }}
                           className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                             cashSubMode === mode
@@ -3473,6 +3529,18 @@ export default function CheckoutPage() {
                           </select>
                         )
                       })()}
+                    {cashSubMode === 'bank_transfer' && (
+                      <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={bankTransferVerifiedAtRegister}
+                          onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded border-gray-300"
+                        />
+                        Verified at register — the credit already landed, post straight to Cash in
+                        Bank
+                      </label>
+                    )}
                   </div>
                 )}
                 {hasCreditCardLine && (
@@ -3635,7 +3703,7 @@ export default function CheckoutPage() {
                     <div className="mt-2.5 space-y-2">
                       <div>
                         <label className="mb-1 block text-[13px] text-prominent-purple-700">
-                          TPF Provider
+                          TPF Provider *
                         </label>
                         <div className="relative">
                           <select
@@ -3667,7 +3735,7 @@ export default function CheckoutPage() {
                       </div>
                       <input
                         type="text"
-                        placeholder="Financier's reference number"
+                        placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
                         className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
@@ -3973,27 +4041,13 @@ export default function CheckoutPage() {
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
               const allCharge = cart.length > 0 && chargeCartLines.length === cart.length
               const allInstallment = cart.length > 0 && installmentCartLines.length === cart.length
-              const priceUseInvalid =
-                saleMode === 'sale' &&
-                cart.length > 0 &&
-                (!priceUseTypeId || cart.some((l) => !l.priceResolved))
 
-              const disabled =
-                submitting ||
-                cart.length === 0 ||
-                !sessionId ||
-                anySerialMissing ||
-                (saleMode === 'sale' &&
-                  ((hasChargeOrInstallmentLine && !selectedCustomer) ||
-                    anyInstallmentMissingTerm ||
-                    installmentMissingCreditApplication ||
-                    tpfMissingReference ||
-                    balance > 0.009 ||
-                    loyaltyOverBalance ||
-                    (!hasChargeOrInstallmentLine && !selectedCustomer))) ||
-                (saleMode === 'reserve' && (!selectedCustomer || cart.length !== 1)) ||
-                (needsManagerOverride && !managerOverrideApproved) ||
-                priceUseInvalid
+              // Only truly non-actionable states stay disabled — everything
+              // else is clickable so the cashier gets a specific error
+              // message (via handleConfirm's own pre-flight checks) instead
+              // of a silently-inert button with nothing but a small label
+              // hinting at what's wrong.
+              const disabled = submitting || cart.length === 0 || !sessionId
 
               const label = submitting
                 ? 'Processing…'

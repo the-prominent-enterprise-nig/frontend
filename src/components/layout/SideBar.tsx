@@ -21,6 +21,7 @@ import {
   Contact,
   CreditCard,
   FileBarChart,
+  FileCheck2,
   FilePlus,
   FileSpreadsheet,
   ClipboardCheck,
@@ -257,6 +258,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Users,
         requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
       },
+      {
+        label: 'Unapplied Collections',
+        href: '/accounting/unapplied-collections',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
+      },
+      {
+        label: 'Withholding Tax (CWT)',
+        href: '/accounting/withholding-tax',
+        icon: FileCheck2,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
+      },
       // ── Operational / periodic ──
       {
         label: 'Bank Reconciliation',
@@ -331,12 +344,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/fiscal-periods',
         icon: CalendarDays,
         requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
-      },
-      {
-        label: 'Currencies',
-        href: '/accounting/currencies',
-        icon: Coins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CURRENCY_READ,
       },
       {
         label: 'Tax',

@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import {
-  DollarSign,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
@@ -1209,7 +1208,6 @@ export default function AccountingPage() {
                 { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
                 { label: 'Fiscal Periods', href: '/accounting/fiscal-periods', icon: CalendarDays },
                 { label: 'Tax', href: '/accounting/tax', icon: Receipt },
-                { label: 'Currencies', href: '/accounting/currencies', icon: DollarSign },
                 { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                 { label: 'Reports', href: '/accounting/reports', icon: Clock },
               ] as const

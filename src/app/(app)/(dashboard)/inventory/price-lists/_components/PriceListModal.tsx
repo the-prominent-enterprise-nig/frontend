@@ -16,7 +16,6 @@ import {
 } from '@/src/schema/inventory/price-use-types'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { Select } from '@/src/components/ui/Select'
-import type { Currency } from '../_actions/get-currencies'
 import type { Branch } from '../_actions/get-branches'
 import PriceUseTypeModal from '../../price-use-types/_components/PriceUseTypeModal'
 
@@ -25,7 +24,6 @@ type Props = {
   onClose: () => void
   onSubmit: (data: PriceListFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
-  currencies: Currency[]
   branches: Branch[]
   priceUseTypes: PriceUseType[]
   /** Scenario 15, Part 4 — every other price list, used to populate the
@@ -92,7 +90,6 @@ export default function PriceListModal({
   onClose,
   onSubmit,
   isSubmitting,
-  currencies,
   branches,
   priceUseTypes,
   priceLists,
@@ -234,24 +231,9 @@ export default function PriceListModal({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">Currency</label>
-                <Controller
-                  name="currency"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder="Select currency…"
-                      options={currencies.map((c) => ({
-                        value: c.code,
-                        label: `${c.code} – ${c.name}`,
-                      }))}
-                    />
-                  )}
-                />
-                {errors.currency && (
-                  <p className="mt-1 text-xs text-red-600">{errors.currency.message}</p>
-                )}
+                <div className={`${fieldClass} bg-zinc-50 text-zinc-500`}>
+                  Philippine Peso (PHP)
+                </div>
               </div>
             </div>
 

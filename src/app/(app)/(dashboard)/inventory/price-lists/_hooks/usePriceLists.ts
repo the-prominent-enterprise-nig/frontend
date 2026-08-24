@@ -10,7 +10,6 @@ import { approvePriceList } from '../_actions/approve-price-list'
 import { rejectPriceList } from '../_actions/reject-price-list'
 import { resubmitPriceList } from '../_actions/resubmit-price-list'
 import { deletePriceList } from '../_actions/delete-price-list'
-import { getCurrencies } from '../_actions/get-currencies'
 import { getBranches } from '../_actions/get-branches'
 import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
 import { createPriceUseType } from '../../price-use-types/_actions/create-price-use-type'
@@ -42,12 +41,6 @@ export function usePriceLists() {
     // own refocus/remount, not when someone else's approve/reject changes
     // the record in a different browser tab/session.
     refetchInterval: 10 * 1000,
-  })
-
-  const currenciesQuery = useQuery({
-    queryKey: ['account-currencies'],
-    queryFn: getCurrencies,
-    staleTime: 10 * 60 * 1000,
   })
 
   const branchesQuery = useQuery({
@@ -202,7 +195,6 @@ export function usePriceLists() {
       setShowInactive(value)
       setPage(1)
     },
-    currencies: currenciesQuery.data ?? [],
     branches: branchesQuery.data ?? [],
     priceUseTypes: priceUseTypesQuery.data ?? [],
     createPriceUseType: createPriceUseTypeMutation.mutateAsync,
