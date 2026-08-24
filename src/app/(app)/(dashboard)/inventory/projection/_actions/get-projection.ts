@@ -1,7 +1,10 @@
 'use server'
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import type { ProjectionListResponse } from '@/src/schema/inventory/projection'
+import {
+  ProjectionListResponseSchema,
+  type ProjectionListResponse,
+} from '@/src/schema/inventory/projection'
 
 type Params = {
   itemId?: string
@@ -29,21 +32,17 @@ export async function getProjection(
       }
     }
 
-    const raw = result.data
-
-    if (Array.isArray(raw)) {
-      return { success: true, data: { data: raw, total: raw.length } }
+    const parsed = ProjectionListResponseSchema.safeParse(result.data)
+    if (!parsed.success) {
+      console.error('Projection response shape mismatch:', parsed.error.flatten())
+      return {
+        success: false,
+        error: 'Unexpected response shape',
+        message: 'Failed to parse projection response',
+      }
     }
 
-    if (raw && Array.isArray((raw as ProjectionListResponse).data)) {
-      return { success: true, data: raw as ProjectionListResponse }
-    }
-
-    return {
-      success: false,
-      error: 'Unexpected response shape',
-      message: 'Failed to parse projection response',
-    }
+    return { success: true, data: parsed.data }
   } catch (error) {
     console.error('Error fetching projection:', error)
     return {
