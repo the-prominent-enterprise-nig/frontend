@@ -29,6 +29,46 @@ const SCOPE_COLORS: Record<ScopeType, string> = {
   DEPARTMENT: 'bg-purple-100 text-purple-700',
 }
 
+// resourceType is a declarative "<module>:<resource-kebab-case>" string (e.g.
+// "inventory:stock-adjustment") that grows every time a new module gets
+// instrumented — a hardcoded label map would silently go stale, so this
+// derives a readable label from the string itself instead. The module
+// prefix set is small and stable (unlike resource types), so it's the one
+// spot worth a manual override — mainly for acronyms Title Case mangles.
+const MODULE_LABEL_OVERRIDES: Record<string, string> = {
+  crm: 'CRM',
+  pos: 'POS',
+  hr: 'HR',
+}
+
+function formatResourceType(resourceType: string): { module: string; resource: string } {
+  const toTitleCase = (segment: string) =>
+    segment
+      .split('-')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+
+  const [modulePart, ...rest] = resourceType.split(':')
+  const moduleLabel = MODULE_LABEL_OVERRIDES[modulePart] ?? toTitleCase(modulePart)
+  if (rest.length === 0) {
+    return { module: '', resource: moduleLabel }
+  }
+  return { module: moduleLabel, resource: toTitleCase(rest.join(':')) }
+}
+
+// A transaction's line-level item(s) (e.g. what a stock transfer/adjustment/
+// batch actually concerns) never change across a status transition, so
+// putting them in oldValues/newValues would make them invisible to the
+// changed-fields-only diff filter — writers instead put them in
+// metadata.items, which this always renders regardless of whether anything
+// else on the row changed.
+function getMetadataItems(log: UserAuditLog): string[] {
+  const items = log.metadata?.items
+  if (!Array.isArray(items)) return []
+  return items.filter((item): item is string => typeof item === 'string')
+}
+
 function ScopeBadge({ log }: { log: UserAuditLog }) {
   // Rows merged in from AccountingAuditLog (SCEN-29) carry no scope at all —
   // that table has no scopeType column.
@@ -80,6 +120,55 @@ function formatSnapshotValue(value: unknown): string {
   return String(value)
 }
 
+// Only fields that actually changed are worth a business owner's attention —
+// an unchanged reference field (e.g. bankAccountId on a reconciliation)
+// sitting next to itself twice is noise, not a diff.
+function getChangedKeys(
+  oldValues?: Record<string, unknown> | null,
+  newValues?: Record<string, unknown> | null
+): string[] {
+  return Array.from(
+    new Set([...Object.keys(oldValues ?? {}), ...Object.keys(newValues ?? {})])
+  ).filter((key) => JSON.stringify(oldValues?.[key]) !== JSON.stringify(newValues?.[key]))
+}
+
+// A one-line "what actually happened" summary shown directly in the row, so
+// scanning the log doesn't require expanding every entry. Prioritizes the
+// `status` transition (the primary marker for almost every action in this
+// system) or a `*Reason` field (the most human-relevant part of a
+// reject/decline), falling back to whatever changed first. CREATE/DELETE-
+// like rows have only one side to draw from, so they preview a couple of
+// the new (or removed) record's own fields instead of a transition.
+function buildActionPreview(log: UserAuditLog): string | null {
+  const { oldValues, newValues } = log
+  if (oldValues && newValues) {
+    const changed = getChangedKeys(oldValues, newValues)
+    if (changed.length === 0) return null
+    const primary =
+      changed.find((key) => key === 'status') ??
+      changed.find((key) => /reason$/i.test(key)) ??
+      changed[0]
+    const line = `${primary}: ${formatSnapshotValue(oldValues[primary])} → ${formatSnapshotValue(newValues[primary])}`
+    const remaining = changed.length - 1
+    return remaining > 0 ? `${line} (+${remaining} more)` : line
+  }
+
+  // No real before/after to diff (CREATE/ADD_LINE/DELETE-shaped) — prefer
+  // the readable item/context summary a writer put in metadata.items over
+  // dumping raw newValues keys, since those are often bare foreign-key IDs
+  // (itemId, lineId, ...) rather than anything a business owner can read.
+  const metadataItems = getMetadataItems(log)
+  if (metadataItems.length > 0) return metadataItems.join(', ')
+
+  const soleSide = newValues ?? oldValues
+  if (!soleSide) return null
+  const keys = Object.keys(soleSide)
+    .filter((key) => soleSide[key] !== null && soleSide[key] !== undefined)
+    .slice(0, 2)
+  if (keys.length === 0) return null
+  return keys.map((key) => `${key}: ${formatSnapshotValue(soleSide[key])}`).join(', ')
+}
+
 // Compact before/after grid for rows carrying an AccountingAuditLog
 // snapshot — the union of both objects' keys, one row each, changed values
 // highlighted so a diff is scannable at a glance rather than two raw JSON
@@ -91,14 +180,7 @@ function SnapshotDiff({
   oldValues?: Record<string, unknown> | null
   newValues?: Record<string, unknown> | null
 }) {
-  // Only fields that actually changed are worth a business owner's
-  // attention — an unchanged reference field (e.g. bankAccountId on a
-  // reconciliation) sitting next to itself twice is noise, not a diff.
-  const keys = Array.from(
-    new Set([...Object.keys(oldValues ?? {}), ...Object.keys(newValues ?? {})])
-  )
-    .filter((key) => JSON.stringify(oldValues?.[key]) !== JSON.stringify(newValues?.[key]))
-    .sort()
+  const keys = getChangedKeys(oldValues, newValues).sort()
 
   if (keys.length === 0) {
     return <p className="text-xs text-zinc-400">No fields changed.</p>
@@ -310,6 +392,9 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                   // state) worth showing even though "after" is just a marker.
                   const hasSnapshot = Boolean(log.oldValues) && Boolean(log.newValues)
                   const isExpanded = expandedId === log.id
+                  const { module, resource } = formatResourceType(log.resourceType)
+                  const preview = buildActionPreview(log)
+                  const metadataItems = getMetadataItems(log)
                   return (
                     <Fragment key={log.id}>
                       <tr
@@ -320,7 +405,7 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                       >
                         <td className="px-4 py-3">
                           <div className="font-medium text-zinc-900">{log.actorName}</div>
-                          <div className="text-xs text-zinc-400">{log.actorId.slice(0, 12)}…</div>
+                          <div className="break-all text-xs text-zinc-400">{log.actorId}</div>
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -328,10 +413,25 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                           >
                             {log.action}
                           </span>
+                          {preview && (
+                            <div
+                              className="mt-1 max-w-[16rem] truncate text-xs text-zinc-500"
+                              title={preview}
+                            >
+                              {preview}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5 text-zinc-700">
-                            {log.resourceType}
+                          <div className="flex items-center gap-1.5">
+                            <div>
+                              {module && (
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                                  {module}
+                                </div>
+                              )}
+                              <div className="font-medium text-zinc-700">{resource}</div>
+                            </div>
                             {hasSnapshot && (
                               <ChevronDown
                                 className={`h-3.5 w-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -342,8 +442,11 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                             <div className="text-xs text-zinc-500">{log.resourceName}</div>
                           )}
                           {log.resourceId && !log.resourceName && (
-                            <div className="text-xs text-zinc-400">
-                              {log.resourceId.slice(0, 12)}…
+                            <div className="break-all text-xs text-zinc-400">{log.resourceId}</div>
+                          )}
+                          {metadataItems.length > 0 && (
+                            <div className="mt-1 text-xs text-zinc-500">
+                              {metadataItems.join(', ')}
                             </div>
                           )}
                         </td>
