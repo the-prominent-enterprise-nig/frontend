@@ -10,13 +10,19 @@ export const UserAuditLogSchema = z.object({
   resourceType: z.string(),
   resourceId: z.string().nullable().optional(),
   resourceName: z.string().nullable().optional(),
-  scopeType: ScopeTypeSchema,
+  // Rows merged in from AccountingAuditLog (SCEN-29) carry no scope — that
+  // table has no scopeType/scopeBranchId/scopeDepartmentId columns at all.
+  scopeType: ScopeTypeSchema.nullable().optional(),
   scopeBranchId: z.string().nullable().optional(),
   scopeDepartmentId: z.string().nullable().optional(),
   enterpriseOwnerId: z.string().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   ipAddress: z.string().nullable().optional(),
   createdAt: z.string(),
+  // Only ever populated for AccountingAuditLog-sourced rows — the real
+  // before/after diff this scenario was built to capture.
+  oldValues: z.record(z.string(), z.unknown()).nullable().optional(),
+  newValues: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 
 export const AuditLogMetaSchema = z.object({
@@ -38,7 +44,7 @@ export const AuditLogQueryParamsSchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   page: z.number().optional().default(1),
-  limit: z.number().optional().default(20),
+  limit: z.number().optional().default(10),
 })
 
 export type ScopeType = z.infer<typeof ScopeTypeSchema>

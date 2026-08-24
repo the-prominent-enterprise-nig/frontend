@@ -12,7 +12,7 @@ export default async function AuditLogsPage() {
   const canView = isAdmin(session) || can(session, 'admin:audit-logs:read')
   if (!canView) redirect('/403')
 
-  const result = await getAuditLogs({ page: 1, limit: 20 })
+  const result = await getAuditLogs({ page: 1, limit: 10 })
 
   if (!result.success || !result.data) {
     return (

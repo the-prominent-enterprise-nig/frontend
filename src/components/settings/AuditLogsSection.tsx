@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback, useTransition } from 'react'
-import { ClipboardList, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { Fragment, useState, useCallback, useTransition } from 'react'
+import { ClipboardList, ChevronLeft, ChevronRight, ChevronDown, Search, X } from 'lucide-react'
 import { getAuditLogs } from '@/src/app/(app)/(dashboard)/settings/_actions/get-audit-logs'
 import type {
   AuditLogListResponse,
@@ -30,6 +30,12 @@ const SCOPE_COLORS: Record<ScopeType, string> = {
 }
 
 function ScopeBadge({ log }: { log: UserAuditLog }) {
+  // Rows merged in from AccountingAuditLog (SCEN-29) carry no scope at all —
+  // that table has no scopeType column.
+  if (!log.scopeType) {
+    return <span className="text-xs text-zinc-400">—</span>
+  }
+
   const label = SCOPE_LABELS[log.scopeType] ?? log.scopeType
   const color = SCOPE_COLORS[log.scopeType] ?? 'bg-zinc-100 text-zinc-600'
   const detail =
@@ -53,6 +59,76 @@ function ScopeBadge({ log }: { log: UserAuditLog }) {
       {label}
       {detail}
     </span>
+  )
+}
+
+// A nested object (e.g. tax-rate approval's appliedTaxRate) reads as
+// "name: X, rate: 5, ..." rather than a raw JSON blob — recurses so a
+// deeper nested value still gets the same treatment instead of falling
+// back to JSON.stringify.
+function formatSnapshotValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (Array.isArray(value)) {
+    return value.length === 0 ? '(none)' : value.map(formatSnapshotValue).join(', ')
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    return entries.length === 0
+      ? '(none)'
+      : entries.map(([key, entryValue]) => `${key}: ${formatSnapshotValue(entryValue)}`).join(', ')
+  }
+  return String(value)
+}
+
+// Compact before/after grid for rows carrying an AccountingAuditLog
+// snapshot — the union of both objects' keys, one row each, changed values
+// highlighted so a diff is scannable at a glance rather than two raw JSON
+// blobs side by side.
+function SnapshotDiff({
+  oldValues,
+  newValues,
+}: {
+  oldValues?: Record<string, unknown> | null
+  newValues?: Record<string, unknown> | null
+}) {
+  // Only fields that actually changed are worth a business owner's
+  // attention — an unchanged reference field (e.g. bankAccountId on a
+  // reconciliation) sitting next to itself twice is noise, not a diff.
+  const keys = Array.from(
+    new Set([...Object.keys(oldValues ?? {}), ...Object.keys(newValues ?? {})])
+  )
+    .filter((key) => JSON.stringify(oldValues?.[key]) !== JSON.stringify(newValues?.[key]))
+    .sort()
+
+  if (keys.length === 0) {
+    return <p className="text-xs text-zinc-400">No fields changed.</p>
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-zinc-200">
+      <table className="min-w-full text-xs">
+        <thead className="bg-zinc-50 text-zinc-500">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium">Field</th>
+            <th className="px-3 py-2 text-left font-medium">Before</th>
+            <th className="px-3 py-2 text-left font-medium">After</th>
+          </tr>
+        </thead>
+        <tbody>
+          {keys.map((key) => (
+            <tr key={key} className="border-t border-zinc-100">
+              <td className="px-3 py-1.5 font-medium text-zinc-700">{key}</td>
+              <td className="px-3 py-1.5 text-red-600 line-through decoration-red-300">
+                {formatSnapshotValue(oldValues?.[key])}
+              </td>
+              <td className="px-3 py-1.5 font-medium text-green-700">
+                {formatSnapshotValue(newValues?.[key])}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -115,8 +191,9 @@ function Pagination({
 
 export default function AuditLogsSection({ initialData }: { initialData: AuditLogListResponse }) {
   const [data, setData] = useState<AuditLogListResponse>(initialData)
-  const [filters, setFilters] = useState<AuditLogQueryParams>({ page: 1, limit: 20 })
+  const [filters, setFilters] = useState<AuditLogQueryParams>({ page: 1, limit: 10 })
   const [isPending, startTransition] = useTransition()
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const fetchLogs = useCallback((newFilters: AuditLogQueryParams) => {
     startTransition(async () => {
@@ -138,7 +215,7 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
   }
 
   const clearFilters = () => {
-    const next: AuditLogQueryParams = { page: 1, limit: 20 }
+    const next: AuditLogQueryParams = { page: 1, limit: 10 }
     setFilters(next)
     fetchLogs(next)
   }
@@ -219,46 +296,77 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                 <th className="px-4 py-3 text-left font-medium">Action</th>
                 <th className="px-4 py-3 text-left font-medium">Resource</th>
                 <th className="px-4 py-3 text-left font-medium">Scope at Time</th>
-                <th className="px-4 py-3 text-left font-medium">IP</th>
                 <th className="px-4 py-3 text-left font-medium">Date</th>
               </tr>
             </thead>
             <tbody>
               {logs.length > 0 ? (
-                logs.map((log) => (
-                  <tr key={log.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-zinc-900">{log.actorName}</div>
-                      <div className="text-xs text-zinc-400">{log.actorId.slice(0, 12)}…</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ACTION_COLORS[log.action] ?? 'bg-zinc-100 text-zinc-600'}`}
+                logs.map((log) => {
+                  // A genuine diff needs both sides — CREATE-like events
+                  // (CREATE, SUBMIT_*, REVERSE, CLEAR, ...) have no "before"
+                  // at all, so expanding would just dump newValues instead
+                  // of showing an actual before/after comparison. DELETE
+                  // still qualifies: it has a real before (the full prior
+                  // state) worth showing even though "after" is just a marker.
+                  const hasSnapshot = Boolean(log.oldValues) && Boolean(log.newValues)
+                  const isExpanded = expandedId === log.id
+                  return (
+                    <Fragment key={log.id}>
+                      <tr
+                        onClick={
+                          hasSnapshot ? () => setExpandedId(isExpanded ? null : log.id) : undefined
+                        }
+                        className={`border-t border-zinc-100 hover:bg-zinc-50 ${hasSnapshot ? 'cursor-pointer' : ''}`}
                       >
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-zinc-700">{log.resourceType}</div>
-                      {log.resourceName && (
-                        <div className="text-xs text-zinc-500">{log.resourceName}</div>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-zinc-900">{log.actorName}</div>
+                          <div className="text-xs text-zinc-400">{log.actorId.slice(0, 12)}…</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${ACTION_COLORS[log.action] ?? 'bg-zinc-100 text-zinc-600'}`}
+                          >
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5 text-zinc-700">
+                            {log.resourceType}
+                            {hasSnapshot && (
+                              <ChevronDown
+                                className={`h-3.5 w-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            )}
+                          </div>
+                          {log.resourceName && (
+                            <div className="text-xs text-zinc-500">{log.resourceName}</div>
+                          )}
+                          {log.resourceId && !log.resourceName && (
+                            <div className="text-xs text-zinc-400">
+                              {log.resourceId.slice(0, 12)}…
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <ScopeBadge log={log} />
+                        </td>
+                        <td className="px-4 py-3 text-zinc-500" suppressHydrationWarning>
+                          {new Date(log.createdAt).toLocaleString()}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="border-t border-zinc-100 bg-zinc-50/60">
+                          <td colSpan={5} className="px-4 py-3">
+                            <SnapshotDiff oldValues={log.oldValues} newValues={log.newValues} />
+                          </td>
+                        </tr>
                       )}
-                      {log.resourceId && !log.resourceName && (
-                        <div className="text-xs text-zinc-400">{log.resourceId.slice(0, 12)}…</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <ScopeBadge log={log} />
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500">{log.ipAddress || '—'}</td>
-                    <td className="px-4 py-3 text-zinc-500" suppressHydrationWarning>
-                      {new Date(log.createdAt).toLocaleString()}
-                    </td>
-                  </tr>
-                ))
+                    </Fragment>
+                  )
+                })
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center">
+                  <td colSpan={5} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <ClipboardList className="h-8 w-8 text-zinc-300" />
                       <p className="text-zinc-500">No audit entries found.</p>
