@@ -191,19 +191,17 @@ export default function NegativeStockPageView({ session }: { session: SessionUse
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {violations.map((v) => (
-                    <tr key={v.id} className="hover:bg-zinc-50">
+                  {violations.map((v, i) => (
+                    <tr key={`${v.itemId}-${v.warehouseId}-${i}`} className="hover:bg-zinc-50">
                       <td className="px-4 py-3">
                         <p className="font-medium text-zinc-900">{v.itemName ?? v.itemId ?? '—'}</p>
-                        {v.itemSku && (
-                          <p className="font-mono text-xs text-zinc-400">{v.itemSku}</p>
-                        )}
+                        {v.sku && <p className="font-mono text-xs text-zinc-400">{v.sku}</p>}
                       </td>
                       <td className="hidden px-4 py-3 text-zinc-600 sm:table-cell">
                         {v.warehouseName ?? v.warehouseId ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-center font-semibold text-red-600">
-                        {v.quantity}
+                        {v.onHandQty}
                       </td>
                     </tr>
                   ))}

@@ -15,8 +15,12 @@ import {
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import {
+  getAccounts,
+  getTaxRates,
+  type Account,
+  type TaxRate,
+} from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
@@ -77,7 +81,7 @@ export default function EditItemModal({
   const [confirmingClose, setConfirmingClose] = useState(false)
 
   useEffect(() => {
-    TaxRates.list(true).then((res) => {
+    getTaxRates().then((res) => {
       if (res.success && res.data) setTaxRates(res.data as TaxRate[])
     })
   }, [])
@@ -115,7 +119,6 @@ export default function EditItemModal({
       requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
-      hasVariants: false,
       isService: false,
       taxRateId: undefined,
       revenueAccountId: undefined,
@@ -147,7 +150,6 @@ export default function EditItemModal({
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
-        hasVariants: item.hasVariants ?? false,
         isService: item.isService ?? false,
         taxRateId: item.taxRateId ?? undefined,
         revenueAccountId: item.revenueAccountId ?? undefined,
@@ -508,38 +510,6 @@ export default function EditItemModal({
                 )}
               />
             </div>
-
-            {/* Has Variants */}
-            <div className="sm:col-span-2">
-              <Controller
-                name="hasVariants"
-                control={control}
-                render={({ field }) => (
-                  <label className="flex cursor-pointer items-center gap-3">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
-                      />
-                      <div
-                        className={`h-5 w-9 rounded-full transition-colors ${field.value ? 'bg-prominent-purple-600' : 'bg-zinc-200'}`}
-                      />
-                      <div
-                        className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${field.value ? 'translate-x-4' : 'translate-x-0'}`}
-                      />
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-zinc-700">Has Variants</span>
-                      <p className="text-xs text-zinc-400">
-                        Enable to manage size, color, or style variants under this item
-                      </p>
-                    </div>
-                  </label>
-                )}
-              />
-            </div>
           </FormSection>
 
           {/* Pricing */}
@@ -591,7 +561,7 @@ export default function EditItemModal({
                       .filter((t) => t.isActive)
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                          {t.name} ({Number(t.rate).toFixed(2)}%)
                         </option>
                       ))}
                   </select>

@@ -46,19 +46,22 @@ export const PriceListSchema = z.object({
   supersedesId: z.string().optional().nullable(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  itemCount: z.number().optional().default(0),
 })
 
 export const PriceListItemSchema = z.object({
   id: z.string(),
   itemId: z.string(),
-  variantId: z.string().optional().nullable(),
   price: z.union([z.string(), z.number()]),
   floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
   minQty: z.union([z.string(), z.number()]).optional().nullable(),
   // Scenario 15, Part 5
   downPayment: z.union([z.string(), z.number()]).optional().nullable(),
+  // Scenario 34 — cmAmount/creditAmount existed on the backend since
+  // Scenario 15 Part 5 but had no frontend form/table surface until now.
+  cmAmount: z.union([z.string(), z.number()]).optional().nullable(),
+  creditAmount: z.union([z.string(), z.number()]).optional().nullable(),
   item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
-  variant: z.object({ id: z.string(), variantSku: z.string() }).optional().nullable(),
 })
 export type PriceListItem = z.infer<typeof PriceListItemSchema>
 
@@ -67,14 +70,24 @@ export const PriceListDetailSchema = PriceListSchema.extend({
 })
 export type PriceListDetail = z.infer<typeof PriceListDetailSchema>
 
+export const PriceListItemsPageSchema = z.object({
+  data: z.array(PriceListItemSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+})
+export type PriceListItemsPage = z.infer<typeof PriceListItemsPageSchema>
+
 export const UpsertPriceListItemFormSchema = z.object({
   itemId: z.string().min(1, 'Select an item'),
-  variantId: z.string().optional(),
   price: z.number().min(0, 'Price must be 0 or more'),
   floorPrice: z.number().min(0).optional(),
   minQty: z.number().min(0).optional(),
   // Scenario 15, Part 5
   downPayment: z.number().min(0).optional(),
+  // Scenario 34
+  cmAmount: z.number().min(0).optional(),
+  creditAmount: z.number().min(0).optional(),
 })
 export type UpsertPriceListItemFormValues = z.infer<typeof UpsertPriceListItemFormSchema>
 

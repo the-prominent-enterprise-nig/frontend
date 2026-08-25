@@ -15,6 +15,7 @@ export function ProcurementHub({
   canSend,
   canCancel,
   canClose,
+  canEdit,
   canReceive,
   canViewCost,
   currentUserBranchId,
@@ -27,6 +28,7 @@ export function ProcurementHub({
   canSend: boolean
   canCancel: boolean
   canClose: boolean
+  canEdit: boolean
   canReceive: boolean
   canViewCost: boolean
   currentUserBranchId?: string | null
@@ -61,6 +63,7 @@ export function ProcurementHub({
           canSend={canSend}
           canCancel={canCancel}
           canClose={canClose}
+          canEdit={canEdit}
           canReceive={canReceive}
           canViewCost={canViewCost}
           currentUserBranchId={currentUserBranchId}

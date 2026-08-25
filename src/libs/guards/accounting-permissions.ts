@@ -26,11 +26,6 @@ export const ACCOUNTING_PERMISSIONS = {
   TRANSACTION_UPDATE: 'accounting:transaction:update',
   TRANSACTION_DELETE: 'accounting:transaction:delete',
 
-  CURRENCY_READ: 'accounting:currency:read',
-  CURRENCY_CREATE: 'accounting:currency:create',
-  CURRENCY_UPDATE: 'accounting:currency:update',
-  CURRENCY_DELETE: 'accounting:currency:delete',
-
   DISBURSEMENT_READ: 'accounting:disbursement:read',
   DISBURSEMENT_CREATE: 'accounting:disbursement:create',
   DISBURSEMENT_UPDATE: 'accounting:disbursement:update',
@@ -50,11 +45,6 @@ export const ACCOUNTING_PERMISSIONS = {
   PAYMENT_CREATE: 'accounting:payment:create',
   PAYMENT_UPDATE: 'accounting:payment:update',
   PAYMENT_DELETE: 'accounting:payment:delete',
-
-  VENDOR_READ: 'accounting:vendor:read',
-  VENDOR_CREATE: 'accounting:vendor:create',
-  VENDOR_UPDATE: 'accounting:vendor:update',
-  VENDOR_DELETE: 'accounting:vendor:delete',
 
   SUPPLIER_READ: 'accounting:supplier:read',
   SUPPLIER_CREATE: 'accounting:supplier:create',
@@ -125,6 +115,12 @@ export const ACCOUNTING_PERMISSIONS = {
   CUSTOMER_ADVANCES_APPLY: 'accounting:customer-advances:apply',
   CUSTOMER_ADVANCES_REFUND: 'accounting:customer-advances:refund',
 
+  // Scenario 38 Gap 4
+  UNAPPLIED_COLLECTIONS_READ: 'accounting:unapplied-collections:read',
+  UNAPPLIED_COLLECTIONS_CREATE: 'accounting:unapplied-collections:create',
+  UNAPPLIED_COLLECTIONS_APPLY: 'accounting:unapplied-collections:apply',
+  UNAPPLIED_COLLECTIONS_REFUND: 'accounting:unapplied-collections:refund',
+
   FISCAL_READ: 'accounting:fiscal:read',
   FISCAL_CREATE: 'accounting:fiscal:create',
   FISCAL_UPDATE: 'accounting:fiscal:update',
@@ -139,9 +135,9 @@ export const ACCOUNTING_PERMISSIONS = {
   FIXED_ASSET_DEPRECIATE: 'accounting:fixedAsset:depreciate',
   FIXED_ASSET_DISPOSE: 'accounting:fixedAsset:dispose',
 
-  FX_READ: 'accounting:fx:read',
-  FX_MANAGE: 'accounting:fx:manage',
-  FX_REVALUATE: 'accounting:fx:revaluate',
+  // Scenario 29 ACC-04 — month-end batch releasing installment financing
+  // markup from Unearned Interest Income into recognized interest income.
+  INSTALLMENT_INTEREST_RELEASE: 'accounting:installmentInterest:release',
 
   RECURRING_ENTRIES_READ: 'accounting:recurring-entries:read',
   RECURRING_ENTRIES_CREATE: 'accounting:recurring-entries:create',
@@ -176,10 +172,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:transaction:create': 'Create transactions',
   'accounting:transaction:update': 'Edit transactions',
   'accounting:transaction:delete': 'Delete transactions',
-  'accounting:currency:read': 'View currencies',
-  'accounting:currency:create': 'Create currencies',
-  'accounting:currency:update': 'Edit currencies',
-  'accounting:currency:delete': 'Delete currencies',
   'accounting:disbursement:read': 'View disbursements',
   'accounting:disbursement:create': 'Create disbursements',
   'accounting:disbursement:update': 'Edit disbursements and change status',
@@ -196,10 +188,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:payment:create': 'Create payments',
   'accounting:payment:update': 'Edit payments',
   'accounting:payment:delete': 'Delete payments',
-  'accounting:vendor:read': 'View vendors',
-  'accounting:vendor:create': 'Create vendors',
-  'accounting:vendor:update': 'Edit vendors',
-  'accounting:vendor:delete': 'Delete vendors',
   'accounting:supplier:read': 'View suppliers',
   'accounting:supplier:create': 'Create suppliers',
   'accounting:supplier:update': 'Edit suppliers',
@@ -258,6 +246,11 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:customer-advances:create': 'Record a customer advance (e.g. a reservation deposit)',
   'accounting:customer-advances:apply': 'Apply a customer advance against an invoice',
   'accounting:customer-advances:refund': 'Refund a customer advance',
+  'accounting:unapplied-collections:read': 'View unapplied customer collections',
+  'accounting:unapplied-collections:create':
+    'Record a payment from a known customer with no invoice decided yet',
+  'accounting:unapplied-collections:apply': 'Apply an unapplied collection against an invoice',
+  'accounting:unapplied-collections:refund': 'Refund an unapplied customer collection',
   'accounting:fiscal:read': 'View fiscal periods + close checklist',
   'accounting:fiscal:create': 'Create fiscal periods',
   'accounting:fiscal:update': 'Update fiscal period close-checklist items',
@@ -270,9 +263,7 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:fixedAsset:delete': 'Retire a fixed asset',
   'accounting:fixedAsset:depreciate': 'Run depreciation (posts JE)',
   'accounting:fixedAsset:dispose': 'Dispose a fixed asset (posts gain/loss)',
-  'accounting:fx:read': 'View FX rates + revaluation runs',
-  'accounting:fx:manage': 'Add effective-dated FX rates',
-  'accounting:fx:revaluate': 'Run FX revaluation (posts JE + reversal)',
+  'accounting:installmentInterest:release': 'Run the month-end installment interest release batch',
   'accounting:recurring-entries:read': 'View recurring journal entry templates',
   'accounting:recurring-entries:create': 'Create a recurring journal entry template',
   'accounting:recurring-entries:update': 'Edit a recurring journal entry template',

@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import {
-  DollarSign,
   TrendingUp,
   TrendingDown,
   AlertTriangle,
@@ -996,7 +995,7 @@ export default function AccountingPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-semibold text-gray-900 truncate">
-                          {bill.vendor?.name ?? bill.vendorId}
+                          {bill.supplier?.name ?? bill.supplierId}
                         </p>
                         <p className="text-[11px] text-gray-400">
                           {bill.billNumber} · {fmtDate(bill.billDate)}
@@ -1167,7 +1166,7 @@ export default function AccountingPage() {
                   return (
                     <div key={i} className="rounded-lg border border-rose-100 bg-rose-50 p-2.5">
                       <p className="text-xs font-semibold text-gray-900 truncate">
-                        {bill.vendor?.name ?? bill.vendorId}
+                        {bill.supplier?.name ?? bill.supplierId}
                       </p>
                       <p className="text-[11px] text-gray-500">
                         {bill.billNumber} · Due {fmtDate(bill.dueDate)}
@@ -1209,7 +1208,6 @@ export default function AccountingPage() {
                 { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
                 { label: 'Fiscal Periods', href: '/accounting/fiscal-periods', icon: CalendarDays },
                 { label: 'Tax', href: '/accounting/tax', icon: Receipt },
-                { label: 'Currencies', href: '/accounting/currencies', icon: DollarSign },
                 { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                 { label: 'Reports', href: '/accounting/reports', icon: Clock },
               ] as const

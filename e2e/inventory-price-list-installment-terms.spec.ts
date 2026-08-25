@@ -67,42 +67,45 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
       timeout: 10_000,
     })
 
+    // Scenario 34 — "Manage Items" now navigates to a dedicated page instead
+    // of opening a modal.
     const row = page.getByRole('row').filter({ hasText: name })
-    await clickStable(
-      row.getByRole('button', { name: 'Manage Items' }),
-      page.getByRole('heading', { name: 'Manage Items' })
-    )
-    await clickStable(
-      page.getByRole('button', { name: 'Add Item' }),
-      page.getByPlaceholder('Search item by name or SKU…')
-    )
-    await page.getByPlaceholder('Search item by name or SKU…').fill(ITEM_NAME)
+    await row.getByRole('link', { name: 'Manage Items' }).click()
+    await expect(page).toHaveURL(/\/inventory\/price-lists\/[^/]+$/, { timeout: 10_000 })
+    await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 10_000 })
+
+    await fillStable(page.getByLabel('Search items to add'), ITEM_NAME)
     await page
       .getByRole('button', { name: new RegExp(ITEM_NAME) })
       .first()
       .click()
-    // Price, Floor Price, Down Payment, Min Qty — in that order (see
-    // PriceListItemsModal.tsx). Only Price and Down Payment matter here.
-    await fillStable(page.getByPlaceholder('0.00').first(), '168.00')
-    await fillStable(page.getByPlaceholder('0.00').nth(2), CURATED_DOWN_PAYMENT)
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    // Named aria-labels per field (Price/Down Payment/etc, scoped to the
+    // staged item) — no more fragile positional placeholder matching.
+    // exact: true — "Price for X" is otherwise a substring match of "Floor
+    // Price for X" too.
+    await fillStable(page.getByLabel(`Price for ${ITEM_NAME}`, { exact: true }), '168.00')
+    await fillStable(
+      page.getByLabel(`Down Payment for ${ITEM_NAME}`, { exact: true }),
+      CURATED_DOWN_PAYMENT
+    )
+    await page.getByRole('button', { name: /^Add 1 Item$/ }).click()
+
     const itemRow = page.locator('tbody tr').filter({ hasText: ITEM_NAME })
     await expect(itemRow).toContainText(CURATED_DOWN_PAYMENT.replace('.00', ''), {
       timeout: 10_000,
     })
-    await page.getByRole('button', { name: 'Close' }).click()
-    await expect(page.getByRole('heading', { name: 'Manage Items' })).not.toBeVisible()
 
-    // Approve — a price list only applies at checkout once active.
+    // Approve directly from the item-management page's own header — a price
+    // list only applies at checkout once active.
     await clickStable(
-      row.getByRole('button', { name: 'Approve' }),
+      page.getByRole('button', { name: 'Approve', exact: true }),
       page.getByRole('heading', { name: 'Approve Price List' })
     )
     await page.getByRole('button', { name: 'Approve', exact: true }).last().click()
     await expect(page.getByRole('heading', { name: 'Approve Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
-    await expect(row).toContainText('Active')
+    await expect(page.getByText('Active', { exact: true })).toBeVisible({ timeout: 10_000 })
 
     // ─── Cashier side: checkout picks up the curated down payment ──────────
     await ensureOpenSession(page, 'Bago')
@@ -126,15 +129,16 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await remoteCard.first().click()
     await page.getByLabel('Price Use').selectOption({ label: 'CREDIT CARD' })
 
-    await clickStable(
-      page.getByRole('button', { name: 'Installment', exact: true }),
-      page.getByPlaceholder('Down payment')
-    )
-
     const termSelect = page.locator('select').filter({ hasText: 'Select a term' })
-    await expect(termSelect).toBeVisible({ timeout: 10_000 })
+    await clickStable(page.getByRole('button', { name: 'Installment', exact: true }), termSelect)
     await termSelect.selectOption({ index: 1 })
 
+    // The down payment starts collapsed behind a static "10% min" badge —
+    // reveal the editable input (pre-filled with the current value) to read it.
+    await clickStable(
+      page.getByRole('button', { name: 'Use a different amount' }),
+      page.getByPlaceholder('Down payment')
+    )
     await expect(page.getByPlaceholder('Down payment')).toHaveValue(CURATED_DOWN_PAYMENT, {
       timeout: 10_000,
     })

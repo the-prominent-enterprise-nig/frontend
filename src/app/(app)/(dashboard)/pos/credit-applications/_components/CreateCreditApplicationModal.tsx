@@ -47,7 +47,7 @@ export default function CreateCreditApplicationModal({
     resolver: zodResolver(CreateCreditApplicationFormSchema),
     defaultValues: {
       branchId: sessionBranchId ?? undefined,
-      items: [{ itemId: '', variantId: undefined }],
+      items: [{ itemId: '' }],
     },
   })
 
@@ -69,7 +69,7 @@ export default function CreateCreditApplicationModal({
     if (!isOpen) {
       reset({
         branchId: sessionBranchId ?? undefined,
-        items: [{ itemId: '', variantId: undefined }],
+        items: [{ itemId: '' }],
       })
     }
   }, [isOpen, sessionBranchId, reset])
@@ -80,7 +80,10 @@ export default function CreateCreditApplicationModal({
 
   async function handleFormSubmit(data: CreateCreditApplicationFormValues) {
     setServerError(undefined)
-    const result = await onSubmit(data)
+    // The <select>'s "No co-maker" option is value="" — the backend's
+    // optional coMakerId expects the field omitted entirely, not an empty
+    // string (which would fail its @IsUUID() check).
+    const result = await onSubmit({ ...data, coMakerId: data.coMakerId || undefined })
     if (result.success) {
       onClose()
     } else {
@@ -128,7 +131,7 @@ export default function CreateCreditApplicationModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Co-Maker <span className="text-red-500">*</span>
+                Co-Maker <span className="text-zinc-400">(optional)</span>
               </label>
               <Controller
                 name="coMakerId"
@@ -146,7 +149,7 @@ export default function CreateCreditApplicationModal({
                           ? 'Loading co-makers…'
                           : coMakers.length === 0
                             ? 'No co-maker on file'
-                            : 'Select co-maker…'}
+                            : 'No co-maker'}
                     </option>
                     {coMakers.map((cm) => (
                       <option key={cm.id} value={cm.id}>
@@ -156,11 +159,6 @@ export default function CreateCreditApplicationModal({
                   </select>
                 )}
               />
-              {applicantCustomerId && !applicantQuery.isLoading && coMakers.length === 0 && (
-                <p className="mt-1 text-xs text-amber-600">
-                  This customer has no co-maker on file — add one via their CRM profile first.
-                </p>
-              )}
               {errors.coMakerId && (
                 <p className="mt-1 text-xs text-red-600">{errors.coMakerId.message}</p>
               )}

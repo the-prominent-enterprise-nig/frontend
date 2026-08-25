@@ -3,6 +3,19 @@ import { z } from 'zod'
 export const SUPPLIER_ONBOARDING_STATUSES = ['pending', 'in_review', 'approved', 'blocked'] as const
 export const SUPPLIER_STATUSES = ['active', 'inactive', 'blacklisted'] as const
 
+// Scenario 33 — merged in from the retired Vendor model. Lets a Supplier
+// row stand in for any AP payee, not just an inventory supplier.
+export const SUPPLIER_TYPES = [
+  'SUPPLIER',
+  'CONTRACTOR',
+  'CONSULTANT',
+  'OFFICER',
+  'EMPLOYEE',
+  'CONSTRUCTION',
+  'FOUNDER',
+  'OTHER',
+] as const
+
 // ─── Create / Update Supplier ─────────────────────────────────────────────────
 
 export const SupplierBankAccountFormSchema = z.object({
@@ -34,6 +47,12 @@ export const CreateSupplierFormSchema = z.object({
   onboardingStatus: z.enum(SUPPLIER_ONBOARDING_STATUSES).optional(),
   status: z.enum(SUPPLIER_STATUSES).optional(),
   notes: z.string().max(1000).optional(),
+  type: z.enum(SUPPLIER_TYPES).optional(),
+  businessType: z.string().max(100).optional(),
+  alphanumericTaxCode: z.string().max(50).optional(),
+  taxRate: z.string().max(20).optional(),
+  defaultPayableAccountId: z.string().optional(),
+  defaultExpenseAccountId: z.string().optional(),
 })
 
 const CreateSupplierServerSchema = CreateSupplierFormSchema.extend({
@@ -68,6 +87,7 @@ export const SupplierListItemSchema = z.object({
   currency: z.string(),
   onboardingStatus: z.enum(SUPPLIER_ONBOARDING_STATUSES),
   status: z.enum(SUPPLIER_STATUSES),
+  type: z.enum(SUPPLIER_TYPES),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -81,6 +101,11 @@ export const SupplierDetailSchema = SupplierListItemSchema.extend({
   creditLimit: z.coerce.number().optional().nullable(),
   notes: z.string().optional().nullable(),
   deletedAt: z.string().optional().nullable(),
+  businessType: z.string().optional().nullable(),
+  alphanumericTaxCode: z.string().optional().nullable(),
+  taxRate: z.string().optional().nullable(),
+  defaultPayableAccountId: z.string().optional().nullable(),
+  defaultExpenseAccountId: z.string().optional().nullable(),
 })
 
 export const PaginatedSupplierSchema = z.object({

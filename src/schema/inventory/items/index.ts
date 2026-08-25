@@ -25,26 +25,6 @@ export const ItemTagAssignmentSchema = z.object({
 })
 export type ItemTagAssignment = z.infer<typeof ItemTagAssignmentSchema>
 
-export const ItemSubstituteSchema = z.object({
-  id: z.string(),
-  itemId: z.string(),
-  substituteItemId: z.string(),
-  note: z.string().nullable().optional(),
-  createdAt: z.string(),
-  substituteItem: z.object({
-    id: z.string(),
-    sku: z.string(),
-    name: z.string(),
-    lifecycle: ItemLifecycleSchema.optional(),
-    sellingPrice: z.coerce.number().nullable().optional(),
-    baseUnit: z
-      .object({ id: z.string(), code: z.string(), name: z.string() })
-      .nullable()
-      .optional(),
-  }),
-})
-export type ItemSubstitute = z.infer<typeof ItemSubstituteSchema>
-
 export const ItemChangeLogSchema = z.object({
   id: z.string(),
   itemId: z.string(),
@@ -89,7 +69,6 @@ const CreateItemFormBaseSchema = z.object({
   requiresSecondarySerial: z.boolean(),
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
-  hasVariants: z.boolean(),
   isService: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
@@ -180,7 +159,6 @@ export const UpdateItemFormSchema = z.object({
   requiresSecondarySerial: z.boolean(),
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
-  hasVariants: z.boolean(),
   isService: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
@@ -296,11 +274,6 @@ export const ItemSummarySchema = z.object({
     return undefined
   }, z.boolean().optional()),
   isBundle: z.preprocess((v) => {
-    if (v === true || v === 'true' || v === 1) return true
-    if (v === false || v === 'false' || v === 0) return false
-    return undefined
-  }, z.boolean().optional()),
-  hasVariants: z.preprocess((v) => {
     if (v === true || v === 'true' || v === 1) return true
     if (v === false || v === 'false' || v === 0) return false
     return undefined

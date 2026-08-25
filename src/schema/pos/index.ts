@@ -70,6 +70,10 @@ export interface CloseSessionInput {
   declaredClosingCash: number
   notes?: string
   denominationBreakdown?: Record<string, number>
+  /** Scenario 38 Gap 3 — required only when declaredClosingCash differs from
+   *  the accounting-expected amount; posts the shortage/overage to the GL. */
+  managerOverride?: boolean
+  managerUserId?: string
 }
 
 export interface SessionReconciliation {
@@ -104,6 +108,17 @@ export interface PaymentMethodConfig {
   referenceFieldLabel: string | null
   referenceFieldRegex: string | null
   referenceIsRequired: boolean
+  /** Named sub-choices (Scenario 37) — POS Terminal for card, bank for
+   * bank_transfer, gateway for qr. Empty for methods with no sub-choice. */
+  options: PaymentMethodOption[]
+}
+
+export interface PaymentMethodOption {
+  id: string
+  paymentMethodConfigId: string
+  name: string
+  isEnabled: boolean
+  displayOrder: number
 }
 
 export interface CreateCustomPaymentMethodInput {
@@ -122,6 +137,9 @@ export type PosTransactionStatus = 'completed' | 'voided'
 // Now/Installment) — kept in the type only because historical transactions
 // still carry it.
 export type PosInvoiceType = 'cash' | 'charge' | 'installment'
+// 'gcash'/'maya' are no longer offered from checkout (superseded by 'qr',
+// Scenario 37) — kept in the type only because historical transactions still
+// carry them.
 export type PosPaymentMethod =
   | 'cash'
   | 'card'
@@ -132,6 +150,7 @@ export type PosPaymentMethod =
   | 'loyalty_points'
   | 'bank_transfer'
   | 'tpf'
+  | 'qr'
   | 'custom'
 
 // Which financing an installment line runs on: NIG's own underwriting
@@ -177,6 +196,7 @@ export interface PosTransactionLine {
   lineTotal: number
   notes?: string | null
   serialNumber?: string | null
+  secondarySerialNumber?: string | null
   invoiceType?: PosInvoiceType
   installmentProvider?: InstallmentProvider | null
   payNowMethod?: PayNowMethod | null
@@ -350,8 +370,6 @@ export interface SkuReservation {
   branch?: { id: string; name: string; code: string }
   itemId: string
   item?: { id: string; sku: string; name: string; sellingPrice: number }
-  variantId?: string | null
-  variant?: { id: string; variantSku: string } | null
   customerId: string
   customer?: { id: string; customerCode: string; name: string }
   quantity: number
@@ -375,7 +393,6 @@ export interface SkuReservation {
 
 export interface CreateSkuReservationInput {
   itemId: string
-  variantId?: string
   customerId: string
   quantity: number
   notes?: string
@@ -442,6 +459,11 @@ export interface CollectionsCustomer {
   phone: string | null
   outstandingCount: number
   outstandingAmount: number
+  // Scenario 29 ACC-05 — the collector's number: only installment lines
+  // whose own due date has actually passed, unlike outstandingAmount
+  // above (which counts every open line regardless of maturity).
+  dueCount: number
+  dueAmount: number
   nextDueDate: string
 }
 
@@ -472,12 +494,26 @@ export interface CreateWalkInCustomerInput {
   consentGivenAt?: Date
 }
 
+// card only — straight charge vs. the card issuer's own installment plan
+// (Scenario 37). Captured only, never calculated.
+export type PosCardTxnMode = 'straight' | 'installment'
+
 export interface AddPaymentInput {
   paymentMethod: PosPaymentMethod
   amount: number
   giftCardId?: string
   referenceNumber?: string
   paymentMethodConfigId?: string
+  /** Named sub-choice used (Scenario 37) — POS Terminal for card, bank for
+   * bank_transfer, gateway for qr. */
+  paymentMethodOptionId?: string
+  cardTxnMode?: PosCardTxnMode
+  /** Months (3/6/9/12/18/24) — required when cardTxnMode is 'installment'. */
+  cardInstallmentTerm?: number
+  /** Scenario 38 Gap 7 — bank_transfer only. The cashier confirmed the
+   * credit already landed at the register, so this posts straight to Cash
+   * in Bank instead of the usual clearing account. */
+  bankTransferVerifiedAtRegister?: boolean
   currency?: string
   fxRate?: number
   notes?: string
@@ -780,19 +816,22 @@ export interface SessionDisplay {
   updatedAt: string
 }
 
-// Cross-branch stock
-export interface CrossBranchStockResult {
-  message: string
-  itemId: string
-  branches: unknown[]
+// Cross-branch stock — one entry per warehouse currently holding this item
+// (POS-15). The backend returns a bare array (pos-inventory.service.ts's
+// crossBranchStock), not the {message, itemId, branches} shape this type
+// used to claim — nothing actually reads those old fields today.
+export interface CrossBranchStockEntry {
+  availableQty: number
+  onHandQty: number
+  warehouse: { id: string; name: string; code: string; branchId: string | null }
 }
+export type CrossBranchStockResult = CrossBranchStockEntry[]
 
 // Branch Pricing
 export interface BranchPricing {
   id: string
   branchId: string
   itemId: string
-  variantId?: string | null
   price: number
   taxRate?: number | null
   pricingMode?: 'inclusive' | 'exclusive' | null
@@ -808,7 +847,6 @@ export interface BranchPricing {
 export interface CreateBranchPricingInput {
   branchId: string
   itemId: string
-  variantId?: string
   price: number
   taxRate?: number
   pricingMode?: 'inclusive' | 'exclusive'
@@ -930,6 +968,8 @@ export interface InstallmentSchedule {
     unitPrice: number
     lineTotal: number
     item: { name: string; brand: { name: string } | null } | null
+    serialNumber: { id: string; serialNumber: string } | null
+    secondarySerialNumber: { id: string; serialNumber: string } | null
   }[]
   // The rebate — fixed 7.5% of the monthly installment. Null if this
   // schedule has no linked InstallmentAccount (shouldn't normally happen,

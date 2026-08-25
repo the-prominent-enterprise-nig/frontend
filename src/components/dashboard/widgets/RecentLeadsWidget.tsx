@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { leadsApi, pipelineStagesApi } from '@/src/libs/api/crm'
+import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-blue-100 text-blue-700',
@@ -34,10 +35,14 @@ export default function RecentLeadsWidget() {
 
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [loading, setLoading] = useState(true)
+  const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([leadsApi.list({ limit: 50, page: 1 }), pipelineStagesApi.list()])
+    Promise.all([
+      leadsApi.list({ limit: 50, page: 1, branchId: branchId ?? undefined }),
+      pipelineStagesApi.list(),
+    ])
       .then(([leadsRes, stagesRes]) => {
         if (cancelled) return
         const stageNameById = new Map((stagesRes.data ?? []).map((s) => [s.id, s.name] as const))
@@ -60,7 +65,7 @@ export default function RecentLeadsWidget() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [branchId])
 
   if (loading) {
     return (

@@ -36,7 +36,6 @@ export const CreatePoFormSchema = z.object({
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
-  shippingAddress: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   lines: z.array(CreatePoLineSchema).min(1, 'At least one line item is required'),
 })
@@ -51,16 +50,12 @@ export const CreatePoServerSchema = CreatePoFormSchema.extend({
   lines: z.array(CreatePoLineServerSchema).min(1, 'At least one line item is required'),
 })
 
-// ─── Update PO (draft fields only) ───────────────────────────────────────────
+// ─── Update PO (draft/approved/sent — full replace, same shape as create;
+// Scenario 29 PO-16 reverts approved/sent back to draft server-side) ────────
 
-export const UpdatePoFormSchema = z.object({
-  warehouseId: z.string().optional(),
-  expectedDeliveryDate: z.string().optional(),
-  deliveryInstructions: z.string().max(1000).optional(),
-  paymentTerms: z.string().max(50).optional(),
-  shippingAddress: z.string().max(500).optional(),
-  notes: z.string().max(1000).optional(),
-})
+export const UpdatePoFormSchema = CreatePoFormSchema
+
+export const UpdatePoServerSchema = CreatePoServerSchema
 
 // ─── Cancel PO ────────────────────────────────────────────────────────────────
 
@@ -76,6 +71,12 @@ export const ConvertPrToPoLineSchema = z.object({
   unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
   description: z.string().max(500).optional(),
   notes: z.string().max(500).optional(),
+  // Scenario 29 PO-14 — carry the discount breakdown into the PO line at
+  // conversion time too, not just the already-computed unit price (same
+  // fields as CreatePoLineSchema).
+  srp: z.number().min(0).optional(),
+  discounts: z.array(LineDiscountSchema).optional(),
+  isFreebie: z.boolean().optional(),
 })
 
 export const ConvertPrToPoFormSchema = z.object({
@@ -84,7 +85,6 @@ export const ConvertPrToPoFormSchema = z.object({
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
-  shippingAddress: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   lines: z.array(ConvertPrToPoLineSchema).min(1, 'At least one line item is required'),
 })
@@ -92,6 +92,7 @@ export const ConvertPrToPoFormSchema = z.object({
 const ConvertPrToPoLineServerSchema = ConvertPrToPoLineSchema.extend({
   quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+  srp: z.coerce.number().min(0).optional(),
 })
 
 export const ConvertPrToPoServerSchema = ConvertPrToPoFormSchema.extend({

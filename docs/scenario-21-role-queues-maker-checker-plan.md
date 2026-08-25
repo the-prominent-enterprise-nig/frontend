@@ -52,7 +52,7 @@ Ordered by risk/value.
 
 ### 3. Wire up or remove `AccountingAuditLog`
 
-**Superseded 2026-08-17**: this item is now tracked and scoped in [Scenario 29 — Full Transaction Audit Log Coverage](./scenario-29-audit-log-coverage-plan.md) Closing Gap 2, alongside the rest of the app's untouched audit-log coverage. Developer-confirmed: wire it up for real (not remove). Not implemented yet in either doc.
+**Superseded 2026-08-17**: this item is now tracked and scoped in [Scenario 39 — Full Transaction Audit Log Coverage](./scenario-39-audit-log-coverage-plan.md) Closing Gap 2, alongside the rest of the app's untouched audit-log coverage. Developer-confirmed: wire it up for real (not remove). Not implemented yet in either doc.
 
 ### 4. Confirm whether amount-based approval limits are wanted now
 

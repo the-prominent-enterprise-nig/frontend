@@ -279,10 +279,7 @@ export default function SkuReservationsList({
                     <tr key={res.id} className="hover:bg-gray-50">
                       <td className="px-5 py-3">
                         <p className="font-medium text-gray-900">{res.item?.name ?? '—'}</p>
-                        <p className="text-xs text-gray-400">
-                          {res.item?.sku}
-                          {res.variant ? ` · ${res.variant.variantSku}` : ''}
-                        </p>
+                        <p className="text-xs text-gray-400">{res.item?.sku}</p>
                       </td>
                       <td className="px-5 py-3 text-gray-600">{res.customer?.name ?? '—'}</td>
                       <td className="px-5 py-3 text-center text-gray-600">{res.quantity}</td>

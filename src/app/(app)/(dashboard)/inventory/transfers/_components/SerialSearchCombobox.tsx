@@ -1,11 +1,14 @@
 'use client'
 
-import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 
 type Props = {
   value: string
   onChange: (id: string) => void
+  /** Fires alongside onChange with the full picked option — for callers
+   * that need the serial's display label too, not just its id. */
+  onSelect?: (option: SearchComboboxOption) => void
   options: SerialNumberSummary[]
   queryKey: string
   disabled?: boolean
@@ -20,6 +23,7 @@ type Props = {
 export function SerialSearchCombobox({
   value,
   onChange,
+  onSelect,
   options,
   queryKey,
   disabled,
@@ -30,6 +34,7 @@ export function SerialSearchCombobox({
     <SearchCombobox
       value={value}
       onChange={onChange}
+      onSelect={onSelect}
       error={error}
       disabled={disabled}
       queryKey={queryKey}
@@ -46,7 +51,15 @@ export function SerialSearchCombobox({
         const matches = q
           ? options.filter((s) => s.serialNumber.toLowerCase().includes(q))
           : options
-        return matches.map((s) => ({ id: s.id, primary: s.serialNumber }))
+        // Scenario 29 SN-01 — an override-capable picker's `options` isn't
+        // pre-scoped to "valid at this warehouse" anymore, so surfacing
+        // where each serial actually is lets a supervisor tell apart the
+        // physically-correct-but-stale one from an unrelated unit.
+        return matches.map((s) => ({
+          id: s.id,
+          primary: s.serialNumber,
+          secondary: [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+        }))
       }}
     />
   )

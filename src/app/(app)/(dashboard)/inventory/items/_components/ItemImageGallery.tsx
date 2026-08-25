@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Crown, Trash2, Upload, ImageOff, Info } from 'lucide-react'
+import { Crown, Trash2, Upload, ImageOff } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import {
   listItemImages,
@@ -10,13 +10,11 @@ import {
   updateItemImage,
   removeItemImage,
   uploadItemFile,
-  getVariantImages,
   type ItemImage,
 } from '../_actions/item-images'
 
 interface Props {
   itemId: string
-  variantId?: string
 }
 
 function imageUrl(fileId: string) {
@@ -89,38 +87,24 @@ function Thumbnail({
   )
 }
 
-export default function ItemImageGallery({ itemId, variantId }: Props) {
+export default function ItemImageGallery({ itemId }: Props) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [pendingImageId, setPendingImageId] = useState<string | null>(null)
 
   const itemImagesKey = ['item-images', itemId]
-  const variantImagesKey = ['item-images-variant', itemId, variantId]
 
   const itemImagesQuery = useQuery({
     queryKey: itemImagesKey,
     queryFn: () => listItemImages(itemId),
-    enabled: !!itemId && !variantId,
+    enabled: !!itemId,
     staleTime: 30 * 1000,
   })
 
-  const variantImagesQuery = useQuery({
-    queryKey: variantImagesKey,
-    queryFn: () => getVariantImages(itemId, variantId!),
-    enabled: !!itemId && !!variantId,
-    staleTime: 30 * 1000,
-  })
-
-  const isLoading = variantId ? variantImagesQuery.isLoading : itemImagesQuery.isLoading
-
-  const variantData = variantImagesQuery.data?.data
-  const images: ItemImage[] = variantId
-    ? (variantData?.images ?? [])
-    : (itemImagesQuery.data?.data ?? [])
-  const inheritedFromParent = variantId && variantData?.source === 'item'
-
-  const activeQueryKey = variantId ? variantImagesKey : itemImagesKey
+  const isLoading = itemImagesQuery.isLoading
+  const images: ItemImage[] = itemImagesQuery.data?.data ?? []
+  const activeQueryKey = itemImagesKey
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -139,7 +123,6 @@ export default function ItemImageGallery({ itemId, variantId }: Props) {
 
       const addResult = await addItemImage(itemId, {
         fileId: uploadResult.data.id,
-        ...(variantId ? { variantId } : {}),
       })
 
       if (!addResult.success) {
@@ -194,16 +177,6 @@ export default function ItemImageGallery({ itemId, variantId }: Props) {
 
   return (
     <div className="space-y-3">
-      {inheritedFromParent && (
-        <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
-          <p className="text-xs text-blue-700">
-            Showing {images.length} inherited image{images.length !== 1 ? 's' : ''} from the parent
-            item. Upload below to add variant-specific images.
-          </p>
-        </div>
-      )}
-
       <div className="grid grid-cols-4 gap-2">
         {images.map((img) => (
           <Thumbnail

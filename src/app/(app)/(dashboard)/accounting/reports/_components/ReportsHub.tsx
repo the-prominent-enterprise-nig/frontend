@@ -8,30 +8,33 @@ import {
   getBranches,
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
+import GlReconciliationView from './GlReconciliationView'
 
 type Tab =
   | 'trial-balance'
   | 'pnl'
   | 'balance-sheet'
-  | 'general-ledger'
   | 'cash-flow'
   | 'ar-aging'
   | 'ap-aging'
+  | 'grni'
   | 'customer-statement'
   | 'cost-center'
   | 'bi'
+  | 'reconciliation'
 
 const VALID_TABS: Tab[] = [
   'trial-balance',
   'pnl',
   'balance-sheet',
-  'general-ledger',
   'cash-flow',
   'ar-aging',
   'ap-aging',
+  'grni',
   'customer-statement',
   'cost-center',
   'bi',
+  'reconciliation',
 ]
 
 const TODAY = new Date().toISOString().slice(0, 10)
@@ -60,6 +63,9 @@ export default function ReportsHub() {
   )
 
   const load = async () => {
+    // Reconciliation is self-contained (GlReconciliationView fetches its
+    // own three endpoints) — nothing for this hub's shared data state to do.
+    if (tab === 'reconciliation') return
     setLoading(true)
     setData(null)
     let res: any
@@ -67,10 +73,10 @@ export default function ReportsHub() {
     else if (tab === 'pnl')
       res = await Reports.pnl(startDate, endDate, branchId || undefined, pnlView)
     else if (tab === 'balance-sheet') res = await Reports.balanceSheet(asOf)
-    else if (tab === 'general-ledger') res = await Reports.generalLedger({ startDate, endDate })
     else if (tab === 'cash-flow') res = await Reports.cashFlow(startDate, endDate)
     else if (tab === 'ar-aging') res = await Reports.aging('ar', asOf)
     else if (tab === 'ap-aging') res = await Reports.aging('ap', asOf)
+    else if (tab === 'grni') res = await Reports.grni()
     else if (tab === 'customer-statement') {
       if (!customerId) {
         setLoading(false)
@@ -100,7 +106,7 @@ export default function ReportsHub() {
     getBranches().then((r) => setBranches(r.success && r.data ? r.data : []))
   }, [tab, branches.length])
 
-  const needsDateRange = ['pnl', 'general-ledger', 'cash-flow', 'cost-center'].includes(tab)
+  const needsDateRange = ['pnl', 'cash-flow', 'cost-center'].includes(tab)
   const needsAsOf = ['trial-balance', 'balance-sheet', 'ar-aging', 'ap-aging'].includes(tab)
   const needsCustomer = tab === 'customer-statement'
   const needsBranch = tab === 'pnl'
@@ -119,12 +125,13 @@ export default function ReportsHub() {
             ['pnl', 'Profit & Loss'],
             ['balance-sheet', 'Balance Sheet'],
             ['cash-flow', 'Cash Flow'],
-            ['general-ledger', 'General Ledger'],
             ['ar-aging', 'AR Aging'],
             ['ap-aging', 'AP Aging'],
+            ['grni', 'GRNI'],
             ['customer-statement', 'Customer Statement'],
             ['cost-center', 'Cost Center'],
             ['bi', 'BI Summary'],
+            ['reconciliation', 'GL Reconciliation'],
           ] as [Tab, string][]
         ).map(([k, l]) => (
           <button
@@ -137,7 +144,9 @@ export default function ReportsHub() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3 mb-4 items-end">
+      <div
+        className={`flex flex-wrap gap-3 mb-4 items-end ${tab === 'reconciliation' ? 'hidden' : ''}`}
+      >
         {needsAsOf && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">As of</label>
@@ -230,8 +239,12 @@ export default function ReportsHub() {
         </button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-4">
-        {!data ? (
+      <div
+        className={tab === 'reconciliation' ? '' : 'bg-white border border-gray-200 rounded-lg p-4'}
+      >
+        {tab === 'reconciliation' ? (
+          <GlReconciliationView />
+        ) : !data ? (
           <div className="text-center text-gray-400 py-8">
             {needsCustomer && !customerId
               ? 'Select a customer to view their statement.'
@@ -245,14 +258,14 @@ export default function ReportsHub() {
           <PnLView data={data} branchName={branches.find((b) => b.id === data.branchId)?.name} />
         ) : tab === 'balance-sheet' ? (
           <BalanceSheetView data={data} />
-        ) : tab === 'general-ledger' ? (
-          <GLView data={data} />
         ) : tab === 'cash-flow' ? (
           <CashFlowView data={data} />
         ) : tab === 'ar-aging' ? (
           <AgingView data={data} type="ar" />
         ) : tab === 'ap-aging' ? (
           <AgingView data={data} type="ap" />
+        ) : tab === 'grni' ? (
+          <GrniView data={data} />
         ) : tab === 'cost-center' ? (
           <CostCenterView data={data} />
         ) : tab === 'bi' ? (
@@ -506,31 +519,6 @@ function BalanceSheetView({ data }: { data: any }) {
   )
 }
 
-function GLView({ data }: { data: any }) {
-  const rows = Array.isArray(data) ? data : []
-  if (rows.length === 0) {
-    return (
-      <div className="text-center text-gray-400 py-8">No posted transactions in this range.</div>
-    )
-  }
-  return (
-    <Table headers={['Date', 'Reference', 'Account', 'Description', 'Debit', 'Credit']}>
-      {rows.map((t: any) => (
-        <tr key={t.id}>
-          <td className="px-3 py-2 text-xs">{fmtDate(t.date)}</td>
-          <td className="px-3 py-2 font-mono text-xs">{t.reference || '—'}</td>
-          <td className="px-3 py-2">
-            {t.account?.number} {t.account?.name}
-          </td>
-          <td className="px-3 py-2 text-gray-500">{t.description || '—'}</td>
-          <td className="px-3 py-2 text-right">{t.debit ? fmtMoney(t.debit) : '—'}</td>
-          <td className="px-3 py-2 text-right">{t.credit ? fmtMoney(t.credit) : '—'}</td>
-        </tr>
-      ))}
-    </Table>
-  )
-}
-
 function CashFlowView({ data }: { data: any }) {
   return (
     <>
@@ -561,7 +549,7 @@ function AgingView({ data, type }: { data: any; type: 'ar' | 'ap' }) {
     <Table
       headers={[
         type === 'ar' ? 'Invoice #' : 'Bill #',
-        type === 'ar' ? 'Customer' : 'Vendor',
+        type === 'ar' ? 'Customer' : 'Supplier',
         'Due Date',
         'Outstanding',
         'Days Overdue',
@@ -580,6 +568,52 @@ function AgingView({ data, type }: { data: any; type: 'ar' | 'ap' }) {
               className={`px-2 py-0.5 rounded-full text-xs ${r.bucket === 'Current' ? 'bg-emerald-50 text-emerald-700' : r.bucket === '90+' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
             >
               {r.bucket}
+            </span>
+          </td>
+        </tr>
+      ))}
+    </Table>
+  )
+}
+
+// Scenario 36 Gap 2 — receipts already posted to the GL but not yet matched
+// to a supplier bill/invoice. Oldest-received-first (backend-sorted).
+function GrniView({ data }: { data: any }) {
+  const rows = Array.isArray(data) ? data : []
+  if (rows.length === 0) {
+    return (
+      <div className="text-center text-gray-400 py-8">
+        No receipts pending a matching supplier bill.
+      </div>
+    )
+  }
+  return (
+    <Table
+      headers={[
+        'Receipt #',
+        'Supplier',
+        'Warehouse',
+        'Received',
+        'DR #',
+        'SI #',
+        'Amount',
+        'Days Outstanding',
+      ]}
+    >
+      {rows.map((r: any) => (
+        <tr key={r.id}>
+          <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
+          <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
+          <td className="px-3 py-2 text-xs">{r.deliveryReceiptNumber ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{r.supplierInvoiceNumber ?? '—'}</td>
+          <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
+          <td className="px-3 py-2 text-right">
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${r.daysOutstanding > 30 ? 'bg-red-50 text-red-700' : r.daysOutstanding > 7 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+            >
+              {r.daysOutstanding}d
             </span>
           </td>
         </tr>

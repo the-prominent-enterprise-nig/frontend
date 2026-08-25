@@ -6,6 +6,7 @@ import { Search, X, ChevronRight, Loader2, Plus, Pencil } from 'lucide-react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import { getItems } from '../../items/_actions/get-items'
+import { getAccounts } from '@/src/libs/data/AccountingData'
 import { getSupplier } from '../_actions/get-supplier'
 import { createSupplier } from '../_actions/create-supplier'
 import { updateSupplier } from '../_actions/update-supplier'
@@ -115,12 +116,23 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
     staleTime: 5 * 60 * 1000,
   })
 
+  // Scenario 33 — GL account options for the merged-in defaultPayableAccountId/
+  // defaultExpenseAccountId fields.
+  const accountsQuery = useQuery({
+    queryKey: ['accounting-accounts-lookup'],
+    queryFn: () => getAccounts({ limit: 500 }),
+    staleTime: 5 * 60 * 1000,
+  })
+
   const suppliers = suppliersQuery.data?.data?.data ?? []
   const itemOptions = (itemsQuery.data?.data?.data ?? []).map((i) => ({
     id: i.id,
     name: i.name,
     sku: i.sku,
   }))
+  const accountOptions = ((accountsQuery.data?.data as any)?.items ??
+    accountsQuery.data?.data ??
+    []) as { id: string; name: string; number?: string }[]
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
@@ -250,6 +262,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
         open={modalOpen}
         mode={modalMode}
         initialData={editingDetail}
+        accountOptions={accountOptions}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
         isSubmitting={createMutation.isPending || updateMutation.isPending}

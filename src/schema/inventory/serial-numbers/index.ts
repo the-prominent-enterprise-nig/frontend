@@ -179,3 +179,33 @@ export const SerialNumberListResponseSchema = z
 
 export type SerialNumberSummary = z.infer<typeof SerialNumberSummarySchema>
 export type SerialNumberListResponse = z.infer<typeof SerialNumberListResponseSchema>
+
+// One physical unit's own event timeline (GET /serial-numbers/:id/movements)
+// — assembled backend-side from every transaction-line table that ties back
+// to this serial, since there's no per-serial StockLedger row to read.
+export const SerialMovementTypeSchema = z.enum([
+  'receipt',
+  'transfer',
+  'adjustment',
+  'sale',
+  'refund',
+  'credit_memo',
+  'debit_memo',
+  'service',
+])
+export type SerialMovementType = z.infer<typeof SerialMovementTypeSchema>
+
+export const SerialMovementEntrySchema = z.object({
+  id: z.string(),
+  type: SerialMovementTypeSchema,
+  occurredAt: z.string(),
+  label: z.string(),
+  description: z.string(),
+  referenceCode: z.string().nullable(),
+})
+export type SerialMovementEntry = z.infer<typeof SerialMovementEntrySchema>
+
+export const SerialMovementsResponseSchema = z.object({
+  data: z.array(SerialMovementEntrySchema),
+})
+export type SerialMovementsResponse = z.infer<typeof SerialMovementsResponseSchema>

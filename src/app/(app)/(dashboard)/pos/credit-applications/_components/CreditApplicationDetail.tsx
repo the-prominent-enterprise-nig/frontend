@@ -13,6 +13,8 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import {
   CREDIT_APPLICATION_STATUS_LABELS,
   CREDIT_APPLICATION_STATUS_COLORS,
+  CREDIT_APPLICATION_ITEM_STATUS_LABELS,
+  CREDIT_APPLICATION_ITEM_STATUS_COLORS,
   CREDIT_APPLICATION_DOCUMENT_TYPE_LABELS,
   CREDIT_INVESTIGATION_OUTCOME_LABELS,
   CREDIT_INVESTIGATION_OUTCOME_COLORS,
@@ -20,11 +22,9 @@ import {
   CreditInvestigationOutcomeSchema,
   CancelCreditApplicationFormSchema,
   RecordCreditInvestigationFormSchema,
-  DeclineCreditApplicationFormSchema,
   UpdateCreditApplicationFormSchema,
   type CancelCreditApplicationFormValues,
   type RecordCreditInvestigationFormValues,
-  type DeclineCreditApplicationFormValues,
   type UpdateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 
@@ -68,10 +68,8 @@ export default function CreditApplicationDetail({
     isStartingInvestigation,
     recordInvestigation,
     isRecordingInvestigation,
-    approve,
-    isApproving,
-    decline,
-    isDeclining,
+    decideItems,
+    isDeciding,
     goToList,
   } = useCreditApplication(id)
 
@@ -80,9 +78,16 @@ export default function CreditApplicationDetail({
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | undefined>(undefined)
   const [isCancelOpen, setIsCancelOpen] = useState(false)
-  const [isDeclineOpen, setIsDeclineOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [editError, setEditError] = useState<string | undefined>(undefined)
+
+  // Scenario 29 POS-02 — per-item decision state while status is
+  // pending_approval. Defaults every item to 'approve' — the common case —
+  // the reviewer flips specific ones to 'decline' rather than starting blank.
+  const [itemDecisions, setItemDecisions] = useState<Record<string, 'approve' | 'decline'>>({})
+  const [isDecisionReasonOpen, setIsDecisionReasonOpen] = useState(false)
+  const [decisionReason, setDecisionReason] = useState('')
+  const [decisionError, setDecisionError] = useState<string | undefined>(undefined)
 
   const {
     control,
@@ -91,16 +96,6 @@ export default function CreditApplicationDetail({
     formState: { errors: cancelErrors },
   } = useForm<CancelCreditApplicationFormValues>({
     resolver: zodResolver(CancelCreditApplicationFormSchema),
-    defaultValues: { reason: '' },
-  })
-
-  const {
-    control: declineControl,
-    handleSubmit: handleDeclineSubmit,
-    reset: resetDeclineForm,
-    formState: { errors: declineErrors },
-  } = useForm<DeclineCreditApplicationFormValues>({
-    resolver: zodResolver(DeclineCreditApplicationFormSchema),
     defaultValues: { reason: '' },
   })
 
@@ -128,11 +123,15 @@ export default function CreditApplicationDetail({
     resetEditForm({
       items: application.items.map((i) => ({
         itemId: i.itemId,
-        variantId: i.variantId ?? undefined,
       })),
       itemDescription: application.itemDescription ?? '',
     })
   }, [isEditOpen, application, resetEditForm])
+
+  useEffect(() => {
+    if (application?.status !== 'pending_approval') return
+    setItemDecisions(Object.fromEntries(application.items.map((i) => [i.id, 'approve'])))
+  }, [application?.status, application?.items])
 
   async function handleEditFormSubmit(data: UpdateCreditApplicationFormValues) {
     setEditError(undefined)
@@ -144,6 +143,43 @@ export default function CreditApplicationDetail({
     }
   }
 
+  function itemIdsByDecision(decision: 'approve' | 'decline'): string[] {
+    return Object.entries(itemDecisions)
+      .filter(([, d]) => d === decision)
+      .map(([itemId]) => itemId)
+  }
+
+  async function submitDecision(declineReasonValue?: string) {
+    setDecisionError(undefined)
+    const result = await decideItems({
+      approveItemIds: itemIdsByDecision('approve'),
+      declineItemIds: itemIdsByDecision('decline'),
+      declineReason: declineReasonValue,
+    })
+    if (result.success) {
+      setIsDecisionReasonOpen(false)
+      setDecisionReason('')
+    } else {
+      setDecisionError(result.message)
+    }
+  }
+
+  function handleSubmitDecisionClick() {
+    if (itemIdsByDecision('decline').length > 0) {
+      setIsDecisionReasonOpen(true)
+    } else {
+      submitDecision(undefined)
+    }
+  }
+
+  async function handleDecisionReasonSubmit() {
+    if (!decisionReason.trim()) {
+      setDecisionError('A reason is required for the declined item(s).')
+      return
+    }
+    await submitDecision(decisionReason.trim())
+  }
+
   if (isLoading) {
     return <div className="p-8 text-sm text-zinc-500">Loading…</div>
   }
@@ -153,6 +189,12 @@ export default function CreditApplicationDetail({
   }
 
   const isDraft = application.status === 'draft'
+  // Editable (items/notes/documents) any time before a decision is made —
+  // matches CreditApplicationService.update()'s widened window on the
+  // backend. Submitting/cancelling stay draft-only (isDraft, above).
+  const isEditable = (
+    ['draft', 'submitted', 'under_investigation', 'pending_approval'] as string[]
+  ).includes(application.status)
 
   async function handleAttach() {
     if (!pendingFile) return
@@ -183,12 +225,6 @@ export default function CreditApplicationDetail({
   async function handleInvestigationFormSubmit(data: RecordCreditInvestigationFormValues) {
     await recordInvestigation(data)
     resetInvestigationForm()
-  }
-
-  async function handleDeclineFormSubmit(data: DeclineCreditApplicationFormValues) {
-    await decline(data)
-    setIsDeclineOpen(false)
-    resetDeclineForm()
   }
 
   return (
@@ -244,23 +280,19 @@ export default function CreditApplicationDetail({
             </div>
           )}
           {application.status === 'pending_approval' && canApprove && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500">
+                {itemIdsByDecision('approve').length} to approve ·{' '}
+                {itemIdsByDecision('decline').length} to decline
+              </span>
               <button
                 type="button"
-                onClick={() => setIsDeclineOpen(true)}
-                disabled={isDeclining}
-                className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                Decline
-              </button>
-              <button
-                type="button"
-                onClick={() => approve()}
-                disabled={isApproving}
+                onClick={handleSubmitDecisionClick}
+                disabled={isDeciding}
                 className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
               >
-                {isApproving && <Loader2 className="h-4 w-4 animate-spin" />}
-                Approve
+                {isDeciding && <Loader2 className="h-4 w-4 animate-spin" />}
+                Submit Decision
               </button>
             </div>
           )}
@@ -291,27 +323,31 @@ export default function CreditApplicationDetail({
 
           <div className="rounded-xl border border-zinc-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-zinc-700">Co-Maker</h2>
-            <dl className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Name</dt>
-                <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Relationship</dt>
-                <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-zinc-500">Contact</dt>
-                <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
-              </div>
-            </dl>
+            {application.coMaker ? (
+              <dl className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Name</dt>
+                  <dd className="font-medium text-zinc-900">{application.coMaker.name}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Relationship</dt>
+                  <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Contact</dt>
+                  <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="text-sm text-zinc-400">No co-maker on this application.</p>
+            )}
           </div>
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-zinc-700">Financing Request</h2>
-            {isDraft && canUpdate && (
+            {isEditable && canUpdate && (
               <button
                 type="button"
                 onClick={() => setIsEditOpen(true)}
@@ -330,16 +366,39 @@ export default function CreditApplicationDetail({
                   <span className="text-zinc-400">—</span>
                 ) : (
                   application.items.map((i) => (
-                    <div key={i.id} className="flex items-center justify-between">
-                      <span className="font-medium text-zinc-900">
-                        {i.item?.name ?? '—'}
-                        {i.variant && (
-                          <span className="text-zinc-500"> ({i.variant.variantSku})</span>
+                    <div key={i.id} className="flex items-center justify-between gap-3 py-0.5">
+                      <span className="font-medium text-zinc-900">{i.item?.name ?? '—'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-500">
+                          ₱{i.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        </span>
+                        {application.status === 'pending_approval' && canApprove ? (
+                          <div className="flex overflow-hidden rounded-lg border border-zinc-200 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setItemDecisions((d) => ({ ...d, [i.id]: 'approve' }))}
+                              className={`px-2.5 py-1 font-medium ${itemDecisions[i.id] === 'approve' ? 'bg-green-600 text-white' : 'bg-white text-zinc-500 hover:bg-zinc-50'}`}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setItemDecisions((d) => ({ ...d, [i.id]: 'decline' }))}
+                              className={`px-2.5 py-1 font-medium ${itemDecisions[i.id] === 'decline' ? 'bg-red-600 text-white' : 'bg-white text-zinc-500 hover:bg-zinc-50'}`}
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        ) : (
+                          i.status !== 'pending' && (
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${CREDIT_APPLICATION_ITEM_STATUS_COLORS[i.status]}`}
+                            >
+                              {CREDIT_APPLICATION_ITEM_STATUS_LABELS[i.status]}
+                            </span>
+                          )
                         )}
-                      </span>
-                      <span className="text-zinc-500">
-                        ₱{i.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                      </span>
+                      </div>
                     </div>
                   ))
                 )}
@@ -381,7 +440,7 @@ export default function CreditApplicationDetail({
                       </p>
                     </div>
                   </div>
-                  {isDraft && canUpdate && (
+                  {isEditable && canUpdate && (
                     <button
                       type="button"
                       onClick={() => removeDocument(doc.id)}
@@ -395,7 +454,7 @@ export default function CreditApplicationDetail({
             </ul>
           )}
 
-          {isDraft && canUpdate && (
+          {isEditable && canUpdate && (
             <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-zinc-100 pt-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-700">
@@ -531,18 +590,29 @@ export default function CreditApplicationDetail({
           </div>
         )}
 
-        {application.status === 'declined' && application.declineReason && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-800">Decline Reason</p>
-            <p className="mt-1 text-sm text-red-700">{application.declineReason}</p>
-          </div>
-        )}
+        {(application.status === 'declined' || application.status === 'partially_approved') &&
+          application.declineReason && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-medium text-red-800">Decline Reason</p>
+              <p className="mt-1 text-sm text-red-700">{application.declineReason}</p>
+            </div>
+          )}
 
         {application.status === 'approved' && (
           <div className="rounded-xl border border-green-200 bg-green-50 p-4">
             <p className="text-sm font-medium text-green-800">Approved</p>
             <p className="mt-1 text-sm text-green-700">
               This application has been approved and is ready to proceed.
+            </p>
+          </div>
+        )}
+
+        {application.status === 'partially_approved' && (
+          <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+            <p className="text-sm font-medium text-orange-800">Partially Approved</p>
+            <p className="mt-1 text-sm text-orange-700">
+              Some items were approved and some were declined — see each item&apos;s status above.
+              Checkout will only accept the approved items.
             </p>
           </div>
         )}
@@ -592,46 +662,41 @@ export default function CreditApplicationDetail({
         </div>
       )}
 
-      {isDeclineOpen && (
+      {isDecisionReasonOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl">
-            <form onSubmit={handleDeclineSubmit(handleDeclineFormSubmit)} noValidate>
-              <div className="space-y-3 px-6 py-5">
-                <h2 className="text-lg font-semibold text-zinc-900">Decline Application</h2>
-                <Controller
-                  name="reason"
-                  control={declineControl}
-                  render={({ field }) => (
-                    <textarea
-                      {...field}
-                      rows={3}
-                      placeholder="Reason for declining"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-                {declineErrors.reason && (
-                  <p className="text-xs text-red-600">{declineErrors.reason.message}</p>
-                )}
-              </div>
-              <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-                <button
-                  type="button"
-                  onClick={() => setIsDeclineOpen(false)}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDeclining}
-                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                >
-                  {isDeclining && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Confirm Decline
-                </button>
-              </div>
-            </form>
+            <div className="space-y-3 px-6 py-5">
+              <h2 className="text-lg font-semibold text-zinc-900">Reason for Declined Item(s)</h2>
+              <p className="text-xs text-zinc-500">
+                Applies to the {itemIdsByDecision('decline').length} item(s) marked Decline.
+              </p>
+              <textarea
+                value={decisionReason}
+                onChange={(e) => setDecisionReason(e.target.value)}
+                rows={3}
+                placeholder="Reason for declining these items"
+                className={fieldClass}
+              />
+              {decisionError && <p className="text-xs text-red-600">{decisionError}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setIsDecisionReasonOpen(false)}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={handleDecisionReasonSubmit}
+                disabled={isDeciding}
+                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {isDeciding && <Loader2 className="h-4 w-4 animate-spin" />}
+                Confirm Decision
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -657,10 +722,8 @@ export default function CreditApplicationDetail({
                   errors={editErrors}
                   initialItems={application.items.map((i) => ({
                     itemId: i.itemId,
-                    variantId: i.variantId,
                     itemLabel: i.item?.name ?? '',
                     itemMeta: {
-                      hasVariants: i.item?.hasVariants ?? false,
                       sellingPrice: i.item?.sellingPrice ?? null,
                       modelNumber: i.item?.modelNumber ?? null,
                     },

@@ -26,7 +26,6 @@ import {
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getVendors, type Vendor } from '@/src/libs/data/AccountingData'
 import VoucherPanel from './VoucherPanel'
 import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
 import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
@@ -64,7 +63,6 @@ const VOUCHER_STATUS_LABEL: Record<string, string> = {
 
 export default function APBillsList() {
   const [items, setItems] = useState<APBill[]>([])
-  const [vendors, setVendors] = useState<Vendor[]>([])
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<APBill | null>(null)
@@ -82,7 +80,6 @@ export default function APBillsList() {
   }, [])
   useEffect(() => {
     load()
-    getVendors().then((r) => setVendors(((r.data as any)?.items ?? r.data ?? []) as Vendor[]))
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
   }, [load])
 
@@ -116,7 +113,7 @@ export default function APBillsList() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold">AP Bills</h2>
-          <p className="text-sm text-gray-500">Vendor bills and payables.</p>
+          <p className="text-sm text-gray-500">Supplier bills and payables.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -138,7 +135,7 @@ export default function APBillsList() {
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
               <th className="px-3 py-2 text-left">Bill #</th>
-              <th className="px-3 py-2 text-left">Vendor</th>
+              <th className="px-3 py-2 text-left">Supplier</th>
               <th className="px-3 py-2 text-left">Bill Date</th>
               <th className="px-3 py-2 text-left">Due Date</th>
               <th className="px-3 py-2 text-right">Total</th>
@@ -166,10 +163,7 @@ export default function APBillsList() {
                 <tr key={b.id}>
                   <td className="px-3 py-2 font-mono text-xs">{b.billNumber}</td>
                   <td className="px-3 py-2">
-                    <div>{b.vendor?.name}</div>
-                    {b.supplier && (
-                      <div className="text-xs text-gray-400">Supplier: {b.supplier.name}</div>
-                    )}
+                    <div>{b.supplier?.name}</div>
                   </td>
                   <td className="px-3 py-2 text-xs">{fmtDate(b.billDate)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(b.dueDate)}</td>
@@ -255,7 +249,6 @@ export default function APBillsList() {
       {(creating || editing) && (
         <BillForm
           initial={editing}
-          vendors={vendors}
           suppliers={suppliers}
           onClose={() => {
             setCreating(false)
@@ -305,19 +298,16 @@ export default function APBillsList() {
 
 function BillForm({
   initial,
-  vendors,
   suppliers,
   onClose,
   onSaved,
 }: {
   initial: APBill | null
-  vendors: Vendor[]
   suppliers: APBillSupplierOption[]
   onClose: () => void
   onSaved: () => void
 }) {
   const [form, setForm] = useState({
-    vendorId: initial?.vendorId ?? '',
     supplierId: initial?.supplierId ?? '',
     purchaseOrderId: initial?.purchaseOrderId ?? '',
     goodsReceiptIds: initial?.goodsReceipts?.map((r) => r.id) ?? ([] as string[]),
@@ -328,7 +318,6 @@ function BillForm({
     description: initial?.description ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -381,7 +370,6 @@ function BillForm({
     setError(null)
     const payload = {
       ...form,
-      supplierId: form.supplierId || undefined,
       purchaseOrderId: form.purchaseOrderId || undefined,
       goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
       subtotal: Number(form.subtotal),
@@ -405,28 +393,14 @@ function BillForm({
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
-          <Field label="Vendor *">
+          <Field label="Supplier *">
             <select
               required
-              value={form.vendorId}
-              onChange={(e) => setForm({ ...form, vendorId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Supplier (if this bill is for a PO/RR delivery)">
-            <select
               value={form.supplierId}
               onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">— None —</option>
+              <option value="">— Select —</option>
               {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.code} — {s.name}
@@ -511,7 +485,7 @@ function BillForm({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
                 required
@@ -528,13 +502,6 @@ function BillForm({
                 step="0.01"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>

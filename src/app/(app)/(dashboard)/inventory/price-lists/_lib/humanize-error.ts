@@ -5,6 +5,7 @@ const PRICE_LIST_ERROR_MESSAGES: Record<string, string> = {
   price_list_not_pending_approval: 'This price list is not awaiting approval.',
   price_list_not_rejected: 'This price list has not been rejected.',
   price_list_item_not_found: 'That item is not in this price list.',
+  price_list_items_not_found: 'None of the selected items are in this price list.',
   invalid_supersedes_id: "The price list you're replacing could not be found.",
   invalid_price_use_type_id: 'Select a valid price use type.',
   price_use_type_not_found: 'This price use type could not be found.',

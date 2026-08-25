@@ -52,9 +52,9 @@ test('Branch Manager shows Mixed Access for Accounting, not a false Manage / Edi
   }
 })
 
-// Coverage half of Part 10 — the toggle previously only covered 4 of 9
+// Coverage half of Part 10 — the toggle previously only covered 4 of 8
 // permission modules (accounting/inventory/pos/crm); procurement, admin,
-// queue, sales, and files had no toggle row at all, only reachable via the
+// sales, and files had no toggle row at all, only reachable via the
 // Advanced permissions search. Branch Manager holds the full
 // procurement:*:* wildcard (Scenario 22 Part 11), so its Procurement row
 // is a real, non-trivial case — not just an empty "No Access" row.
@@ -137,7 +137,6 @@ test('Business Owner shows Full Access for every module, never Mixed or partial'
     'CRM',
     'Procurement',
     'Admin',
-    'Queue',
     'Sales',
     'Files',
   ]) {

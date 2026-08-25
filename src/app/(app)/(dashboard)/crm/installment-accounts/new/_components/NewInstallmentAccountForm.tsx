@@ -285,6 +285,31 @@ export default function NewInstallmentAccountForm() {
                 <p className="mt-1 text-[12px] text-red-600">{errors.miFactor}</p>
               )}
             </div>
+            <div>
+              <label
+                htmlFor="insuranceCharge"
+                className="block text-[13px] font-medium text-gray-700"
+              >
+                IC (Insurance charge) (₱)
+              </label>
+              <input
+                id="insuranceCharge"
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.insuranceCharge ?? ''}
+                onChange={(e) =>
+                  setField(
+                    'insuranceCharge',
+                    e.target.value === '' ? undefined : Number(e.target.value)
+                  )
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              />
+              {errors.insuranceCharge && (
+                <p className="mt-1 text-[12px] text-red-600">{errors.insuranceCharge}</p>
+              )}
+            </div>
           </div>
 
           {serverError && (

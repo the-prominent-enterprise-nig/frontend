@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
 import type {
   Control,
@@ -62,23 +63,6 @@ export function PurchaseOrderFormFields({
 
   const fmtAmount = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-
-  // Unit Price defaults to srp with every discount step applied
-  // sequentially (each step's output feeds the next — 30% then 20% off,
-  // not 30+20=50% off in one step), but stays a normal editable input —
-  // this only fires off srp/discount changes, never off Unit Price itself,
-  // so a manual override isn't immediately overwritten.
-  function recomputeUnitPrice(index: number) {
-    const line = getValues(`lines.${index}`)
-    const srp = Number(line?.srp)
-    if (!line?.srp || !line.discounts || line.discounts.length === 0) return
-    const computed = line.discounts.reduce((price, d) => {
-      const val = Number(d?.value)
-      if (!d?.type || d.value == null || isNaN(val)) return price
-      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
-    }, srp)
-    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
-  }
 
   return (
     <>
@@ -175,7 +159,6 @@ export function PurchaseOrderFormFields({
               line={lines[index]}
               canRemove={fields.length > 1}
               onRemove={() => remove(index)}
-              recomputeUnitPrice={recomputeUnitPrice}
               fmtAmount={fmtAmount}
             />
           ))}
@@ -220,7 +203,6 @@ type LineCardProps = {
   line: CreatePoFormValues['lines'][number] | undefined
   canRemove: boolean
   onRemove: () => void
-  recomputeUnitPrice: (index: number) => void
   fmtAmount: (n: number) => string
 }
 
@@ -237,7 +219,6 @@ function PurchaseOrderLineCard({
   line,
   canRemove,
   onRemove,
-  recomputeUnitPrice,
   fmtAmount,
 }: LineCardProps) {
   const {
@@ -248,6 +229,29 @@ function PurchaseOrderLineCard({
     control,
     name: `lines.${index}.discounts` as `lines.${number}.discounts`,
   })
+
+  // Unit Price defaults to srp with every discount step applied
+  // sequentially (each step's output feeds the next — 30% then 20% off,
+  // not 30+20=50% off in one step), but stays a normal editable input —
+  // reacting to srp/discounts via useWatch (not a setValue() call chained
+  // off this field's own onChange) so typing in SRP/a discount value never
+  // fires a cross-field form update synchronously inside its own change
+  // event — that re-entrant update was what caused the input to drop focus
+  // after every keystroke.
+  const srp = useWatch({ control, name: `lines.${index}.srp` })
+  const discounts = useWatch({ control, name: `lines.${index}.discounts` })
+
+  useEffect(() => {
+    const srpNum = Number(srp)
+    if (!srp || !discounts || discounts.length === 0) return
+    const computed = discounts.reduce((price, d) => {
+      const val = Number(d?.value)
+      if (!d?.type || d.value == null || isNaN(val)) return price
+      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
+    }, srpNum)
+    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srp, discounts, index])
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
@@ -314,25 +318,16 @@ function PurchaseOrderLineCard({
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier SRP</label>
-          {(() => {
-            const { onChange, ...rest } = register(`lines.${index}.srp`, {
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            placeholder="0.00"
+            {...register(`lines.${index}.srp`, {
               setValueAs: (v) => (v === '' ? undefined : Number(v)),
-            })
-            return (
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="0.00"
-                {...rest}
-                onChange={(e) => {
-                  onChange(e)
-                  recomputeUnitPrice(index)
-                }}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-              />
-            )
-          })()}
+            })}
+            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+          />
         </div>
       </div>
 
@@ -342,19 +337,11 @@ function PurchaseOrderLineCard({
       <div className="space-y-2">
         <label className="block text-xs font-medium text-zinc-600">Discounts (off SRP)</label>
         {discountFields.map((discountField, discountIndex) => {
-          const typeField = register(`lines.${index}.discounts.${discountIndex}.type`)
-          const valueField = register(`lines.${index}.discounts.${discountIndex}.value`, {
-            valueAsNumber: true,
-          })
           return (
             <div key={discountField.id} className="flex items-center gap-2">
               <div className="grid flex-1 grid-cols-2 gap-2">
                 <select
-                  {...typeField}
-                  onChange={(e) => {
-                    typeField.onChange(e)
-                    recomputeUnitPrice(index)
-                  }}
+                  {...register(`lines.${index}.discounts.${discountIndex}.type`)}
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
                 >
                   <option value="percentage">Percentage</option>
@@ -367,20 +354,15 @@ function PurchaseOrderLineCard({
                   placeholder={
                     line?.discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'
                   }
-                  {...valueField}
-                  onChange={(e) => {
-                    valueField.onChange(e)
-                    recomputeUnitPrice(index)
-                  }}
+                  {...register(`lines.${index}.discounts.${discountIndex}.value`, {
+                    valueAsNumber: true,
+                  })}
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
                 />
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  removeDiscount(discountIndex)
-                  recomputeUnitPrice(index)
-                }}
+                onClick={() => removeDiscount(discountIndex)}
                 className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
                 aria-label="Remove discount"
               >

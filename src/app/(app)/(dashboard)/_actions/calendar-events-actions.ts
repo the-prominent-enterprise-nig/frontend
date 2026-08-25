@@ -9,6 +9,7 @@ export interface CalendarEventRecord {
   allDay: boolean
   startTime?: string
   endTime?: string
+  branchId?: string
   createdAt: string
 }
 
@@ -18,14 +19,20 @@ export interface CreateCalendarEventInput {
   allDay?: boolean
   startTime?: string
   endTime?: string
+  branchId?: string
 }
 
 export async function getCalendarEvents(
   year: number,
-  month: number
+  month: number,
+  branchId?: string
 ): Promise<ApiResponse<CalendarEventRecord[]>> {
   try {
-    const result = await api.get<CalendarEventRecord[]>('/calendar-events', { year, month })
+    const result = await api.get<CalendarEventRecord[]>('/calendar-events', {
+      year,
+      month,
+      branchId,
+    })
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch calendar events' }
     }

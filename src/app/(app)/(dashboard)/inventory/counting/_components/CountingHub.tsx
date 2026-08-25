@@ -6,6 +6,7 @@ import StockCountList from '../../stock-counts/_components/StockCountList'
 import MobileCountInterface from '../../mobile-count/_components/MobileCountInterface'
 import BatchList from '../../batches/_components/BatchList'
 import AdjustmentList from '../../adjustments/_components/AdjustmentList'
+import ManualRrList from '../../manual-receiving-reports/_components/ManualRrList'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 // Cycle counts are just Stock Counts filtered to countType=cycle (same
@@ -22,6 +23,10 @@ const TABS = [
   { id: 'adjustments', label: 'Stock Adjustments' },
   { id: 'mobile', label: 'Mobile Count' },
   { id: 'batches', label: 'Batches' },
+  // Scenario 29 RR-05 — a small, owner-controlled feature adjacent in spirit
+  // to Stock Adjustments (an exceptional inventory correction), not tied to
+  // any specific stock count.
+  { id: 'manual-rr', label: 'Manual RR' },
 ]
 
 export function CountingHub({ session }: { session: SessionUser }) {
@@ -37,6 +42,8 @@ export function CountingHub({ session }: { session: SessionUser }) {
         <MobileCountInterface session={session} />
       ) : tab === 'batches' ? (
         <BatchList session={session} />
+      ) : tab === 'manual-rr' ? (
+        <ManualRrList session={session} />
       ) : (
         <StockCountList session={session} />
       )}

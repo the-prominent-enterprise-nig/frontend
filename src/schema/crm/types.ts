@@ -84,6 +84,7 @@ export interface Lead {
   stageId: string
   estimatedValue?: number | string | null
   assignedTo?: string | null
+  branchId?: string | null
   convertedToCustomerId?: string | null
   notes?: string | null
   status: LeadStatus
@@ -352,6 +353,54 @@ export interface InstallmentAccount {
 
 export interface InstallmentAccountDetail extends InstallmentAccount {
   arInvoiceId?: string | null
+  installmentScheduleId?: string | null
+  // Scenario 32 item 2 — the financing scheme this account was sold under
+  // (WIP, CR-BR, SSC, TONIK, SKYRO, etc.). Null for hand-entered/imported
+  // accounts (POS-only per developer decision, 2026-08-18).
+  priceUseType?: { id: string; name: string } | null
+  // Scenario 32 item 3 — the selling agent (manager/salesperson on the
+  // paper card) this account was sold under. Same POS-only scoping.
+  sellingAgent?: { id: string; name: string } | null
+  // Scenario 32 item 4 — running totals, same for both POS-originated and
+  // hand-entered accounts (unlike items 1/2/3/5 above, which are POS-only).
+  totalPayments: number | string
+  totalRebates: number | string
+  totalBilling: number | string
+  // Scenario 32 item 6 — IC on the paper card. A plain financing-terms
+  // value, editable for either origin (not tied to POS checkout).
+  insuranceCharge?: number | string | null
+  // Scenario 32 item 6 — TMI on the paper card. Read-only copy of the
+  // linked CreditApplication's totalMonthlyIncome, taken at creation time.
+  // Null for hand-entered/imported accounts (same POS-only reasoning as
+  // items 1/2/3/5 — a CreditApplication only ever exists for a POS sale).
+  totalMonthlyIncome?: number | string | null
+  // Scenario 32 item 5 — per-installment billing history, moved here from
+  // Customer360's schedule-detail modal. Empty for hand-entered/imported
+  // accounts (POS-only per developer decision, 2026-08-18).
+  billingHistory: {
+    lineNumber: number
+    dueDate: string
+    arInvoiceId: string
+    invoiceNumber: string
+    totalAmount: number | string
+    amountPaid: number | string
+    status: string
+    // Developer-requested (2026-08-19): most recent non-cancelled payment
+    // date on this invoice, or null if nothing's been paid yet.
+    paidOn: string | null
+  }[]
+  // Scenario 32 item 1 — resolved via the linked InstallmentSchedule's
+  // PosTransactionLines (mirrors Customer360's InstallmentScheduleDetailModal
+  // pattern); always empty for hand-entered/imported accounts, which have no
+  // linked schedule (POS-only per developer decision, 2026-08-18).
+  unitItems: {
+    id: string
+    itemName: string | null
+    modelNumber: string | null
+    brand: string | null
+    serialNumber: string | null
+    secondarySerialNumber: string | null
+  }[]
   listedCashPrice: number | string
   downPayment: number | string
   amountFinanced: number | string

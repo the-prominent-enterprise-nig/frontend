@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
   useTransactions,
@@ -85,8 +86,11 @@ export default function TransactionsList({ session }: Props) {
   // Type/Status/Date filters still wait for an explicit Apply click (you're
   // usually setting several before submitting), but a plain search box
   // should just search as you stop typing, no button needed.
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchParams = useSearchParams()
+  // Lets an AR Invoice "Sale: <transactionNumber>" link deep-link straight
+  // into a prefilled search, rather than landing on an empty list.
+  const [search, setSearch] = useState(searchParams.get('search') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') ?? '')
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400)
     return () => clearTimeout(timer)
@@ -708,10 +712,12 @@ function TransactionDetail({
     setReprinting(false)
 
     const lineRows = (tx.lines ?? [])
-      .map(
-        (l) =>
-          `<tr><td>${l.itemName}</td><td style="text-align:right">${l.quantity}</td><td style="text-align:right">&#8369;${l.unitPrice.toFixed(2)}</td><td style="text-align:right">&#8369;${l.lineTotal.toFixed(2)}</td></tr>`
-      )
+      .map((l) => {
+        const serials = l.serialNumber
+          ? `<div style="font-size:10px;color:#7c3aed">SN: ${l.serialNumber}${l.secondarySerialNumber ? ` / ${l.secondarySerialNumber}` : ''}</div>`
+          : ''
+        return `<tr><td>${l.itemName}${serials}</td><td style="text-align:right">${l.quantity}</td><td style="text-align:right">&#8369;${l.unitPrice.toFixed(2)}</td><td style="text-align:right">&#8369;${l.lineTotal.toFixed(2)}</td></tr>`
+      })
       .join('')
 
     const payRows = (tx.payments ?? [])
@@ -758,6 +764,7 @@ function TransactionDetail({
 <div class="banner">— REPRINT —</div>
 <p class="center" style="font-weight:bold">${tx.transactionNumber}</p>
 <p class="center">${date}</p>
+${customerName ? `<p class="center">Customer: ${customerName}</p>` : ''}
 <hr>
 <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Total</th></tr></thead><tbody>${lineRows}</tbody></table>
 <hr>
@@ -860,6 +867,7 @@ function TransactionDetail({
                             {l.serialNumber && (
                               <p className="font-mono text-[10px] text-purple-500">
                                 SN: {l.serialNumber}
+                                {l.secondarySerialNumber && ` / ${l.secondarySerialNumber}`}
                               </p>
                             )}
                           </td>

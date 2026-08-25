@@ -17,8 +17,12 @@ import {
 import { formatClassificationLabel } from '@/src/libs/format/text'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import { TaxRates, type TaxRate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import {
+  getAccounts,
+  getTaxRates,
+  type Account,
+  type TaxRate,
+} from '@/src/libs/data/AccountingData'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { addItemTag } from '../_actions/item-tags'
@@ -86,7 +90,6 @@ export default function CreateItemModal({
       requiresSecondarySerial: false,
       isExpiryTracked: false,
       isBundle: false,
-      hasVariants: false,
       isService: false,
       taxRateId: undefined,
       initialWarehouseId: '',
@@ -218,7 +221,7 @@ export default function CreateItemModal({
   useEffect(() => {
     if (!isOpen) return
     ;(async () => {
-      const [a, t] = await Promise.all([getAccounts({ limit: 500 }), TaxRates.list(true)])
+      const [a, t] = await Promise.all([getAccounts({ limit: 500 }), getTaxRates()])
       const aData = a.data as any
       setAccounts((aData?.items ?? aData ?? []) as Account[])
       const activeTaxRates = (t.data ?? []).filter((r) => r.isActive)
@@ -609,7 +612,7 @@ export default function CreateItemModal({
                       .filter((t) => t.isActive)
                       .map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                          {t.name} ({Number(t.rate).toFixed(2)}%)
                         </option>
                       ))}
                   </select>
@@ -966,7 +969,7 @@ export default function CreateItemModal({
                         <option value="">— Use default —</option>
                         {taxRates.map((t) => (
                           <option key={t.id} value={t.id}>
-                            {t.code} — {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                            {t.name} ({Number(t.rate).toFixed(2)}%)
                           </option>
                         ))}
                       </select>

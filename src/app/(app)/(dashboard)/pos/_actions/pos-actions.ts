@@ -10,6 +10,7 @@ import type {
   PosTerminal,
   CashierTerminalAccess,
   PaymentMethodConfig,
+  PaymentMethodOption,
   CreateCustomPaymentMethodInput,
   CreateTerminalInput,
   UpdateTerminalInput,
@@ -2032,6 +2033,66 @@ export async function reorderPaymentMethods(orderedIds: string[]): Promise<ApiRe
   }
 }
 
+// ─── Payment Method Options (Scenario 37) ──────────────────────────────────────
+
+export async function createPaymentMethodOption(
+  configId: string,
+  name: string
+): Promise<ApiResponse<PaymentMethodOption>> {
+  try {
+    // Backend wraps every response as { data, meta } — api.post() returns
+    // that raw parsed body as-is (no auto-unwrapping), so the generic here
+    // must be the wrapper shape, not the flat option (see client.ts).
+    const result = await api.post<{ data: PaymentMethodOption; meta: unknown }>(
+      `/pos/payment-method-configs/${configId}/options`,
+      { name }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to create option' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data.data }
+  } catch {
+    return { success: false, error: 'Failed to create option' }
+  }
+}
+
+export async function updatePaymentMethodOption(
+  configId: string,
+  optionId: string,
+  input: Partial<{ name: string; isEnabled: boolean; displayOrder: number }>
+): Promise<ApiResponse<PaymentMethodOption>> {
+  try {
+    const result = await api.patch<{ data: PaymentMethodOption; meta: unknown }>(
+      `/pos/payment-method-configs/${configId}/options/${optionId}`,
+      input
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to update option' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true, data: result.data.data }
+  } catch {
+    return { success: false, error: 'Failed to update option' }
+  }
+}
+
+export async function deletePaymentMethodOption(
+  configId: string,
+  optionId: string
+): Promise<ApiResponse<void>> {
+  try {
+    const result = await api.delete(`/pos/payment-method-configs/${configId}/options/${optionId}`)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to delete option' }
+    }
+    revalidateTag('pos-payment-methods', 'max')
+    return { success: true }
+  } catch {
+    return { success: false, error: 'Failed to delete option' }
+  }
+}
+
 // ─── Account Mapping ──────────────────────────────────────────────────────────
 
 export interface AccountMapping {
@@ -2938,9 +2999,14 @@ export interface MissingCogsReport {
 // Scenario-01 COGS-visibility gap closure (Part 2): surfaces completed
 // sales whose lines never got a COGS/Inventory posting (computeCogs()
 // failed at sale time) instead of that failure staying silent.
-export async function getMissingCogsReport(): Promise<ApiResponse<MissingCogsReport>> {
+export async function getMissingCogsReport(
+  branchId?: string
+): Promise<ApiResponse<MissingCogsReport>> {
   try {
-    const result = await api.get<MissingCogsReport>('/pos/transactions/reports/missing-cogs')
+    const result = await api.get<MissingCogsReport>(
+      '/pos/transactions/reports/missing-cogs',
+      branchId ? { branchId } : undefined
+    )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch missing-COGS report' }
     }
