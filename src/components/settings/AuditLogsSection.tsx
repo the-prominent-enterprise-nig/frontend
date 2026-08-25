@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useState, useCallback, useTransition } from 'react'
+import { Fragment, useState, useMemo, useCallback, useTransition } from 'react'
 import { ClipboardList, ChevronLeft, ChevronRight, ChevronDown, Search, X } from 'lucide-react'
 import { getAuditLogs } from '@/src/app/(app)/(dashboard)/settings/_actions/get-audit-logs'
 import type {
@@ -9,6 +9,8 @@ import type {
   UserAuditLog,
   ScopeType,
 } from '@/src/schema/settings/audit-logs'
+import type { BranchDetail } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-green-100 text-green-700',
@@ -69,7 +71,13 @@ function getMetadataItems(log: UserAuditLog): string[] {
   return items.filter((item): item is string => typeof item === 'string')
 }
 
-function ScopeBadge({ log }: { log: UserAuditLog }) {
+function ScopeBadge({
+  log,
+  branchNameById,
+}: {
+  log: UserAuditLog
+  branchNameById: Map<string, string>
+}) {
   // Rows merged in from AccountingAuditLog (SCEN-29) carry no scope at all —
   // that table has no scopeType column.
   if (!log.scopeType) {
@@ -78,9 +86,13 @@ function ScopeBadge({ log }: { log: UserAuditLog }) {
 
   const label = SCOPE_LABELS[log.scopeType] ?? log.scopeType
   const color = SCOPE_COLORS[log.scopeType] ?? 'bg-zinc-100 text-zinc-600'
+  // Falls back to a truncated ID when the branch can't be resolved (e.g. a
+  // since-deleted branch, or the /branches lookup failing) — never blocks
+  // the row itself from rendering.
+  const branchName = log.scopeBranchId && branchNameById.get(log.scopeBranchId)
   const detail =
     log.scopeType === 'BRANCH' && log.scopeBranchId
-      ? ` · ${log.scopeBranchId.slice(0, 8)}`
+      ? ` · ${branchName ?? log.scopeBranchId.slice(0, 8)}`
       : log.scopeType === 'DEPARTMENT' && log.scopeDepartmentId
         ? ` · ${log.scopeDepartmentId.slice(0, 8)}`
         : ''
@@ -90,7 +102,7 @@ function ScopeBadge({ log }: { log: UserAuditLog }) {
       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}
       title={
         log.scopeType === 'BRANCH'
-          ? `Branch ID: ${log.scopeBranchId ?? '—'}`
+          ? `Branch: ${branchName ?? log.scopeBranchId ?? '—'}`
           : log.scopeType === 'DEPARTMENT'
             ? `Department ID: ${log.scopeDepartmentId ?? '—'}`
             : 'All branches and departments'
@@ -132,13 +144,32 @@ function getChangedKeys(
   ).filter((key) => JSON.stringify(oldValues?.[key]) !== JSON.stringify(newValues?.[key]))
 }
 
+// A bare foreign-key field (cashierId, terminalId, branchId, ...) reads as
+// noise in a one-line preview — its raw UUID says nothing about what
+// happened, and is often already shown elsewhere on the same row (e.g. a
+// session's cashierId duplicating the Actor column when someone opens their
+// own session). Still shown when it's genuinely the only field available
+// (never fully hidden), just deprioritized and truncated.
+function isIdLikeKey(key: string): boolean {
+  return /Id$/.test(key)
+}
+
+// Long ID-shaped values (UUIDs) dominate a compact preview line — shortened
+// here only, never in the full expanded SnapshotDiff view where precision
+// matters more than scannability.
+function formatPreviewValue(key: string, value: unknown): string {
+  const formatted = formatSnapshotValue(value)
+  return isIdLikeKey(key) && formatted.length > 12 ? `${formatted.slice(0, 8)}…` : formatted
+}
+
 // A one-line "what actually happened" summary shown directly in the row, so
 // scanning the log doesn't require expanding every entry. Prioritizes the
 // `status` transition (the primary marker for almost every action in this
-// system) or a `*Reason` field (the most human-relevant part of a
-// reject/decline), falling back to whatever changed first. CREATE/DELETE-
-// like rows have only one side to draw from, so they preview a couple of
-// the new (or removed) record's own fields instead of a transition.
+// system), a `*Reason` field (the most human-relevant part of a
+// reject/decline), or any other non-ID field, falling back to whatever
+// changed first only if every changed field is ID-shaped. CREATE/DELETE-like
+// rows have only one side to draw from, so they preview a couple of the new
+// (or removed) record's own fields instead of a transition.
 function buildActionPreview(log: UserAuditLog): string | null {
   const { oldValues, newValues } = log
   if (oldValues && newValues) {
@@ -147,8 +178,9 @@ function buildActionPreview(log: UserAuditLog): string | null {
     const primary =
       changed.find((key) => key === 'status') ??
       changed.find((key) => /reason$/i.test(key)) ??
+      changed.find((key) => !isIdLikeKey(key)) ??
       changed[0]
-    const line = `${primary}: ${formatSnapshotValue(oldValues[primary])} → ${formatSnapshotValue(newValues[primary])}`
+    const line = `${primary}: ${formatPreviewValue(primary, oldValues[primary])} → ${formatPreviewValue(primary, newValues[primary])}`
     const remaining = changed.length - 1
     return remaining > 0 ? `${line} (+${remaining} more)` : line
   }
@@ -162,11 +194,16 @@ function buildActionPreview(log: UserAuditLog): string | null {
 
   const soleSide = newValues ?? oldValues
   if (!soleSide) return null
-  const keys = Object.keys(soleSide)
-    .filter((key) => soleSide[key] !== null && soleSide[key] !== undefined)
-    .slice(0, 2)
+  const populatedKeys = Object.keys(soleSide).filter(
+    (key) => soleSide[key] !== null && soleSide[key] !== undefined
+  )
+  // Non-ID fields first (e.g. status, amount, name) — only reach for an
+  // ID-shaped field if literally nothing else was populated, so a preview
+  // is never silently empty just because every field happened to be an FK.
+  const nonIdKeys = populatedKeys.filter((key) => !isIdLikeKey(key))
+  const keys = (nonIdKeys.length > 0 ? nonIdKeys : populatedKeys).slice(0, 2)
   if (keys.length === 0) return null
-  return keys.map((key) => `${key}: ${formatSnapshotValue(soleSide[key])}`).join(', ')
+  return keys.map((key) => `${key}: ${formatPreviewValue(key, soleSide[key])}`).join(', ')
 }
 
 // Compact before/after grid for rows carrying an AccountingAuditLog
@@ -271,11 +308,32 @@ function Pagination({
   )
 }
 
-export default function AuditLogsSection({ initialData }: { initialData: AuditLogListResponse }) {
+export default function AuditLogsSection({
+  initialData,
+  branches = [],
+  resourceTypes = [],
+}: {
+  initialData: AuditLogListResponse
+  branches?: BranchDetail[]
+  resourceTypes?: string[]
+}) {
   const [data, setData] = useState<AuditLogListResponse>(initialData)
   const [filters, setFilters] = useState<AuditLogQueryParams>({ page: 1, limit: 10 })
   const [isPending, startTransition] = useTransition()
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const branchNameById = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches])
+  // SearchableSelect filters by label text, so typing "pos" or "transaction"
+  // already works without any extra fuzzy-matching logic — the label is
+  // "<Module> · <Resource>" (e.g. "POS · Transaction"), built from the same
+  // formatResourceType() used everywhere else on this page.
+  const resourceTypeOptions = useMemo(
+    () =>
+      resourceTypes.map((value) => {
+        const { module, resource } = formatResourceType(value)
+        return { value, label: module ? `${module} · ${resource}` : resource }
+      }),
+    [resourceTypes]
+  )
 
   const fetchLogs = useCallback((newFilters: AuditLogQueryParams) => {
     startTransition(async () => {
@@ -325,14 +383,14 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
               />
             </div>
           </div>
-          <div className="w-full lg:w-48">
+          <div className="w-full lg:w-56">
             <label className="mb-1 block text-xs font-medium text-zinc-500">Resource Type</label>
-            <input
-              type="text"
-              placeholder="e.g. inventory:item"
+            <SearchableSelect
               value={filters.resourceType ?? ''}
-              onChange={(e) => applyFilters({ resourceType: e.target.value || undefined })}
-              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400"
+              onChange={(value) => applyFilters({ resourceType: value || undefined })}
+              options={resourceTypeOptions}
+              placeholder="Search e.g. POS, transaction…"
+              clearable
             />
           </div>
           <div className="w-full lg:w-40">
@@ -451,7 +509,7 @@ export default function AuditLogsSection({ initialData }: { initialData: AuditLo
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <ScopeBadge log={log} />
+                          <ScopeBadge log={log} branchNameById={branchNameById} />
                         </td>
                         <td className="px-4 py-3 text-zinc-500" suppressHydrationWarning>
                           {new Date(log.createdAt).toLocaleString()}

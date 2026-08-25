@@ -9,6 +9,11 @@ export interface ActivityEntry {
   resourceId?: string
   resourceName?: string
   metadata?: Record<string, unknown>
+  // Only ever populated for the AccountingAuditLog-backed types added in
+  // Scenario 29 Gap 9 (inventory:stock-adjustment, inventory:transfer,
+  // pos:gift-card) — the original 3 UserAuditLog-backed types have no
+  // before/after columns and always send these as null/absent.
+  newValues?: Record<string, unknown> | null
   createdAt: string
 }
 

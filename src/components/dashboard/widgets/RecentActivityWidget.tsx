@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ShoppingCart, CheckCircle, Undo2, Activity } from 'lucide-react'
+import {
+  ShoppingCart,
+  CheckCircle,
+  Undo2,
+  Activity,
+  ClipboardCheck,
+  ArrowRightLeft,
+  Gift,
+} from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import {
   getRecentActivity,
@@ -20,6 +28,30 @@ function timeAgo(iso: string): string {
   return `${days}d ago`
 }
 
+// Human-readable past-tense verb for an AccountingAuditLog action code
+// (e.g. 'APPROVE_HQ' -> 'approved (HQ)'), used by the two Scenario 29 Gap 9
+// inventory cases below whose action set is larger than a simple lookup.
+function actionVerb(action: string): string {
+  const map: Record<string, string> = {
+    CREATE: 'created',
+    CONFIRM: 'confirmed',
+    INVESTIGATE: 'flagged for investigation',
+    APPROVE: 'approved',
+    APPROVE_MANAGER: 'approved (manager)',
+    APPROVE_HQ: 'approved (HQ)',
+    REJECT: 'rejected',
+    REJECT_MANAGER: 'rejected (manager)',
+    REJECT_HQ: 'rejected (HQ)',
+    DELETE: 'withdrawn',
+    REQUEST_FROM_POS: 'requested',
+    ACCEPT: 'accepted',
+    DISPATCH: 'dispatched',
+    RECEIVE: 'received',
+    CANCEL: 'cancelled',
+  }
+  return map[action] ?? action.toLowerCase().replace(/_/g, ' ')
+}
+
 function describe(entry: ActivityEntry): {
   icon: typeof ShoppingCart
   color: string
@@ -27,7 +59,33 @@ function describe(entry: ActivityEntry): {
   sub: string
 } {
   const meta = entry.metadata ?? {}
+  const items = Array.isArray(meta.items)
+    ? (meta.items as unknown[]).filter((i): i is string => typeof i === 'string')
+    : []
   switch (entry.resourceType) {
+    case 'inventory:stock-adjustment':
+      return {
+        icon: ClipboardCheck,
+        color: 'text-orange-500 bg-orange-50',
+        label: `Stock adjustment ${actionVerb(entry.action)}`,
+        sub: items.join(', '),
+      }
+    case 'inventory:transfer':
+      return {
+        icon: ArrowRightLeft,
+        color: 'text-indigo-500 bg-indigo-50',
+        label: `Stock transfer ${actionVerb(entry.action)}`,
+        sub: items.join(', '),
+      }
+    case 'pos:gift-card': {
+      const cardNumber = entry.newValues?.cardNumber
+      return {
+        icon: Gift,
+        color: 'text-pink-500 bg-pink-50',
+        label: `Gift card ${entry.action === 'ISSUE' ? 'issued' : 'voided'}`,
+        sub: typeof cardNumber === 'string' ? `#${cardNumber}` : '',
+      }
+    }
     case 'pos:transaction': {
       const amount = Number(meta.totalAmount ?? 0)
       const kind = meta.transactionType === 'refund' ? 'Refund' : 'Sale'
