@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Bell, BellOff, CheckCheck } from 'lucide-react'
@@ -18,6 +18,7 @@ import {
   useNotificationsSocket,
   type NotificationPushPayload,
 } from '@/src/libs/hooks/useNotificationsSocket'
+import { groupByDateBucket } from './notification-types'
 import NotificationListItem from './NotificationListItem'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type {
@@ -28,10 +29,11 @@ import type {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
+  const [unreadOnly, setUnreadOnly] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: unreadData } = useUnreadNotificationCount()
-  const { data: listData, isLoading } = useNotificationsList({}, open)
+  const { data: listData, isLoading } = useNotificationsList({ unreadOnly }, open)
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
 
@@ -41,7 +43,12 @@ export default function NotificationBell() {
         success: true,
         data: { count: (old?.data?.count ?? 0) + 1 },
       }))
-      const asItem: NotificationItem = { ...payload, isRead: false, readAt: null }
+      const asItem: NotificationItem = {
+        ...payload,
+        isRead: false,
+        readAt: null,
+        archivedAt: null,
+      }
       queryClient.setQueriesData<ApiResponse<NotificationListResponse>>(
         { queryKey: [LIST_KEY_PREFIX], exact: false },
         (old) =>
@@ -56,7 +63,8 @@ export default function NotificationBell() {
   })
 
   const unreadCount = unreadData?.data?.count ?? 0
-  const notifications = listData?.data?.data ?? []
+  const notifications = useMemo(() => listData?.data?.data ?? [], [listData])
+  const grouped = useMemo(() => groupByDateBucket(notifications), [notifications])
 
   function handleItemClick(notification: NotificationItem) {
     setOpen(false)
@@ -119,6 +127,36 @@ export default function NotificationBell() {
               )}
             </div>
 
+            <div className="flex items-center gap-1 border-b border-zinc-100 px-3.5 py-2">
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(false)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  !unreadOnly
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(true)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  unreadOnly
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                Unread
+                {unreadCount > 0 && (
+                  <span className="rounded-full bg-prominent-orange-100 px-1.5 py-px text-[10px] font-semibold text-prominent-orange-700">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
             <div className="max-h-96 divide-y divide-zinc-50 overflow-y-auto">
               {isLoading && (
                 <div className="space-y-3 p-3">
@@ -137,17 +175,28 @@ export default function NotificationBell() {
               {!isLoading && notifications.length === 0 && (
                 <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
                   <BellOff className="h-6 w-6 text-zinc-300" strokeWidth={1.5} />
-                  <p className="text-sm text-zinc-400">No notifications yet</p>
+                  <p className="text-sm text-zinc-400">
+                    {unreadOnly ? "You're all caught up" : 'No notifications yet'}
+                  </p>
                 </div>
               )}
 
               {!isLoading &&
-                notifications.map((notification) => (
-                  <NotificationListItem
-                    key={notification.id}
-                    notification={notification}
-                    onClick={handleItemClick}
-                  />
+                grouped.map(([bucket, items]) => (
+                  <div key={bucket}>
+                    <p className="bg-zinc-50/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      {bucket}
+                    </p>
+                    <div className="divide-y divide-zinc-50">
+                      {items.map((notification) => (
+                        <NotificationListItem
+                          key={notification.id}
+                          notification={notification}
+                          onClick={handleItemClick}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
             </div>
 

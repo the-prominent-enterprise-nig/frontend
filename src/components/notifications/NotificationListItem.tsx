@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { cn } from '@/src/libs/tailwind-merge/utils'
-import { formatRelativeTime } from '@/src/libs/format/date'
+import { formatCompactRelativeTime } from '@/src/libs/format/date'
 import {
   NOTIFICATION_TYPE_META,
   STATUS_STYLE,
@@ -89,7 +89,7 @@ export default function NotificationListItem({
           {notification.message}
         </span>
         <span className="mt-1 block text-[11px] text-zinc-400">
-          {formatRelativeTime(notification.createdAt)}
+          {formatCompactRelativeTime(notification.createdAt)}
         </span>
       </span>
     </Link>

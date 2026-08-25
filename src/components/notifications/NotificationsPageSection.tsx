@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Bell, CheckCheck, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Archive, Bell, CheckCheck, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { showToast } from '@/src/components/ui/toast'
 import {
@@ -10,6 +10,7 @@ import {
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
 } from '@/src/libs/query/notifications/useNotifications'
+import { groupByDateBucket } from './notification-types'
 import NotificationListItem from './NotificationListItem'
 import type {
   NotificationItem,
@@ -19,27 +20,7 @@ import type { ApiResponse } from '@/src/libs/api/client'
 
 const LIMIT = 20
 
-/** Buckets are computed per-page (not globally) — good enough for a 20-item slice, and avoids an extra pass over data we don't have. */
-function dateBucket(iso: string): string {
-  const date = new Date(iso)
-  const startOfDay = (d: Date): number =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000)
-
-  if (diffDays <= 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return 'This week'
-  return 'Earlier'
-}
-
-function groupByDate(notifications: NotificationItem[]): [string, NotificationItem[]][] {
-  const groups = new Map<string, NotificationItem[]>()
-  for (const notification of notifications) {
-    const bucket = dateBucket(notification.createdAt)
-    groups.set(bucket, [...(groups.get(bucket) ?? []), notification])
-  }
-  return Array.from(groups.entries())
-}
+type FilterTab = 'all' | 'unread' | 'archived'
 
 function Pagination({
   page,
@@ -121,23 +102,23 @@ export default function NotificationsPageSection({
   initialData: ApiResponse<NotificationListResponse>
 }) {
   const [page, setPage] = useState(1)
-  const [unreadOnly, setUnreadOnly] = useState(false)
+  const [tab, setTab] = useState<FilterTab>('all')
 
   const { data: unreadData } = useUnreadNotificationCount()
   const { data, isLoading, isPlaceholderData } = useNotificationsList(
-    { page, limit: LIMIT, unreadOnly },
+    { page, limit: LIMIT, unreadOnly: tab === 'unread', archived: tab === 'archived' },
     true
   )
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
 
-  const list = data ?? (page === 1 && !unreadOnly ? initialData : undefined)
+  const list = data ?? (page === 1 && tab === 'all' ? initialData : undefined)
   const total = list?.data?.total ?? 0
   const limit = list?.data?.limit ?? LIMIT
   const lastPage = Math.max(1, Math.ceil(total / limit))
   const unreadCount = unreadData?.data?.count ?? 0
   const notifications = useMemo(() => list?.data?.data ?? [], [list])
-  const grouped = useMemo(() => groupByDate(notifications), [notifications])
+  const grouped = useMemo(() => groupByDateBucket(notifications), [notifications])
 
   function handleItemClick(notification: NotificationItem): void {
     if (!notification.isRead) {
@@ -158,8 +139,8 @@ export default function NotificationsPageSection({
     })
   }
 
-  function handleTab(next: boolean): void {
-    setUnreadOnly(next)
+  function handleTab(next: FilterTab): void {
+    setTab(next)
     setPage(1)
   }
 
@@ -169,18 +150,22 @@ export default function NotificationsPageSection({
         <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
           <button
             type="button"
-            onClick={() => handleTab(false)}
+            onClick={() => handleTab('all')}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-              !unreadOnly ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              tab === 'all'
+                ? 'bg-white text-zinc-900 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700'
             }`}
           >
             All
           </button>
           <button
             type="button"
-            onClick={() => handleTab(true)}
+            onClick={() => handleTab('unread')}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-              unreadOnly ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+              tab === 'unread'
+                ? 'bg-white text-zinc-900 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700'
             }`}
           >
             Unread
@@ -190,9 +175,21 @@ export default function NotificationsPageSection({
               </span>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => handleTab('archived')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+              tab === 'archived'
+                ? 'bg-white text-zinc-900 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700'
+            }`}
+          >
+            <Archive className="h-3.5 w-3.5" />
+            Archived
+          </button>
         </div>
 
-        {unreadCount > 0 && (
+        {tab !== 'archived' && unreadCount > 0 && (
           <button
             type="button"
             onClick={handleMarkAllRead}
@@ -211,18 +208,26 @@ export default function NotificationsPageSection({
 
         {!isLoading && notifications.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-3 py-16 text-center">
-            {unreadOnly ? (
+            {tab === 'unread' ? (
               <CheckCircle2 className="h-8 w-8 text-emerald-300" strokeWidth={1.5} />
+            ) : tab === 'archived' ? (
+              <Archive className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
             ) : (
               <Bell className="h-8 w-8 text-zinc-300" strokeWidth={1.5} />
             )}
             <p className="text-sm font-medium text-zinc-600">
-              {unreadOnly ? "You're all caught up" : 'No notifications yet'}
+              {tab === 'unread'
+                ? "You're all caught up"
+                : tab === 'archived'
+                  ? 'No archived notifications'
+                  : 'No notifications yet'}
             </p>
             <p className="text-xs text-zinc-400">
-              {unreadOnly
+              {tab === 'unread'
                 ? 'Nothing new needs your attention right now.'
-                : "We'll let you know when something comes up."}
+                : tab === 'archived'
+                  ? 'Notifications move here automatically after 30 days.'
+                  : "We'll let you know when something comes up."}
             </p>
           </div>
         )}

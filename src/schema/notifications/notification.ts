@@ -38,6 +38,7 @@ export interface NotificationItem {
   createdAt: string
   isRead: boolean
   readAt: string | null
+  archivedAt: string | null
 }
 
 export interface NotificationListResponse {

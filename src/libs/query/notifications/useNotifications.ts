@@ -33,7 +33,7 @@ export function useUnreadNotificationCount() {
 
 /** Lazy — only fetches once the panel has been opened at least once. */
 export function useNotificationsList(
-  params: { page?: number; limit?: number; unreadOnly?: boolean } = {},
+  params: { page?: number; limit?: number; unreadOnly?: boolean; archived?: boolean } = {},
   enabled: boolean
 ) {
   return useQuery({
