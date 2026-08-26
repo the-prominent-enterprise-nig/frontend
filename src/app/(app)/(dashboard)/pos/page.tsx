@@ -1,8 +1,19 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useTransactions, useSessions, useTerminals } from './_hooks/usePos'
+import {
+  useTransactions,
+  useSessions,
+  useTerminals,
+  usePendingVoidRequests,
+  usePendingCancellationRequests,
+  usePendingRefundRequests,
+  usePendingReleaseFormRequests,
+} from './_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import {
   ShoppingCart,
@@ -12,7 +23,21 @@ import {
   RefreshCw,
   ArrowRight,
   ReceiptText,
+  Ban,
+  ClipboardX,
+  RotateCcw,
+  FileCheck,
+  CheckCircle2,
 } from 'lucide-react'
+
+// Tailwind's JIT scanner needs literal class names, so grid-cols can't be
+// templated from approvalQueues.length directly.
+const APPROVAL_GRID_COLS: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+}
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', {
@@ -28,6 +53,10 @@ export default function PosOverviewPage() {
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
 
+  const { data: me } = useMe()
+  const canReadApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_READ)
+  const canOverrideApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
+
   const autoRefresh = { refetchInterval: 30_000, refetchOnWindowFocus: true }
   const {
     data: txData,
@@ -37,6 +66,50 @@ export default function PosOverviewPage() {
   } = useTransactions(branchFilter, autoRefresh)
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
   const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
+
+  // Void/release only require read access to view (matching those pages'
+  // own guards); cancellation/refund approvals require override access —
+  // gating the fetch itself, not just the render, avoids a 403 round-trip
+  // for roles like Cashier that can't see these queues at all.
+  const { data: voidData } = usePendingVoidRequests(branchId ?? undefined, canReadApprovals)
+  const { data: releaseData } = usePendingReleaseFormRequests(
+    branchId ?? undefined,
+    canReadApprovals
+  )
+  const { data: cancellationData } = usePendingCancellationRequests(
+    branchId ?? undefined,
+    canOverrideApprovals
+  )
+  const { data: refundData } = usePendingRefundRequests(branchId ?? undefined, canOverrideApprovals)
+
+  const approvalQueues = [
+    canReadApprovals && {
+      label: 'Void Requests',
+      count: voidData?.data?.length ?? 0,
+      href: '/pos/void-requests',
+      icon: Ban,
+    },
+    canOverrideApprovals && {
+      label: 'Cancellations',
+      count: cancellationData?.data?.length ?? 0,
+      href: '/pos/cancellation-requests',
+      icon: ClipboardX,
+    },
+    canOverrideApprovals && {
+      label: 'Refunds',
+      count: refundData?.data?.length ?? 0,
+      href: '/pos/return-refund-approvals',
+      icon: RotateCcw,
+    },
+    canReadApprovals && {
+      label: 'Release Forms',
+      count: releaseData?.data?.length ?? 0,
+      href: '/pos/release-approvals',
+      icon: FileCheck,
+    },
+  ].filter((q): q is Exclude<typeof q, false | undefined> => !!q)
+
+  const pendingApprovalsTotal = approvalQueues.reduce((sum, q) => sum + q.count, 0)
 
   type Row = Record<string, unknown>
   const transactions = (() => {
@@ -139,6 +212,48 @@ export default function PosOverviewPage() {
             </button>
           </div>
         </div>
+
+        {/* Needs Attention */}
+        {approvalQueues.length > 0 && (
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Needs Attention
+            </h2>
+            {pendingApprovalsTotal === 0 ? (
+              <div className="flex items-center gap-2 rounded-xl border border-dashed border-gray-200 bg-white px-5 py-4 text-sm text-gray-500">
+                <CheckCircle2 size={16} className="text-green-500" />
+                Nothing pending approval right now.
+              </div>
+            ) : (
+              <div
+                className={`grid grid-cols-2 gap-3 ${
+                  APPROVAL_GRID_COLS[approvalQueues.length] ?? 'lg:grid-cols-4'
+                }`}
+              >
+                {approvalQueues.map((q) => (
+                  <button
+                    key={q.href}
+                    onClick={() => router.push(q.href)}
+                    disabled={q.count === 0}
+                    className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md disabled:cursor-default disabled:opacity-50 disabled:hover:shadow-sm"
+                  >
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                        q.count > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-400'
+                      }`}
+                    >
+                      <q.icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xl font-bold text-gray-900">{q.count}</p>
+                      <p className="truncate text-xs text-gray-500">{q.label}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
