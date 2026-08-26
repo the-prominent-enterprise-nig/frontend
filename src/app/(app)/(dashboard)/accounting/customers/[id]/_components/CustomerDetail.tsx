@@ -1,10 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, FileText, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CircleCheck, FileText, ShieldCheck } from 'lucide-react'
 import { getCustomerById, Customer } from '@/src/libs/data/AccountingData'
-import { fmtDate } from '@/src/libs/data/AccountingV2Data'
+import { ARInvoices, fmtDate, fmtMoney, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
+
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+}
 
 const LIFECYCLE_COLORS: Record<string, string> = {
   alive: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -16,6 +24,12 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Own fetch of this customer's AR invoices — not borrowed from CRM's
+  // Customer360 (which shows this same kind of receivables summary today
+  // even though AR is Accounting's own data), so this page is
+  // self-sufficient instead of sending accountants elsewhere to see what a
+  // customer owes.
+  const [invoices, setInvoices] = useState<ARInvoice[]>([])
 
   useEffect(() => {
     getCustomerById(id).then((res) => {
@@ -27,6 +41,25 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
       setLoading(false)
     })
   }, [id])
+
+  useEffect(() => {
+    ARInvoices.list({ customerId: id }).then((res) => setInvoices(res.data?.items ?? []))
+  }, [id])
+
+  const { unpaid, outstandingTotal, nextDue, recentInvoices } = useMemo(() => {
+    const sorted = [...invoices].sort(
+      (a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()
+    )
+    const unpaidInvoices = invoices
+      .filter((i) => i.totalAmount - i.amountPaid > 0.01)
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    return {
+      unpaid: unpaidInvoices,
+      outstandingTotal: unpaidInvoices.reduce((s, i) => s + (i.totalAmount - i.amountPaid), 0),
+      nextDue: unpaidInvoices[0] ?? null,
+      recentInvoices: sorted.slice(0, 5),
+    }
+  }, [invoices])
 
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
@@ -83,6 +116,35 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
               </div>
             </div>
 
+            {nextDue ? (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm">
+                <span className="text-zinc-700">
+                  Next payment due{' '}
+                  <span className="font-semibold">
+                    {fmtMoney(nextDue.totalAmount - nextDue.amountPaid)}
+                  </span>{' '}
+                  on {fmtDate(nextDue.dueDate)}
+                </span>
+                <span className="flex items-center gap-3 text-zinc-500">
+                  {unpaid.length} upcoming ·{' '}
+                  <span className="font-medium">{fmtMoney(outstandingTotal)}</span> total
+                  <Link
+                    href={`/accounting/ar-invoices?customerId=${id}`}
+                    className="flex items-center gap-1 font-medium text-purple-700 hover:underline"
+                  >
+                    View all <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </span>
+              </div>
+            ) : (
+              !loading &&
+              invoices.length > 0 && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  <CircleCheck className="h-4 w-4" /> No outstanding AR balance.
+                </div>
+              )
+            )}
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <DetailCard title="Contact">
                 <Row label="Type" value={customer.customerType ?? 'individual'} />
@@ -126,6 +188,58 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
                 <Row label="Created" value={fmtDate(customer.createdAt)} />
                 <Row label="Updated" value={fmtDate(customer.updatedAt)} />
               </DetailCard>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900">Recent Invoices</h2>
+                {invoices.length > 5 && (
+                  <Link
+                    href={`/accounting/ar-invoices?customerId=${id}`}
+                    className="flex items-center gap-1 text-xs font-medium text-purple-700 hover:underline"
+                  >
+                    View all {invoices.length} <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+              {recentInvoices.length === 0 ? (
+                <p className="py-4 text-center text-sm text-zinc-400">No invoices yet.</p>
+              ) : (
+                <ul className="divide-y divide-zinc-100">
+                  {recentInvoices.map((inv) => (
+                    <li key={inv.id}>
+                      <Link
+                        href={`/accounting/ar-invoices/${inv.id}`}
+                        className="flex items-center justify-between gap-3 py-2.5 text-sm hover:bg-zinc-50"
+                      >
+                        <div>
+                          <span className="font-mono text-xs text-purple-700">
+                            {inv.invoiceNumber}
+                          </span>
+                          <span
+                            className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-medium ${INVOICE_STATUS_BADGE[inv.status] ?? 'bg-gray-100 text-gray-600'}`}
+                          >
+                            {inv.status}
+                          </span>
+                          <div className="mt-0.5 text-xs text-zinc-500">
+                            {fmtDate(inv.invoiceDate)}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-right">
+                          <span className="block font-semibold text-zinc-900">
+                            {fmtMoney(inv.totalAmount)}
+                          </span>
+                          {inv.totalAmount - inv.amountPaid > 0.01 && (
+                            <span className="text-xs text-red-600">
+                              {fmtMoney(inv.totalAmount - inv.amountPaid)} due
+                            </span>
+                          )}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </>
         )}

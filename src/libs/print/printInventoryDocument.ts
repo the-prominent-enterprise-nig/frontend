@@ -61,21 +61,26 @@ export function printInventoryDocument(
 }
 
 /**
- * Purpose-built layout for the Receiving Report print/download — replicates
- * NIG's pre-printed paper Receiving Report pad (ruled ledger table with a
- * Brand/Model/Type description block) rather than reusing
- * printInventoryDocument()'s generic "Enterprise" meta-grid shell.
+ * Builds the Receiving Report document as a standalone HTML string — same
+ * typographic system as printPurchaseOrderDocument() below (title left /
+ * logo right, stacked label-over-value meta columns, light #ccc-bordered
+ * table) so the two lettered documents read as one family, rather than the
+ * earlier version's pre-printed-pad look (underlined fill-in blanks, heavy
+ * ruled borders). Kept separate from printReceivingReportDocument() so a
+ * preview (e.g. an iframe) can render the exact same markup without opening
+ * a popup window.
  */
-export function printReceivingReportDocument(data: unknown): void {
+export function buildReceivingReportHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
   const supplier = rr.supplier as { name?: string } | undefined
   const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
+  const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '')
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -115,92 +120,105 @@ export function printReceivingReportDocument(data: unknown): void {
     })
     .join('')
 
-  const win = window.open('', '_blank', 'width=950,height=750')
-  if (!win) return
-
-  win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    .top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #111; padding-bottom: 12px; margin-bottom: 4px; }
-    .brand-logo { height: 56px; width: auto; object-fit: contain; }
-    .doc-title { text-align: center; flex: 1; }
-    .doc-title h1 { font-size: 20px; letter-spacing: 2px; margin: 0; }
-    .doc-no { text-align: right; font-size: 13px; }
-    .doc-no .no { font-weight: 700; font-size: 15px; }
-    .fields { border-bottom: 3px solid #111; padding: 10px 0 12px; margin-bottom: 0; }
-    .field-row { display: flex; gap: 24px; margin: 3px 0; }
-    .field-row > div { flex: 1; }
-    .field-label { font-weight: 700; }
-    .field-value { border-bottom: 1px solid #999; display: inline-block; min-width: 220px; padding-bottom: 1px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 0; }
-    th, td { border: 1px solid #333; padding: 6px 8px; font-size: 12.5px; }
-    thead th { background: #f2f2f2; text-align: center; font-weight: 700; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
-    tbody tr td { height: 26px; }
-    .filler-row td { border-left: 1px solid #333; border-right: 1px solid #333; border-bottom: none; }
-    .footer-row { display: flex; border: 1px solid #333; border-top: none; }
-    .footer-row > div { padding: 8px 10px; }
-    .footer-branch { flex: 1; border-right: 1px solid #333; }
-    .footer-total { width: 160px; border-right: 1px solid #333; display: flex; align-items: center; gap: 8px; }
-    .footer-total .value { font-weight: 700; }
-    .footer-receivedby { width: 220px; }
-    .footer-label { font-weight: 700; margin-right: 6px; }
-    .footer-value { border-bottom: 1px solid #999; display: inline-block; min-width: 90px; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { font-weight: 700; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 120px; }
+    .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
+      <h1>Receiving Report</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
-      <div class="doc-title"><h1>RECEIVING REPORT</h1></div>
-      <div class="doc-no">
-        <p class="no">No. ${esc(doc.documentNumber)}</p>
-        <p>Date: ${fmtDate(rr.receivedAt)}</p>
-      </div>
     </div>
 
-    <div class="fields">
-      <div class="field-row">
-        <div><span class="field-label">Received from:</span> <span class="field-value">${esc(supplier?.name) || '&nbsp;'}</span></div>
-        <div><span class="field-label">Driver/Helper:</span> <span class="field-value">&nbsp;</span></div>
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(supplier?.name) || '—'}</p>
+        <p class="party-address">Driver/Helper: —</p>
       </div>
-      <div class="field-row">
-        <div><span class="field-label">Ref:</span> <span class="field-value">${esc(ref) || '&nbsp;'}</span></div>
-        <div><span class="field-label">Dated:</span> <span class="field-value">&nbsp;</span></div>
+      <div class="meta">
+        <p class="meta-label">No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
+        <p class="meta-label">Ref</p>
+        <p class="meta-value">${esc(ref) || '—'}</p>
+        <p class="meta-label">Dated</p>
+        <p class="meta-value">—</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
       </div>
     </div>
 
     <table>
       <thead>
         <tr>
-          <th rowspan="2" style="width:14%">PART NO. / Serial No.</th>
-          <th colspan="3">DESCRIPTION</th>
-          <th rowspan="2" style="width:8%">QTY.</th>
-          <th rowspan="2" style="width:12%">UNIT PRICE</th>
-          <th rowspan="2" style="width:14%">AMOUNT</th>
+          <th rowspan="2" style="width:14%">Part No. / Serial No.</th>
+          <th colspan="3">Description</th>
+          <th rowspan="2" style="width:8%">Qty</th>
+          <th rowspan="2" style="width:12%">Unit price</th>
+          <th rowspan="2" style="width:14%">Amount</th>
         </tr>
         <tr>
-          <th>BRAND</th>
-          <th>MODEL</th>
-          <th>TYPE</th>
+          <th>Brand</th>
+          <th>Model</th>
+          <th>Type</th>
         </tr>
       </thead>
-      <tbody>
-        ${rows}
-        ${Array.from({ length: Math.max(0, 4 - lines.length) })
-          .map(
-            () =>
-              '<tr class="filler-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
-          )
-          .join('')}
-      </tbody>
+      <tbody>${rows}</tbody>
     </table>
-    <div class="footer-row">
-      <div class="footer-branch"><span class="footer-label">BRANCH</span> ${esc(warehouse?.branch?.name ?? warehouse?.name) || ''}</div>
-      <div class="footer-total"><span class="footer-label">TOTAL</span> <span class="value">${totalQty}</span>${hasAnyCost ? `<span class="value">₱${fmt(totalAmount)}</span>` : ''}</div>
-      <div class="footer-receivedby"><span class="footer-label">RECEIVED BY:</span> <span class="footer-value">${esc((rr.receivedByName as string | null) ?? '') || '&nbsp;'}</span></div>
+
+    <div class="total-wrap">
+      <table>
+        <tr>
+          <td class="label">Total</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${hasAnyCost ? ` — ${fmt(totalAmount)}` : ''}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Received by:</p>
+        <div class="sig-line"></div>
+        ${rr.receivedByName ? `<p class="sig-name">${esc(rr.receivedByName)}</p>` : ''}
+      </div>
     </div>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
-  </body></html>`)
+  </body></html>`
+}
+
+export function printReceivingReportDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildReceivingReportHtml(data))
   win.document.close()
 }
 
@@ -282,7 +300,7 @@ export function printPurchaseOrderDocument(
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 64px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }

@@ -46,6 +46,9 @@ yarn.lock
 # vercel
 .vercel
 
+# claude code agent worktrees
+.claude/worktrees/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

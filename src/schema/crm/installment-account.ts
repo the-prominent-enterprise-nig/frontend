@@ -49,7 +49,6 @@ export const updateInstallmentAccountSchema = createInstallmentAccountSchema.par
   status: InstallmentAccountStatusEnum.optional(),
   category: InstallmentAccountCategoryEnum.optional(),
   classification: InstallmentAccountClassificationEnum.optional(),
-  agingBucket: z.string().optional().or(z.literal('')),
   arrears: z.coerce.number().min(0).optional(),
   penalty: z.coerce.number().min(0).optional(),
 })

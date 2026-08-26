@@ -22,6 +22,10 @@ function brandModelLabel(item: ItemSummary): string {
   return brand ?? model ?? '—'
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
+}
+
 const LIFECYCLE_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
   discontinued: 'bg-orange-100 text-orange-700',
@@ -225,6 +229,9 @@ export default function ItemMasterTable({
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Brand / Model
               </th>
+              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Price
+              </th>
               <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Status
               </th>
@@ -250,31 +257,31 @@ export default function ItemMasterTable({
                 }
               >
                 <td className="px-4 py-3">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-zinc-900">{item.name}</span>
-                      {item.isBundle === true && (
-                        <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
-                          Bundle
-                        </span>
-                      )}
-                      {item.isService === true && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                          Service
-                        </span>
-                      )}
-                      {(item._count?.serialNumbers ?? 0) > 0 && (
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
-                          {item._count?.serialNumbers} unit
-                          {item._count?.serialNumbers !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-mono text-xs text-zinc-500">{item.sku}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-zinc-900">{item.name}</span>
+                    {item.isBundle === true && (
+                      <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                        Bundle
+                      </span>
+                    )}
+                    {item.isService === true && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        Service
+                      </span>
+                    )}
+                    {(item._count?.serialNumbers ?? 0) > 0 && (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                        {item._count?.serialNumbers} unit
+                        {item._count?.serialNumbers !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
                 <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
+                <td className="px-4 py-3 text-right text-zinc-700">
+                  {item.sellingPrice != null ? formatCurrency(item.sellingPrice) : '—'}
+                </td>
                 <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                   {/* Scenario 16: lifecycle (active/discontinued/archived) is a
                       post-publish concept — showing it alongside "Pending
