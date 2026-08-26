@@ -21,7 +21,6 @@ import {
 import { installmentAccountsApi, remindersApi } from '@/src/libs/api/crm'
 import EarlyPayoffModal from '@/src/components/crm/EarlyPayoffModal'
 import RecordPaymentModal from '@/src/components/crm/RecordPaymentModal'
-import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import CompleteReminderModal from '@/src/components/crm/CompleteReminderModal'
 import type {
@@ -334,14 +333,6 @@ export default function InstallmentAccountDetail({
                 DAM
               </span>
             )}
-            {account.recommendedCategory && account.recommendedCategory !== account.category && (
-              <span
-                title="Computed from this account's aging data — not applied automatically"
-                className="rounded-full border border-dashed border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
-              >
-                Suggests: {account.recommendedCategory}
-              </span>
-            )}
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -375,225 +366,224 @@ export default function InstallmentAccountDetail({
         </div>
       </header>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-1">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Customer & assignment</h2>
-          <dl className="space-y-2 text-[13px]">
-            <Row label="Customer" value={account.customer.name} />
-            <Row label="Phone" value={account.customer.phone ?? '—'} />
-            <Row label="Email" value={account.customer.email ?? '—'} />
-            <Row label="Branch" value={account.branch?.name ?? '—'} />
-            <Row
-              label="Collector"
-              value={
-                account.collector
-                  ? `${account.collector.stubNumber} — ${account.collector.name}`
-                  : '—'
-              }
-            />
-            <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
-          </dl>
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Customer & assignment</h2>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+          <Row label="Customer" value={account.customer.name} />
+          <Row label="Phone" value={account.customer.phone ?? '—'} />
+          <Row label="Email" value={account.customer.email ?? '—'} />
+          <Row label="Branch" value={account.branch?.name ?? '—'} />
+          <Row
+            label="Collector"
+            value={
+              account.collector
+                ? `${account.collector.stubNumber} — ${account.collector.name}`
+                : '—'
+            }
+          />
+          <Row label="Salesperson" value={account.sellingAgent?.name ?? '—'} />
+        </dl>
+      </section>
 
-          <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Collection tags</h2>
-          <dl className="space-y-2 text-[13px]">
-            <Row label="Classification" value={account.classification ?? '—'} />
-            <Row
-              label="DAM entered"
-              value={
-                account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'
-              }
-            />
-            <Row label="Aging bucket" value={account.agingBucket ?? '—'} />
-            <Row label="Months run" value={String(account.monthsRun)} />
-            <Row label="Points" value={String(account.points)} />
-            <div className="flex justify-between gap-3">
-              <dt className="text-gray-500">Aging color</dt>
-              <dd className="text-right">
-                <AgingColorBadge color={account.aging?.color} />
-              </dd>
-            </div>
-          </dl>
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Collection tags</h2>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+          <Row label="Classification" value={account.classification ?? '—'} />
+          <Row
+            label="DAM entered"
+            value={account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'}
+          />
+          <Row label="Months run" value={String(account.monthsRun)} />
+          <Row label="Points" value={String(account.points)} />
+        </dl>
 
-          {account.category !== 'C' &&
-            !pendingGraduation &&
-            canEdit &&
-            account.status === 'active' && (
-              <div className="mt-4 border-t border-gray-100 pt-4">
-                <button
-                  onClick={handleRequestGraduation}
-                  disabled={requestingGraduation}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <ArrowUpCircle className="h-4 w-4" />
-                  {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
-                </button>
-                {graduationError && (
-                  <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
-                )}
-              </div>
-            )}
-
-          {pendingGraduation && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <p className="text-[13px] font-medium text-amber-900">
-                Pending graduation to Category C
-              </p>
-              <p className="mt-0.5 text-[12px] text-amber-700">
-                Requires management approval before the category changes.
-              </p>
-              {canApproveGraduation && (
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    onClick={() => handleApproveGraduation(pendingGraduation.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => setRejectingRequestId(pendingGraduation.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
+        {account.category !== 'C' &&
+          !pendingGraduation &&
+          canEdit &&
+          account.status === 'active' && (
             <div className="mt-4 border-t border-gray-100 pt-4">
               <button
-                onClick={handleRequestDamEscalation}
-                disabled={requestingDamEscalation}
+                onClick={handleRequestGraduation}
+                disabled={requestingGraduation}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
-                <AlertOctagon className="h-4 w-4" />
-                {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
+                <ArrowUpCircle className="h-4 w-4" />
+                {requestingGraduation ? 'Requesting…' : 'Request graduation to Category C'}
               </button>
-              {damEscalationError && (
-                <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+              {graduationError && (
+                <p className="mt-2 text-[12px] text-red-600">{graduationError}</p>
               )}
             </div>
           )}
 
-          {pendingDamEscalation && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
-              <p className="text-[13px] font-medium text-red-900">Pending DAM escalation</p>
-              <p className="mt-0.5 text-[12px] text-red-700">
-                Requires management approval before the account moves to DAM.
-              </p>
-              {canApproveDamEscalation && (
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    onClick={() => handleApproveDamEscalation(pendingDamEscalation.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => setRejectingDamRequestId(pendingDamEscalation.id)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Unit</h2>
-          {account.unitItems.length > 0 ? (
-            <ul className="mb-5 divide-y divide-gray-100 text-[13px]" data-testid="unit-items">
-              {account.unitItems.map((unit) => (
-                <li key={unit.id} className="flex items-start justify-between gap-3 py-1.5">
-                  <span className="text-gray-700">
-                    {unit.itemName
-                      ? unit.brand
-                        ? `${unit.itemName} (${unit.brand})`
-                        : unit.itemName
-                      : '—'}
-                  </span>
-                  <span className="text-right text-gray-500">
-                    {unit.modelNumber && <div>Model: {unit.modelNumber}</div>}
-                    {unit.serialNumber && (
-                      <div className="font-mono text-[11px] text-purple-600">
-                        SN: {unit.serialNumber}
-                        {unit.secondarySerialNumber && ` / ${unit.secondarySerialNumber}`}
-                      </div>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mb-5 text-[13px] text-gray-400">
-              Not available for hand-entered/imported accounts.
+        {pendingGraduation && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[13px] font-medium text-amber-900">
+              Pending graduation to Category C
             </p>
-          )}
-
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Financing</h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-            <Row label="Scheme" value={account.priceUseType?.name ?? '—'} />
-            <Row label="Listed cash price" value={peso(account.listedCashPrice)} />
-            <Row label="Down payment" value={peso(account.downPayment)} />
-            <Row label="Amount financed" value={peso(account.amountFinanced)} />
-            <Row label="Term" value={`${account.termMonths} mo`} />
-            <Row label="MI factor" value={String(account.miFactor)} />
-            <Row label="Monthly installment" value={peso(account.monthlyInstallment)} />
-            <Row label="PNV" value={peso(account.pnv)} />
-            <Row label="Total price" value={peso(account.totalPrice)} />
-            <Row label="Interest differential" value={peso(account.interestDifferential)} />
-            <Row label="PPD" value={peso(account.ppd)} />
-            <Row
-              label="IC (Insurance charge)"
-              value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
-            />
-            <Row
-              label="TMI (Total monthly income)"
-              value={account.totalMonthlyIncome != null ? peso(account.totalMonthlyIncome) : '—'}
-            />
+            <p className="mt-0.5 text-[12px] text-amber-700">
+              Requires management approval before the category changes.
+            </p>
+            {canApproveGraduation && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => handleApproveGraduation(pendingGraduation.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Approve
+                </button>
+                <button
+                  onClick={() => setRejectingRequestId(pendingGraduation.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                  Reject
+                </button>
+              </div>
+            )}
           </div>
+        )}
 
-          <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Ledger balances</h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-            <Row label="Opening balance" value={peso(account.openingBalance)} />
-            <Row label="Current balance" value={peso(account.currentBalance)} />
-            <Row label="DP balance" value={peso(account.dpBalance)} />
-            <Row label="Arrears" value={peso(account.arrears)} />
-            <Row label="Penalty" value={peso(account.penalty)} />
-            <Row label="Not yet due" value={peso(account.notYetDue)} />
-            <Row label="Total due" value={peso(account.totalDue)} />
-            <Row label="MI due" value={peso(account.miDue)} />
-            <Row label="Uncollected" value={peso(account.uncollected)} />
+        {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <button
+              onClick={handleRequestDamEscalation}
+              disabled={requestingDamEscalation}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <AlertOctagon className="h-4 w-4" />
+              {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
+            </button>
+            {damEscalationError && (
+              <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+            )}
           </div>
+        )}
 
-          <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Running totals</h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-            <Row label="Total billing" value={peso(account.totalBilling)} />
-            <Row label="Total payments" value={peso(account.totalPayments)} />
-            <Row label="Total rebates" value={peso(account.totalRebates)} />
+        {pendingDamEscalation && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
+            <p className="text-[13px] font-medium text-red-900">Pending DAM escalation</p>
+            <p className="mt-0.5 text-[12px] text-red-700">
+              Requires management approval before the account moves to DAM.
+            </p>
+            {canApproveDamEscalation && (
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => handleApproveDamEscalation(pendingDamEscalation.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-700"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Approve
+                </button>
+                <button
+                  onClick={() => setRejectingDamRequestId(pendingDamEscalation.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                  Reject
+                </button>
+              </div>
+            )}
           </div>
+        )}
+      </section>
 
-          <h2 className="mb-3 mt-5 text-[14px] font-semibold text-gray-900">Last OR</h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-            <Row label="OR number" value={account.lastOrNumber ?? '—'} />
-            <Row
-              label="OR date"
-              value={account.lastOrDate ? new Date(account.lastOrDate).toLocaleDateString() : '—'}
-            />
-            <Row
-              label="OR amount"
-              value={account.lastOrAmount != null ? peso(account.lastOrAmount) : '—'}
-            />
-          </div>
-        </section>
-      </div>
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Unit</h2>
+        {account.unitItems.length > 0 ? (
+          <ul className="divide-y divide-gray-100 text-[13px]" data-testid="unit-items">
+            {account.unitItems.map((unit) => (
+              <li key={unit.id} className="py-1.5">
+                <div className="text-gray-700">
+                  {unit.itemName
+                    ? unit.brand
+                      ? `${unit.itemName} (${unit.brand})`
+                      : unit.itemName
+                    : '—'}
+                </div>
+                <div className="mt-0.5 text-gray-500">
+                  {unit.modelNumber && <div>Model: {unit.modelNumber}</div>}
+                  {unit.serialNumber && (
+                    <div className="font-mono text-[11px] text-purple-600">
+                      SN: {unit.serialNumber}
+                      {unit.secondarySerialNumber && ` / ${unit.secondarySerialNumber}`}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-gray-400">
+            Not available for hand-entered/imported accounts.
+          </p>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Financing</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+          <Row label="Scheme" value={account.priceUseType?.name ?? '—'} />
+          <Row label="Listed cash price" value={peso(account.listedCashPrice)} />
+          <Row label="Down payment" value={peso(account.downPayment)} />
+          <Row label="Amount financed" value={peso(account.amountFinanced)} />
+          <Row label="Term" value={`${account.termMonths} mo`} />
+          <Row label="MI factor" value={String(account.miFactor)} />
+          <Row label="Monthly installment" value={peso(account.monthlyInstallment)} />
+          <Row label="PNV" value={peso(account.pnv)} />
+          <Row label="Total price" value={peso(account.totalPrice)} />
+          <Row label="Interest differential" value={peso(account.interestDifferential)} />
+          <Row label="PPD" value={peso(account.ppd)} />
+          <Row
+            label="IC (Insurance charge)"
+            value={account.insuranceCharge != null ? peso(account.insuranceCharge) : '—'}
+          />
+          <Row
+            label="TMI (Total monthly income)"
+            value={account.totalMonthlyIncome != null ? peso(account.totalMonthlyIncome) : '—'}
+          />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Ledger balances</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+          <Row label="Opening balance" value={peso(account.openingBalance)} />
+          <Row label="Current balance" value={peso(account.currentBalance)} />
+          <Row label="DP balance" value={peso(account.dpBalance)} />
+          <Row label="Arrears" value={peso(account.arrears)} />
+          <Row label="Penalty" value={peso(account.penalty)} />
+          <Row label="Not yet due" value={peso(account.notYetDue)} />
+          <Row label="Total due" value={peso(account.totalDue)} />
+          <Row label="MI due" value={peso(account.miDue)} />
+          <Row label="Uncollected" value={peso(account.uncollected)} />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Running totals</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+          <Row label="Total billing" value={peso(account.totalBilling)} />
+          <Row label="Total payments" value={peso(account.totalPayments)} />
+          <Row label="Total rebates" value={peso(account.totalRebates)} />
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last OR</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
+          <Row label="OR number" value={account.lastOrNumber ?? '—'} />
+          <Row
+            label="OR date"
+            value={account.lastOrDate ? new Date(account.lastOrDate).toLocaleDateString() : '—'}
+          />
+          <Row
+            label="OR amount"
+            value={account.lastOrAmount != null ? peso(account.lastOrAmount) : '—'}
+          />
+        </div>
+      </section>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Billing history</h2>

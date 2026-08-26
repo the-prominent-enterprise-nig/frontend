@@ -1,8 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { ChevronRight, Loader2, Printer, RefreshCw, X } from 'lucide-react'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import {
+  buildReceivingReportHtml,
+  printReceivingReportDocument,
+} from '@/src/libs/print/printInventoryDocument'
 
 interface ReceivingReportRow {
   id: string
@@ -19,6 +23,23 @@ export default function ReceivingReportsList() {
   const [rows, setRows] = useState<ReceivingReportRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+
+  // Clicking a row opens the formatted document inline (an iframe rendering
+  // the exact same markup printReceivingReportDocument() would print) so
+  // the user can view it before deciding to print, instead of a click
+  // immediately opening a print-ready popup window.
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ id: string; data: unknown; html: string } | null>(null)
+
+  const openPreview = useCallback(async (id: string) => {
+    setPreviewingId(id)
+    try {
+      const res = await Reports.receivingReportDocument(id)
+      if (res.data) setPreview({ id, data: res.data, html: buildReceivingReportHtml(res.data) })
+    } finally {
+      setPreviewingId(null)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,24 +96,29 @@ export default function ReceivingReportsList() {
               <th className="px-3 py-2 text-right">Amount</th>
               <th className="px-3 py-2 text-center">GL Posted</th>
               <th className="px-3 py-2 text-left">Matched Bill</th>
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={7} className="text-center text-gray-400 py-8">
+                <td colSpan={8} className="text-center text-gray-400 py-8">
                   Loading…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center text-gray-400 py-8">
+                <td colSpan={8} className="text-center text-gray-400 py-8">
                   {rows.length === 0 ? 'No receiving reports.' : 'No matches for that search.'}
                 </td>
               </tr>
             ) : (
               filtered.map((r) => (
-                <tr key={r.id}>
+                <tr
+                  key={r.id}
+                  onClick={() => openPreview(r.id)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
                   <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
                   <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
                   <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
@@ -108,12 +134,49 @@ export default function ReceivingReportsList() {
                   <td className="px-3 py-2 text-xs">
                     {r.matchedBill ? `${r.matchedBill.billNumber} (${r.matchedBill.status})` : '—'}
                   </td>
+                  <td className="px-3 py-2 text-right">
+                    {previewingId === r.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-gray-400 ml-auto" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-gray-300 ml-auto" />
+                    )}
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+          <div className="flex h-full max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+              <h3 className="text-sm font-semibold text-gray-900">Receiving Report Preview</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => printReceivingReportDocument(preview.data)}
+                  className="flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-800"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print
+                </button>
+                <button
+                  onClick={() => setPreview(null)}
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <iframe
+              title="Receiving report preview"
+              srcDoc={preview.html}
+              className="flex-1 w-full"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -20,7 +20,7 @@ import { gotoReady, clickStable, fillStable, loginAs } from './utils'
 // runs as Owner instead.
 
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
-const SEARCH_PLACEHOLDER = 'Search by name, SKU, or serial number…'
+const SEARCH_PLACEHOLDER = 'Search by name or serial number…'
 const STOCK_EMAIL = 'technova.b1.stock@test.com'
 const OWNER_EMAIL = 'technova.owner@test.com'
 const ACCOUNTING_EMAIL = 'technova.b1.accounting@test.com'
@@ -35,16 +35,24 @@ async function switchTo(page: Page, email: string): Promise<void> {
   await loginAs(page, email, DEV_PASSWORD)
 }
 
-async function createDraftItem(page: Page): Promise<{ id: string; sku: string }> {
+// The Item Master list's search box doesn't match SKU (SKU is intentionally
+// not searchable/displayed there — see ItemMasterTable/ItemMasterList), so
+// the unique suffix that used to just live in `sku` also has to live in
+// `name` for these UI-driven searches to reliably isolate this one item.
+async function createDraftItem(
+  page: Page
+): Promise<{ id: string; sku: string; searchTerm: string }> {
   const listRes = await page.request.get('/api/inventory/items?limit=1')
   const listJson = await listRes.json()
   const baseUnitId = listJson.data[0].baseUnit.id
-  const sku = `E2E-GOV-${Date.now()}`
+  const suffix = `${Date.now()}`
+  const sku = `E2E-GOV-${suffix}`
+  const searchTerm = `E2E Governance Test Item ${suffix}`
   const createRes = await page.request.post('/api/inventory/items', {
-    data: { sku, name: 'E2E Governance Test Item', baseUnitId },
+    data: { sku, name: searchTerm, baseUnitId },
   })
   const item = await createRes.json()
-  return { id: item.id as string, sku }
+  return { id: item.id as string, sku, searchTerm }
 }
 
 test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () => {
@@ -77,11 +85,11 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
     page,
   }) => {
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
-    const { id, sku } = await createDraftItem(page)
+    const { id, sku, searchTerm } = await createDraftItem(page)
     createdItemIds.push(id)
 
     await gotoReady(page, '/inventory/items')
-    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
     await expect(page.getByRole('table').getByText('Draft', { exact: true })).toBeVisible({
       timeout: 10_000,
     })
@@ -96,7 +104,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
     // Accountant confirms tax/GL mapping
     await switchTo(page, ACCOUNTING_EMAIL)
     await gotoReady(page, '/inventory/items')
-    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
     await page.getByRole('button', { name: 'Confirm' }).click()
     const confirmModal = page.getByRole('dialog', { name: 'Confirm Tax/GL Mapping' })
     await expect(confirmModal).toBeVisible()
@@ -110,7 +118,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
     // Master Data Approver approves — item publishes
     await switchTo(page, APPROVER_EMAIL)
     await gotoReady(page, '/inventory/items')
-    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
     await page.getByRole('button', { name: 'Approve' }).click()
     const approveModal = page.getByRole('dialog', { name: 'Approve Item' })
     await expect(approveModal).toBeVisible()
@@ -131,11 +139,11 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
 
   test('Accountant can reject a submitted item, visible with its reason', async ({ page }) => {
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
-    const { id, sku } = await createDraftItem(page)
+    const { id, searchTerm } = await createDraftItem(page)
     createdItemIds.push(id)
 
     await gotoReady(page, '/inventory/items')
-    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
     await page.getByRole('button', { name: 'Submit' }).click()
     await expect(
       page.getByRole('table').getByText('Pending Accounting', { exact: true })
@@ -145,7 +153,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
 
     await switchTo(page, ACCOUNTING_EMAIL)
     await gotoReady(page, '/inventory/items')
-    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+    await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
     await page.getByRole('button', { name: 'Reject' }).click()
     const rejectModal = page.getByRole('dialog', { name: 'Reject — Tax/GL Mapping' })
     await expect(rejectModal).toBeVisible()
@@ -166,7 +174,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
   // gate this scenario adds.
   test('a plain items:read caller never sees a draft item in the list', async ({ page }) => {
     await loginAs(page, STOCK_EMAIL, DEV_PASSWORD)
-    const { id, sku } = await createDraftItem(page)
+    const { id, searchTerm } = await createDraftItem(page)
     createdItemIds.push(id)
 
     await switchTo(page, CASHIER_EMAIL)
@@ -176,7 +184,7 @@ test.describe('Inventory — Item Master Governance (Scenario 16, Part 2)', () =
     // re-fetches (same race fillAllStable's docstring describes) — retry
     // the fill+check together so any wipe just re-fills and re-checks.
     await expect(async () => {
-      await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), sku)
+      await fillStable(page.getByPlaceholder(SEARCH_PLACEHOLDER), searchTerm)
       await expect(page.getByText('No items found')).toBeVisible({ timeout: 3_000 })
     }).toPass({ timeout: 15_000 })
   })

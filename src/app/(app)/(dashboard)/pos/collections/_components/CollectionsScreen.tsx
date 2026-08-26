@@ -402,6 +402,7 @@ export default function CollectionsScreen() {
                               )}
                               {collectable && (
                                 <button
+                                  disabled={selectedInvoiceIds.size > 0}
                                   onClick={() =>
                                     setCollectingLine({
                                       line,
@@ -414,7 +415,12 @@ export default function CollectionsScreen() {
                                           : null,
                                     })
                                   }
-                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50"
+                                  title={
+                                    selectedInvoiceIds.size > 0
+                                      ? 'Dues are selected below — use "Pay Selected" to collect them together, or clear the selection to collect this one individually.'
+                                      : undefined
+                                  }
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
                                 >
                                   <Banknote className="h-3.5 w-3.5" />
                                   Collect

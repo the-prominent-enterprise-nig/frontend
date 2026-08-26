@@ -6982,6 +6982,22 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/reports/receiving-reports/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ReportsController_receivingReportDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/reports/customer-statement/{id}': {
     parameters: {
       query?: never
@@ -7280,6 +7296,22 @@ export interface paths {
     get?: never
     put?: never
     post: operations['ARInvoicesController_resolveWithholdingVariance']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ar-invoices/{id}/void': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['ARInvoicesController_void']
     delete?: never
     options?: never
     head?: never
@@ -10096,6 +10128,11 @@ export interface components {
        * @example 12
        */
       cardInstallmentTerm?: number
+      /**
+       * @description bank_transfer only — the cashier confirmed the credit already landed at the register, so this posts straight to Cash in Bank instead of the usual clearing account.
+       * @default false
+       */
+      bankTransferVerifiedAtRegister: boolean
     }
     SendReceiptDto: {
       /**
@@ -12506,7 +12543,6 @@ export interface components {
       category?: 'A' | 'B' | 'C' | 'D'
       /** @enum {string} */
       classification?: 'official' | 'arrears' | 'not_moving'
-      agingBucket?: string
       /** @enum {string} */
       status: 'active' | 'closed' | 'early_closed' | 'written_off'
       createdAt: string
@@ -12571,8 +12607,6 @@ export interface components {
       category?: 'A' | 'B' | 'C' | 'D'
       /** @enum {string} */
       classification?: 'official' | 'arrears' | 'not_moving'
-      /** @example current | 30 | 60 | 90 | over_90 */
-      agingBucket?: string
       arrears?: number
       penalty?: number
       miDue?: number
@@ -13414,6 +13448,42 @@ export interface components {
       journalType?: string
       payee?: string
       transactions?: components['schemas']['TransactionLineDto'][]
+    }
+    CreateARInvoiceDto: {
+      /** @description Auto-generated (AR-<timestamp>) if omitted */
+      invoiceNumber?: string
+      /** @description Customer being billed */
+      customerId?: string
+      invoiceDate?: string
+      dueDate?: string
+      description?: string
+      /** @default 0 */
+      subtotal: number
+      /** @default 0 */
+      taxAmount: number
+      totalAmount?: number
+      costCenter?: string
+      /** @description VAT | NON_VAT | EXEMPT */
+      taxCode?: string
+      branchId?: string
+    }
+    UpdateARInvoiceDto: {
+      /** @description Auto-generated (AR-<timestamp>) if omitted */
+      invoiceNumber?: string
+      /** @description Customer being billed */
+      customerId?: string
+      invoiceDate?: string
+      dueDate?: string
+      description?: string
+      /** @default 0 */
+      subtotal: number
+      /** @default 0 */
+      taxAmount: number
+      totalAmount?: number
+      costCenter?: string
+      /** @description VAT | NON_VAT | EXEMPT */
+      taxCode?: string
+      branchId?: string
     }
     RecordArPaymentDto: {
       /** @description Amount received */
@@ -24341,7 +24411,6 @@ export interface operations {
         /** @description Scenario 20 (DAM) — filter to accounts in the DAM track */
         inDam?: boolean
         status?: 'active' | 'closed' | 'early_closed' | 'written_off'
-        agingBucket?: string
         page?: number
         limit?: number
       }
@@ -26339,6 +26408,25 @@ export interface operations {
       }
     }
   }
+  ReportsController_receivingReportDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   ReportsController_customerStatement: {
     parameters: {
       query?: never
@@ -26500,7 +26588,11 @@ export interface operations {
       path?: never
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateARInvoiceDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -26611,7 +26703,11 @@ export interface operations {
       }
       cookie?: never
     }
-    requestBody?: never
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateARInvoiceDto']
+      }
+    }
     responses: {
       200: {
         headers: {
@@ -26762,6 +26858,25 @@ export interface operations {
         'application/json': components['schemas']['ResolveWithholdingVarianceDto']
       }
     }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ARInvoicesController_void: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
     responses: {
       201: {
         headers: {

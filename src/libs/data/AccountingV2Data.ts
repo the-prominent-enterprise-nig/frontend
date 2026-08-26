@@ -222,6 +222,8 @@ export const Reports = {
   // Scenario 36 Gap 11 — every receiving report, matched or not (unlike
   // GRNI above) — Accounting had no way to browse these at all before this.
   receivingReports: () => api.get<any>('/reports/receiving-reports'),
+  receivingReportDocument: (id: string) =>
+    api.get<any>(`/reports/receiving-reports/${id}/document`),
   customerStatement: (id: string) => api.get<any>(`/reports/customer-statement/${id}`),
   supplierStatement: (id: string) => api.get<any>(`/reports/supplier-statement/${id}`),
   biSummary: () => api.get<any>('/reports/bi-summary'),
@@ -367,6 +369,13 @@ export interface RecordArPaymentInput {
   collectorId?: string
 }
 
+export interface ARInvoiceSerialGoodsReceipt {
+  code: string
+  receivedAt?: string
+  supplier: { name: string } | null
+  purchaseOrderNumber?: string | null
+}
+
 export interface ARInvoiceInstallmentItem {
   id: string
   itemId: string
@@ -374,7 +383,11 @@ export interface ARInvoiceInstallmentItem {
   unitPrice: number | string
   item: { id: string; name: string; brand: { name: string } | null } | null
   lineTotal: number
-  serialNumber: { id: string; serialNumber: string } | null
+  serialNumber: {
+    id: string
+    serialNumber: string
+    goodsReceiptLine?: { goodsReceipt: ARInvoiceSerialGoodsReceipt } | null
+  } | null
   secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
@@ -382,6 +395,10 @@ export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
+  /** This due's position within the schedule (e.g. 2 of 12) — the rest of
+   * this detail is schedule-wide and identical across every due-date
+   * invoice on the same plan. */
+  lineNumber: number | null
 }
 
 export interface ARInvoice {
@@ -471,6 +488,7 @@ export const ARInvoices = {
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
+  void: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/void`, {}),
   // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
   // backend), so a real "Check overdue" button is the only way to fire it
   // outside an external scheduler.
@@ -642,8 +660,35 @@ export interface APBill {
   // Scenario 10 Part 2 — the PO this invoice bills against, and the RRs
   // matched to it, for the 3-way match.
   purchaseOrderId?: string | null
-  purchaseOrder?: { id: string; code: string } | null
-  goodsReceipts?: { id: string; code: string }[]
+  purchaseOrder?: {
+    id: string
+    code: string
+    status:
+      | 'draft'
+      | 'approved'
+      | 'sent'
+      | 'partially_received'
+      | 'fully_received'
+      | 'closed'
+      | 'cancelled'
+  } | null
+  goodsReceipts?: {
+    id: string
+    code: string
+    receivedAt?: string
+    purchaseOrderNumber?: string | null
+    deliveryReceiptNumber?: string | null
+    supplierInvoiceNumber?: string | null
+    // Line-level detail — only populated by APBills.get() (the detail
+    // page), findAll()'s list view stays on the lighter shape above.
+    lines?: {
+      id: string
+      quantityReceived: number
+      unitCost?: number | null
+      isFreebie?: boolean
+      item?: { id: string; name: string; sku?: string } | null
+    }[]
+  }[]
   // Scenario 10 Part 4 — manual voucher number + two-step approval status.
   voucherNumber?: string | null
   voucherApprovalStatus?:
@@ -668,6 +713,7 @@ export const APBills = {
   list: (params?: { search?: string; status?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
+  getDocument: (id: string) => api.get<unknown>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),

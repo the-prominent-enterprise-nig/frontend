@@ -2,12 +2,24 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Download, Loader2 } from 'lucide-react'
 import { ARInvoices, fmtMoney, fmtDate, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
 import {
   printInventoryDocument,
   type PrintDocumentEnvelope,
 } from '@/src/libs/print/printInventoryDocument'
+
+// Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
+// than imported from there so this page doesn't pull in that file's much
+// heavier client-component tree (react-hook-form, item/serial comboboxes)
+// just for a 5-entry color map.
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+}
 
 // Scenario 25 — print-ready AR Invoice body, mirroring PurchaseOrderList's
 // renderPoBody pattern (same printInventoryDocument() shell). Includes the
@@ -16,6 +28,7 @@ import {
 function renderInvoiceBody(doc: PrintDocumentEnvelope): string {
   const inv = doc.document as Record<string, unknown>
   const customer = inv.customer as { name?: string } | undefined
+  const posTransaction = inv.posTransaction as { transactionNumber?: string } | null
   const installmentDetail = inv.installmentDetail as {
     termMonths: number | null
     rebate: number | string | null
@@ -35,12 +48,25 @@ function renderInvoiceBody(doc: PrintDocumentEnvelope): string {
       const unitPrice = Number(l.unitPrice ?? 0)
       const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const brand = item?.brand ? ` — ${item.brand.name}` : ''
-      const serialNumber = l.serialNumber as { serialNumber?: string } | null
+      const serialNumber = l.serialNumber as {
+        serialNumber?: string
+        goodsReceiptLine?: {
+          goodsReceipt?: {
+            code?: string
+            supplier?: { name?: string } | null
+            purchaseOrderNumber?: string | null
+          } | null
+        } | null
+      } | null
       const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
       const serials = serialNumber
         ? `<div style="font-size:10px;color:#7c3aed">SN: ${serialNumber.serialNumber}${secondarySerialNumber ? ` / ${secondarySerialNumber.serialNumber}` : ''}</div>`
         : ''
-      return `<tr><td>${item?.name ?? '—'}${brand}${serials}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
+      const goodsReceipt = serialNumber?.goodsReceiptLine?.goodsReceipt
+      const receiving = goodsReceipt
+        ? `<div style="font-size:10px;color:#999">RR: ${goodsReceipt.code}${goodsReceipt.supplier ? ` — ${goodsReceipt.supplier.name}` : ''}${goodsReceipt.purchaseOrderNumber ? ` · PO: ${goodsReceipt.purchaseOrderNumber}` : ''}</div>`
+        : ''
+      return `<tr><td>${item?.name ?? '—'}${brand}${serials}${receiving}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
     })
     .join('')
 
@@ -49,6 +75,7 @@ function renderInvoiceBody(doc: PrintDocumentEnvelope): string {
     <div><p class="label">Invoice Date</p><p>${fmtDateStr(inv.invoiceDate)}</p></div>
     <div><p class="label">Due Date</p><p>${fmtDateStr(inv.dueDate)}</p></div>
     <div><p class="label">Status</p><p>${inv.status ?? '—'}</p></div>
+    ${posTransaction ? `<div><p class="label">Source Sale</p><p>${posTransaction.transactionNumber ?? '—'}</p></div>` : ''}
   </div>
   ${
     installmentDetail
@@ -125,9 +152,19 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">{invoice.invoiceNumber}</h1>
-          <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
             {invoice.customer?.name}
-            <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
+            {invoice.installmentDetail?.lineNumber != null &&
+              invoice.installmentDetail.termMonths && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  Payment {invoice.installmentDetail.lineNumber} of{' '}
+                  {invoice.installmentDetail.termMonths}
+                </span>
+              )}
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-bold ${INVOICE_STATUS_BADGE[invoice.status] ?? 'bg-gray-100 text-gray-600'}`}
+            >
+              {invoice.status === 'PAID' && <CheckCircle2 className="h-4 w-4" />}
               {invoice.status}
             </span>
             {invoice.status === 'OVERDUE' && (
@@ -136,6 +173,23 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
                 overdue
               </span>
             )}
+          </div>
+          <div className="mt-1.5 flex flex-col gap-1 text-xs text-gray-400">
+            {invoice.posTransaction && (
+              <span>
+                Source sale:{' '}
+                <Link
+                  href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+                  className="text-purple-600 hover:underline"
+                >
+                  {invoice.posTransaction.transactionNumber}
+                </Link>
+              </span>
+            )}
+            <span>Invoice date: {fmtDate(invoice.invoiceDate)}</span>
+            <span>Due date: {fmtDate(invoice.dueDate)}</span>
+            <span>Subtotal: {fmtMoney(invoice.subtotal)}</span>
+            <span>Tax: {fmtMoney(invoice.taxAmount)}</span>
           </div>
         </div>
         <button
@@ -152,91 +206,83 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
         </button>
       </header>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-1">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Details</h2>
-          <dl className="space-y-2 text-[13px]">
-            {invoice.posTransaction && (
-              <Row
-                label="Source sale"
-                value={
-                  <Link
-                    href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
-                    className="text-purple-700 hover:underline"
-                  >
-                    {invoice.posTransaction.transactionNumber}
-                  </Link>
-                }
-              />
-            )}
-            <Row label="Invoice date" value={fmtDate(invoice.invoiceDate)} />
-            <Row label="Due date" value={fmtDate(invoice.dueDate)} />
-            <Row label="Subtotal" value={fmtMoney(invoice.subtotal)} />
-            <Row label="Tax" value={fmtMoney(invoice.taxAmount)} />
-            <Row label="Total" value={fmtMoney(invoice.totalAmount)} />
-            <Row label="Paid" value={fmtMoney(invoice.amountPaid)} />
-            <Row label="Outstanding" value={fmtMoney(outstanding)} bold />
-            <Row label="Due now" value={due > 0 ? fmtMoney(due) : '—'} bold={due > 0} />
-          </dl>
-        </section>
-
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-2">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">
-            {invoice.installmentDetail
-              ? `Items — ${invoice.installmentDetail.termMonths ?? '—'}-month installment`
-              : 'Items'}
-          </h2>
-          {!invoice.installmentDetail && (
-            <p className="py-6 text-center text-[13px] text-gray-400">
-              No item breakdown for this invoice.
-            </p>
-          )}
-          {invoice.installmentDetail && (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-100 text-sm">
-                  <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                    <tr>
-                      <th className="py-2 pr-4">Item</th>
-                      <th className="py-2 pr-4 text-right">Qty</th>
-                      <th className="py-2 pr-4 text-right">Unit price</th>
-                      <th className="py-2 text-right">Line total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {invoice.installmentDetail.items.map((l) => (
-                      <tr key={l.id}>
-                        <td className="py-2 pr-4 text-gray-900">
-                          {l.item?.name ?? '—'}
-                          {l.item?.brand ? (
-                            <span className="text-gray-500"> — {l.item.brand.name}</span>
-                          ) : null}
-                          {l.serialNumber && (
-                            <p className="font-mono text-[10px] text-purple-500">
-                              SN: {l.serialNumber.serialNumber}
-                              {l.secondarySerialNumber &&
-                                ` / ${l.secondarySerialNumber.serialNumber}`}
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-2 pr-4 text-right">{l.quantity}</td>
-                        <td className="py-2 pr-4 text-right">{fmtMoney(Number(l.unitPrice))}</td>
-                        <td className="py-2 text-right">{fmtMoney(l.lineTotal)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-3 text-right text-[13px] text-gray-600">
-                Rebate on this due date:{' '}
-                <span className="font-semibold">
-                  {fmtMoney(Number(invoice.installmentDetail.rebate ?? 0))}
-                </span>
-              </p>
-            </>
-          )}
-        </section>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatBox label="Total" value={fmtMoney(invoice.totalAmount)} />
+        <StatBox label="Paid" value={fmtMoney(invoice.amountPaid)} />
+        <StatBox label="Outstanding" value={fmtMoney(outstanding)} emphasize={outstanding > 0} />
+        <StatBox label="Due now" value={due > 0 ? fmtMoney(due) : '—'} emphasize={due > 0} />
       </div>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-1 text-[14px] font-semibold text-gray-900">
+          {invoice.installmentDetail ? 'Financed items — full plan' : 'Items'}
+        </h2>
+        {invoice.installmentDetail && (
+          <p className="mb-3 text-xs text-gray-500">
+            Full price of everything on this {invoice.installmentDetail.termMonths ?? '—'}-month
+            plan — this invoice only covers 1 of {invoice.installmentDetail.termMonths ?? '—'}{' '}
+            monthly payments, not the full amount shown below.
+          </p>
+        )}
+        {!invoice.installmentDetail && (
+          <p className="py-6 text-center text-[13px] text-gray-400">
+            No item breakdown for this invoice.
+          </p>
+        )}
+        {invoice.installmentDetail && (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  <tr>
+                    <th className="py-2 pr-4">Item</th>
+                    <th className="py-2 pr-4 text-right">Qty</th>
+                    <th className="py-2 pr-4 text-right">Unit price</th>
+                    <th className="py-2 text-right">Line total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {invoice.installmentDetail.items.map((l) => (
+                    <tr key={l.id}>
+                      <td className="py-2 pr-4 text-gray-900">
+                        {l.item?.name ?? '—'}
+                        {l.item?.brand ? (
+                          <span className="text-gray-500"> — {l.item.brand.name}</span>
+                        ) : null}
+                        {l.serialNumber && (
+                          <p className="font-mono text-sm font-semibold text-purple-600">
+                            SN: {l.serialNumber.serialNumber}
+                            {l.secondarySerialNumber &&
+                              ` / ${l.secondarySerialNumber.serialNumber}`}
+                          </p>
+                        )}
+                        {l.serialNumber?.goodsReceiptLine?.goodsReceipt && (
+                          <p className="font-mono text-[10px] text-gray-400">
+                            RR: {l.serialNumber.goodsReceiptLine.goodsReceipt.code}
+                            {l.serialNumber.goodsReceiptLine.goodsReceipt.supplier &&
+                              ` — ${l.serialNumber.goodsReceiptLine.goodsReceipt.supplier.name}`}
+                            {l.serialNumber.goodsReceiptLine.goodsReceipt.purchaseOrderNumber &&
+                              ` · PO: ${l.serialNumber.goodsReceiptLine.goodsReceipt.purchaseOrderNumber}`}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-right">{l.quantity}</td>
+                      <td className="py-2 pr-4 text-right">{fmtMoney(Number(l.unitPrice))}</td>
+                      <td className="py-2 text-right">{fmtMoney(l.lineTotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-right text-[13px] text-gray-600">
+              Rebate on this due date:{' '}
+              <span className="font-semibold">
+                {fmtMoney(Number(invoice.installmentDetail.rebate ?? 0))}
+              </span>
+            </p>
+          </>
+        )}
+      </section>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Payment history</h2>
@@ -271,13 +317,23 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   )
 }
 
-function Row({ label, value, bold }: { label: string; value: React.ReactNode; bold?: boolean }) {
+function StatBox({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string
+  value: string
+  emphasize?: boolean
+}) {
   return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className={`text-right ${bold ? 'font-semibold' : 'font-medium'} text-gray-800`}>
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p
+        className={`mt-1 text-lg font-semibold tabular-nums ${emphasize ? 'text-red-600' : 'text-gray-900'}`}
+      >
         {value}
-      </dd>
+      </p>
     </div>
   )
 }

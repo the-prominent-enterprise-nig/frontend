@@ -94,6 +94,10 @@ export function useItemMaster() {
       page,
       limit,
       search: search || undefined,
+      // SKU is intentionally not shown or searchable in the Item Master
+      // catalog list — see ItemMasterTable's item row and this page's search
+      // placeholder, which no longer mention SKU either.
+      matchSku: false,
       lifecycle,
       approvalStatus,
       primaryCategoryId,

@@ -7,6 +7,7 @@ export async function getItems(params?: {
   page?: number
   limit?: number
   search?: string
+  matchSku?: boolean
   lifecycle?: 'active' | 'discontinued' | 'archived'
   approvalStatus?:
     | 'draft'
