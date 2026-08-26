@@ -74,7 +74,12 @@ const ReceivePoFormSchema = z.object({
   // this Receiving Report. Both are the supplier's own paperwork, typed in
   // by whoever is physically receiving the delivery.
   deliveryReceiptNumber: z.string().optional(),
-  supplierInvoiceNumber: z.string().optional(),
+  // This modal always submits applicationType: 'new_stock' (see
+  // handleFormSubmit below), so — unlike ReceiveStockFormSchema, which
+  // branches on applicationType — the requirement here is unconditional.
+  supplierInvoiceNumber: z
+    .string()
+    .min(1, 'Supplier invoice number is required for new stock receipts'),
   withholding: z.enum(['none', 'pct_1']).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
@@ -385,6 +390,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Supplier Invoice No.
+                  <span className="text-red-500"> *</span>
                   <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
                 </label>
                 <Controller
