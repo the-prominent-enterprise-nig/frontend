@@ -43,10 +43,7 @@ import {
 } from '@/src/schema/inventory/transfers'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { getTransferDocument } from '../_actions/get-transfer-document'
-import {
-  printInventoryDocument,
-  type PrintDocumentEnvelope,
-} from '@/src/libs/print/printInventoryDocument'
+import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
@@ -352,42 +349,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <p className="mt-0.5 text-zinc-800">{value}</p>
     </div>
   )
-}
-
-function renderTransferBody(doc: PrintDocumentEnvelope): string {
-  const d = doc.document as Record<string, unknown>
-  const lines = (d.lines as Array<Record<string, unknown>>) ?? []
-  const hasSerialLine = lines.some((l) => (l.serialNumber as Record<string, unknown>)?.serialNumber)
-  const linesHtml = lines
-    .map((l) => {
-      const serial = (l.serialNumber as Record<string, unknown>)?.serialNumber
-      const serialCell = hasSerialLine ? `<td>${serial ?? '—'}</td>` : ''
-      return `<tr><td>${(l.item as Record<string, unknown>)?.name ?? l.itemId ?? '—'}</td>${serialCell}<td style="text-align:right">${l.quantity}</td></tr>`
-    })
-    .join('')
-
-  const driverFields: string[] = []
-  if (d.driverName)
-    driverFields.push(`<div><p class="label">Driver</p><p>${d.driverName}</p></div>`)
-  if (d.driverPhone)
-    driverFields.push(`<div><p class="label">Phone</p><p>${d.driverPhone}</p></div>`)
-  if (d.driverLicense)
-    driverFields.push(`<div><p class="label">License</p><p>${d.driverLicense}</p></div>`)
-  if (d.vehiclePlate)
-    driverFields.push(`<div><p class="label">Plate</p><p>${d.vehiclePlate}</p></div>`)
-  if (d.carrierName)
-    driverFields.push(`<div><p class="label">Carrier</p><p>${d.carrierName}</p></div>`)
-
-  return `${driverFields.length > 0 ? `<h2>Logistics</h2><div class="meta">${driverFields.join('')}</div>` : ''}
-    <h2>Items</h2>
-    <table>
-      <thead><tr><th>Item</th>${hasSerialLine ? '<th>Serial</th>' : ''}<th style="text-align:right">Qty</th></tr></thead>
-      <tbody>${linesHtml}</tbody>
-    </table>`
-}
-
-function printTransferDocument(data: unknown) {
-  printInventoryDocument(data, 'Stock Transfer', renderTransferBody)
 }
 
 type Props = {
@@ -1803,7 +1764,7 @@ export default function TransferDetailModal({
                       setIsPrinting(true)
                       try {
                         const res = await getTransferDocument(transfer.id)
-                        if (res.success && res.data) printTransferDocument(res.data)
+                        if (res.success && res.data) printStockTransferDocument(res.data)
                       } finally {
                         setIsPrinting(false)
                       }

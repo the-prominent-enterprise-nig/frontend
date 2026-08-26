@@ -223,6 +223,160 @@ export function printReceivingReportDocument(data: unknown): void {
 }
 
 /**
+ * Stock Transfer print — same typographic system as buildReceivingReportHtml()
+ * and printPurchaseOrderDocument() (title left / logo right, three-column
+ * info row, light #ccc-bordered table, signature blocks) so all three
+ * lettered documents read as one family.
+ */
+export function buildStockTransferHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const transfer = doc.document as Record<string, unknown>
+  const fromWarehouse = transfer.fromWarehouse as { name?: string; code?: string } | undefined
+  const toWarehouse = transfer.toWarehouse as { name?: string; code?: string } | undefined
+  const enterprise = doc.enterprise
+  const lines = Array.isArray(transfer.lines) ? (transfer.lines as Record<string, unknown>[]) : []
+
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const hasSerialLine = lines.some(
+    (l) => (l.serialNumber as Record<string, unknown> | null)?.serialNumber
+  )
+
+  let totalQty = 0
+  const rows = lines
+    .map((l, i) => {
+      const item = l.item as { name?: string } | undefined
+      const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
+        | string
+        | undefined
+      const qty = Number(l.quantity ?? 0)
+      totalQty += qty
+      return `<tr>
+        <td class="num">${i + 1}</td>
+        <td>${esc(item?.name) || '—'}</td>
+        ${hasSerialLine ? `<td class="mono">${esc(serial) || '—'}</td>` : ''}
+        <td class="right">${qty}</td>
+      </tr>`
+    })
+    .join('')
+
+  const logisticsFields = [
+    { label: 'Driver', value: transfer.driverName },
+    { label: 'Phone', value: transfer.driverPhone },
+    { label: 'License', value: transfer.driverLicense },
+    { label: 'Plate', value: transfer.vehiclePlate },
+    { label: 'Carrier', value: transfer.carrierName },
+  ].filter((f) => f.value)
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .logistics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 28px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.num, th.num { text-align: center; width: 32px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { font-weight: 700; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 120px; }
+    .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Stock Transfer</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">From</p>
+        <p class="party-name">${esc(fromWarehouse?.name)}${fromWarehouse?.code ? ` (${esc(fromWarehouse.code)})` : ''}</p>
+        <p class="meta-label">To</p>
+        <p class="party-name">${esc(toWarehouse?.name)}${toWarehouse?.code ? ` (${esc(toWarehouse.code)})` : ''}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(transfer.transferDate)}</p>
+        ${transfer.reason ? `<p class="meta-label">Reason</p><p class="meta-value">${esc(transfer.reason)}</p>` : ''}
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${
+      logisticsFields.length > 0
+        ? `<div class="logistics">${logisticsFields
+            .map(
+              (f) =>
+                `<div><p class="meta-label">${f.label}</p><p class="meta-value">${esc(f.value)}</p></div>`
+            )
+            .join('')}</div>`
+        : ''
+    }
+
+    <table>
+      <thead>
+        <tr>
+          <th class="num">#</th>
+          <th>Item</th>
+          ${hasSerialLine ? '<th>Serial No.</th>' : ''}
+          <th class="right">Qty</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-wrap">
+      <table>
+        <tr><td class="label">Total</td><td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}</td></tr>
+      </table>
+    </div>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Dispatched by:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Received by:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printStockTransferDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildStockTransferHtml(data))
+  win.document.close()
+}
+
+/**
  * Purpose-built letterhead layout for the Purchase Order print/download —
  * doesn't reuse printInventoryDocument()'s generic "Enterprise" meta-grid
  * shell, since a PO needs its own two-party (supplier + enterprise) header,
