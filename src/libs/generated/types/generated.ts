@@ -413,6 +413,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/audit-logs/resource-types': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Distinct resourceType values present in this tenant's audit trail — powers the Resource Type filter dropdown, always current since it reads actual data rather than a hardcoded list */
+    get: operations['AuditLogController_findDistinctResourceTypes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/audit-logs/recent': {
     parameters: {
       query?: never
@@ -15096,6 +15113,23 @@ export interface operations {
       }
     }
   }
+  AuditLogController_findDistinctResourceTypes: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   AuditLogController_findRecent: {
     parameters: {
       query?: {
@@ -23920,6 +23954,8 @@ export interface operations {
         page?: number
         limit?: number
         unreadOnly?: boolean
+        /** @description true = only archived notifications (30+ days old); omitted/false = active only (the default everywhere else in the app) */
+        archived?: boolean
       }
       header?: never
       path?: never

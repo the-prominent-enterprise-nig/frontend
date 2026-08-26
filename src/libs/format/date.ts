@@ -22,6 +22,29 @@ export function formatRelativeTime(iso: string): string {
   return 'just now'
 }
 
+const COMPACT_RELATIVE_TIME_UNITS: [string, number][] = [
+  ['y', 365 * 24 * 60 * 60],
+  ['mo', 30 * 24 * 60 * 60],
+  ['w', 7 * 24 * 60 * 60],
+  ['d', 24 * 60 * 60],
+  ['h', 60 * 60],
+  ['m', 60],
+]
+
+/** Dense "14h" / "1d" / "2w" style timestamp for notification lists (mirrors Facebook's density). */
+export function formatCompactRelativeTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+
+  const diffSeconds = Math.max(0, (Date.now() - date.getTime()) / 1000)
+  for (const [unit, secondsInUnit] of COMPACT_RELATIVE_TIME_UNITS) {
+    if (diffSeconds >= secondsInUnit) {
+      return `${Math.floor(diffSeconds / secondsInUnit)}${unit}`
+    }
+  }
+  return 'now'
+}
+
 export function formatShortDate(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return '—'

@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can, isAdmin } from '@/src/libs/guards/permission'
 import { getAuditLogs } from '../_actions/get-audit-logs'
+import { getBranches } from '../_actions/get-branches'
+import { getAuditLogResourceTypes } from '../_actions/get-audit-log-resource-types'
 import AuditLogsSection from '@/src/components/settings/AuditLogsSection'
 
 export default async function AuditLogsPage() {
@@ -12,7 +14,18 @@ export default async function AuditLogsPage() {
   const canView = isAdmin(session) || can(session, 'admin:audit-logs:read')
   if (!canView) redirect('/403')
 
-  const result = await getAuditLogs({ page: 1, limit: 20 })
+  // Branch names for the Scope column, and the resource type list for the
+  // filter dropdown — both best-effort, non-critical to the page's own
+  // purpose, so a failure in either degrades gracefully (ScopeBadge's raw-ID
+  // fallback; an empty, still-searchable-by-typing resource type list)
+  // rather than blocking the audit log itself from loading.
+  const [result, branchesResult, resourceTypesResult] = await Promise.all([
+    getAuditLogs({ page: 1, limit: 10 }),
+    getBranches(),
+    getAuditLogResourceTypes(),
+  ])
+  const branches = branchesResult.success ? (branchesResult.data ?? []) : []
+  const resourceTypes = resourceTypesResult.success ? (resourceTypesResult.data ?? []) : []
 
   if (!result.success || !result.data) {
     return (
@@ -38,7 +51,11 @@ export default async function AuditLogsPage() {
             time of each action.
           </p>
         </div>
-        <AuditLogsSection initialData={result.data} />
+        <AuditLogsSection
+          initialData={result.data}
+          branches={branches}
+          resourceTypes={resourceTypes}
+        />
       </div>
     </div>
   )
