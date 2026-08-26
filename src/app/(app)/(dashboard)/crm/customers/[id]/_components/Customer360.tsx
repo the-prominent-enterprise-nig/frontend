@@ -18,7 +18,6 @@ import {
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
 import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
 import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
 
@@ -514,7 +513,6 @@ export default function Customer360({
                   </Link>
                   <span className="flex items-center gap-2 text-gray-600">
                     {a.collector ? `${a.collector.stubNumber} — ${a.collector.name}` : 'Unassigned'}
-                    <AgingColorBadge color={a.aging?.color} />
                     <span className="font-medium text-gray-800">
                       {formatPeso(Number(a.currentBalance))}
                     </span>
@@ -731,11 +729,9 @@ function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPaya
   return payables.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
 }
 
-// Due-date proximity accent — distinct from InstallmentStatusBadge (which
-// already covers OVERDUE in red) and from AgingColorBadge (a different axis
-// entirely: InstallmentAccount-level "months since last activity", not
-// per-due-date proximity). The 7-day "due soon" threshold is a reasonable
-// default, not a client-confirmed business rule.
+// Due-date proximity accent — distinct from InstallmentStatusBadge, which
+// already covers OVERDUE in red. The 7-day "due soon" threshold is a
+// reasonable default, not a client-confirmed business rule.
 type PayableUrgency = 'overdue' | 'dueSoon' | 'upcoming'
 
 function payableUrgency(status: string, dueDate: string): PayableUrgency {

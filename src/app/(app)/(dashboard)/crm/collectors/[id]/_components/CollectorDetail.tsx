@@ -189,9 +189,7 @@ export default function CollectorDetail({
                   >
                     <div>
                       <div className="text-[13px] font-medium text-gray-900">{a.accountNumber}</div>
-                      <div className="text-[12px] text-gray-500">
-                        {a.classification ?? '—'} · {a.agingBucket ?? '—'}
-                      </div>
+                      <div className="text-[12px] text-gray-500">{a.classification ?? '—'}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <CategoryBadge category={a.category} />
@@ -211,7 +209,6 @@ export default function CollectorDetail({
                       <th className="py-2 pr-4">Account #</th>
                       <th className="py-2 pr-4">Category</th>
                       <th className="py-2 pr-4">Classification</th>
-                      <th className="py-2 pr-4">Aging</th>
                       <th className="py-2 pr-4 text-right">Balance</th>
                     </tr>
                   </thead>
@@ -223,7 +220,6 @@ export default function CollectorDetail({
                           <CategoryBadge category={a.category} />
                         </td>
                         <td className="py-2.5 pr-4 text-gray-600">{a.classification ?? '—'}</td>
-                        <td className="py-2.5 pr-4 text-gray-600">{a.agingBucket ?? '—'}</td>
                         <td className="py-2.5 pr-4 text-right tabular-nums font-medium text-gray-900">
                           {peso(a.currentBalance)}
                         </td>

@@ -7,7 +7,6 @@ import { Plus, Search, Wallet, Calculator } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
-import AgingColorBadge from '@/src/components/crm/AgingColorBadge'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -24,33 +23,15 @@ const STATUS_COLORS: Record<string, string> = {
   written_off: 'bg-red-50 text-red-700 ring-red-200',
 }
 
-function CategoryBadge({
-  category,
-  recommended,
-}: {
-  category?: string | null
-  /** Recommend-only hint from aging data — never auto-applied. Shown only
-   * when it differs from the current category. */
-  recommended?: string | null
-}) {
+function CategoryBadge({ category }: { category?: string | null }) {
   if (!category) return <span className="text-gray-400">—</span>
   return (
-    <span className="inline-flex items-center gap-1">
-      <span
-        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-          CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-        }`}
-      >
-        {category}
-      </span>
-      {recommended && recommended !== category && (
-        <span
-          title="Computed from this account's aging data — not applied automatically"
-          className="rounded-full border border-dashed border-amber-300 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
-        >
-          →{recommended}
-        </span>
-      )}
+    <span
+      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+        CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
+      }`}
+    >
+      {category}
     </span>
   )
 }
@@ -128,7 +109,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Installment Accounts</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Financing accounts, balances, categories, and aging.
+            Financing accounts, balances, and categories.
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -251,16 +232,13 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-medium text-gray-900">{a.accountNumber}</span>
-                      <CategoryBadge category={a.category} recommended={a.recommendedCategory} />
+                      <CategoryBadge category={a.category} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
                       {a.customer ? a.customer.name : '—'}
                     </div>
                     <div className="mt-1 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <StatusBadge status={a.status} />
-                        <AgingColorBadge color={a.aging?.color} />
-                      </div>
+                      <StatusBadge status={a.status} />
                       <span className="text-[13px] font-semibold tabular-nums text-gray-900">
                         {peso(a.currentBalance)}
                       </span>
@@ -282,8 +260,6 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                     <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3">Collector</th>
                     <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Aging</th>
-                    <th className="px-4 py-3">Color</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Balance</th>
                   </tr>
@@ -306,13 +282,7 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
                         {a.collector?.stubNumber ?? <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <CategoryBadge category={a.category} recommended={a.recommendedCategory} />
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-gray-600">
-                        {a.agingBucket ?? <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <AgingColorBadge color={a.aging?.color} />
+                        <CategoryBadge category={a.category} />
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={a.status} />

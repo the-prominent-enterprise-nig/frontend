@@ -51,6 +51,10 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
+  .refine((data) => data.applicationType !== 'new_stock' || !!data.supplierInvoiceNumber?.trim(), {
+    message: 'Supplier invoice number is required for new stock receipts',
+    path: ['supplierInvoiceNumber'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
