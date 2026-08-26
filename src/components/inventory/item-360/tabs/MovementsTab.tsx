@@ -51,7 +51,6 @@ type Props = {
 export default function MovementsTab({ itemId }: Props) {
   const {
     currentBalances,
-    openingBalance,
     entries,
     meta,
     isLoading,
@@ -167,18 +166,6 @@ export default function MovementsTab({ itemId }: Props) {
           <RefreshCw className="h-3.5 w-3.5 animate-spin text-zinc-400" />
         )}
       </div>
-
-      {/* Opening balance */}
-      {!isLoading && (
-        <div className="flex items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs">
-          <span className="text-zinc-500">Opening Balance</span>
-          <span
-            className={`font-semibold tabular-nums ${openingBalance >= 0 ? 'text-zinc-700' : 'text-red-600'}`}
-          >
-            {openingBalance >= 0 ? `+${openingBalance}` : openingBalance}
-          </span>
-        </div>
-      )}
 
       {/* Ledger entries */}
       <div

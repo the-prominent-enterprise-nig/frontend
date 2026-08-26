@@ -10,7 +10,9 @@ import { closeConsignment } from '../_actions/close-consignment'
 import { consignToBranch } from '../_actions/consign-to-branch'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
+import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { getBranches } from '../../purchase-requests/_actions/get-branches'
+import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
   UpdateSerialStatusFormValues,
@@ -24,7 +26,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
-  const [itemFilter, setItemFilter] = useState<string | undefined>(undefined)
+  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState<string | undefined>(undefined)
 
@@ -46,7 +48,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
         ? {
             page,
             limit,
-            itemId: itemFilter,
+            categoryId: categoryFilter,
             status: statusFilter,
             search,
             consignedToBranchId: caravanBranchId ?? 'caravan',
@@ -55,11 +57,20 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
             page,
             limit,
             status: statusFilter,
-            itemId: itemFilter,
+            categoryId: categoryFilter,
             warehouseId: warehouseFilter,
             search,
           },
-    [page, limit, statusFilter, itemFilter, warehouseFilter, search, caravanView, caravanBranchId]
+    [
+      page,
+      limit,
+      statusFilter,
+      categoryFilter,
+      warehouseFilter,
+      search,
+      caravanView,
+      caravanBranchId,
+    ]
   )
 
   // In caravan view, an unrestricted (Business Owner) caller needs an
@@ -85,6 +96,12 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   const itemsQuery = useQuery({
     queryKey: ['inventory-items-lookup'],
     queryFn: () => getItems({ limit: 200 }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const categoriesQuery = useQuery({
+    queryKey: ['inventory-categories-flat'],
+    queryFn: () => getCategoriesFlat({ limit: 500 }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -166,15 +183,15 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     error: serialsQuery.error,
 
     statusFilter,
-    itemFilter,
+    categoryFilter,
     warehouseFilter,
     search,
     setStatusFilter: (v: SerialStatus | undefined) => {
       setStatusFilter(v)
       setPage(1)
     },
-    setItemFilter: (v: string | undefined) => {
-      setItemFilter(v)
+    setCategoryFilter: (v: string | undefined) => {
+      setCategoryFilter(v)
       setPage(1)
     },
     setWarehouseFilter: (v: string | undefined) => {
@@ -187,7 +204,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     },
     resetFilters: () => {
       setStatusFilter(undefined)
-      setItemFilter(undefined)
+      setCategoryFilter(undefined)
       setWarehouseFilter(undefined)
       setSearch(undefined)
       setPage(1)
@@ -203,6 +220,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
+    categoryOptions: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
     branchOptions: branchesQuery.data?.data?.data ?? [],
 
     caravanView,

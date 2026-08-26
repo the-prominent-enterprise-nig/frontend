@@ -16,6 +16,7 @@ import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToBranchModal from './ConsignToBranchModal'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import CategorySelect from '@/src/components/ui/CategorySelect'
 import { formatShortDate, formatAge } from '@/src/libs/format/date'
 import { originLabel } from '@/src/libs/format/serial-provenance'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -38,11 +39,11 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isFetching,
     error,
     statusFilter,
-    itemFilter,
+    categoryFilter,
     warehouseFilter,
     search,
     setStatusFilter,
-    setItemFilter,
+    setCategoryFilter,
     setWarehouseFilter,
     setSearch,
     resetFilters,
@@ -52,6 +53,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     setLimit,
     warehouseOptions,
     itemOptions,
+    categoryOptions,
     branchOptions,
     registerSerials,
     isRegistering,
@@ -70,7 +72,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isConsigning,
   } = useSerialNumbers(!!session.branchId)
 
-  const hasFilters = statusFilter || itemFilter || warehouseFilter || search
+  const hasFilters = statusFilter || categoryFilter || warehouseFilter || search
   // Selection is available in both tabs for a caravan manager — the Caravan
   // tab uses it for Return/Move (event close), the All Serials tab uses it
   // to pick units to consign out.
@@ -182,22 +184,12 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
               </option>
             ))}
           </select>
-          {/* A native <select> sizes its closed state to its widest <option> —
-              with ~90 items, some carrying long service-line labels, that
-              stretched this control across nearly the full row. SearchableSelect
-              (already used for the pickers below) renders at a fixed width
-              regardless of option length, and its type-ahead is a better fit
-              for a list this long besides. */}
-          <SearchableSelect
+          <CategorySelect
             className="w-56"
-            value={itemFilter ?? ''}
-            onChange={(v) => setItemFilter(v || undefined)}
-            placeholder="All Items"
-            clearable
-            options={itemOptions.map((item) => ({
-              value: item.id,
-              label: `${item.sku} — ${item.name}`,
-            }))}
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={categoryOptions}
+            placeholder="All Categories"
           />
           {caravanView ? (
             !session.branchId && (
