@@ -51,6 +51,10 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
+  .refine((data) => data.applicationType !== 'new_stock' || !!data.supplierInvoiceNumber?.trim(), {
+    message: 'Supplier invoice number is required for new stock receipts',
+    path: ['supplierInvoiceNumber'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
@@ -85,20 +89,28 @@ export const StockBalanceSchema = z.object({
 // ItemListResponseSchema/SerialNumberListResponseSchema. Parsing the real
 // shape and transforming it back to a flat one keeps every existing
 // consumer (useStockBalance's `pagination`) unchanged.
+const StockBalanceSummarySchema = z.object({
+  totalOnHandQty: z.number(),
+  totalAvailableQty: z.number(),
+  totalReservedQty: z.number(),
+})
+
 export const StockBalanceListResponseSchema = z
   .object({
     data: z.array(StockBalanceSchema),
+    summary: StockBalanceSummarySchema.optional(),
     meta: z.object({
       total: z.number(),
       page: z.number(),
       limit: z.number(),
     }),
   })
-  .transform(({ data, meta }) => ({
+  .transform(({ data, meta, summary }) => ({
     data,
     total: meta.total,
     page: meta.page,
     limit: meta.limit,
+    summary,
   }))
 
 export type StockBalance = z.infer<typeof StockBalanceSchema>
@@ -161,16 +173,25 @@ const ReceivingReportPoLineSchema = z.object({
   purchaseOrder: z.object({ code: z.string() }).optional().nullable(),
 })
 
+const ReceivingReportLineItemSchema = StockBalanceItemSchema.extend({
+  // Catalog-level classification, used to fill the printed Receiving
+  // Report's Brand / Model / Type columns.
+  modelNumber: z.string().optional().nullable(),
+  brand: z.object({ name: z.string() }).optional().nullable(),
+  type: z.object({ name: z.string() }).optional().nullable(),
+})
+
 const ReceivingReportLineSchema = z.object({
   id: z.string(),
   goodsReceiptId: z.string(),
   itemId: z.string(),
-  item: StockBalanceItemSchema.optional().nullable(),
+  item: ReceivingReportLineItemSchema.optional().nullable(),
   purchaseOrderLineId: z.string().optional().nullable(),
   purchaseOrderLine: ReceivingReportPoLineSchema.optional().nullable(),
   quantityReceived: z.number(),
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
+  unitCost: z.number().optional().nullable(),
   qualityHold: z.boolean(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
@@ -201,6 +222,8 @@ export const ReceivingReportSchema = z.object({
   notes: z.string().optional().nullable(),
   warehouse: ReceivingReportWarehouseSchema.optional().nullable(),
   supplier: ReceivingReportSupplierSchema.optional().nullable(),
+  receivedById: z.string().optional().nullable(),
+  receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
@@ -208,6 +231,9 @@ export const ReceivingReportSchema = z.object({
   journalEntryId: z.string().optional().nullable(),
   withholding: z.enum(['none', 'pct_1']).optional(),
   withheldAmount: z.number().optional().nullable(),
+  // Scenario 36 Gap 4 — Input VAT, resolved from each line's item's own
+  // tax rate at receiving time.
+  vatAmount: z.number().optional().nullable(),
   lines: z.array(ReceivingReportLineSchema),
   hasAnyDiscrepancy: z.boolean(),
 })

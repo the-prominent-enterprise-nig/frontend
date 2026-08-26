@@ -43,7 +43,6 @@ type Props = {
 type CountSheetLine = {
   itemId: string
   itemLabel: string
-  variantId?: string
   batchId?: string
   locationId?: string
   // Scenario 19 Part 5 — present (even as '') for a serial-level line, so
@@ -98,7 +97,6 @@ export default function CountSessionView({
       [...countLines].reverse().map((l) => ({
         itemId: l.itemId,
         itemLabel: `${l.item.sku} — ${l.item.name}`,
-        variantId: l.variantId ?? undefined,
         batchId: l.batchId ?? undefined,
         locationId: l.locationId ?? undefined,
         serialNumberId: l.serialNumberId ?? undefined,
@@ -201,7 +199,6 @@ export default function CountSessionView({
       .filter((l) => l.itemId && l.countedQty !== '')
       .map((l) => ({
         itemId: l.itemId,
-        variantId: l.variantId,
         batchId: l.batchId,
         locationId: l.locationId,
         serialNumberId: l.serialNumberId,

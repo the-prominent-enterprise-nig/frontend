@@ -11,6 +11,7 @@ const TX_LABELS: Record<string, string> = {
   adjustment: 'Adjustment',
   return: 'Return',
   write_off: 'Write-off',
+  field_edit: 'Edited',
 }
 
 const TX_COLORS: Record<string, string> = {
@@ -21,6 +22,15 @@ const TX_COLORS: Record<string, string> = {
   adjustment: 'bg-purple-100 text-purple-700',
   return: 'bg-orange-100 text-orange-700',
   write_off: 'bg-red-100 text-red-700',
+  field_edit: 'bg-zinc-100 text-zinc-600',
+}
+
+function humanizeField(field: string): string {
+  return field
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .replace(/^\w/, (c) => c.toUpperCase())
+    .trim()
 }
 
 const TRANSACTION_TYPES = [
@@ -195,6 +205,7 @@ export default function MovementsTab({ itemId }: Props) {
             {entries.map((entry) => {
               const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-zinc-100 text-zinc-600'
               const label = TX_LABELS[entry.transactionType] ?? entry.transactionType
+              const isFieldEdit = entry.transactionType === 'field_edit'
               const hasIn = entry.quantityIn > 0
               const hasOut = entry.quantityOut > 0
 
@@ -216,29 +227,57 @@ export default function MovementsTab({ itemId }: Props) {
                     </div>
                     <div className="shrink-0 text-right">
                       <span className="text-sm font-semibold tabular-nums">
-                        {hasIn && <span className="text-green-700">+{entry.quantityIn}</span>}
-                        {hasIn && hasOut && ' '}
-                        {hasOut && <span className="text-red-600">−{entry.quantityOut}</span>}
-                        {!hasIn && !hasOut && <span className="text-zinc-500">0</span>}
+                        {isFieldEdit ? (
+                          <span className="text-zinc-400">—</span>
+                        ) : (
+                          <>
+                            {hasIn && <span className="text-green-700">+{entry.quantityIn}</span>}
+                            {hasIn && hasOut && ' '}
+                            {hasOut && <span className="text-red-600">−{entry.quantityOut}</span>}
+                            {!hasIn && !hasOut && <span className="text-zinc-500">0</span>}
+                          </>
+                        )}
                       </span>
                     </div>
                   </div>
 
-                  {/* Row 2: warehouse + date + running balance */}
+                  {/* Row 2: warehouse/edit detail + date + running balance */}
                   <div className="mt-1 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 min-w-0">
-                      {entry.warehouse && (
-                        <span className="text-[11px] text-zinc-500">
-                          {entry.warehouse.code}
-                          {entry.warehouse.name && (
-                            <span className="text-zinc-400"> · {entry.warehouse.name}</span>
+                      {isFieldEdit ? (
+                        <>
+                          <span className="text-[11px] text-zinc-500">
+                            {humanizeField(entry.field ?? '')}:{' '}
+                            <span className="line-through text-zinc-400">
+                              {entry.oldValue ?? '—'}
+                            </span>{' '}
+                            <span className="text-zinc-300">→</span>{' '}
+                            <span className="font-medium text-zinc-600">
+                              {entry.newValue ?? '—'}
+                            </span>
+                          </span>
+                          {entry.changedBy && (
+                            <span className="truncate text-[11px] italic text-zinc-400">
+                              by {entry.changedBy}
+                            </span>
                           )}
-                        </span>
-                      )}
-                      {entry.notes && (
-                        <span className="truncate text-[11px] italic text-zinc-400">
-                          {entry.notes}
-                        </span>
+                        </>
+                      ) : (
+                        <>
+                          {entry.warehouse && (
+                            <span className="text-[11px] text-zinc-500">
+                              {entry.warehouse.code}
+                              {entry.warehouse.name && (
+                                <span className="text-zinc-400"> · {entry.warehouse.name}</span>
+                              )}
+                            </span>
+                          )}
+                          {entry.notes && (
+                            <span className="truncate text-[11px] italic text-zinc-400">
+                              {entry.notes}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="shrink-0 text-right text-[11px] text-zinc-400">
@@ -249,9 +288,11 @@ export default function MovementsTab({ itemId }: Props) {
                           year: 'numeric',
                         })}
                       </span>
-                      <span className="ml-2 font-medium text-zinc-600">
-                        Bal: {entry.runningBalance}
-                      </span>
+                      {!isFieldEdit && (
+                        <span className="ml-2 font-medium text-zinc-600">
+                          Bal: {entry.runningBalance}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

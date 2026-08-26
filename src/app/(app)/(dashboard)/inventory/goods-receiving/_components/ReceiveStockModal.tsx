@@ -116,6 +116,7 @@ export default function ReceiveStockModal({
 
   const watchedLines = watch('lines')
   const withholding = watch('withholding')
+  const watchedApplicationType = watch('applicationType')
   const totalCost = (watchedLines ?? []).reduce(
     (sum, line) => sum + (line.quantityReceived || 0) * (line.unitCost || 0),
     0
@@ -304,6 +305,9 @@ export default function ReceiveStockModal({
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Supplier Invoice No.
+                  {watchedApplicationType === 'new_stock' && (
+                    <span className="text-red-500"> *</span>
+                  )}
                   <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
                 </label>
                 <Controller
@@ -319,6 +323,11 @@ export default function ReceiveStockModal({
                     />
                   )}
                 />
+                {errors.supplierInvoiceNumber && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {errors.supplierInvoiceNumber.message}
+                  </p>
+                )}
               </div>
             </div>
 

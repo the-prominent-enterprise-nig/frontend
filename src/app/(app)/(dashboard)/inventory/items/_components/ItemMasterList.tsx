@@ -10,7 +10,6 @@ import ItemApprovalActionModal from './ItemApprovalActionModal'
 import ItemRejectModal from './ItemRejectModal'
 import CreateBundleModal from '../../bundles/_components/CreateBundleModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
-import VariantsModal from './VariantsModal'
 import BulkImageImportModal from './BulkImageImportModal'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -25,8 +24,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canManageLifecycle = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)
   const canReadAttributes = hasPermission(session, INVENTORY_PERMISSIONS.ATTRIBUTES_READ)
   const canCreateBundle = hasPermission(session, INVENTORY_PERMISSIONS.BUNDLES_CREATE)
-  const canViewVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_READ)
-  const canManageVariants = hasPermission(session, INVENTORY_PERMISSIONS.VARIANTS_MANAGE)
   // Scenario 16 — Item Master Governance. Submitting a draft reuses the
   // update permission (same convention Purchase Requests uses for its own
   // submit action) rather than introducing a separate permission for it.
@@ -85,16 +82,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     isAddingBundleComponent,
     removeBundleComponent,
     removingComponentId,
-    selectedVariantItem,
-    setSelectedVariantItem,
-    variants,
-    isLoadingVariants,
-    createVariant,
-    isCreatingVariant,
-    updateVariant,
-    isUpdatingVariant,
-    deleteVariant,
-    isDeletingVariant,
     submitItem,
     isSubmitting,
     confirmAccounting,
@@ -191,7 +178,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, SKU, or serial number…"
+              placeholder="Search by name or serial number…"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
             {search && (
@@ -301,7 +288,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           onDelete={handleDelete}
           onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
           onViewBundle={(item) => setSelectedBundleItem(item)}
-          onViewVariants={canViewVariants ? (item) => setSelectedVariantItem(item) : undefined}
           canSubmitReview={canSubmitReview}
           canConfirmAccounting={canConfirmAccounting}
           canApproveItem={canApproveItem}
@@ -421,26 +407,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         isOpen={isBulkImportOpen}
         onClose={() => setIsBulkImportOpen(false)}
         items={itemOptions}
-      />
-
-      {/* Variants Modal */}
-      <VariantsModal
-        isOpen={!!selectedVariantItem}
-        item={selectedVariantItem}
-        variants={variants}
-        isLoading={isLoadingVariants}
-        onClose={() => setSelectedVariantItem(null)}
-        onCreateVariant={createVariant}
-        isCreating={isCreatingVariant}
-        onEditItem={(item) => {
-          setSelectedVariantItem(null)
-          setEditTarget(item)
-        }}
-        canManage={canManageVariants}
-        onUpdateVariant={updateVariant}
-        isUpdating={isUpdatingVariant}
-        onDeleteVariant={deleteVariant}
-        isDeleting={isDeletingVariant}
       />
 
       {/* Scenario 16 — Item Master Governance modals */}

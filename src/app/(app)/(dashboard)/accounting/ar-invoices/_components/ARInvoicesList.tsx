@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Pencil,
   Trash2,
+  Ban,
   Send,
   PhilippinePeso,
   ReceiptText,
@@ -22,15 +23,21 @@ import {
   X,
   Search,
   User,
+  Users,
+  List,
+  ChevronDown,
+  ChevronRight,
   Loader2,
 } from 'lucide-react'
 import {
   ARInvoices,
   CreditMemos,
   DebitMemos,
+  BankAccounts,
   type ARInvoice,
   type ARInvoiceCustomerResult,
   type ARPayment,
+  type BankAccount,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
@@ -76,6 +83,7 @@ export default function ARInvoicesList({
   const [debitingFor, setDebitingFor] = useState<ARInvoice | null>(null)
   const [historyFor, setHistoryFor] = useState<ARInvoice | null>(null)
   const [deletingFor, setDeletingFor] = useState<ARInvoice | null>(null)
+  const [voidingFor, setVoidingFor] = useState<ARInvoice | null>(null)
   const [customerFilter, setCustomerFilter] = useState<string | undefined>(initialCustomerId)
   // Set directly when a customer is picked via search below; when arriving
   // via initialCustomerId (a link from Customer360) there's no name yet, so
@@ -97,6 +105,19 @@ export default function ARInvoicesList({
   const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
+  // Group-by-customer view — a display mode over the same `items` this
+  // screen already loads (findAll() is unpaginated), not a separate query.
+  // Flat list stays the default; grouped is opt-in via the toggle below.
+  const [groupByCustomer, setGroupByCustomer] = useState(false)
+  const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set())
+  const toggleCustomerGroup = (customerId: string) => {
+    setExpandedCustomers((prev) => {
+      const next = new Set(prev)
+      if (next.has(customerId)) next.delete(customerId)
+      else next.add(customerId)
+      return next
+    })
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -145,6 +166,54 @@ export default function ARInvoicesList({
     }, 300)
     return () => clearTimeout(timer)
   }, [customerSearch])
+
+  // One entry per distinct customer in the currently loaded `items` — e.g.
+  // an installment plan's ~12 due-date invoices collapse into one row here,
+  // which is the whole point of this view (see ARInvoicesList group-by-
+  // customer discussion): a customer with several open dues shouldn't need
+  // 12 scans of the flat table to see what they owe in total.
+  const customerGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        customerId: string
+        customerName: string
+        invoices: ARInvoice[]
+        total: number
+        paid: number
+        outstanding: number
+        dueNow: number
+        overdueCount: number
+      }
+    >()
+    for (const inv of items) {
+      let g = map.get(inv.customerId)
+      if (!g) {
+        g = {
+          customerId: inv.customerId,
+          customerName: inv.customer?.name ?? 'Unknown customer',
+          invoices: [],
+          total: 0,
+          paid: 0,
+          outstanding: 0,
+          dueNow: 0,
+          overdueCount: 0,
+        }
+        map.set(inv.customerId, g)
+      }
+      g.invoices.push(inv)
+      g.total += inv.totalAmount
+      g.paid += inv.amountPaid
+      g.outstanding += inv.totalAmount - inv.amountPaid
+      if (new Date(inv.dueDate) <= new Date()) {
+        g.dueNow += Math.max(inv.totalAmount - inv.amountPaid, 0)
+      }
+      if (inv.status === 'OVERDUE') g.overdueCount += 1
+    }
+    // Customers owing the most float to the top — that's who collections
+    // triage actually cares about first.
+    return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
+  }, [items])
 
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
@@ -281,6 +350,26 @@ export default function ARInvoicesList({
             Clear
           </button>
         )}
+        <div className="ml-auto flex items-center rounded-lg border border-gray-200 p-0.5">
+          <button
+            onClick={() => setGroupByCustomer(false)}
+            aria-pressed={!groupByCustomer}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              !groupByCustomer ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            <List className="w-4 h-4" /> Flat list
+          </button>
+          <button
+            onClick={() => setGroupByCustomer(true)}
+            aria-pressed={groupByCustomer}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              groupByCustomer ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            <Users className="w-4 h-4" /> By customer
+          </button>
+        </div>
       </div>
       {customerFilter && (
         <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
@@ -325,152 +414,84 @@ export default function ARInvoicesList({
                   No invoices.
                 </td>
               </tr>
+            ) : groupByCustomer ? (
+              customerGroups.map((g) => (
+                <Fragment key={g.customerId}>
+                  <tr
+                    onClick={() => toggleCustomerGroup(g.customerId)}
+                    className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
+                  >
+                    <td className="px-3 py-2" colSpan={2}>
+                      <div className="flex items-center gap-2">
+                        {expandedCustomers.has(g.customerId) ? (
+                          <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+                        )}
+                        <span className="truncate">{g.customerName}</span>
+                        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
+                          {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs" colSpan={2}>
+                      {g.overdueCount > 0 && (
+                        <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {g.dueNow > 0 ? (
+                        <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2" />
+                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
+                        className="text-xs font-medium text-purple-700 hover:underline"
+                      >
+                        Statement
+                      </Link>
+                    </td>
+                  </tr>
+                  {expandedCustomers.has(g.customerId) &&
+                    g.invoices.map((i) => (
+                      <InvoiceRow
+                        key={i.id}
+                        i={i}
+                        onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
+                        onSend={() => send(i.id)}
+                        onPay={() => setPayingFor(i)}
+                        onHistory={() => setHistoryFor(i)}
+                        onCredit={() => setCreditingFor(i)}
+                        onDebit={() => setDebitingFor(i)}
+                        onEdit={() => setEditing(i)}
+                        onVoid={() => setVoidingFor(i)}
+                        onDelete={() => setDeletingFor(i)}
+                      />
+                    ))}
+                </Fragment>
+              ))
             ) : (
               items.map((i) => (
-                <tr
+                <InvoiceRow
                   key={i.id}
-                  onClick={() => router.push(`/accounting/ar-invoices/${i.id}`)}
-                  className="cursor-pointer hover:bg-gray-50"
-                >
-                  <td className="px-3 py-2 max-w-40">
-                    <span
-                      title={i.invoiceNumber}
-                      className="block truncate font-mono text-xs text-purple-700"
-                    >
-                      {i.invoiceNumber}
-                    </span>
-                    {i.posTransaction && (
-                      <Link
-                        href={`/pos/transactions?search=${encodeURIComponent(i.posTransaction.transactionNumber)}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="block truncate text-[10px] text-gray-400 hover:text-purple-700 hover:underline"
-                      >
-                        Sale: {i.posTransaction.transactionNumber}
-                      </Link>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 max-w-40">
-                    <span title={i.customer?.name} className="block truncate">
-                      {i.customer?.name}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
-                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
-                  <td className="px-3 py-2 text-right">
-                    {/* Scenario 29 ACC-05 — Outstanding above counts the
-                        balance regardless of maturity; Due only counts it
-                        once the invoice's own due date has passed. */}
-                    {new Date(i.dueDate) <= new Date() ? (
-                      <span
-                        className={
-                          i.totalAmount - i.amountPaid > 0 ? 'font-medium text-red-600' : undefined
-                        }
-                      >
-                        {fmtMoney(Math.max(i.totalAmount - i.amountPaid, 0))}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
-                    >
-                      {i.status}
-                    </span>
-                    {i.status === 'OVERDUE' && (
-                      <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
-                        {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days
-                        overdue
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-0.5">
-                      <div className="flex items-center gap-0.5">
-                        {i.status === 'DRAFT' ? (
-                          <Tooltip label="Send">
-                            <button
-                              onClick={() => send(i.id)}
-                              aria-label="Send"
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          </Tooltip>
-                        ) : (
-                          ['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
-                            <Tooltip label="Record payment">
-                              <button
-                                onClick={() => setPayingFor(i)}
-                                aria-label="Record payment"
-                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                              >
-                                <PhilippinePeso className="w-4 h-4" />
-                              </button>
-                            </Tooltip>
-                          )
-                        )}
-                        {(i.payments?.length ?? 0) > 0 && (
-                          <Tooltip label="Payment history">
-                            <button
-                              onClick={() => setHistoryFor(i)}
-                              aria-label="Payment history"
-                              className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-                            >
-                              <History className="w-4 h-4" />
-                            </button>
-                          </Tooltip>
-                        )}
-                        {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
-                          <Tooltip label="Issue credit memo">
-                            <button
-                              onClick={() => setCreditingFor(i)}
-                              aria-label="Issue credit memo"
-                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                            >
-                              <ReceiptText className="w-4 h-4" />
-                            </button>
-                          </Tooltip>
-                        )}
-                        {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
-                          <Tooltip label="Issue debit memo">
-                            <button
-                              onClick={() => setDebitingFor(i)}
-                              aria-label="Issue debit memo"
-                              className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
-                            >
-                              <FilePlus className="w-4 h-4" />
-                            </button>
-                          </Tooltip>
-                        )}
-                      </div>
-                      <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
-                        <Tooltip label="Edit">
-                          <button
-                            onClick={() => setEditing(i)}
-                            aria-label="Edit"
-                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                        </Tooltip>
-                        <Tooltip label="Delete">
-                          <button
-                            onClick={() => setDeletingFor(i)}
-                            aria-label="Delete"
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </Tooltip>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
+                  i={i}
+                  onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
+                  onSend={() => send(i.id)}
+                  onPay={() => setPayingFor(i)}
+                  onHistory={() => setHistoryFor(i)}
+                  onCredit={() => setCreditingFor(i)}
+                  onDebit={() => setDebitingFor(i)}
+                  onEdit={() => setEditing(i)}
+                  onVoid={() => setVoidingFor(i)}
+                  onDelete={() => setDeletingFor(i)}
+                />
               ))
             )}
           </tbody>
@@ -528,6 +549,16 @@ export default function ARInvoicesList({
           onChanged={load}
         />
       )}
+      {voidingFor && (
+        <VoidInvoiceDialog
+          invoice={voidingFor}
+          onClose={() => setVoidingFor(null)}
+          onVoided={() => {
+            setVoidingFor(null)
+            load()
+          }}
+        />
+      )}
       {deletingFor && (
         <DeleteInvoiceDialog
           invoice={deletingFor}
@@ -538,6 +569,283 @@ export default function ARInvoicesList({
           }}
         />
       )}
+    </div>
+  )
+}
+
+/** One invoice's table row — shared by the flat list and the by-customer
+ * grouped view (nested under an expanded customer group) so both render
+ * identical rows/actions from a single source. */
+function InvoiceRow({
+  i,
+  onOpen,
+  onSend,
+  onPay,
+  onHistory,
+  onCredit,
+  onDebit,
+  onEdit,
+  onVoid,
+  onDelete,
+}: {
+  i: ARInvoice
+  onOpen: () => void
+  onSend: () => void
+  onPay: () => void
+  onHistory: () => void
+  onCredit: () => void
+  onDebit: () => void
+  onEdit: () => void
+  onVoid: () => void
+  onDelete: () => void
+}) {
+  return (
+    <tr onClick={onOpen} className="cursor-pointer hover:bg-gray-50">
+      <td className="px-3 py-2 max-w-40">
+        <span title={i.invoiceNumber} className="block truncate font-mono text-xs text-purple-700">
+          {i.invoiceNumber}
+        </span>
+        {i.posTransaction && (
+          <Link
+            href={`/pos/transactions?search=${encodeURIComponent(i.posTransaction.transactionNumber)}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block truncate text-[10px] text-gray-400 hover:text-purple-700 hover:underline"
+          >
+            Sale: {i.posTransaction.transactionNumber}
+          </Link>
+        )}
+      </td>
+      <td className="px-3 py-2 max-w-40">
+        <span title={i.customer?.name} className="block truncate">
+          {i.customer?.name}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
+      <td className="px-3 py-2 text-right">
+        {/* Scenario 29 ACC-05 — Outstanding above counts the
+            balance regardless of maturity; Due only counts it
+            once the invoice's own due date has passed. */}
+        {new Date(i.dueDate) <= new Date() ? (
+          <span
+            className={i.totalAmount - i.amountPaid > 0 ? 'font-medium text-red-600' : undefined}
+          >
+            {fmtMoney(Math.max(i.totalAmount - i.amountPaid, 0))}
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2">
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
+        >
+          {i.status}
+        </span>
+        {i.status === 'OVERDUE' && (
+          <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
+            {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days overdue
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-0.5">
+          <div className="flex items-center gap-0.5">
+            {i.status === 'DRAFT' ? (
+              <Tooltip label="Send">
+                <button
+                  onClick={onSend}
+                  aria-label="Send"
+                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            ) : (
+              // Not PAID — a fully-settled invoice has nothing left to
+              // collect; the "closed-account overpayment" path this used to
+              // allow (rounding/extra fees) wasn't a real accounting need,
+              // it just let a paid invoice be reopened by mistake.
+              ['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
+                <Tooltip label="Record payment">
+                  <button
+                    onClick={onPay}
+                    aria-label="Record payment"
+                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                  >
+                    <PhilippinePeso className="w-4 h-4" />
+                  </button>
+                </Tooltip>
+              )
+            )}
+            {(i.payments?.length ?? 0) > 0 && (
+              <Tooltip label="Payment history">
+                <button
+                  onClick={onHistory}
+                  aria-label="Payment history"
+                  className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                >
+                  <History className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+            {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && (
+              <Tooltip label="Issue credit memo">
+                <button
+                  onClick={onCredit}
+                  aria-label="Issue credit memo"
+                  className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                >
+                  <ReceiptText className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+            {['SENT', 'PARTIAL', 'OVERDUE', 'PAID'].includes(i.status) && (
+              <Tooltip label="Issue debit memo">
+                <button
+                  onClick={onDebit}
+                  aria-label="Issue debit memo"
+                  className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                >
+                  <FilePlus className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+          <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
+            <Tooltip label="Edit">
+              <button
+                onClick={onEdit}
+                aria-label="Edit"
+                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && i.amountPaid === 0 && (
+              <Tooltip label="Void">
+                <button
+                  onClick={onVoid}
+                  aria-label="Void"
+                  className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                >
+                  <Ban className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip label="Delete">
+              <button
+                onClick={onDelete}
+                aria-label="Delete"
+                className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function VoidInvoiceDialog({
+  invoice,
+  onClose,
+  onVoided,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onVoided: () => void
+}) {
+  const [pin, setPin] = useState('')
+  const [voiding, setVoiding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!pin.trim()) {
+      setError('Manager/Owner PIN is required to void this invoice.')
+      return
+    }
+    setVoiding(true)
+    setError(null)
+    const pinRes = await validateManagerByPin(pin.trim())
+    if (!pinRes.success || !pinRes.data?.valid) {
+      setError(pinRes.error ?? 'Invalid PIN. Please try again.')
+      setVoiding(false)
+      return
+    }
+    const res = await ARInvoices.void(invoice.id)
+    setVoiding(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Void failed')
+      return
+    }
+    onVoided()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h3 className="text-lg font-semibold">Void Invoice</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          <div className="text-sm text-gray-600 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <span>
+              Void invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This reverses
+              its journal entry and cannot be undone.
+            </span>
+          </div>
+          <div className="rounded-xl border border-purple-100 bg-purple-50 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <KeyRound size={13} className="text-purple-600" />
+              <p className="text-xs font-semibold text-purple-700">Manager / Owner PIN required</p>
+            </div>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono tracking-widest text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              placeholder="••••"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => e.key === 'Enter' && submit(e as unknown as React.FormEvent)}
+              disabled={voiding}
+            />
+          </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={voiding || !pin.trim()}
+              className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
+            >
+              {voiding ? 'Voiding...' : 'Void Invoice'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -1329,7 +1637,6 @@ function InvoiceFormDialog({
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
     taxCode: (initial as any)?.taxCode ?? '',
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   // ACC-21 bridge: load tax rates so users can pick one instead of typing taxAmount manually
@@ -1502,7 +1809,7 @@ function InvoiceFormDialog({
               <p className="mt-1 text-xs text-gray-500">Tax auto-calculates as subtotal × rate.</p>
             )}
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
                 required
@@ -1522,14 +1829,6 @@ function InvoiceFormDialog({
                 disabled={!!form.taxCode}
                 className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${form.taxCode ? 'bg-gray-50 text-gray-600' : ''}`}
                 title={form.taxCode ? 'Auto-calculated from tax rate' : 'Enter tax amount manually'}
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                placeholder="Dept / Project"
               />
             </Field>
           </div>
@@ -1571,7 +1870,6 @@ function PaymentDialog({
   onSaved: () => void
 }) {
   const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
-  const isClosedAccount = invoice.status === 'PAID'
   const [form, setForm] = useState({
     // outstanding is always a valid non-negative number (Math.max(...) above),
     // so this never needs a `|| ''` fallback — that idiom would blank the
@@ -1584,6 +1882,10 @@ function PaymentDialog({
     method: 'CASH' as PaymentMethod,
     reference: '',
     notes: '',
+    // Which bank/cash fund the money actually landed in — distinct from
+    // Method (how it was paid). Optional: not every payment goes through a
+    // tracked fund account (e.g. an untracked cash drawer).
+    bankAccountId: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1591,6 +1893,10 @@ function PaymentDialog({
     overpaidAmount: number
     wasClosedAccount: boolean
   } | null>(null)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  useEffect(() => {
+    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+  }, [])
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01
 
@@ -1604,6 +1910,7 @@ function PaymentDialog({
       withholdingAmount: Number(form.withholdingAmount || 0),
       withholdingCertificateNo: form.withholdingCertificateNo || undefined,
       withholdingCertificateStatus: form.withholdingCertificateStatus || undefined,
+      bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -1658,13 +1965,6 @@ function PaymentDialog({
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
-          {isClosedAccount && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              This invoice is already fully paid. Any amount recorded here will be flagged as a
-              closed-account overpayment.
-            </div>
-          )}
           <div className="text-sm text-gray-600">
             Outstanding: <span className="font-semibold">{fmtMoney(outstanding)}</span>
           </div>
@@ -1753,6 +2053,20 @@ function PaymentDialog({
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
+          </Field>
+          <Field label="Source of Fund">
+            <select
+              value={form.bankAccountId}
+              onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            >
+              <option value="">— Not tracked —</option>
+              {bankAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} — {acc.bankName} ({acc.accountNumber})
+                </option>
+              ))}
+            </select>
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">

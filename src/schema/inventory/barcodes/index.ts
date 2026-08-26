@@ -10,7 +10,6 @@ export const BarcodeRecordSchema = z.object({
   barcode: z.string(),
   barcodeType: BarcodeTypeSchema,
   itemId: z.string(),
-  variantId: z.string().nullable().optional(),
   isPrimary: z.boolean().optional(),
   createdAt: z.string().optional(),
 })
@@ -18,12 +17,10 @@ export const BarcodeRecordSchema = z.object({
 export const CreateBarcodeFormSchema = z.object({
   barcode: z.string().min(1, 'Barcode value is required'),
   barcodeType: BarcodeTypeSchema,
-  variantId: z.string().optional(),
 })
 
 export const GenerateBarcodeFormSchema = z.object({
   barcodeType: BarcodeTypeSchema,
-  variantId: z.string().optional(),
 })
 
 export const BulkGenerateFormSchema = z.object({

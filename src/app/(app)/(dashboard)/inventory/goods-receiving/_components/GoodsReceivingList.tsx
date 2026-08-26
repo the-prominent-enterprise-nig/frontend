@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   PackageCheck,
   RefreshCw,
@@ -24,6 +25,7 @@ import WithholdingSummaryTab from './WithholdingSummaryTab'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 
 type Tab = 'balances' | 'ledger' | 'reports' | 'withholding'
+const VALID_TABS: Tab[] = ['balances', 'ledger', 'reports', 'withholding']
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'balances', label: 'Stock Balances', icon: <PackageCheck className="h-4 w-4" /> },
@@ -46,7 +48,22 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
   const [isReceiveOpen, setIsReceiveOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<Tab>('balances')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const subtabParam = searchParams.get('subtab')
+  // URL-addressable (not local state) so "Receiving Reports" — otherwise
+  // buried 2 tabs deep under Inventory's "Receiving" page-tab — can be
+  // bookmarked/shared/linked-to directly instead of always resetting to
+  // "Stock Balances" on reload.
+  const activeTab: Tab = VALID_TABS.includes(subtabParam as Tab) ? (subtabParam as Tab) : 'balances'
+  const setActiveTab = (tab: Tab) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (tab === 'balances') params.delete('subtab')
+    else params.set('subtab', tab)
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
   const { pushPanel } = useUIShell()
 
   const {
@@ -306,6 +323,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                                         type: 'item360',
                                         itemId: balance.item!.id,
                                         itemName: balance.item?.name,
+                                        context: 'stock',
                                       })
                                     }
                                     className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-prominent-purple-700"

@@ -15,17 +15,11 @@ export interface ItemImageFile {
 export interface ItemImage {
   id: string
   itemId: string
-  variantId: string | null
   fileId: string
   sortOrder: number
   isPrimary: boolean
   createdAt: string
   file: ItemImageFile
-}
-
-export interface VariantImagesResponse {
-  source: 'variant' | 'item'
-  images: ItemImage[]
 }
 
 export async function uploadItemFile(formData: FormData): Promise<ApiResponse<ItemImageFile>> {
@@ -76,7 +70,7 @@ export async function listItemImages(itemId: string): Promise<ApiResponse<ItemIm
 
 export async function addItemImage(
   itemId: string,
-  dto: { fileId: string; variantId?: string; sortOrder?: number; isPrimary?: boolean }
+  dto: { fileId: string; sortOrder?: number; isPrimary?: boolean }
 ): Promise<ApiResponse<ItemImage>> {
   const result = await api.post(`/inventory/items/${itemId}/images`, dto)
   if (result.success) revalidatePath('/inventory/items')
@@ -100,11 +94,4 @@ export async function removeItemImage(
   const result = await api.delete(`/inventory/items/${itemId}/images/${imageId}`)
   if (result.success) revalidatePath('/inventory/items')
   return result
-}
-
-export async function getVariantImages(
-  itemId: string,
-  variantId: string
-): Promise<ApiResponse<VariantImagesResponse>> {
-  return api.get(`/inventory/items/${itemId}/variants/${variantId}/images`)
 }

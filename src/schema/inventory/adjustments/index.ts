@@ -51,7 +51,6 @@ export const AdjustmentLineSchema = z.object({
   id: z.string(),
   itemId: z.string(),
   item: AdjustmentLineItemSchema,
-  variantId: z.string().optional().nullable(),
   batchId: z.string().optional().nullable(),
   batch: AdjustmentLineBatchSchema.optional().nullable(),
   locationId: z.string().optional().nullable(),

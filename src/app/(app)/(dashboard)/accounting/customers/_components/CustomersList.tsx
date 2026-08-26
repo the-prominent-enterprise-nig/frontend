@@ -2,10 +2,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, RefreshCw, Pencil, Trash2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
+import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
 import {
   getCustomers,
+  getCustomerById,
   createCustomer,
   updateCustomer,
   deleteCustomer,
@@ -14,6 +18,24 @@ import {
 } from '@/src/libs/data/AccountingData'
 import { SessionUser, can } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
+
+/**
+ * PhoneInput's own `value` prop must always be E.164 (a leading `+`) or
+ * `undefined` — some existing customer records predate this component
+ * (imported/seeded data entered in a local format) and break it otherwise.
+ * Mirrors CRM's own CustomerForm.toDisplayPhoneValue().
+ */
+function toDisplayPhoneValue(raw: string): string | undefined {
+  if (!raw) return undefined
+  if (raw.startsWith('+')) return raw
+  try {
+    const parsed = parsePhoneNumber(raw, 'PH')
+    return parsed?.isValid() ? parsed.number : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const FIELD_LIMITS = {
   firstName: 150,
@@ -36,11 +58,29 @@ interface Props {
 }
 
 export default function CustomersList({ session }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [items, setItems] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
+
+  // Deep link from the customer detail page's "Edit" button
+  // (/accounting/customers/[id] -> /accounting/customers?edit=<id>) — opens
+  // the edit modal directly instead of requiring a second click on the row.
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (!editId) return
+    getCustomerById(editId).then((res) => {
+      if (res.success && res.data) {
+        setEditing(res.data)
+        setDialogOpen(true)
+      }
+    })
+    router.replace('/accounting/customers')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const canCreate = can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_CREATE)
   const canUpdate = can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_UPDATE)
@@ -167,7 +207,9 @@ export default function CustomersList({ session }: Props) {
                         {c.customerCode || '-'}
                       </td>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {c.name}
+                        <Link href={`/accounting/customers/${c.id}`} className="hover:underline">
+                          {c.name}
+                        </Link>
                         <span className="ml-2 text-xs font-normal capitalize text-zinc-400">
                           {c.customerType ?? 'individual'}
                         </span>
@@ -250,10 +292,14 @@ function customerToFormInput(customer: Customer | null): Partial<CustomerInput> 
       email: '',
       phoneNumber: '',
       address: '',
+      barangayCode: '',
       note: '',
       customerType: 'individual',
       groupId: '',
       lifecycleStatus: 'alive',
+      isWithholdingAgent: false,
+      defaultWithholdingRate: null,
+      defaultWithholdingAtc: '',
     }
   }
   // `name` is stored as a single field — split naively for the two-field
@@ -266,10 +312,14 @@ function customerToFormInput(customer: Customer | null): Partial<CustomerInput> 
     email: customer.email ?? '',
     phoneNumber: customer.phone ?? '',
     address: customer.address ?? '',
+    barangayCode: customer.barangayCode ?? '',
     note: customer.notes ?? '',
     customerType: customer.customerType ?? 'individual',
     groupId: customer.groupId ?? '',
     lifecycleStatus: customer.lifecycleStatus ?? 'alive',
+    isWithholdingAgent: customer.isWithholdingAgent ?? false,
+    defaultWithholdingRate: customer.defaultWithholdingRate ?? null,
+    defaultWithholdingAtc: customer.defaultWithholdingAtc ?? '',
   }
 }
 
@@ -368,51 +418,42 @@ function CustomerFormDialog({
                 }`}
               />
             </Field>
-            <Field
-              label="Phone Number"
-              count={[form.phoneNumber?.length ?? 0, FIELD_LIMITS.phoneNumber]}
-            >
-              <input
-                maxLength={FIELD_LIMITS.phoneNumber}
-                value={form.phoneNumber ?? ''}
-                onChange={(e) => set('phoneNumber', e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+            <div>
+              <span className="mb-1 block text-xs font-medium text-zinc-600">Phone Number</span>
+              <PhoneInput
+                value={toDisplayPhoneValue(form.phoneNumber ?? '')}
+                defaultCountry="PH"
+                international
+                countryCallingCodeEditable={false}
+                onChange={(v) => set('phoneNumber', v ?? '')}
+                numberInputProps={{ className: 'phone-input-field' }}
+                className="ph-phone-input"
               />
-            </Field>
+            </div>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Group ID" count={[form.groupId?.length ?? 0, FIELD_LIMITS.groupId]}>
-              <input
-                maxLength={FIELD_LIMITS.groupId}
-                value={form.groupId ?? ''}
-                onChange={(e) => set('groupId', e.target.value)}
-                placeholder="e.g. shared household ID"
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-              />
-            </Field>
-            <Field label="Status">
-              <select
-                value={form.lifecycleStatus ?? 'alive'}
-                onChange={(e) =>
-                  set('lifecycleStatus', e.target.value as CustomerInput['lifecycleStatus'])
-                }
-                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-              >
-                <option value="alive">Alive</option>
-                <option value="dead">Dead</option>
-                <option value="employed">Employed</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Address" count={[form.address?.length ?? 0, FIELD_LIMITS.address]}>
-            <textarea
-              maxLength={FIELD_LIMITS.address}
-              value={form.address ?? ''}
-              onChange={(e) => set('address', e.target.value)}
-              rows={2}
+          <Field label="Group ID" count={[form.groupId?.length ?? 0, FIELD_LIMITS.groupId]}>
+            <input
+              maxLength={FIELD_LIMITS.groupId}
+              value={form.groupId ?? ''}
+              onChange={(e) => set('groupId', e.target.value)}
+              placeholder="e.g. shared household ID"
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
           </Field>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-600">Address</label>
+            {Boolean(customer) && form.address && (
+              <p className="mb-1.5 text-[11px] text-zinc-500">
+                Current: <span className="text-zinc-700">{form.address}</span> — pick below to
+                replace it.
+              </p>
+            )}
+            <PhilippineAddressPicker
+              onChange={(v) =>
+                setForm((p) => ({ ...p, address: v.address, barangayCode: v.barangayCode }))
+              }
+            />
+          </div>
           <Field label="Note" count={[form.note?.length ?? 0, FIELD_LIMITS.note]}>
             <textarea
               maxLength={FIELD_LIMITS.note}
@@ -422,6 +463,51 @@ function CustomerFormDialog({
               className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
             />
           </Field>
+          <div className="rounded-lg border border-zinc-200 p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+              <input
+                type="checkbox"
+                checked={form.isWithholdingAgent ?? false}
+                onChange={(e) => set('isWithholdingAgent', e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-purple-700 focus:ring-purple-500"
+              />
+              Withholding agent (expected to remit BIR Form 2307)
+            </label>
+            {form.isWithholdingAgent && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="Default withholding rate (%)">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    value={
+                      form.defaultWithholdingRate != null
+                        ? Math.round(form.defaultWithholdingRate * 10000) / 100
+                        : ''
+                    }
+                    onChange={(e) =>
+                      set(
+                        'defaultWithholdingRate',
+                        e.target.value === '' ? null : Number(e.target.value) / 100
+                      )
+                    }
+                    placeholder="e.g. 2"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                  />
+                </Field>
+                <Field label="Default ATC">
+                  <input
+                    maxLength={20}
+                    value={form.defaultWithholdingAtc ?? ''}
+                    onChange={(e) => set('defaultWithholdingAtc', e.target.value)}
+                    placeholder="e.g. WC160"
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"

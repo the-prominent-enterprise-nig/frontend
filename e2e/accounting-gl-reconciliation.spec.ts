@@ -12,11 +12,11 @@ import { gotoReady } from './utils'
 
 test.describe('Accounting — GL Reconciliation (Scenario 29 ACC-07)', () => {
   test.beforeAll(async ({ request }) => {
-    // POS_EWALLET is deliberately left unmapped by the seed (manual-config-
-    // only by design — see coa-seed.service.ts) — without a mapping the
-    // e-wallet check 400s and its section never renders. Configuring it via
-    // the same PATCH /account-mapping/:key endpoint the Settings UI itself
-    // uses, matching how the backend e2e spec upserts it directly.
+    // Scenario 38 Gap 2 — POS_EWALLET is now pre-mapped by coa-seed's
+    // seedPH() by default; this is defensive for an env whose DB hasn't run
+    // that seed yet — without a mapping the e-wallet check 400s and its
+    // section never renders. Uses the same PATCH /account-mapping/:key
+    // endpoint the Settings UI itself uses.
     const accountsRes = await request.get('/api/accounts')
     const accounts = (await accountsRes.json()) as { id: string; number: string }[]
     const ewalletAccount = accounts.find((a) => a.number === '1-01-112')
@@ -44,7 +44,7 @@ test.describe('Accounting — GL Reconciliation (Scenario 29 ACC-07)', () => {
     await expect(page.getByRole('heading', { name: 'E-Wallet Clearing Trend' })).toBeVisible()
     await expect(page.getByText(/Trending down|Trending up|Flat/)).toBeVisible()
     await expect(
-      page.getByText('No automated e-wallet settlement action exists', { exact: false })
+      page.getByText('A settlement action now exists for this account', { exact: false })
     ).toBeVisible()
   })
 

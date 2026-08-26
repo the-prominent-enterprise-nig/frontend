@@ -216,6 +216,14 @@ export const Reports = {
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
     api.get<any>(`/reports/aging/${type}`, asOf ? { asOf } : undefined),
+  // Scenario 36 Gap 2 — receipts already posted to the GL but not yet
+  // matched to a supplier bill/invoice.
+  grni: () => api.get<any>('/reports/grni'),
+  // Scenario 36 Gap 11 — every receiving report, matched or not (unlike
+  // GRNI above) — Accounting had no way to browse these at all before this.
+  receivingReports: () => api.get<any>('/reports/receiving-reports'),
+  receivingReportDocument: (id: string) =>
+    api.get<any>(`/reports/receiving-reports/${id}/document`),
   customerStatement: (id: string) => api.get<any>(`/reports/customer-statement/${id}`),
   supplierStatement: (id: string) => api.get<any>(`/reports/supplier-statement/${id}`),
   biSummary: () => api.get<any>('/reports/bi-summary'),
@@ -290,6 +298,11 @@ export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] =
 ]
 
 export type WithholdingCertificateStatus = 'pending' | 'received'
+// Scenario 38 Gap 5 — "none" until a certificate is received; "flagged" when
+// its stated amount doesn't match withholdingAmount (needs Accounting/CPA
+// review); "resolved" once a reviewer has logged a decision. Never gates or
+// adjusts the GL — see MarkCertificateReceivedDto's backend doc comment.
+export type WithholdingVarianceStatus = 'none' | 'flagged' | 'resolved'
 
 export interface ARPayment {
   id: string
@@ -298,6 +311,14 @@ export interface ARPayment {
   withholdingAmount: number
   withholdingCertificateNo?: string | null
   withholdingCertificateStatus?: WithholdingCertificateStatus | null
+  withholdingAtc?: string | null
+  withholdingTaxableBase?: number | null
+  withholdingTaxPeriod?: string | null
+  withholdingCertificateDate?: string | null
+  withholdingCertificateAmount?: number | null
+  withholdingVarianceStatus?: WithholdingVarianceStatus | null
+  withholdingVarianceNote?: string | null
+  withholdingReviewerId?: string | null
   rebateAmount: number
   paymentDate: string
   method?: PaymentMethod | null
@@ -312,6 +333,25 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
+}
+
+// Scenario 38 Gap 5 — row shape for the Pending 2307 / CWT Variance lists,
+// each ARPayment plus just enough of its parent invoice to identify it.
+export interface WithholdingPaymentListItem extends ARPayment {
+  arInvoice: { invoiceNumber: string; customer: { name: string } }
+}
+
+export interface MarkCertificateReceivedInput {
+  certificateNo?: string
+  certificateDate?: string
+  certificateAmount: number
+  atc?: string
+  taxableBase?: number
+  taxPeriod?: string
+}
+
+export interface ResolveWithholdingVarianceInput {
+  notes?: string
 }
 
 export interface RecordArPaymentInput {
@@ -329,6 +369,13 @@ export interface RecordArPaymentInput {
   collectorId?: string
 }
 
+export interface ARInvoiceSerialGoodsReceipt {
+  code: string
+  receivedAt?: string
+  supplier: { name: string } | null
+  purchaseOrderNumber?: string | null
+}
+
 export interface ARInvoiceInstallmentItem {
   id: string
   itemId: string
@@ -336,7 +383,11 @@ export interface ARInvoiceInstallmentItem {
   unitPrice: number | string
   item: { id: string; name: string; brand: { name: string } | null } | null
   lineTotal: number
-  serialNumber: { id: string; serialNumber: string } | null
+  serialNumber: {
+    id: string
+    serialNumber: string
+    goodsReceiptLine?: { goodsReceipt: ARInvoiceSerialGoodsReceipt } | null
+  } | null
   secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
@@ -344,6 +395,10 @@ export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
+  /** This due's position within the schedule (e.g. 2 of 12) — the rest of
+   * this detail is schedule-wide and identical across every due-date
+   * invoice on the same plan. */
+  lineNumber: number | null
 }
 
 export interface ARInvoice {
@@ -433,11 +488,31 @@ export const ARInvoices = {
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
+  void: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/void`, {}),
   // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
   // backend), so a real "Check overdue" button is the only way to fire it
   // outside an external scheduler.
   sweepOverdueNotifications: () =>
     api.post<{ notified: number }>('/ar-invoices/sweep-overdue-notifications', {}),
+  // Scenario 38 Gap 5 — CWT/2307 reconciliation.
+  listPendingCertificates: () =>
+    api.get<WithholdingPaymentListItem[]>('/ar-invoices/withholding/pending-certificates'),
+  listFlaggedVariances: () =>
+    api.get<WithholdingPaymentListItem[]>('/ar-invoices/withholding/variances'),
+  markCertificateReceived: (
+    invoiceId: string,
+    paymentId: string,
+    body: MarkCertificateReceivedInput
+  ) => api.post<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}/certificate`, body),
+  resolveWithholdingVariance: (
+    invoiceId: string,
+    paymentId: string,
+    body: ResolveWithholdingVarianceInput
+  ) =>
+    api.post<ARPayment>(
+      `/ar-invoices/${invoiceId}/payments/${paymentId}/certificate/resolve-variance`,
+      body
+    ),
 }
 
 // ============ Credit Memos ============
@@ -585,8 +660,35 @@ export interface APBill {
   // Scenario 10 Part 2 — the PO this invoice bills against, and the RRs
   // matched to it, for the 3-way match.
   purchaseOrderId?: string | null
-  purchaseOrder?: { id: string; code: string } | null
-  goodsReceipts?: { id: string; code: string }[]
+  purchaseOrder?: {
+    id: string
+    code: string
+    status:
+      | 'draft'
+      | 'approved'
+      | 'sent'
+      | 'partially_received'
+      | 'fully_received'
+      | 'closed'
+      | 'cancelled'
+  } | null
+  goodsReceipts?: {
+    id: string
+    code: string
+    receivedAt?: string
+    purchaseOrderNumber?: string | null
+    deliveryReceiptNumber?: string | null
+    supplierInvoiceNumber?: string | null
+    // Line-level detail — only populated by APBills.get() (the detail
+    // page), findAll()'s list view stays on the lighter shape above.
+    lines?: {
+      id: string
+      quantityReceived: number
+      unitCost?: number | null
+      isFreebie?: boolean
+      item?: { id: string; name: string; sku?: string } | null
+    }[]
+  }[]
   // Scenario 10 Part 4 — manual voucher number + two-step approval status.
   voucherNumber?: string | null
   voucherApprovalStatus?:
@@ -611,6 +713,7 @@ export const APBills = {
   list: (params?: { search?: string; status?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
+  getDocument: (id: string) => api.get<unknown>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
@@ -976,6 +1079,110 @@ export const BankAdjusting = {
     date: string
     description?: string
   }) => api.post<any>('/bank-accounts/adjusting-entry', body),
+}
+
+// ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============
+export type ClearingSettlementType = 'card' | 'ewallet' | 'bank_transfer' | 'tpf'
+
+export interface ClearingSettlement {
+  id: string
+  clearingType: ClearingSettlementType
+  tpfProviderId?: string | null
+  tpfProvider?: { id: string; name: string } | null
+  bankAccountId: string
+  bankAccount?: BankAccount
+  amount: number
+  feeAmount: number
+  referenceNo?: string | null
+  settledAt: string
+  journalEntryId?: string | null
+  createdAt: string
+}
+
+export interface UnidentifiedBankCredit {
+  id: string
+  bankAccountId: string
+  bankAccount?: BankAccount
+  amount: number
+  creditDate: string
+  bankRef?: string | null
+  status: 'unmatched' | 'reclassified'
+  reclassifiedNote?: string | null
+  reclassifiedAt?: string | null
+  journalEntryId?: string | null
+  reclassJournalEntryId?: string | null
+  createdAt: string
+}
+
+export const ClearingSettlements = {
+  list: (filters?: { clearingType?: ClearingSettlementType; tpfProviderId?: string }) =>
+    api.get<ClearingSettlement[]>('/bank-accounts/clearing-settlements', filters as any),
+  record: (body: {
+    bankAccountId: string
+    clearingType: ClearingSettlementType
+    tpfProviderId?: string
+    amount: number
+    feeAmount?: number
+    referenceNo?: string
+    settledAt: string
+  }) => api.post<ClearingSettlement>('/bank-accounts/clearing-settlements', body),
+  activeTpfProviders: () => api.get<{ id: string; name: string }[]>('/bank-accounts/tpf-providers'),
+}
+
+// ============ Unapplied Customer Collections (Scenario 38 Gap 4) ============
+export type UnappliedCollectionStatus = 'UNMATCHED' | 'APPLIED' | 'REFUNDED'
+
+export interface UnappliedCustomerCollection {
+  id: string
+  customerId: string
+  customer?: { id: string; name: string; customerCode?: string | null }
+  branchId: string
+  branch?: { id: string; name: string; code?: string | null }
+  amount: number
+  unappliedAmount: number
+  paymentMethod?: string | null
+  reference?: string | null
+  notes?: string | null
+  status: UnappliedCollectionStatus
+  journalEntryId?: string | null
+  createdAt: string
+}
+
+export const UnappliedCollections = {
+  list: (filters?: {
+    status?: UnappliedCollectionStatus
+    customerId?: string
+    branchId?: string
+  }) => api.get<UnappliedCustomerCollection[]>('/accounting/unapplied-collections', filters as any),
+  get: (id: string) =>
+    api.get<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}`),
+  record: (body: {
+    customerId: string
+    amount: number
+    paymentMethod?: string
+    reference?: string
+    notes?: string
+    branchId?: string
+  }) => api.post<UnappliedCustomerCollection>('/accounting/unapplied-collections', body),
+  apply: (id: string, body: { arInvoiceId: string; amount?: number; paymentDate?: string }) =>
+    api.post<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}/apply`, body),
+  refund: (id: string, body: { amount?: number; reason?: string }) =>
+    api.post<UnappliedCustomerCollection>(`/accounting/unapplied-collections/${id}/refund`, body),
+}
+
+export const UnidentifiedBankCredits = {
+  list: (status?: 'unmatched' | 'reclassified') =>
+    api.get<UnidentifiedBankCredit[]>(
+      '/bank-accounts/unidentified-bank-credits',
+      status ? { status } : undefined
+    ),
+  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
+    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
+    api.post<UnidentifiedBankCredit>(
+      `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
+      body
+    ),
 }
 
 // ============ Helpers ============

@@ -220,7 +220,6 @@ export type InstallmentAccountFilters = {
   category?: string
   classification?: string
   status?: string
-  agingBucket?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

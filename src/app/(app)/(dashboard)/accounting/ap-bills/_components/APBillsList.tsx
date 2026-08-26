@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Plus,
   RefreshCw,
@@ -17,12 +18,14 @@ import {
   APBills,
   APBillSuppliers,
   APBillMatching,
+  BankAccounts,
   type APBill,
   type APBillPayment,
   type APBillSupplierOption,
   type APBillPurchaseOrderOption,
   type APBillGoodsReceiptOption,
   type APBillMatchCheck,
+  type BankAccount,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
@@ -62,6 +65,7 @@ const VOUCHER_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function APBillsList() {
+  const router = useRouter()
   const [items, setItems] = useState<APBill[]>([])
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -160,8 +164,53 @@ export default function APBillsList() {
               </tr>
             ) : (
               items.map((b) => (
-                <tr key={b.id}>
-                  <td className="px-3 py-2 font-mono text-xs">{b.billNumber}</td>
+                <tr
+                  key={b.id}
+                  onClick={() => router.push(`/accounting/ap-bills/${b.id}`)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {b.billNumber}
+                    {b.purchaseOrder && (
+                      <span className="block text-[10px] text-gray-400">
+                        PO: {b.purchaseOrder.code}
+                        {b.purchaseOrder.status === 'partially_received' && (
+                          <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[9px] font-medium text-amber-700">
+                            Partial
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {(b.goodsReceipts?.length ?? 0) > 0 && (
+                      <span className="block text-[10px] text-gray-400">
+                        RR: {b.goodsReceipts!.map((r) => r.code).join(', ')}
+                      </span>
+                    )}
+                    {(() => {
+                      const siNumbers = Array.from(
+                        new Set(
+                          (b.goodsReceipts ?? [])
+                            .map((r) => r.supplierInvoiceNumber)
+                            .filter(Boolean)
+                        )
+                      )
+                      const drNumbers = Array.from(
+                        new Set(
+                          (b.goodsReceipts ?? [])
+                            .map((r) => r.deliveryReceiptNumber)
+                            .filter(Boolean)
+                        )
+                      )
+                      if (siNumbers.length === 0 && drNumbers.length === 0) return null
+                      return (
+                        <span className="block text-[10px] text-gray-400">
+                          {siNumbers.length > 0 && <>SI: {siNumbers.join(', ')}</>}
+                          {siNumbers.length > 0 && drNumbers.length > 0 && ' · '}
+                          {drNumbers.length > 0 && <>DR: {drNumbers.join(', ')}</>}
+                        </span>
+                      )
+                    })()}
+                  </td>
                   <td className="px-3 py-2">
                     <div>{b.supplier?.name}</div>
                   </td>
@@ -180,7 +229,7 @@ export default function APBillsList() {
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       {b.status === 'DRAFT' && (
                         <button
@@ -318,7 +367,6 @@ function BillForm({
     description: initial?.description ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -486,7 +534,7 @@ function BillForm({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
                 required
@@ -503,13 +551,6 @@ function BillForm({
                 step="0.01"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>
@@ -565,9 +606,17 @@ function PayBill({
     reference: '',
     chequeNumber: '',
     notes: '',
+    // Which bank/cash fund the money actually paid out of — distinct from
+    // Method (how it was paid). Optional: not every payment goes through a
+    // tracked fund account.
+    bankAccountId: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  useEffect(() => {
+    BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
+  }, [])
   const totalSettled = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -578,6 +627,7 @@ function PayBill({
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
       chequeNumber: form.method === 'check' ? form.chequeNumber || undefined : undefined,
+      bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
     if (!res.success) {
@@ -668,6 +718,20 @@ function PayBill({
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
+          </Field>
+          <Field label="Source of Fund">
+            <select
+              value={form.bankAccountId}
+              onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            >
+              <option value="">— Not tracked —</option>
+              {bankAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} — {acc.bankName} ({acc.accountNumber})
+                </option>
+              ))}
+            </select>
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">

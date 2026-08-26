@@ -14,6 +14,7 @@ import { AdjustmentReasonCodeSchema } from '@/src/schema/inventory/stock-counts'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 type WarehouseOption = { id: string; name: string; branch?: { name: string } | null }
+type SupplierOption = { id: string; code: string; name: string }
 
 type Props = {
   isOpen: boolean
@@ -21,6 +22,7 @@ type Props = {
   onSubmit: (data: CreateManualReceivingReportFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouseOptions: WarehouseOption[]
+  supplierOptions: SupplierOption[]
 }
 
 const fieldClass =
@@ -32,6 +34,7 @@ export default function CreateManualRrModal({
   onSubmit,
   isSubmitting,
   warehouseOptions,
+  supplierOptions,
 }: Props) {
   const [selectedItemIsSerialTracked, setSelectedItemIsSerialTracked] = useState<boolean | null>(
     null
@@ -39,7 +42,14 @@ export default function CreateManualRrModal({
 
   const form = useForm<CreateManualReceivingReportFormValues>({
     resolver: zodResolver(CreateManualReceivingReportFormSchema),
-    defaultValues: { itemId: '', warehouseId: '', serialNumber: '', notes: '' },
+    defaultValues: {
+      itemId: '',
+      warehouseId: '',
+      serialNumber: '',
+      notes: '',
+      unitCost: undefined,
+      supplierId: '',
+    },
   })
 
   if (!isOpen) return null
@@ -180,6 +190,62 @@ export default function CreateManualRrModal({
                 {form.formState.errors.reasonCode.message}
               </p>
             )}
+          </div>
+
+          <div className="border-t border-zinc-100 pt-4">
+            <p className="mb-3 text-xs font-medium text-zinc-500">
+              Financial value (optional) — leave blank if unknown, or fill both to post a journal
+              entry when approved
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">Unit Cost</label>
+                <Controller
+                  name="unitCost"
+                  control={form.control}
+                  render={({ field: f }) => (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={f.value ?? ''}
+                      onChange={(e) =>
+                        f.onChange(e.target.value === '' ? undefined : Number(e.target.value))
+                      }
+                      onBlur={f.onBlur}
+                      className={fieldClass}
+                    />
+                  )}
+                />
+                {form.formState.errors.unitCost && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {form.formState.errors.unitCost.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier</label>
+                <Controller
+                  name="supplierId"
+                  control={form.control}
+                  render={({ field: f }) => (
+                    <select {...f} className={fieldClass}>
+                      <option value="">Select a supplier…</option>
+                      {supplierOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.code} — {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                />
+                {form.formState.errors.supplierId && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {form.formState.errors.supplierId.message}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
           <div>

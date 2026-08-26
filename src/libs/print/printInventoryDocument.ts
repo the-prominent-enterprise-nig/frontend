@@ -61,6 +61,168 @@ export function printInventoryDocument(
 }
 
 /**
+ * Builds the Receiving Report document as a standalone HTML string — same
+ * typographic system as printPurchaseOrderDocument() below (title left /
+ * logo right, stacked label-over-value meta columns, light #ccc-bordered
+ * table) so the two lettered documents read as one family, rather than the
+ * earlier version's pre-printed-pad look (underlined fill-in blanks, heavy
+ * ruled borders). Kept separate from printReceivingReportDocument() so a
+ * preview (e.g. an iframe) can render the exact same markup without opening
+ * a popup window.
+ */
+export function buildReceivingReportHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const rr = doc.document as Record<string, unknown>
+  const supplier = rr.supplier as { name?: string } | undefined
+  const warehouse = rr.warehouse as { name?: string; branch?: { name?: string } | null } | undefined
+  const enterprise = doc.enterprise
+  const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
+
+  let totalQty = 0
+  let totalAmount = 0
+  let hasAnyCost = false
+
+  const rows = lines
+    .map((l) => {
+      const item = l.item as
+        | {
+            name?: string
+            modelNumber?: string
+            brand?: { name?: string }
+            type?: { name?: string }
+          }
+        | undefined
+      const serials = (l.serialNumbers as string[] | undefined) ?? []
+      const qty = Number(l.quantityReceived ?? 0)
+      const unitCost = l.unitCost != null ? Number(l.unitCost) : null
+      totalQty += qty
+      if (unitCost != null) {
+        hasAnyCost = true
+        totalAmount += qty * unitCost
+      }
+      return `<tr>
+        <td class="mono">${serials.length > 0 ? esc(serials.join(', ')) : ''}</td>
+        <td>${esc(item?.brand?.name) || ''}</td>
+        <td>${esc(item?.modelNumber) || esc(item?.name) || ''}</td>
+        <td>${esc(item?.type?.name) || ''}</td>
+        <td class="right">${qty}</td>
+        <td class="right">${unitCost != null ? fmt(unitCost) : ''}</td>
+        <td class="right">${unitCost != null ? fmt(qty * unitCost) : ''}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { font-weight: 700; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 120px; }
+    .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Receiving Report</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(supplier?.name) || '—'}</p>
+        <p class="party-address">Driver/Helper: —</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
+        <p class="meta-label">Ref</p>
+        <p class="meta-value">${esc(ref) || '—'}</p>
+        <p class="meta-label">Dated</p>
+        <p class="meta-value">—</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="width:14%">Part No. / Serial No.</th>
+          <th colspan="3">Description</th>
+          <th rowspan="2" style="width:8%">Qty</th>
+          <th rowspan="2" style="width:12%">Unit price</th>
+          <th rowspan="2" style="width:14%">Amount</th>
+        </tr>
+        <tr>
+          <th>Brand</th>
+          <th>Model</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="total-wrap">
+      <table>
+        <tr>
+          <td class="label">Total</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${hasAnyCost ? ` — ${fmt(totalAmount)}` : ''}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Received by:</p>
+        <div class="sig-line"></div>
+        ${rr.receivedByName ? `<p class="sig-name">${esc(rr.receivedByName)}</p>` : ''}
+      </div>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printReceivingReportDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildReceivingReportHtml(data))
+  win.document.close()
+}
+
+/**
  * Purpose-built letterhead layout for the Purchase Order print/download —
  * doesn't reuse printInventoryDocument()'s generic "Enterprise" meta-grid
  * shell, since a PO needs its own two-party (supplier + enterprise) header,
@@ -138,7 +300,7 @@ export function printPurchaseOrderDocument(
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 64px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }

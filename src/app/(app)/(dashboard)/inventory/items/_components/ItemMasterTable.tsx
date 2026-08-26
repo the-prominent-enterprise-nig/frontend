@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Trash2, ChevronDown, Layers, Palette } from 'lucide-react'
+import { Pencil, Trash2, ChevronDown, Layers } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -20,6 +20,10 @@ function brandModelLabel(item: ItemSummary): string {
   const model = item.modelNumber ?? undefined
   if (brand && model) return `${brand} — ${model}`
   return brand ?? model ?? '—'
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
 }
 
 const LIFECYCLE_COLORS: Record<string, string> = {
@@ -70,7 +74,6 @@ type Props = {
   onDelete: (item: ItemSummary) => void
   onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
   onViewBundle?: (item: ItemSummary) => void
-  onViewVariants?: (item: ItemSummary) => void
   // Scenario 16 — Item Master Governance
   canSubmitReview: boolean
   canConfirmAccounting: boolean
@@ -164,7 +167,6 @@ export default function ItemMasterTable({
   onDelete,
   onLifecycleChange,
   onViewBundle,
-  onViewVariants,
   canSubmitReview,
   canConfirmAccounting,
   canApproveItem,
@@ -180,7 +182,6 @@ export default function ItemMasterTable({
     canUpdate ||
     canDelete ||
     !!onViewBundle ||
-    !!onViewVariants ||
     canSubmitReview ||
     canConfirmAccounting ||
     canApproveItem
@@ -228,6 +229,9 @@ export default function ItemMasterTable({
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Brand / Model
               </th>
+              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Price
+              </th>
               <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Status
               </th>
@@ -243,39 +247,41 @@ export default function ItemMasterTable({
               <tr
                 key={item.id}
                 className="cursor-pointer hover:bg-zinc-50"
-                onClick={() => pushPanel({ type: 'item360', itemId: item.id, itemName: item.name })}
+                onClick={() =>
+                  pushPanel({
+                    type: 'item360',
+                    itemId: item.id,
+                    itemName: item.name,
+                    context: 'catalog',
+                  })
+                }
               >
                 <td className="px-4 py-3">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-zinc-900">{item.name}</span>
-                      {item.isBundle === true && (
-                        <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
-                          Bundle
-                        </span>
-                      )}
-                      {item.hasVariants === true && (
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700">
-                          Variants
-                        </span>
-                      )}
-                      {item.isService === true && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                          Service
-                        </span>
-                      )}
-                      {(item._count?.serialNumbers ?? 0) > 0 && (
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
-                          {item._count?.serialNumbers} unit
-                          {item._count?.serialNumbers !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-mono text-xs text-zinc-500">{item.sku}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-zinc-900">{item.name}</span>
+                    {item.isBundle === true && (
+                      <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                        Bundle
+                      </span>
+                    )}
+                    {item.isService === true && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        Service
+                      </span>
+                    )}
+                    {(item._count?.serialNumbers ?? 0) > 0 && (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
+                        {item._count?.serialNumbers} unit
+                        {item._count?.serialNumbers !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
                 <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
+                <td className="px-4 py-3 text-right text-zinc-700">
+                  {item.sellingPrice != null ? formatCurrency(item.sellingPrice) : '—'}
+                </td>
                 <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                   {/* Scenario 16: lifecycle (active/discontinued/archived) is a
                       post-publish concept — showing it alongside "Pending
@@ -352,15 +358,6 @@ export default function ItemMasterTable({
                                   label: 'Components',
                                   icon: Layers,
                                   onClick: () => onViewBundle(item),
-                                },
-                              ]
-                            : []),
-                          ...(!item.isBundle && onViewVariants
-                            ? [
-                                {
-                                  label: 'Variants',
-                                  icon: Palette,
-                                  onClick: () => onViewVariants(item),
                                 },
                               ]
                             : []),

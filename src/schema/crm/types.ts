@@ -288,7 +288,6 @@ export interface CollectorInstallmentAccountSummary {
   accountNumber: string
   category?: InstallmentAccountCategory | null
   classification?: InstallmentAccountClassification | null
-  agingBucket?: string | null
   currentBalance: number | string
 }
 
@@ -306,25 +305,6 @@ export interface AccountingCustomerLite {
   email?: string | null
 }
 
-/**
- * Reverse-engineered against the client's real June 2026 AR export
- * (AR_Balance_0626.xlsx) — see computeAging() in the backend's
- * installment-account.service.ts. Two independent flags, not one value:
- * an account can be both in arrears AND not-moving at once.
- */
-export type ArrearsFlag = 'pink' | 'green' | null
-export type NotMovingFlag = 'pink' | 'blue' | null
-
-export interface AgingInfo {
-  noArsMonths: number
-  mosRun: number
-  notMvgMonths: number
-  arrears: ArrearsFlag
-  notMoving: NotMovingFlag
-  /** Deduped, slash-joined display color (e.g. "green/blue"), or null if neither flag is set. */
-  color: string | null
-}
-
 export interface InstallmentAccount {
   id: string
   accountNumber: string
@@ -339,16 +319,11 @@ export interface InstallmentAccount {
   legalEscalationStatus?: LegalEscalationStatus
   legalEscalationNotes?: string | null
   legalEscalationUpdatedAt?: string | null
-  agingBucket?: string | null
   status: InstallmentAccountStatus
   createdAt: string
   customer?: { name: string } | null
   branch?: { name: string } | null
   collector?: { stubNumber: string; name: string } | null
-  aging?: AgingInfo | null
-  /** Recommend-only, computed from aging — never auto-applied. Null when the
-   * account isn't active (aging itself isn't computed) or has no signal. */
-  recommendedCategory?: InstallmentAccountCategory | null
 }
 
 export interface InstallmentAccountDetail extends InstallmentAccount {

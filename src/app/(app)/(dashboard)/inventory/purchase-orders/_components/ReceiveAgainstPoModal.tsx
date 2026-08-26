@@ -74,7 +74,12 @@ const ReceivePoFormSchema = z.object({
   // this Receiving Report. Both are the supplier's own paperwork, typed in
   // by whoever is physically receiving the delivery.
   deliveryReceiptNumber: z.string().optional(),
-  supplierInvoiceNumber: z.string().optional(),
+  // This modal always submits applicationType: 'new_stock' (see
+  // handleFormSubmit below), so — unlike ReceiveStockFormSchema, which
+  // branches on applicationType — the requirement here is unconditional.
+  supplierInvoiceNumber: z
+    .string()
+    .min(1, 'Supplier invoice number is required for new stock receipts'),
   withholding: z.enum(['none', 'pct_1']).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
@@ -138,6 +143,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
 
   const {
     control,
+    register,
     handleSubmit,
     reset,
     setValue,
@@ -199,16 +205,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       }
       return next
     })
-  }
-
-  // One box per physical unit rather than a shared multi-serial textarea —
-  // easier to scan/verify against a delivery of individually-labeled units
-  // than typing/pasting a comma- or newline-separated list.
-  function handleUnitSerialChange(lineIdx: number, unitIdx: number, value: string): void {
-    const qty = Math.max(0, Math.floor(Number(watchedLines?.[lineIdx]?.quantityReceived) || 0))
-    const current = watchedLines?.[lineIdx]?.serialNumbers ?? []
-    const next = Array.from({ length: qty }, (_, i) => (i === unitIdx ? value : (current[i] ?? '')))
-    setValue(`lines.${lineIdx}.serialNumbers`, next, { shouldValidate: true })
   }
 
   async function handleFormSubmit(data: ReceivePoFormValues) {
@@ -394,6 +390,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Supplier Invoice No.
+                  <span className="text-red-500"> *</span>
                   <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
                 </label>
                 <Controller
@@ -705,8 +702,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                         )
                                       ),
                                     }).map((_, unitIdx) => {
-                                      const value =
-                                        watchedLines?.[idx]?.serialNumbers?.[unitIdx] ?? ''
                                       const unitError =
                                         errors.lines?.[idx]?.serialNumbers?.[unitIdx]?.message ??
                                         (unitIdx === 0
@@ -724,10 +719,9 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                             )}
                                           </span>
                                           <input
-                                            value={value}
-                                            onChange={(e) =>
-                                              handleUnitSerialChange(idx, unitIdx, e.target.value)
-                                            }
+                                            {...register(
+                                              `lines.${idx}.serialNumbers.${unitIdx}` as `lines.${number}.serialNumbers.${number}`
+                                            )}
                                             type="text"
                                             placeholder={`SN-00${unitIdx + 1}`}
                                             className={`${cellInputClass} font-mono text-xs ${

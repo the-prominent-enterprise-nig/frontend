@@ -20,10 +20,6 @@ import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
 import { addBundleComponent } from '../../bundles/_actions/add-bundle-component'
 import { removeBundleComponent } from '../../bundles/_actions/remove-bundle-component'
-import { getVariants } from '../_actions/get-variants'
-import { createVariant } from '../_actions/create-variant'
-import { updateVariant } from '../_actions/update-variant'
-import { deleteVariant } from '../_actions/delete-variant'
 import type {
   CreateItemFormValues,
   UpdateItemFormValues,
@@ -41,10 +37,6 @@ import type {
   CreateBundleFormValues,
   BundleComponentFormValues,
 } from '@/src/schema/inventory/bundles'
-import type {
-  CreateVariantFormValues,
-  UpdateVariantFormValues,
-} from '@/src/schema/inventory/variants'
 
 type CategorySelectOption = { id: string; name: string; depth: number }
 
@@ -96,13 +88,16 @@ export function useItemMaster() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [selectedBundleItem, setSelectedBundleItem] = useState<ItemSummary | null>(null)
   const [removingComponentId, setRemovingComponentId] = useState<string | null>(null)
-  const [selectedVariantItem, setSelectedVariantItem] = useState<ItemSummary | null>(null)
 
   const queryParams = useMemo(
     () => ({
       page,
       limit,
       search: search || undefined,
+      // SKU is intentionally not shown or searchable in the Item Master
+      // catalog list — see ItemMasterTable's item row and this page's search
+      // placeholder, which no longer mention SKU either.
+      matchSku: false,
       lifecycle,
       approvalStatus,
       primaryCategoryId,
@@ -271,73 +266,6 @@ export function useItemMaster() {
     queryFn: () => getBundleComponents(selectedBundleItem!.id),
     enabled: !!selectedBundleItem,
     staleTime: 30 * 1000,
-  })
-
-  const variantsQuery = useQuery({
-    queryKey: ['inventory-item-variants', selectedVariantItem?.id],
-    queryFn: () => getVariants(selectedVariantItem!.id),
-    enabled: !!selectedVariantItem,
-    staleTime: 30 * 1000,
-  })
-
-  const createVariantMutation = useMutation({
-    mutationFn: ({ itemId, data }: { itemId: string; data: CreateVariantFormValues }) =>
-      createVariant(itemId, data),
-    onSuccess: (result, { itemId }) => {
-      if (result.success) {
-        showToast({ title: 'Variant created', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['inventory-item-variants', itemId] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
-      } else {
-        showToast({
-          title: 'Failed to create variant',
-          description: result.message,
-          status: 'error',
-        })
-      }
-    },
-  })
-
-  const updateVariantMutation = useMutation({
-    mutationFn: ({
-      itemId,
-      variantId,
-      data,
-    }: {
-      itemId: string
-      variantId: string
-      data: UpdateVariantFormValues
-    }) => updateVariant(itemId, variantId, data),
-    onSuccess: (result, { itemId }) => {
-      if (result.success) {
-        showToast({ title: 'Variant updated', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['inventory-item-variants', itemId] })
-      } else {
-        showToast({
-          title: 'Failed to update variant',
-          description: result.message,
-          status: 'error',
-        })
-      }
-    },
-  })
-
-  const deleteVariantMutation = useMutation({
-    mutationFn: ({ itemId, variantId }: { itemId: string; variantId: string }) =>
-      deleteVariant(itemId, variantId),
-    onSuccess: (result, { itemId }) => {
-      if (result.success) {
-        showToast({ title: 'Variant deleted', description: result.message, status: 'success' })
-        queryClient.invalidateQueries({ queryKey: ['inventory-item-variants', itemId] })
-        queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
-      } else {
-        showToast({
-          title: 'Failed to delete variant',
-          description: result.message,
-          status: 'error',
-        })
-      }
-    },
   })
 
   const itemsLookupQuery = useQuery({
@@ -559,20 +487,5 @@ export function useItemMaster() {
     isAddingBundleComponent: addBundleComponentMutation.isPending,
     removeBundleComponent: removeBundleComponentMutation.mutateAsync,
     removingComponentId,
-
-    // Variants
-    selectedVariantItem,
-    setSelectedVariantItem,
-    variants: variantsQuery.data?.data?.data ?? [],
-    isLoadingVariants: variantsQuery.isLoading,
-    createVariant: (itemId: string, data: CreateVariantFormValues) =>
-      createVariantMutation.mutateAsync({ itemId, data }),
-    isCreatingVariant: createVariantMutation.isPending,
-    updateVariant: (itemId: string, variantId: string, data: UpdateVariantFormValues) =>
-      updateVariantMutation.mutateAsync({ itemId, variantId, data }),
-    isUpdatingVariant: updateVariantMutation.isPending,
-    deleteVariant: (itemId: string, variantId: string) =>
-      deleteVariantMutation.mutateAsync({ itemId, variantId }),
-    isDeletingVariant: deleteVariantMutation.isPending,
   }
 }

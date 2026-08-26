@@ -23,9 +23,11 @@ function SerialsSkeleton() {
 export default function SerialsTab({
   serials,
   isLoading,
+  onSelectSerial,
 }: {
   serials: SerialNumberSummary[]
   isLoading: boolean
+  onSelectSerial: (serial: SerialNumberSummary) => void
 }) {
   if (isLoading) return <SerialsSkeleton />
 
@@ -77,7 +79,11 @@ export default function SerialsTab({
         </thead>
         <tbody className="divide-y divide-zinc-100">
           {serials.map((serial) => (
-            <tr key={serial.id} className="hover:bg-zinc-50">
+            <tr
+              key={serial.id}
+              className="cursor-pointer hover:bg-zinc-50"
+              onClick={() => onSelectSerial(serial)}
+            >
               <td className="px-2 py-2 font-mono text-xs font-semibold text-zinc-700">
                 {serial.serialNumber}
               </td>

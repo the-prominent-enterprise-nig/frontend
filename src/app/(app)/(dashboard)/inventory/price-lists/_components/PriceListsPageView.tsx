@@ -149,7 +149,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
     setPage,
     showInactive,
     setShowInactive,
-    currencies,
     branches,
     priceUseTypes,
     createPriceUseType,
@@ -443,7 +442,6 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleSubmit}
         isSubmitting={editingList ? isUpdating : isCreating}
-        currencies={currencies}
         branches={branches}
         priceUseTypes={priceUseTypes}
         priceLists={priceLists}

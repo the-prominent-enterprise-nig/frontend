@@ -19,7 +19,6 @@ type FormState = {
   status: InstallmentAccountStatus
   category: InstallmentAccountCategory | ''
   classification: InstallmentAccountClassification | ''
-  agingBucket: string
   arrears: string
   penalty: string
   insuranceCharge: string
@@ -31,7 +30,6 @@ const empty: FormState = {
   status: 'active',
   category: '',
   classification: '',
-  agingBucket: '',
   arrears: '',
   penalty: '',
   insuranceCharge: '',
@@ -111,7 +109,6 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
           status: a.status,
           category: a.category ?? '',
           classification: a.classification ?? '',
-          agingBucket: a.agingBucket ?? '',
           arrears: String(a.arrears ?? 0),
           penalty: String(a.penalty ?? 0),
           insuranceCharge: a.insuranceCharge != null ? String(a.insuranceCharge) : '',
@@ -147,7 +144,6 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
       status: form.status,
       category: form.category || undefined,
       classification: form.classification || undefined,
-      agingBucket: form.agingBucket || undefined,
       arrears: form.arrears === '' ? undefined : Number(form.arrears),
       penalty: form.penalty === '' ? undefined : Number(form.penalty),
       insuranceCharge: form.insuranceCharge === '' ? undefined : Number(form.insuranceCharge),
@@ -276,18 +272,6 @@ export default function EditInstallmentAccountForm({ id }: { id: string }) {
               <option value="early_closed">Early closed</option>
               <option value="written_off">Written off</option>
             </select>
-          </div>
-          <div>
-            <label htmlFor="agingBucket" className="block text-[13px] font-medium text-gray-700">
-              Aging bucket
-            </label>
-            <input
-              id="agingBucket"
-              value={form.agingBucket}
-              onChange={(e) => setField('agingBucket', e.target.value)}
-              placeholder="current | 30 | 60 | 90 | over_90"
-              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-            />
           </div>
         </div>
 
