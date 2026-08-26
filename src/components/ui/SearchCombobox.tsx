@@ -80,9 +80,20 @@ export function SearchCombobox({
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Clear confirmed label when value is reset externally (form reset)
+  // Clear confirmed label when value is reset externally (form reset).
+  // Deferred one tick and re-checked rather than cleared inline: a sibling
+  // field's setValue() elsewhere in the same form can cause this field's
+  // Controller to receive a momentarily-stale falsy `value` for a single
+  // render before the real id comes back — clearing inline on that blip
+  // permanently wipes a still-valid selection with nothing to restore it,
+  // since this effect only ever handles value-becomes-empty, never
+  // value-comes-back. Deferring past that render (and bailing out in the
+  // cleanup if `value` is truthy again by then) makes a real external reset
+  // — which stays empty — behave identically, while surviving the blip.
   useEffect(() => {
-    if (!value) setConfirmedLabel('')
+    if (value) return
+    const id = setTimeout(() => setConfirmedLabel(''), 0)
+    return () => clearTimeout(id)
   }, [value])
 
   const updatePosition = useCallback(() => {
