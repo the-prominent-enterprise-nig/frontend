@@ -434,7 +434,6 @@ export default function CustomerForm({ id }: { id?: string }) {
         <CustomerExtraFields
           values={form}
           onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
-          showAddressHint={isEdit}
           showGroupId={false}
         />
 

@@ -411,9 +411,24 @@ export function printPurchaseOrderDocument(
       const unitPrice = Number(l.unitPrice ?? 0)
       const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const name = l.isFreebie ? `${item?.name ?? '—'} (Freebie)` : (item?.name ?? '—')
+      const srp = l.srp != null ? Number(l.srp) : null
+      const discounts = Array.isArray(l.discounts)
+        ? (l.discounts as { name?: string; type: string; value: number }[])
+        : []
+      const discountNote =
+        srp != null && discounts.length > 0
+          ? `<div class="discount-note">SRP ${fmt(srp)} · ${discounts
+              .map((d) => {
+                const amount = d.type === 'percentage' ? `${d.value}%` : fmt(d.value)
+                return esc(d.name ? `${d.name} (${amount})` : amount)
+              })
+              .join(
+                ' → '
+              )} off → ${fmt(l.discountedCost != null ? Number(l.discountedCost) : unitPrice)}</div>`
+          : ''
       return `<tr>
         <td class="num">${i + 1}</td>
-        <td>${esc(name)}</td>
+        <td>${esc(name)}${discountNote}</td>
         <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
         <td class="right">${fmt(unitPrice)}</td>
@@ -483,6 +498,7 @@ export function printPurchaseOrderDocument(
     .page-break { page-break-before: always; break-before: page; padding-top: 32px; }
     .mono { font-family: "Courier New", monospace; }
     .item-name { font-weight: 700; }
+    .discount-note { font-size: 11px; color: #555; margin-top: 2px; }
     .sn-table thead { display: table-header-group; }
     .sn-table tr { break-inside: avoid; }
     @media print { body { padding: 0; } .page-break { padding-top: 0; } button { display: none; } }

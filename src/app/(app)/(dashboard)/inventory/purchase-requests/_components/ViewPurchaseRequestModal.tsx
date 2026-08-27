@@ -16,6 +16,21 @@ const STATUS_STYLES: Record<string, string> = {
   converted: 'bg-purple-100 text-purple-700',
 }
 
+const fmtPHP = (n: number) => `₱${n.toLocaleString()}`
+
+// A PR line has no stored discountedCost (unlike a PO line, computed
+// server-side) — apply the same sequential chain client-side, same formula
+// PurchaseOrderFormFields.tsx uses for its own live preview.
+function discountedCostFor(
+  srp: number,
+  discounts: PurchaseRequestSummary['lines'][number]['discounts']
+): number {
+  return (discounts ?? []).reduce(
+    (price, d) => (d.type === 'percentage' ? price * (1 - d.value / 100) : price - d.value),
+    srp
+  )
+}
+
 export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
   if (!open || !pr) return null
 
@@ -126,6 +141,25 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
                         <p className="font-medium text-zinc-900">{line.item.name}</p>
                         <p className="text-xs text-zinc-400">SKU: {line.item.sku}</p>
                         {line.notes && <p className="mt-0.5 text-xs text-zinc-500">{line.notes}</p>}
+                        {line.srp != null && (
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            SRP {fmtPHP(Number(line.srp))}
+                            {line.discounts && line.discounts.length > 0 && (
+                              <>
+                                {' · '}
+                                {line.discounts
+                                  .map((d) => {
+                                    const amount =
+                                      d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
+                                    return d.name ? `${d.name} (${amount})` : amount
+                                  })
+                                  .join(' → ')}{' '}
+                                off
+                                {` → ${fmtPHP(discountedCostFor(Number(line.srp), line.discounts))}`}
+                              </>
+                            )}
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-700">{line.quantity}</td>
                       <td className="px-3 py-2 text-right text-zinc-700">
