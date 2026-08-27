@@ -218,15 +218,16 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await expect(dueNowRow).toBeVisible()
   await expect(dueNowRow).toHaveText('Due now—')
 
-  // Print/Download opens a popup with the right content — same
-  // printInventoryDocument() shell Purchase Orders already use.
+  // Print/Download opens a popup with the right content — same lettered
+  // letterhead template (logo top-right, title left) Purchase Orders /
+  // Receiving Reports / Stock Transfers already use.
   const [popup] = await Promise.all([
     page.waitForEvent('popup'),
     page.getByRole('button', { name: 'Print / Download' }).click(),
   ])
   await popup.waitForLoadState('domcontentloaded')
-  await expect(popup.locator('h1')).toHaveText(invoice.invoiceNumber)
-  await expect(popup.getByText('AR Invoice', { exact: true })).toBeVisible()
+  await expect(popup.locator('h1')).toHaveText('AR Invoice')
+  await expect(popup.getByText(invoice.invoiceNumber, { exact: false })).toBeVisible()
   await expect(popup.getByText(item.name, { exact: false })).toBeVisible()
   await popup.close()
 
