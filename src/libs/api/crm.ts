@@ -3,6 +3,7 @@ import type {
   PipelineStage,
   Lead,
   Customer,
+  CoMaker,
   Interaction,
   Reminder,
   CustomerSegment,
@@ -25,9 +26,14 @@ import type {
   CollectionsCalendarResponse,
   CustomerSourceChannel,
   InteractionType,
+  InstallmentLedger,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
-import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
+import type {
+  CreateCustomerInput,
+  UpdateCustomerInput,
+  CoMakerFormValues,
+} from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type {
   CreateReminderInput,
@@ -166,6 +172,14 @@ export const customersApi = {
     api.post('/crm/customers/duplicates/dismiss', { customerAId, customerBId }),
   merge: (survivorId: string, duplicateId: string, fieldOverrides?: Partial<UpdateCustomerInput>) =>
     api.post<Customer>(`/crm/customers/${survivorId}/merge`, { duplicateId, fieldOverrides }),
+  // Single-row co-maker writes — unlike `update`'s coMakers[] array (which
+  // replaces the whole set and reassigns every id), these only ever touch
+  // one co-maker, so anything else pointing at it (e.g. a Credit
+  // Application's coMakerId) stays linked.
+  addCoMaker: (customerId: string, body: CoMakerFormValues) =>
+    api.post<CoMaker>(`/crm/customers/${customerId}/co-makers`, body),
+  updateCoMaker: (customerId: string, coMakerId: string, body: Partial<CoMakerFormValues>) =>
+    api.patch<CoMaker>(`/crm/customers/${customerId}/co-makers/${coMakerId}`, body),
 }
 
 // ─── Interactions ───────────────────────────────────────────
@@ -268,6 +282,7 @@ export const installmentAccountsApi = {
       tags: ['crm:installment-accounts'],
     }),
   get: (id: string) => api.get<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`),
+  getLedger: (id: string) => api.get<InstallmentLedger>(`/crm/installment-accounts/${id}/ledger`),
   create: (body: CreateInstallmentAccountInput) =>
     api.post<InstallmentAccountDetail>('/crm/installment-accounts', body),
   update: (id: string, body: UpdateInstallmentAccountInput) =>

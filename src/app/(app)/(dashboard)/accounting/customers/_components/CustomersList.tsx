@@ -2,16 +2,13 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, Search, RefreshCw, Pencil, Trash2, FileText, X } from 'lucide-react'
+import { Plus, Search, RefreshCw, Trash2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 import PhoneInput, { parsePhoneNumber } from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
 import {
   getCustomers,
-  getCustomerById,
   createCustomer,
-  updateCustomer,
   deleteCustomer,
   Customer,
   CustomerInput,
@@ -39,6 +36,7 @@ function toDisplayPhoneValue(raw: string): string | undefined {
 
 const FIELD_LIMITS = {
   firstName: 150,
+  middleName: 150,
   lastName: 150,
   email: 255,
   phoneNumber: 50,
@@ -58,32 +56,12 @@ interface Props {
 }
 
 export default function CustomersList({ session }: Props) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const [items, setItems] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Customer | null>(null)
-
-  // Deep link from the customer detail page's "Edit" button
-  // (/accounting/customers/[id] -> /accounting/customers?edit=<id>) — opens
-  // the edit modal directly instead of requiring a second click on the row.
-  useEffect(() => {
-    const editId = searchParams.get('edit')
-    if (!editId) return
-    getCustomerById(editId).then((res) => {
-      if (res.success && res.data) {
-        setEditing(res.data)
-        setDialogOpen(true)
-      }
-    })
-    router.replace('/accounting/customers')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
 
   const canCreate = can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_CREATE)
-  const canUpdate = can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_UPDATE)
   const canDelete = can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_DELETE)
 
   const load = useCallback(async () => {
@@ -103,14 +81,13 @@ export default function CustomersList({ session }: Props) {
   }, [load])
 
   const handleSave = async (data: Partial<CustomerInput>) => {
-    const res = editing ? await updateCustomer(editing.id, data) : await createCustomer(data)
+    const res = await createCustomer(data)
     if (!res.success) {
       toast.error(res.message || res.error || 'Could not save customer')
       return
     }
-    toast.success(editing ? 'Customer updated' : 'Customer created')
+    toast.success('Customer created')
     setDialogOpen(false)
-    setEditing(null)
     load()
   }
 
@@ -143,10 +120,7 @@ export default function CustomersList({ session }: Props) {
             </button>
             {canCreate && (
               <button
-                onClick={() => {
-                  setEditing(null)
-                  setDialogOpen(true)
-                }}
+                onClick={() => setDialogOpen(true)}
                 className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-purple-800"
               >
                 <Plus className="h-4 w-4" /> Add Customer
@@ -240,17 +214,6 @@ export default function CustomersList({ session }: Props) {
                           >
                             <FileText className="w-4 h-4" />
                           </Link>
-                          {canUpdate && (
-                            <button
-                              onClick={() => {
-                                setEditing(c)
-                                setDialogOpen(true)
-                              }}
-                              className="p-1.5 text-purple-700 hover:bg-purple-50 rounded"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                          )}
                           {canDelete && (
                             <button
                               onClick={() => handleDelete(c)}
@@ -271,68 +234,39 @@ export default function CustomersList({ session }: Props) {
       </div>
 
       {dialogOpen && (
-        <CustomerFormDialog
-          customer={editing}
-          onClose={() => {
-            setDialogOpen(false)
-            setEditing(null)
-          }}
-          onSave={handleSave}
-        />
+        <CustomerFormDialog onClose={() => setDialogOpen(false)} onSave={handleSave} />
       )}
     </div>
   )
 }
 
-function customerToFormInput(customer: Customer | null): Partial<CustomerInput> {
-  if (!customer) {
-    return {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phoneNumber: '',
-      address: '',
-      barangayCode: '',
-      note: '',
-      customerType: 'individual',
-      groupId: '',
-      lifecycleStatus: 'alive',
-      isWithholdingAgent: false,
-      defaultWithholdingRate: null,
-      defaultWithholdingAtc: '',
-    }
-  }
-  // `name` is stored as a single field — split naively for the two-field
-  // form (mirrors the same split the backend does when merging partial
-  // firstName/lastName updates back onto the stored name).
-  const [firstName, ...rest] = (customer.name ?? '').split(' ')
+function defaultFormInput(): Partial<CustomerInput> {
   return {
-    firstName: firstName ?? '',
-    lastName: rest.join(' '),
-    email: customer.email ?? '',
-    phoneNumber: customer.phone ?? '',
-    address: customer.address ?? '',
-    barangayCode: customer.barangayCode ?? '',
-    note: customer.notes ?? '',
-    customerType: customer.customerType ?? 'individual',
-    groupId: customer.groupId ?? '',
-    lifecycleStatus: customer.lifecycleStatus ?? 'alive',
-    isWithholdingAgent: customer.isWithholdingAgent ?? false,
-    defaultWithholdingRate: customer.defaultWithholdingRate ?? null,
-    defaultWithholdingAtc: customer.defaultWithholdingAtc ?? '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    email: '',
+    phoneNumber: '',
+    address: '',
+    barangayCode: '',
+    note: '',
+    customerType: 'individual',
+    groupId: '',
+    lifecycleStatus: 'alive',
+    isWithholdingAgent: false,
+    defaultWithholdingRate: null,
+    defaultWithholdingAtc: '',
   }
 }
 
 function CustomerFormDialog({
-  customer,
   onClose,
   onSave,
 }: {
-  customer: Customer | null
   onClose: () => void
   onSave: (data: Partial<CustomerInput>) => Promise<void> | void
 }) {
-  const [form, setForm] = useState<Partial<CustomerInput>>(customerToFormInput(customer))
+  const [form, setForm] = useState<Partial<CustomerInput>>(defaultFormInput())
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<{ email?: string }>({})
   const set = <K extends keyof CustomerInput>(k: K, v: CustomerInput[K]) => {
@@ -359,9 +293,7 @@ function CustomerFormDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {customer ? 'Edit Customer' : 'Add Customer'}
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900">Add Customer</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-800">
             <X className="w-5 h-5" />
           </button>
@@ -397,6 +329,17 @@ function CustomerFormDialog({
                 maxLength={FIELD_LIMITS.lastName}
                 value={form.lastName ?? ''}
                 onChange={(e) => set('lastName', e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
+              />
+            </Field>
+            <Field
+              label="Middle Name"
+              count={[form.middleName?.length ?? 0, FIELD_LIMITS.middleName]}
+            >
+              <input
+                maxLength={FIELD_LIMITS.middleName}
+                value={form.middleName ?? ''}
+                onChange={(e) => set('middleName', e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm"
               />
             </Field>
@@ -442,12 +385,6 @@ function CustomerFormDialog({
           </Field>
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600">Address</label>
-            {Boolean(customer) && form.address && (
-              <p className="mb-1.5 text-[11px] text-zinc-500">
-                Current: <span className="text-zinc-700">{form.address}</span> — pick below to
-                replace it.
-              </p>
-            )}
             <PhilippineAddressPicker
               onChange={(v) =>
                 setForm((p) => ({ ...p, address: v.address, barangayCode: v.barangayCode }))

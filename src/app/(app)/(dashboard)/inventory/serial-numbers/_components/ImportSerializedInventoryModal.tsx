@@ -224,7 +224,7 @@ export default function ImportSerializedInventoryModal({ isOpen, onClose, wareho
                   htmlFor="import-serialized-warehouse"
                   className="mb-1 block text-sm font-medium text-zinc-700"
                 >
-                  Warehouse <span className="text-red-500">*</span>
+                  Location <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="import-serialized-warehouse"
@@ -232,7 +232,7 @@ export default function ImportSerializedInventoryModal({ isOpen, onClose, wareho
                   onChange={(e) => setWarehouseId(e.target.value)}
                   className={`${fieldClass} bg-white`}
                 >
-                  <option value="">Select warehouse…</option>
+                  <option value="">Select location…</option>
                   {warehouses.map((wh) => (
                     <option key={wh.id} value={wh.id}>
                       {wh.branch?.name ?? wh.name}

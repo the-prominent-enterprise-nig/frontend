@@ -80,9 +80,21 @@ export function SearchCombobox({
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Clear confirmed label when value is reset externally (form reset)
+  // Clear confirmed label only on a real transition from a selected value to
+  // blank (a genuine external reset) — never just because the current value
+  // happens to be blank. A parent modal that stays mounted across opens
+  // (gated by an early `if (!open) return null` rather than actually
+  // unmounting) still has last close's blank RHF state on the render where
+  // this component first mounts; the real value lands moments later via the
+  // parent's own reset() effect. Tracking prevValue (rather than "have I run
+  // before") also survives React StrictMode's dev-only double-invoke of
+  // effects on mount, which would otherwise replay this effect a second time
+  // while value is still blank and defeat a simple first-run guard.
+  const prevValueRef = useRef(value)
   useEffect(() => {
-    if (!value) setConfirmedLabel('')
+    const prevValue = prevValueRef.current
+    prevValueRef.current = value
+    if (prevValue && !value) setConfirmedLabel('')
   }, [value])
 
   const updatePosition = useCallback(() => {

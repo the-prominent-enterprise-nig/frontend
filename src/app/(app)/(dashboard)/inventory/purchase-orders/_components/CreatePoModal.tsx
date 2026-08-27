@@ -111,6 +111,16 @@ export function CreatePoModal({
   const isPrEditMode = !!pr
   const isPoEditMode = !!po
   const isBusy = isPoEditMode ? isSavingPo : isPrEditMode ? isSaving : isCreating
+  // Nothing to save yet if editing and the loaded record hasn't been touched.
+  const isEditMode = isPoEditMode || isPrEditMode
+
+  // Edit mode's line items come in pre-filled with an itemId but no display
+  // name — ItemSearchCombobox only knows an id, so without this it renders
+  // blank instead of showing what's already selected (SearchCombobox seeds
+  // its shown label from initialLabel once, on mount). Same story for the
+  // Supplier field.
+  const initialItemLabels = (po ?? pr)?.lines.map((line) => line.item?.name)
+  const initialSupplierLabel = (po ?? pr)?.supplier?.name
 
   const {
     register,
@@ -119,7 +129,7 @@ export function CreatePoModal({
     reset,
     setValue,
     getValues,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
     defaultValues: getDefaultValues(pr, po, currentUserBranchId),
@@ -202,6 +212,8 @@ export function CreatePoModal({
               setValue={setValue}
               getValues={getValues}
               open={open}
+              initialItemLabels={initialItemLabels}
+              initialSupplierLabel={initialSupplierLabel}
             />
           </div>
 
@@ -217,7 +229,7 @@ export function CreatePoModal({
             </button>
             <button
               type="submit"
-              disabled={isBusy}
+              disabled={isBusy || (isEditMode && !isDirty)}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-700 disabled:opacity-60"
             >
               {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}

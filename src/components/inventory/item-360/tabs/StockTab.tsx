@@ -91,10 +91,10 @@ export default function StockTab({
         ))}
       </div>
 
-      {/* Per-warehouse breakdown */}
+      {/* Per-location breakdown */}
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          By Warehouse
+          By Location
         </p>
         <div className="space-y-2">
           {balances.map((balance) => {
@@ -108,7 +108,10 @@ export default function StockTab({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-zinc-900">
-                    {balance.warehouse?.name ?? balance.warehouse?.code ?? '—'}
+                    {balance.warehouse?.branch?.name ??
+                      balance.warehouse?.name ??
+                      balance.warehouse?.code ??
+                      '—'}
                   </p>
                   {balance.reorderPoint != null && (
                     <p className="text-xs text-zinc-400">Reorder at {balance.reorderPoint} units</p>

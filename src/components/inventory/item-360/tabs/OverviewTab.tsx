@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { ItemTagLabel } from '@/src/schema/inventory/items'
 import ItemImageGallery from '@/src/app/(app)/(dashboard)/inventory/items/_components/ItemImageGallery'
+import PriceGuideSection from './PriceGuideSection'
+import AvailableBranchesSection from './AvailableBranchesSection'
 import { getItemTags } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/item-tags'
 import { STALE } from '@/src/libs/query/stale-times'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -118,6 +120,12 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
           <Field label="Selling Price" value={sellingPrice} />
         </div>
       </div>
+
+      {/* Price Guide — per Price Use scheme, with installment terms */}
+      <PriceGuideSection itemId={item.id} />
+
+      {/* Which branches currently carry stock of this item */}
+      <AvailableBranchesSection itemId={item.id} />
 
       {/* Physical (INV-38 + INV-45) */}
       {hasPhysical && (

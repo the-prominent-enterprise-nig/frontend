@@ -3,10 +3,11 @@ import { gotoReady } from './utils'
 
 // Scenario 29 — the mirror case of purchase-order-list-create-navigates-to-
 // requests.spec.ts: a fully-specified Purchase Request (supplier + priced
-// lines already set) auto-converts into a real PO the moment its single
-// approval tier is granted (PurchaseRequestService.approve()). The PR then
+// lines already set) auto-converts into a real PO the moment it's submitted
+// (PurchaseRequestService.submit()) — there's no separate PR-level approval
+// step anymore (the PO has its own, further down the pipeline). The PR then
 // drops out of the default (non-'converted') Purchase Requests list by
-// design (see that service's findAll()) — this proves the approver is
+// design (see that service's findAll()) — this proves the submitter is
 // followed to the Purchase Orders tab, where the new PO actually landed,
 // instead of being left looking at a list the record just vanished from.
 
@@ -21,8 +22,8 @@ async function pickFirstOption(page: Page, inputPlaceholder: string): Promise<vo
   await option.click()
 }
 
-test.describe('Inventory — approving a fully-specified Purchase Request', () => {
-  test('auto-converts to a PO and follows the approver to the Purchase Orders tab', async ({
+test.describe('Inventory — submitting a fully-specified Purchase Request', () => {
+  test('auto-converts to a PO and follows the submitter to the Purchase Orders tab', async ({
     page,
   }) => {
     await gotoReady(page, '/inventory/purchase-orders?tab=requests')
@@ -62,28 +63,10 @@ test.describe('Inventory — approving a fully-specified Purchase Request', () =
     await expect(page.getByRole('heading', { name: 'Submit Purchase Request' })).toHaveCount(0, {
       timeout: 10_000,
     })
-    await expect(row).toContainText(/submitted/i, { timeout: 10_000 })
 
-    await row.getByRole('button', { name: 'Approve' }).click()
-    await expect(page.getByRole('heading', { name: 'Approve Purchase Request' })).toBeVisible({
-      timeout: 10_000,
-    })
-    // This PR has a supplier and fully priced lines already, so this is the
-    // exact case the modal itself warns about.
-    await expect(
-      page.getByText('approving will convert this directly into a Purchase Order', {
-        exact: false,
-      })
-    ).toBeVisible()
-    await page
-      .locator('.fixed.inset-0')
-      .getByRole('button', { name: 'Approve', exact: true })
-      .click()
-    await expect(page.getByRole('heading', { name: 'Approve Purchase Request' })).toHaveCount(0, {
-      timeout: 10_000,
-    })
-
-    // The fix under test: the URL follows the record to where it now lives.
+    // The fix under test: this PR has a supplier and fully priced lines
+    // already, so submit() auto-converts it in the same request — the URL
+    // follows the record to where it now lives, no separate approval click.
     await expect(page).toHaveURL(/[?&]tab=orders/, { timeout: 15_000 })
     await expect(tabNav.getByRole('link', { name: 'Purchase Orders' })).toBeVisible()
 

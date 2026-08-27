@@ -32,7 +32,7 @@ function exportToCsv(data: AgingReportResponse) {
     'Serial Number',
     'Item Name',
     'SKU',
-    'Warehouse',
+    'Location',
     'Received',
     'Days Since Receipt',
     'Unit Cost',
@@ -211,7 +211,7 @@ export default function AgingReport({
                     Item
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                    Warehouse
+                    Location
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                     Unit Cost

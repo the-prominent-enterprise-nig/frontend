@@ -117,7 +117,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Goods Receiving</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Receive stock, track movements across all branches, and review delivery reports.
+              Receive stock, track movements across all locations, and review delivery reports.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -184,7 +184,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                 onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
                 className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
               >
-                <option value="">All Branches</option>
+                <option value="">All Locations</option>
                 {warehouseOptions.map((wh) => (
                   <option key={wh.id} value={wh.id}>
                     {wh.branch?.name ?? wh.name}
@@ -243,7 +243,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                           Item
                         </th>
                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                          Warehouse
+                          Location
                         </th>
                         <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                           On Hand
@@ -278,7 +278,14 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                               )}
                             </td>
                             <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                              {balance.warehouse?.code ?? '—'}
+                              <span>
+                                {balance.warehouse?.branch?.name ?? balance.warehouse?.name ?? '—'}
+                              </span>
+                              {balance.warehouse?.code && (
+                                <span className="ml-1.5 text-xs text-zinc-400">
+                                  ({balance.warehouse.code})
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-center font-semibold text-zinc-800">
                               {balance.onHandQty ?? 0}
@@ -407,7 +414,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                             Qty
                           </th>
                           <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                            Branch
+                            Location
                           </th>
                           <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                             Date

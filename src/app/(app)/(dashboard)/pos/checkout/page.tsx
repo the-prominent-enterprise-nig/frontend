@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Receipt,
-  Zap,
   User,
   UserPlus,
   PauseCircle,
@@ -24,8 +23,6 @@ import {
   KeyRound,
   WifiOff,
   UtensilsCrossed,
-  Mail,
-  Phone,
   Send,
   Clock,
   Building2,
@@ -76,7 +73,6 @@ import {
   validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
-  sendReceipt,
   getPaymentMethods,
   getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
@@ -236,8 +232,6 @@ const REF_METHODS: PosPaymentMethod[] = [
   'tpf',
   'qr',
 ]
-
-const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1111,12 +1105,11 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleMode, tenderTarget, payments.length])
 
-  // Scenario 37 — keep every payment row that's still on its default (not
-  // "Use a different method"-opened) live-synced with Item Payment Mode's
-  // current selection. Without this, switching Item Payment Mode after a
-  // row already exists leaves the row silently showing a stale method —
-  // the whole point of dropping the always-visible dropdown was to trust
-  // Item Payment Mode as the source of truth, so it has to stay current.
+  // Scenario 37 — keep every payment row that's still on its default (the
+  // cashier hasn't picked a different method from the row's own dropdown)
+  // live-synced with Item Payment Mode's current selection. Without this,
+  // switching Item Payment Mode after a row already exists leaves the row
+  // silently showing a stale method.
   useEffect(() => {
     const preferredKey = preferredPaymentMethodKey()
     if (!preferredKey) return
@@ -1510,10 +1503,6 @@ export default function CheckoutPage() {
 
   function toggleDownPaymentEdit(lineId: string) {
     setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
-  }
-
-  function togglePaymentMethodEdit(idx: number) {
-    setPaymentMethodEditOpen((prev) => ({ ...prev, [idx]: !prev[idx] }))
   }
 
   function setQty(itemId: string, qty: number) {
@@ -3350,7 +3339,7 @@ export default function CheckoutPage() {
                         />
                       </div>
                       {groupMode === 'installment' && (
-                        <div className="mt-2 space-y-1.5">
+                        <div className="mt-2 space-y-3">
                           <div className="flex gap-1.5">
                             {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
                               <button
@@ -3400,7 +3389,7 @@ export default function CheckoutPage() {
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right font-mono text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
                                     Must be at least {fmt(minDownPayment)} and no more than{' '}
@@ -3415,26 +3404,28 @@ export default function CheckoutPage() {
                                   </button>
                                 </>
                               ) : (
-                                <>
-                                  <div className="flex items-center justify-between gap-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+                                  <div className="flex items-center justify-between gap-2">
                                     <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment{' '}
-                                      <span className="font-mono font-bold text-prominent-purple-800">
-                                        {fmt(downPaymentValue)}
-                                      </span>
+                                      Down payment
                                     </span>
                                     <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
                                       10% min
                                     </span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                    className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                  >
-                                    Use a different amount
-                                  </button>
-                                </>
+                                  <div className="mt-1 flex items-center gap-2 pl-4">
+                                    <span className="text-[15px] font-bold text-prominent-purple-800">
+                                      {fmt(downPaymentValue)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
+                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                                    >
+                                      Change amount
+                                    </button>
+                                  </div>
+                                </div>
                               )}
                               <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
                                 <span className="text-prominent-purple-400">●</span>
@@ -3770,84 +3761,77 @@ export default function CheckoutPage() {
             ) : (
               <div className="space-y-2">
                 {payments.map((p, i) => {
-                  const methodLabel =
-                    configuredMethods.find((m) => m.id === p.configId)?.name ??
-                    PAYMENT_LABELS[p.method] ??
-                    p.method
-                  const methodEditingThisRow = !!paymentMethodEditOpen[i]
                   return (
                     <div key={i} className="space-y-1">
                       <div className="flex items-center gap-2">
-                        {methodEditingThisRow ? (
-                          <div className="relative min-w-0 flex-1">
-                            <select
-                              aria-label="Payment method"
-                              className="w-full appearance-none cursor-pointer rounded-lg border border-purple-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                              value={p.configId ?? p.method}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                if (configuredMethods.length > 0) {
-                                  const cfg = configuredMethods.find((m) => m.id === val)
-                                  if (cfg) {
-                                    updatePayment(i, {
-                                      method:
-                                        cfg.type === 'custom'
-                                          ? 'custom'
-                                          : ((cfg.key as PosPaymentMethod) ?? 'custom'),
-                                      configId: cfg.id,
-                                      refFieldLabel: cfg.referenceFieldLabel ?? undefined,
-                                      refRequired: cfg.referenceIsRequired,
-                                      refRegex: cfg.referenceFieldRegex ?? undefined,
-                                      referenceNumber: '',
-                                      paymentMethodOptionId: undefined,
-                                    })
-                                    return
-                                  }
+                        <div className="relative min-w-0 flex-1">
+                          {/* Scenario 37's default still comes from Item Payment
+                              Mode, but the dropdown itself stays visible so a
+                              split tender or a method Item Payment Mode doesn't
+                              cover (Gift Card/Store Credit/Loyalty Points) is one
+                              click away instead of needing "Use a different
+                              method" first. */}
+                          <select
+                            aria-label="Payment method"
+                            className="w-full appearance-none cursor-pointer rounded-lg border border-purple-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                            value={p.configId ?? p.method}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setPaymentMethodEditOpen((prev) => ({ ...prev, [i]: true }))
+                              if (configuredMethods.length > 0) {
+                                const cfg = configuredMethods.find((m) => m.id === val)
+                                if (cfg) {
+                                  updatePayment(i, {
+                                    method:
+                                      cfg.type === 'custom'
+                                        ? 'custom'
+                                        : ((cfg.key as PosPaymentMethod) ?? 'custom'),
+                                    configId: cfg.id,
+                                    refFieldLabel: cfg.referenceFieldLabel ?? undefined,
+                                    refRequired: cfg.referenceIsRequired,
+                                    refRegex: cfg.referenceFieldRegex ?? undefined,
+                                    referenceNumber: '',
+                                    paymentMethodOptionId: undefined,
+                                  })
+                                  return
                                 }
-                                updatePayment(i, {
-                                  method: val as PosPaymentMethod,
-                                  configId: undefined,
-                                  paymentMethodOptionId: undefined,
-                                })
-                              }}
-                            >
-                              {configuredMethods.length > 0
-                                ? configuredMethods
-                                    .filter((m) => {
-                                      if (isOffline) return m.key === 'cash'
-                                      return m.key === null
-                                        ? enabledPaymentMethods.includes('custom')
-                                        : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
-                                    })
-                                    .map((m) => (
-                                      <option key={m.id} value={m.id}>
-                                        {m.name}
-                                      </option>
-                                    ))
-                                : Object.entries(PAYMENT_LABELS)
-                                    .filter(([v]) => {
-                                      if (isOffline) return v === 'cash'
-                                      return enabledPaymentMethods.includes(v as PosPaymentMethod)
-                                    })
-                                    .map(([v, l]) => (
-                                      <option key={v} value={v}>
-                                        {l}
-                                      </option>
-                                    ))}
-                            </select>
-                            <ChevronDown
-                              size={11}
-                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
-                            />
-                          </div>
-                        ) : (
-                          <span
-                            data-testid="payment-row-method-label"
-                            className="min-w-0 flex-1 truncate rounded-lg border border-transparent px-2 py-2 text-xs font-medium text-gray-800"
+                              }
+                              updatePayment(i, {
+                                method: val as PosPaymentMethod,
+                                configId: undefined,
+                                paymentMethodOptionId: undefined,
+                              })
+                            }}
                           >
-                            {methodLabel}
-                          </span>
-                        )}
+                            {configuredMethods.length > 0
+                              ? configuredMethods
+                                  .filter((m) => {
+                                    if (isOffline) return m.key === 'cash'
+                                    return m.key === null
+                                      ? enabledPaymentMethods.includes('custom')
+                                      : enabledPaymentMethods.includes(m.key as PosPaymentMethod)
+                                  })
+                                  .map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name}
+                                    </option>
+                                  ))
+                              : Object.entries(PAYMENT_LABELS)
+                                  .filter(([v]) => {
+                                    if (isOffline) return v === 'cash'
+                                    return enabledPaymentMethods.includes(v as PosPaymentMethod)
+                                  })
+                                  .map(([v, l]) => (
+                                    <option key={v} value={v}>
+                                      {l}
+                                    </option>
+                                  ))}
+                          </select>
+                          <ChevronDown
+                            size={11}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-700"
+                          />
+                        </div>
                         <input
                           type="number"
                           min={0}
@@ -3868,56 +3852,9 @@ export default function CheckoutPage() {
                           <X size={13} />
                         </button>
                       </div>
-                      {/* Scenario 37 — the method already defaults from Item Payment
-                          Mode; only reveal the dropdown if the cashier explicitly
-                          needs something else (a split tender, or Gift
-                          Card/Store Credit/Loyalty Points, none of which Item
-                          Payment Mode covers). */}
-                      <button
-                        type="button"
-                        onClick={() => togglePaymentMethodEdit(i)}
-                        className="text-left text-[11px] font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                      >
-                        {methodEditingThisRow
-                          ? 'Use the default instead'
-                          : 'Use a different method'}
-                      </button>
                     </div>
                   )
                 })}
-
-                {/* Quick cash denomination buttons */}
-                {payments.some((p) => p.method === 'cash') && (
-                  <div className="mt-1">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                      Quick Amount
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        onClick={() => {
-                          const idx = payments.findIndex((p) => p.method === 'cash')
-                          if (idx >= 0) updatePayment(idx, { amount: totalAmount })
-                        }}
-                        className="flex items-center gap-0.5 rounded-lg bg-purple-200 px-2 py-1 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-300"
-                      >
-                        <Zap size={10} />
-                        Exact
-                      </button>
-                      {CASH_DENOMINATIONS.map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            const idx = payments.findIndex((p) => p.method === 'cash')
-                            if (idx >= 0) updatePayment(idx, { amount: d })
-                          }}
-                          className="rounded-lg border border-purple-200 bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.96]"
-                        >
-                          ₱{d}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Reference number — required for card / bank / gift card / custom with ref field */}
                 {payments.some(
@@ -4838,12 +4775,6 @@ function SuccessScreen({
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
 }) {
-  const [receiptEmail, setReceiptEmail] = useState(selectedCustomer?.email ?? '')
-  const [receiptPhone, setReceiptPhone] = useState(selectedCustomer?.phone ?? '')
-  const [receiptSending, setReceiptSending] = useState(false)
-  const [receiptSent, setReceiptSent] = useState<string | null>(null)
-  const [receiptError, setReceiptError] = useState('')
-
   const [branding, setBranding] = useState<{
     receiptLogoUrl: string | null
     receiptHeaderText: string | null
@@ -4862,25 +4793,6 @@ function SuccessScreen({
     day: 'numeric',
     year: 'numeric',
   })
-
-  async function handleSendReceipt() {
-    const email = receiptEmail.trim()
-    const phone = receiptPhone.trim()
-    if (!email && !phone) return
-    setReceiptSending(true)
-    setReceiptError('')
-    setReceiptSent(null)
-    const res = await sendReceipt(success.transactionId, {
-      email: email || undefined,
-      phone: phone || undefined,
-    })
-    setReceiptSending(false)
-    if (!res.success) {
-      setReceiptError(res.error ?? 'Failed to send receipt')
-      return
-    }
-    setReceiptSent(email || phone)
-  }
 
   const chargeOutcomes = success.lineOutcomes.filter((l) => l.invoiceType === 'charge')
   const installmentOutcomes = success.lineOutcomes.filter((l) => l.invoiceType === 'installment')
@@ -5015,72 +4927,6 @@ function SuccessScreen({
             <p className="text-center text-xs font-medium text-purple-500">
               Points earned for {customerDisplayName(selectedCustomer)}
             </p>
-          )}
-
-          {/* Send Receipt */}
-          {!success.offlineBuffered && success.transactionId && (
-            <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                <Mail size={12} /> Send Receipt
-              </p>
-              {receiptSent ? (
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2">
-                  <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-                  <p className="text-xs font-medium text-green-700">
-                    Receipt sent to {receiptSent}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="relative">
-                    <Mail
-                      size={13}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email address"
-                      value={receiptEmail}
-                      onChange={(e) => setReceiptEmail(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    />
-                  </div>
-                  <div className="relative">
-                    <Phone
-                      size={13}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Phone number (SMS not yet active)"
-                      value={receiptPhone}
-                      onChange={(e) => setReceiptPhone(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-3 text-xs text-gray-500 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    />
-                  </div>
-                  {receiptError && (
-                    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                      {receiptError}
-                    </p>
-                  )}
-                  <button
-                    onClick={handleSendReceipt}
-                    disabled={receiptSending || (!receiptEmail.trim() && !receiptPhone.trim())}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gray-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-900 disabled:opacity-40"
-                  >
-                    {receiptSending ? (
-                      <>
-                        <Loader2 size={11} className="animate-spin" /> Sending…
-                      </>
-                    ) : (
-                      <>
-                        <Send size={11} /> Send Receipt
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
           )}
 
           <button
@@ -5662,6 +5508,7 @@ function NewCustomerModal({
 }) {
   const [form, setForm] = useState({
     firstName: '',
+    middleName: '',
     lastName: '',
     phone: '',
     email: '',
@@ -5751,6 +5598,7 @@ function NewCustomerModal({
     setSubmitting(true)
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
+      middleName: form.middleName.trim() || undefined,
       lastName: form.lastName.trim(),
       phoneNumber: form.phone.trim(),
       email: form.email.trim() || undefined,
@@ -5811,6 +5659,14 @@ function NewCustomerModal({
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
               value={form.lastName}
               onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.middleName}
+              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
             />
           </div>
           <div>

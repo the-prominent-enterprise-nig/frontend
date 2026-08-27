@@ -20,6 +20,7 @@ import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
 import { addBundleComponent } from '../../bundles/_actions/add-bundle-component'
 import { removeBundleComponent } from '../../bundles/_actions/remove-bundle-component'
+import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   CreateItemFormValues,
   UpdateItemFormValues,
@@ -32,44 +33,10 @@ import type {
   ApproveItemFormValues,
   RejectItemFormValues,
 } from '@/src/schema/inventory/items'
-import type { FlatCategory } from '@/src/schema/inventory/categories'
 import type {
   CreateBundleFormValues,
   BundleComponentFormValues,
 } from '@/src/schema/inventory/bundles'
-
-type CategorySelectOption = { id: string; name: string; depth: number }
-
-function flatToSelectOptions(flat: FlatCategory[]): CategorySelectOption[] {
-  const map = new Map<string, FlatCategory & { children: FlatCategory[] }>()
-  const roots: (FlatCategory & { children: FlatCategory[] })[] = []
-
-  for (const c of flat) map.set(c.id, { ...c, children: [] })
-
-  for (const node of map.values()) {
-    const parent = node.parentCategoryId ? map.get(node.parentCategoryId) : null
-    if (parent) parent.children.push(node)
-    else roots.push(node)
-  }
-
-  function sort(nodes: (FlatCategory & { children: FlatCategory[] })[]) {
-    nodes.sort(
-      (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0) || a.name.localeCompare(b.name)
-    )
-  }
-
-  const result: CategorySelectOption[] = []
-  function traverse(nodes: (FlatCategory & { children: FlatCategory[] })[], depth: number) {
-    sort(nodes)
-    for (const n of nodes) {
-      result.push({ id: n.id, name: n.name, depth })
-      if (n.children.length)
-        traverse(n.children as (FlatCategory & { children: FlatCategory[] })[], depth + 1)
-    }
-  }
-  traverse(roots, 0)
-  return result
-}
 
 export function useItemMaster() {
   const queryClient = useQueryClient()
@@ -83,9 +50,9 @@ export function useItemMaster() {
   const [approvalStatus, setApprovalStatus] = useState<ItemApprovalStatus | undefined>(undefined)
   const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>(undefined)
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
-    'createdAt'
+    'name'
   )
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [selectedBundleItem, setSelectedBundleItem] = useState<ItemSummary | null>(null)
   const [removingComponentId, setRemovingComponentId] = useState<string | null>(null)
 
@@ -371,8 +338,8 @@ export function useItemMaster() {
     setLifecycle(undefined)
     setApprovalStatus(undefined)
     setPrimaryCategoryId(undefined)
-    setSortBy('createdAt')
-    setSortOrder('desc')
+    setSortBy('name')
+    setSortOrder('asc')
     setPage(1)
   }
 
@@ -380,7 +347,7 @@ export function useItemMaster() {
     // Data
     items,
     pagination,
-    categories: flatToSelectOptions(categoriesQuery.data?.data?.data ?? []),
+    categories: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
     uomOptions: (() => {
       const d = uomQuery.data?.data
       if (!d) return []
