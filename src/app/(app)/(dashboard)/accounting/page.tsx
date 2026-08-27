@@ -103,34 +103,32 @@ const COLORS = [
 
 // ── AgingBuckets helper ───────────────────────────────────────────────────────
 
+// GET /reports/aging/:type returns a flat array of invoice/bill rows, each
+// carrying its own `outstanding` amount and `bucket` label (backend's
+// agingBucket(): 'Current' | '1-30' | '31-60' | '61-90' | '90+') — this
+// used to expect a pre-aggregated `{buckets: [...]}` or bucket-keyed object
+// shape that the endpoint never actually returns, so it always resolved to
+// an empty array regardless of real overdue data. Sum by bucket here instead.
 function extractAging(raw: any) {
-  if (!raw) return []
-  const buckets: { label: string; value: number; color: string; badge: string }[] = []
-  const BUCKET_COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#dc2626']
-  const BUCKET_KEYS = [
-    { key: 'current', label: 'Current' },
-    { key: '1-30', label: '1–30 days' },
-    { key: '31-60', label: '31–60 days' },
-    { key: '61-90', label: '61–90 days' },
-    { key: '90+', label: '90+ days' },
+  if (!Array.isArray(raw)) return []
+  const BUCKET_ORDER: { key: string; label: string; color: string }[] = [
+    { key: 'Current', label: 'Current', color: '#10b981' },
+    { key: '1-30', label: '1–30 days', color: '#f59e0b' },
+    { key: '31-60', label: '31–60 days', color: '#f97316' },
+    { key: '61-90', label: '61–90 days', color: '#ef4444' },
+    { key: '90+', label: '90+ days', color: '#dc2626' },
   ]
-  if (Array.isArray(raw.buckets)) {
-    return raw.buckets.map((b: any, i: number) => ({
-      label: b.label ?? b.period ?? `Bucket ${i + 1}`,
-      value: Number(b.balance ?? b.amount ?? b.total ?? 0),
-      color: BUCKET_COLORS[i] ?? '#94a3b8',
-      badge: fmtMoney(Number(b.balance ?? b.amount ?? 0)),
-    }))
-  }
-  BUCKET_KEYS.forEach(({ key, label }, i) => {
-    const bucket = raw[key] ?? raw.summary?.[key]
-    if (bucket == null) return
-    const val = Number(
-      typeof bucket === 'object' ? (bucket.balance ?? bucket.amount ?? bucket.total ?? 0) : bucket
-    )
-    if (val > 0) buckets.push({ label, value: val, color: BUCKET_COLORS[i], badge: fmtMoney(val) })
+  const sums: Record<string, number> = {}
+  raw.forEach((row: any) => {
+    const key = row.bucket ?? 'Current'
+    sums[key] = (sums[key] ?? 0) + Number(row.outstanding ?? 0)
   })
-  return buckets
+  return BUCKET_ORDER.filter(({ key }) => (sums[key] ?? 0) > 0).map(({ key, label, color }) => ({
+    label,
+    value: sums[key],
+    color,
+    badge: fmtMoney(sums[key]),
+  }))
 }
 
 // ── DonutChart ────────────────────────────────────────────────────────────────
@@ -349,7 +347,6 @@ const INIT = {
   pnlBreakdown: [] as { label: string; value: number; color: string }[],
   arAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
   apAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
-  bankBreakdown: [] as { label: string; value: number; color: string; badge?: string }[],
   recentInvoices: [] as any[],
   recentBills: [] as any[],
   overdueInvoicesList: [] as any[],
@@ -406,8 +403,11 @@ export default function AccountingPage() {
     const totalRevenue = Number(pnl?.totalRevenue ?? pnl?.revenue ?? pnl?.data?.totalRevenue ?? 0)
     const totalCogs = Number(pnl?.totalCogs ?? pnl?.data?.totalCogs ?? 0)
     const totalOpEx = Number(pnl?.totalOpEx ?? pnl?.expenses ?? pnl?.data?.totalOpEx ?? 0)
-    const totalExpenses =
-      totalCogs + totalOpEx || Number(pnl?.totalExpenses ?? pnl?.data?.totalExpenses ?? 0)
+    // profitAndLoss() (reports.service.ts) never returns a `totalExpenses`
+    // field — the old `|| Number(pnl?.totalExpenses ...)` fallback here was
+    // dead: it only ran when totalCogs + totalOpEx was already falsy (0),
+    // and always resolved to 0 itself.
+    const totalExpenses = totalCogs + totalOpEx
     const netIncome = Number(
       pnl?.netIncome ?? pnl?.netProfit ?? pnl?.data?.netIncome ?? totalRevenue - totalExpenses
     )
@@ -473,15 +473,6 @@ export default function AccountingPage() {
     // ── Bank Accounts ─────────────────────────────────────────────────────────
     const bankList = arr(7)
     const totalCash = bankList.reduce((sum, b) => sum + (Number(b.currentBalance) || 0), 0)
-    const bankBreakdown = bankList
-      .filter((b) => b.isActive !== false)
-      .slice(0, 6)
-      .map((b, i) => ({
-        label: b.name ?? b.bankName,
-        value: Number(b.currentBalance) || 0,
-        color: COLORS[i % COLORS.length],
-        badge: b.currencyCode,
-      }))
 
     // ── Fixed Assets ──────────────────────────────────────────────────────────
     const assetList = arr(8)
@@ -528,7 +519,6 @@ export default function AccountingPage() {
       pnlBreakdown,
       arAgingBuckets,
       apAgingBuckets,
-      bankBreakdown,
       recentInvoices: invoiceList.slice(0, 8),
       recentBills: billList.slice(0, 8),
       overdueInvoicesList: overdueInvoicesList.slice(0, 6),
@@ -541,6 +531,22 @@ export default function AccountingPage() {
 
   useEffect(() => {
     load()
+    // Scenario 29 — this dashboard previously only ever fetched once on
+    // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+    // CRM's dashboard fix and POS's own overview page (refetchInterval:
+    // 30_000 + refetchOnWindowFocus: true), the working reference pattern
+    // already established in this codebase.
+    const interval = setInterval(load, 30_000)
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('focus', load)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', load)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [load])
 
   const loading = !s.loaded
@@ -856,7 +862,7 @@ export default function AccountingPage() {
         </div>
 
         {/* Bank Accounts */}
-        {(loading || s.bankBreakdown.length > 0) && (
+        {(loading || s.bankAccountsList.length > 0) && (
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -1210,6 +1216,7 @@ export default function AccountingPage() {
                 { label: 'Tax', href: '/accounting/tax', icon: Receipt },
                 { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                 { label: 'Reports', href: '/accounting/reports', icon: Clock },
+                { label: 'Cash Flow Forecast', href: '/accounting/cash-forecast', icon: Activity },
               ] as const
             ).map(({ label, href, icon: Icon }, i) => (
               <Link
