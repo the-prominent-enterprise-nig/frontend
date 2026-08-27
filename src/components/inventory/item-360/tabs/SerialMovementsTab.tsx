@@ -136,6 +136,11 @@ export default function SerialMovementsTab({
                     {entry.referenceCode}
                   </p>
                 )}
+                {entry.invoiceNumber && (
+                  <p className="mt-0.5 font-mono text-[11px] text-zinc-400">
+                    Invoice: {entry.invoiceNumber}
+                  </p>
+                )}
               </div>
             )
           })}

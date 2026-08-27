@@ -71,15 +71,6 @@ export function PurchaseOrderFormFields({
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
-  const lines = useWatch({ control, name: 'lines' })
-
-  const subtotal = lines.reduce((sum, line) => {
-    if (line.isFreebie) return sum
-    const qty = Number(line.quantity) || 0
-    const price = Number(line.unitPrice) || 0
-    return sum + qty * price
-  }, 0)
-
   const fmtAmount = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
@@ -176,7 +167,6 @@ export function PurchaseOrderFormFields({
               setValue={setValue}
               errors={errors}
               index={index}
-              line={lines[index]}
               canRemove={fields.length > 1}
               onRemove={() => remove(index)}
               fmtAmount={fmtAmount}
@@ -209,10 +199,34 @@ export function PurchaseOrderFormFields({
       {/* Subtotal */}
       <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
         <span className="text-sm font-medium text-zinc-700">Subtotal:&nbsp;</span>
-        <span className="text-base font-semibold text-zinc-900">{fmtAmount(subtotal)}</span>
+        <PoSubtotal control={control} fmtAmount={fmtAmount} />
       </div>
     </>
   )
+}
+
+// Isolated in its own component so its useWatch({name: 'lines'}) subscription
+// never shares a component instance with the useFieldArray({name: 'lines'})
+// call above — watching a whole array a field array is also managing, in
+// the same scope, was regenerating the field array's own item keys on the
+// production React build (never reproduced under `next dev`), forcing every
+// PurchaseOrderLineCard to unmount/remount on each keystroke and dropping
+// both input focus and the Item combobox's selection.
+function PoSubtotal({
+  control,
+  fmtAmount,
+}: {
+  control: Control<CreatePoFormValues>
+  fmtAmount: (n: number) => string
+}) {
+  const lines = useWatch({ control, name: 'lines' })
+  const subtotal = (lines ?? []).reduce((sum, line) => {
+    if (line?.isFreebie) return sum
+    const qty = Number(line?.quantity) || 0
+    const price = Number(line?.unitPrice) || 0
+    return sum + qty * price
+  }, 0)
+  return <span className="text-base font-semibold text-zinc-900">{fmtAmount(subtotal)}</span>
 }
 
 type LineCardProps = {
@@ -221,7 +235,6 @@ type LineCardProps = {
   setValue: UseFormSetValue<CreatePoFormValues>
   errors: FieldErrors<CreatePoFormValues>
   index: number
-  line: CreatePoFormValues['lines'][number] | undefined
   canRemove: boolean
   onRemove: () => void
   fmtAmount: (n: number) => string
@@ -238,7 +251,6 @@ function PurchaseOrderLineCard({
   setValue,
   errors,
   index,
-  line,
   canRemove,
   onRemove,
   fmtAmount,
@@ -263,6 +275,9 @@ function PurchaseOrderLineCard({
   // after every keystroke.
   const srp = useWatch({ control, name: `lines.${index}.srp` })
   const discounts = useWatch({ control, name: `lines.${index}.discounts` })
+  const isFreebie = useWatch({ control, name: `lines.${index}.isFreebie` })
+  const quantity = useWatch({ control, name: `lines.${index}.quantity` })
+  const unitPrice = useWatch({ control, name: `lines.${index}.unitPrice` })
 
   useEffect(() => {
     const srpNum = Number(srp)
@@ -283,7 +298,7 @@ function PurchaseOrderLineCard({
         <label className="flex items-center gap-2 text-xs text-zinc-600">
           <input
             type="checkbox"
-            checked={Boolean(line?.isFreebie)}
+            checked={Boolean(isFreebie)}
             onChange={(e) => {
               setValue(`lines.${index}.isFreebie`, e.target.checked)
               if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
@@ -382,9 +397,7 @@ function PurchaseOrderLineCard({
                   type="number"
                   min={0}
                   step={0.01}
-                  placeholder={
-                    line?.discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'
-                  }
+                  placeholder={discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'}
                   {...register(`lines.${index}.discounts.${discountIndex}.value`, {
                     valueAsNumber: true,
                   })}
@@ -421,7 +434,7 @@ function PurchaseOrderLineCard({
           min={0}
           step={0.01}
           placeholder="0.00"
-          disabled={line?.isFreebie}
+          disabled={isFreebie}
           {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
           className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
         />
@@ -444,7 +457,7 @@ function PurchaseOrderLineCard({
       <div className="text-right text-xs text-zinc-500">
         Line total:{' '}
         <span className="font-medium text-zinc-800">
-          {fmtAmount((Number(line?.quantity) || 0) * (Number(line?.unitPrice) || 0))}
+          {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
         </span>
       </div>
     </div>

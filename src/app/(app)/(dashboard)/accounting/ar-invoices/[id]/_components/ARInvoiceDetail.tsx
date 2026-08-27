@@ -174,22 +174,42 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
               </span>
             )}
           </div>
-          <div className="mt-1.5 flex flex-col gap-1 text-xs text-gray-400">
+          <div className="mt-2 grid max-w-xs grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
             {invoice.posTransaction && (
-              <span>
-                Source sale:{' '}
-                <Link
-                  href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
-                  className="text-purple-600 hover:underline"
-                >
-                  {invoice.posTransaction.transactionNumber}
-                </Link>
-              </span>
+              <>
+                <span className="text-gray-500">Source sale</span>
+                <span className="text-left font-medium">
+                  <Link
+                    href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+                    className="text-purple-600 hover:underline"
+                  >
+                    {invoice.posTransaction.transactionNumber}
+                  </Link>
+                </span>
+              </>
             )}
-            <span>Invoice date: {fmtDate(invoice.invoiceDate)}</span>
-            <span>Due date: {fmtDate(invoice.dueDate)}</span>
-            <span>Subtotal: {fmtMoney(invoice.subtotal)}</span>
-            <span>Tax: {fmtMoney(invoice.taxAmount)}</span>
+            <span className="text-gray-500">Invoice date</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtDate(invoice.invoiceDate)}
+            </span>
+            <span className="text-gray-500">Due date</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtDate(invoice.dueDate)}
+            </span>
+            <span className="text-gray-500">Subtotal</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtMoney(invoice.subtotal)}
+            </span>
+            <span className="text-gray-500">Tax</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtMoney(invoice.taxAmount)}
+            </span>
+            <span className="border-t border-gray-100 pt-1.5 font-semibold text-gray-600">
+              Total
+            </span>
+            <span className="border-t border-gray-100 pt-1.5 text-left font-semibold tabular-nums text-gray-900">
+              {fmtMoney(invoice.totalAmount)}
+            </span>
           </div>
         </div>
         <button
@@ -250,7 +270,7 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
                           <span className="text-gray-500"> — {l.item.brand.name}</span>
                         ) : null}
                         {l.serialNumber && (
-                          <p className="font-mono text-sm font-semibold text-purple-600">
+                          <p className="text-sm font-semibold text-purple-600">
                             SN: {l.serialNumber.serialNumber}
                             {l.secondarySerialNumber &&
                               ` / ${l.secondarySerialNumber.serialNumber}`}

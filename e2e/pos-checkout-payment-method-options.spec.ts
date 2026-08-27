@@ -7,6 +7,9 @@ import { gotoReady, clickStable } from './utils'
 // carrying a named-option dropdown sourced from PosPaymentMethodConfig.
 // options. The tender "Payment" section no longer repeats these — it just
 // defaults its method to match Item Payment Mode and shows a pointer note.
+// The row's own method dropdown stays visible (no "Use a different method"
+// toggle) so a split tender or an Item-Payment-Mode-uncovered method (Gift
+// Card/Store Credit/Loyalty Points) is a direct selection.
 // Option CRUD itself is covered by settings-payment-methods.spec.ts.
 async function ensureManilaSession(page: import('@playwright/test').Page) {
   await gotoReady(page, '/pos/checkout')
@@ -146,10 +149,9 @@ test.describe('POS Checkout — Payment Method Options', () => {
       ])
     )
 
-    // Tender section: switch its row to QR (revealing the now-hidden-by-
-    // default method dropdown via "Use a different method"), confirm no
-    // duplicate gateway picker there — reference number still lives there.
-    await page.getByRole('button', { name: 'Use a different method' }).click()
+    // Tender section: switch its row to QR via the row's own (always-visible)
+    // method dropdown, confirm no duplicate gateway picker there — reference
+    // number still lives there.
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'QR' })
     await page.getByPlaceholder('0.00').first().fill('100')
     await expect(page.getByPlaceholder(/QR reference/)).toBeVisible({ timeout: 10_000 })
@@ -174,7 +176,6 @@ test.describe('POS Checkout — Payment Method Options', () => {
     const optionTexts = await terminalSelect.locator('option').allTextContents()
     expect(optionTexts).toEqual(expect.arrayContaining(['BDO', 'BPI', 'Metrobank', 'Maya']))
 
-    await page.getByRole('button', { name: 'Use a different method' }).click()
     await page.getByLabel('Payment method', { exact: true }).first().selectOption({ label: 'Card' })
     await page.getByPlaceholder('0.00').first().fill('100')
     await expect(
@@ -190,58 +191,54 @@ test.describe('POS Checkout — Payment Method Options', () => {
   }) => {
     await ensureManilaSession(page)
     const cartRow = await addAnyItemToCart(page)
+    const methodSelect = page.getByLabel('Payment method', { exact: true }).first()
 
     // The row auto-created before Item Payment Mode is touched starts on
     // the plain Cash default.
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('Cash', {
-      timeout: 10_000,
-    })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('Cash')
+    }).toPass({ timeout: 10_000 })
 
     // Switching Item Payment Mode afterward must update that *same* row in
     // place — not leave it stale until it's removed and re-added.
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Debit/Credit Card' })
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('Card', {
-      timeout: 10_000,
-    })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('Card')
+    }).toPass({ timeout: 10_000 })
 
     // Also cover switching between two Cash sub-modes (the exact scenario
     // reported live: QR → Bank Transfer left the tender row stuck on QR).
     await page.getByLabel('Item Payment Mode').selectOption({ label: 'Cash' })
     const cashSubModeToggle = page.getByTestId('cash-sub-mode-toggle')
     await cashSubModeToggle.getByRole('button', { name: 'QR', exact: true }).click()
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('QR', {
-      timeout: 10_000,
-    })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('QR')
+    }).toPass({ timeout: 10_000 })
     await cashSubModeToggle.getByRole('button', { name: 'Bank Transfer', exact: true }).click()
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('Bank Transfer', {
-      timeout: 10_000,
-    })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('Bank Transfer')
+    }).toPass({ timeout: 10_000 })
 
     await cleanup(page, cartRow)
   })
 
-  test('the tender row shows a plain method label by default; "Use a different method" reveals the dropdown, and it collapses back', async ({
+  test('the tender row shows its method dropdown right away, defaulted to Item Payment Mode, with no extra click needed', async ({
     page,
   }) => {
     await ensureManilaSession(page)
     const cartRow = await addAnyItemToCart(page)
+    const methodSelect = page.getByLabel('Payment method', { exact: true }).first()
 
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('Cash', {
-      timeout: 10_000,
-    })
-    await expect(page.getByLabel('Payment method', { exact: true })).toHaveCount(0)
+    await expect(methodSelect).toBeVisible({ timeout: 10_000 })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('Cash')
+    }).toPass({ timeout: 10_000 })
 
-    await page.getByRole('button', { name: 'Use a different method' }).click()
-    await expect(page.getByLabel('Payment method', { exact: true }).first()).toBeVisible({
-      timeout: 10_000,
-    })
-    await expect(page.getByTestId('payment-row-method-label')).toHaveCount(0)
-
-    await page.getByRole('button', { name: 'Use the default instead' }).click()
-    await expect(page.getByTestId('payment-row-method-label').first()).toHaveText('Cash', {
-      timeout: 10_000,
-    })
-    await expect(page.getByLabel('Payment method', { exact: true })).toHaveCount(0)
+    // Picking straight off the dropdown works without any prior toggle.
+    await methodSelect.selectOption({ label: 'Card' })
+    await expect(async () => {
+      expect(await methodSelect.locator('option:checked').innerText()).toBe('Card')
+    }).toPass({ timeout: 10_000 })
 
     await cleanup(page, cartRow)
   })

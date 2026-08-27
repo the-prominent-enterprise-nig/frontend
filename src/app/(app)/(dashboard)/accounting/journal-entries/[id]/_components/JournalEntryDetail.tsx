@@ -94,16 +94,40 @@ export default function JournalEntryDetail({ id }: { id: string }) {
             {entry.status}
           </span>
         </div>
-        <div className="mt-1.5 flex flex-col gap-1 text-xs text-gray-400">
-          {entry.sourceDocumentNo && <span>Source document: {entry.sourceDocumentNo}</span>}
-          <span>Branch: {entry.branchName ?? 'Tenant-wide'}</span>
-          <span>Type: {entry.journalType || '—'}</span>
-          {entry.payee && <span>Payee: {entry.payee}</span>}
-          {entry.description && <span>Description: {entry.description}</span>}
+        <div className="mt-2 grid max-w-lg grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
+          {entry.sourceDocumentNo && (
+            <>
+              <span className="text-gray-500">Source document</span>
+              <span className="text-left font-medium tabular-nums text-gray-800">
+                {entry.sourceDocumentNo}
+              </span>
+            </>
+          )}
+          <span className="text-gray-500">Branch</span>
+          <span className="text-left font-medium text-gray-800">
+            {entry.branchName ?? 'Tenant-wide'}
+          </span>
+          <span className="text-gray-500">Type</span>
+          <span className="text-left font-medium text-gray-800">{entry.journalType || '—'}</span>
+          {entry.payee && (
+            <>
+              <span className="text-gray-500">Payee</span>
+              <span className="text-left font-medium text-gray-800">{entry.payee}</span>
+            </>
+          )}
+          {entry.description && (
+            <>
+              <span className="text-gray-500">Description</span>
+              <span className="text-left font-medium text-gray-800">{entry.description}</span>
+            </>
+          )}
           {entry.postedBy && (
-            <span>
-              Posted by: {entry.postedBy} · {formatDate(entry.postedAt)}
-            </span>
+            <>
+              <span className="text-gray-500">Posted by</span>
+              <span className="text-left font-medium tabular-nums text-gray-800">
+                {entry.postedBy} · {formatDate(entry.postedAt)}
+              </span>
+            </>
           )}
         </div>
       </header>
