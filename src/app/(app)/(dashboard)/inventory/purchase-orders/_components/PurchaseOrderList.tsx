@@ -554,13 +554,15 @@ export function PurchaseOrderList({
                               )}
                               {/* Approve/Cancel moved into PoDetailModal — click
                                   through to review before deciding. */}
-                              <IconBtn
-                                title="View"
+                              <button
+                                type="button"
                                 onClick={() => setDetailsTarget(po)}
                                 disabled={isActing}
+                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
                               >
                                 <Eye className="h-3.5 w-3.5" />
-                              </IconBtn>
+                                View
+                              </button>
                             </>
                           )}
 
@@ -595,13 +597,15 @@ export function PurchaseOrderList({
                               )}
                               {/* Cancel moved into PoDetailModal, same as the
                                   draft row above. */}
-                              <IconBtn
-                                title="View"
+                              <button
+                                type="button"
                                 onClick={() => setDetailsTarget(po)}
                                 disabled={isActing}
+                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
                               >
                                 <Eye className="h-3.5 w-3.5" />
-                              </IconBtn>
+                                View
+                              </button>
                             </>
                           )}
 
