@@ -87,55 +87,65 @@ export default function DashboardWidgetWrapper({
   const sizeContextValue = { width: size.width, height: size.height, variant }
   const configContextValue = { settings }
   const isConfigurable = CONFIGURABLE_WIDGET_IDS.has(id)
+  // Chromeless widgets supply their own visual chrome, so the standard
+  // title bar + content padding only show up while editing (drag handle,
+  // remove, settings) — collapsed away in normal view mode.
+  const showChrome = !widget?.noChrome || isEditing
+
+  const chromeClasses = showChrome
+    ? `rounded-2xl bg-white shadow-sm ring-1 ${
+        isEditing
+          ? 'ring-purple-300 shadow-md shadow-purple-100'
+          : 'ring-zinc-200 hover:ring-zinc-300'
+      }`
+    : ''
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 transition
-        ${
-          isEditing
-            ? 'h-full min-h-0 min-w-36 ring-purple-300 shadow-md shadow-purple-100'
-            : 'h-full min-w-0 ring-zinc-200 hover:ring-zinc-300'
-        }`}
+      className={`flex flex-col overflow-hidden transition ${chromeClasses}
+        ${isEditing ? 'h-full min-h-0 min-w-36' : 'h-full min-w-0'}`}
     >
       {/* Widget header — always shrink-0 so it never gets clipped */}
-      <div
-        className={`flex shrink-0 items-center gap-2 border-b border-zinc-100 px-3 py-2
-          ${isEditing ? 'cursor-grab active:cursor-grabbing bg-purple-50 widget-drag-handle' : 'bg-white'}`}
-      >
-        {isEditing && <GripHorizontal className="h-4 w-4 shrink-0 text-purple-400" />}
-        {WidgetIcon && <WidgetIcon className="h-4 w-4 shrink-0 text-zinc-400" />}
-        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 select-none">
-          {label}
-        </p>
-        {!isEditing && headerExtra}
-        {isEditing && isConfigurable && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowSettings((s) => !s)
-            }}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition ${
-              showSettings
-                ? 'bg-purple-100 text-purple-600'
-                : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'
-            }`}
-            aria-label={showSettings ? 'Close widget settings' : 'Customise widget'}
-          >
-            <SlidersHorizontal className="h-3 w-3" />
-          </button>
-        )}
-        {isEditing && (
-          <button
-            type="button"
-            onClick={() => onRemove(id)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-500"
-            aria-label={`Remove ${label}`}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
+      {showChrome && (
+        <div
+          className={`flex shrink-0 items-center gap-2 border-b border-zinc-100 px-3 py-2
+            ${isEditing ? 'cursor-grab active:cursor-grabbing bg-purple-50 widget-drag-handle' : 'bg-white'}`}
+        >
+          {isEditing && <GripHorizontal className="h-4 w-4 shrink-0 text-purple-400" />}
+          {WidgetIcon && <WidgetIcon className="h-4 w-4 shrink-0 text-zinc-400" />}
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 select-none">
+            {label}
+          </p>
+          {!isEditing && headerExtra}
+          {isEditing && isConfigurable && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowSettings((s) => !s)
+              }}
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition ${
+                showSettings
+                  ? 'bg-purple-100 text-purple-600'
+                  : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'
+              }`}
+              aria-label={showSettings ? 'Close widget settings' : 'Customise widget'}
+            >
+              <SlidersHorizontal className="h-3 w-3" />
+            </button>
+          )}
+          {isEditing && (
+            <button
+              type="button"
+              onClick={() => onRemove(id)}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 transition hover:bg-red-50 hover:text-red-500"
+              aria-label={`Remove ${label}`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Content area — provides size + config contexts to children.
           Edit mode: flex-1 fills the full grid item (enables scrolling and shows resize area).
@@ -151,7 +161,15 @@ export default function DashboardWidgetWrapper({
         <WidgetHeaderContext.Provider value={{ setHeaderExtra }}>
           <WidgetSizeContext.Provider value={sizeContextValue}>
             <WidgetConfigContext.Provider value={configContextValue}>
-              <div className={isEditing ? 'absolute inset-0 overflow-auto p-3' : 'p-3'}>
+              <div
+                className={
+                  isEditing
+                    ? `absolute inset-0 overflow-auto ${showChrome ? 'p-3' : ''}`
+                    : showChrome
+                      ? 'p-3'
+                      : ''
+                }
+              >
                 {/* innerRef measures the natural content height for auto-fit calculations */}
                 <div ref={innerRef}>
                   {isEditing && showSettings ? (

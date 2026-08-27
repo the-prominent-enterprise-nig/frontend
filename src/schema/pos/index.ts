@@ -469,6 +469,7 @@ export interface CollectionsCustomer {
 
 export interface CreateWalkInCustomerInput {
   firstName: string
+  middleName?: string
   lastName: string
   phoneNumber: string
   email?: string
@@ -971,10 +972,17 @@ export interface InstallmentSchedule {
     serialNumber: { id: string; serialNumber: string } | null
     secondarySerialNumber: { id: string; serialNumber: string } | null
   }[]
-  // The rebate — fixed 7.5% of the monthly installment. Null if this
-  // schedule has no linked InstallmentAccount (shouldn't normally happen,
-  // every POS installment line creates one, but the relation is optional).
-  installmentAccount: { ppd: number } | null
+  // ppd is the rebate — fixed 7.5% of the monthly installment. status is the
+  // plan's overall finished/ongoing state (closed/early_closed/written_off
+  // all mean "no longer active", just via different paths — see Customer360's
+  // InstallmentPlanStatusBadge). Null if this schedule has no linked
+  // InstallmentAccount (shouldn't normally happen, every POS installment
+  // line creates one, but the relation is optional).
+  installmentAccount: {
+    id: string
+    ppd: number
+    status: 'active' | 'closed' | 'early_closed' | 'written_off'
+  } | null
 }
 
 // Void Requests

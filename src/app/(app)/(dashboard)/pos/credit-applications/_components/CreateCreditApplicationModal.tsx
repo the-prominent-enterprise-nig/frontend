@@ -7,10 +7,14 @@ import { useQuery } from '@tanstack/react-query'
 import { X, Loader2 } from 'lucide-react'
 import {
   CreateCreditApplicationFormSchema,
+  NEW_CO_MAKER_VALUE,
   type CreateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { customersApi } from '@/src/libs/api/crm'
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
+import { ApplicantContactFields } from './ApplicantContactFields'
+import { CoMakerFields } from './CoMakerFields'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
 import { getApplicantCustomer } from '../_actions/search-applicants'
 
@@ -59,11 +63,30 @@ export default function CreateCreditApplicationModal({
     enabled: !!applicantCustomerId,
   })
   const coMakers = applicantQuery.data?.data?.coMakers ?? []
+  const applicant = applicantQuery.data?.data
 
   useEffect(() => {
-    // Selecting a new applicant invalidates whichever co-maker was picked for the previous one
+    // Selecting a new applicant invalidates whichever co-maker was picked
+    // for the previous one, and any contact edits/new-co-maker draft made
+    // for it.
     setValue('coMakerId', '')
+    setValue('coMakerContactNumber', '')
+    setValue('coMakerEmail', '')
+    setValue('newCoMakerName', '')
+    setValue('newCoMakerRelationship', '')
+    setValue('newCoMakerContactNumber', '')
+    setValue('newCoMakerEmail', '')
   }, [applicantCustomerId, setValue])
+
+  useEffect(() => {
+    if (!applicant) return
+    setValue('applicantPhone', applicant.phone ?? '')
+    setValue('applicantEmail', applicant.email ?? '')
+    // Only re-run when a *different* customer's data resolves — not on
+    // every background refetch of the same customer, which would stomp
+    // whatever the user is currently typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant?.id, setValue])
 
   useEffect(() => {
     if (!isOpen) {
@@ -75,19 +98,79 @@ export default function CreateCreditApplicationModal({
   }, [isOpen, sessionBranchId, reset])
 
   const [serverError, setServerError] = useState<string | undefined>(undefined)
+  const [isOrchestrating, setIsOrchestrating] = useState(false)
 
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateCreditApplicationFormValues) {
     setServerError(undefined)
-    // The <select>'s "No co-maker" option is value="" — the backend's
-    // optional coMakerId expects the field omitted entirely, not an empty
-    // string (which would fail its @IsUUID() check).
-    const result = await onSubmit({ ...data, coMakerId: data.coMakerId || undefined })
-    if (result.success) {
-      onClose()
-    } else {
-      setServerError(result.message)
+    setIsOrchestrating(true)
+    try {
+      // Applicant contact: only persisted if actually changed, straight to
+      // the customer's real record — independent of whether the credit
+      // application below ends up saving successfully.
+      if (applicant) {
+        const phoneChanged = (data.applicantPhone || '') !== (applicant.phone ?? '')
+        const emailChanged = (data.applicantEmail || '') !== (applicant.email ?? '')
+        if (phoneChanged || emailChanged) {
+          const contactRes = await customersApi.update(data.applicantCustomerId, {
+            phone: data.applicantPhone || undefined,
+            email: data.applicantEmail || undefined,
+          })
+          if (!contactRes.success) {
+            setServerError(contactRes.error ?? "Failed to update the applicant's contact info")
+            return
+          }
+        }
+      }
+
+      // Resolve coMakerId to a real id before the application itself is
+      // submitted — either by adding a brand-new co-maker, or by patching
+      // the selected existing one's contact info if it changed.
+      let resolvedCoMakerId = data.coMakerId || undefined
+
+      if (data.coMakerId === NEW_CO_MAKER_VALUE) {
+        const addRes = await customersApi.addCoMaker(data.applicantCustomerId, {
+          name: (data.newCoMakerName ?? '').trim(),
+          relationship: (data.newCoMakerRelationship ?? '').trim(),
+          contactNumber: (data.newCoMakerContactNumber ?? '').trim(),
+          email: data.newCoMakerEmail || undefined,
+        })
+        if (!addRes.success || !addRes.data) {
+          setServerError(addRes.error ?? 'Failed to add the new co-maker')
+          return
+        }
+        resolvedCoMakerId = addRes.data.id
+      } else if (data.coMakerId) {
+        const selected = coMakers.find((cm) => cm.id === data.coMakerId)
+        const contactChanged =
+          !!selected &&
+          ((data.coMakerContactNumber || '') !== selected.contactNumber ||
+            (data.coMakerEmail || '') !== (selected.email ?? ''))
+        if (contactChanged) {
+          const updateRes = await customersApi.updateCoMaker(
+            data.applicantCustomerId,
+            data.coMakerId,
+            {
+              contactNumber: data.coMakerContactNumber || undefined,
+              email: data.coMakerEmail || undefined,
+            }
+          )
+          if (!updateRes.success) {
+            setServerError(updateRes.error ?? "Failed to update the co-maker's contact info")
+            return
+          }
+        }
+      }
+
+      const result = await onSubmit({ ...data, coMakerId: resolvedCoMakerId })
+      if (result.success) {
+        onClose()
+      } else {
+        setServerError(result.message)
+      }
+    } finally {
+      setIsOrchestrating(false)
     }
   }
 
@@ -129,40 +212,16 @@ export default function CreateCreditApplicationModal({
               />
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Co-Maker <span className="text-zinc-400">(optional)</span>
-              </label>
-              <Controller
-                name="coMakerId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    disabled={!applicantCustomerId || applicantQuery.isLoading}
-                    className={`${fieldClass} bg-white disabled:bg-zinc-50 disabled:text-zinc-400`}
-                  >
-                    <option value="">
-                      {!applicantCustomerId
-                        ? 'Select an applicant first…'
-                        : applicantQuery.isLoading
-                          ? 'Loading co-makers…'
-                          : coMakers.length === 0
-                            ? 'No co-maker on file'
-                            : 'No co-maker'}
-                    </option>
-                    {coMakers.map((cm) => (
-                      <option key={cm.id} value={cm.id}>
-                        {cm.name} ({cm.relationship})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-              {errors.coMakerId && (
-                <p className="mt-1 text-xs text-red-600">{errors.coMakerId.message}</p>
-              )}
-            </div>
+            {applicantCustomerId && <ApplicantContactFields control={control} errors={errors} />}
+
+            <CoMakerFields
+              control={control}
+              setValue={setValue}
+              errors={errors}
+              coMakers={coMakers}
+              applicantSelected={!!applicantCustomerId}
+              isLoading={applicantQuery.isLoading}
+            />
 
             <CreditApplicationItemFields control={control} setValue={setValue} errors={errors} />
 
@@ -192,18 +251,18 @@ export default function CreateCreditApplicationModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isOrchestrating}
               className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isOrchestrating}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Creating…' : 'Open Application'}
+              {(isSubmitting || isOrchestrating) && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSubmitting || isOrchestrating ? 'Creating…' : 'Open Application'}
             </button>
           </div>
         </form>

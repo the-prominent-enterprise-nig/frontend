@@ -176,15 +176,18 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
     status: 'resolved',
     getHref: batchHoldHref,
   },
-  purchase_request_approval_needed: {
+  purchase_request_needs_conversion: {
     icon: FileText,
     status: 'needs-action',
     getHref: purchaseRequestHref,
   },
-  purchase_request_resolved: {
+  // The PR is already converted at this point — findAll() filters converted
+  // PRs off the default Purchase Requests view, so routing there would be a
+  // dead end. The resulting PO now lives on the Purchase Orders tab instead.
+  purchase_request_auto_converted: {
     icon: FileText,
     status: 'resolved',
-    getHref: purchaseRequestHref,
+    getHref: purchaseOrderHref,
   },
   purchase_order_approval_needed: {
     icon: Truck,
@@ -229,6 +232,26 @@ export function getNotificationHref(notification: {
  * *_resolved type that hasn't been wired to set it yet) falls back to the
  * type's default status rather than guessing.
  */
+/** "Today" / "Earlier" — matches the Facebook-style notification panel this UI mirrors. */
+export function dateBucket(iso: string): 'Today' | 'Earlier' {
+  const date = new Date(iso)
+  const startOfDay = (d: Date): number =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  return startOfDay(date) >= startOfDay(new Date()) ? 'Today' : 'Earlier'
+}
+
+/** Buckets are computed per-page (not globally) — good enough for a page-sized slice. */
+export function groupByDateBucket(
+  notifications: NotificationItem[]
+): [string, NotificationItem[]][] {
+  const groups = new Map<string, NotificationItem[]>()
+  for (const notification of notifications) {
+    const bucket = dateBucket(notification.createdAt)
+    groups.set(bucket, [...(groups.get(bucket) ?? []), notification])
+  }
+  return Array.from(groups.entries())
+}
+
 export function resolveNotificationStatus(notification: NotificationItem): NotificationStatus {
   const meta = NOTIFICATION_TYPE_META[notification.eventType]
   if (meta.status !== 'resolved') return meta.status

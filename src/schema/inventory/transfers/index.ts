@@ -88,7 +88,20 @@ export const ReceiveTransferLineSchema = z
     isSerial: z.boolean(),
     serialLabel: z.string().optional(),
     itemLabel: z.string().optional(),
+    // Form-only — scopes the "different unit arrived" serial search to this
+    // line's item. Stripped before the value is sent to the API.
+    itemId: z.string().optional(),
     quantityReceived: z.number().min(0, 'Cannot be negative'),
+    // "Wrong serial was sent" corrections — mutually exclusive. A typo-fix
+    // rewrites the same physical unit's recorded serial in place;
+    // a unit-swap repoints the line at a different unit that actually
+    // arrived. Both require serial-override permission server-side.
+    correctedSerialNumber: z.string().max(150).optional(),
+    replacementSerialNumberId: z.string().optional(),
+    // Form-only display context for the picked replacement — stripped
+    // before the value is sent to the API.
+    replacementSerialLabel: z.string().optional(),
+    correctionReason: z.string().max(500).optional(),
   })
   .refine((d) => d.quantityReceived <= d.dispatchedQty, {
     message: 'Cannot receive more than what was dispatched',
@@ -98,6 +111,25 @@ export const ReceiveTransferLineSchema = z
     message: 'A serial line must be 0 (missing) or 1 (received)',
     path: ['quantityReceived'],
   })
+  .refine((d) => !(d.correctedSerialNumber && d.replacementSerialNumberId), {
+    message: 'Choose either a typo fix or a different unit, not both',
+    path: ['correctedSerialNumber'],
+  })
+  .refine(
+    (d) => !(d.correctedSerialNumber || d.replacementSerialNumberId) || d.quantityReceived === 1,
+    {
+      message: 'A corrected serial must be marked as received',
+      path: ['quantityReceived'],
+    }
+  )
+  .refine(
+    (d) =>
+      !(d.correctedSerialNumber || d.replacementSerialNumberId) || !!d.correctionReason?.trim(),
+    {
+      message: 'A reason is required when correcting a serial number',
+      path: ['correctionReason'],
+    }
+  )
 
 export const ReceiveTransferExtraLineSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -171,6 +203,14 @@ const TransferLineSchema = z.object({
     })
     .nullable()
     .optional(),
+  // Set only when this line's serial was corrected at receipt — a wrong
+  // serial was sent. Present (non-null) only for a unit-swap correction;
+  // absent for a typo-fix, which rewrites serialNumber above in place.
+  receiptCorrectedFromSerial: z
+    .object({ id: z.string(), serialNumber: z.string() })
+    .nullable()
+    .optional(),
+  receiptCorrectionReason: z.string().nullable().optional(),
 })
 
 export const TransferSummarySchema = z.object({

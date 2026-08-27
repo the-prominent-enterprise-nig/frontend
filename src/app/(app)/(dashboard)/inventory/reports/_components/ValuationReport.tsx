@@ -20,7 +20,7 @@ function exportToCsv(data: ValuationReportResponse) {
     'Item Name',
     'SKU',
     'Category',
-    'Warehouse',
+    'Location',
     'On-Hand Qty',
     'Cost Price',
     'Total Value',
@@ -152,7 +152,7 @@ export default function ValuationReport({ data, isLoading, isFetching, page, set
                     Category
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                    Warehouse
+                    Location
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     Qty

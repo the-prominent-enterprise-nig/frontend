@@ -126,7 +126,7 @@ export function PoDetailModal({ po, onClose }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <InfoRow label="Requested By" value={po.branch?.name ?? 'Tenant-wide'} />
             <div>
-              <p className="text-xs font-medium text-zinc-400">Destination Warehouse</p>
+              <p className="text-xs font-medium text-zinc-400">Destination Location</p>
               <p className="mt-0.5 text-sm text-zinc-800">{po.warehouse?.name ?? '—'}</p>
               {po.warehouse?.address && (
                 <p className="mt-0.5 text-xs text-zinc-500">{po.warehouse.address}</p>
@@ -211,9 +211,11 @@ export function PoDetailModal({ po, onClose }: Props) {
                               <>
                                 {' · '}
                                 {line.discounts
-                                  .map((d) =>
-                                    d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
-                                  )
+                                  .map((d) => {
+                                    const amount =
+                                      d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
+                                    return d.name ? `${d.name} (${amount})` : amount
+                                  })
                                   .join(' → ')}{' '}
                                 off
                                 {line.discountedCost != null &&

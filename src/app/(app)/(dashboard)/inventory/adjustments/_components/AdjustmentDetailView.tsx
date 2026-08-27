@@ -100,7 +100,7 @@ export default function AdjustmentDetailView({
               Adjustment {adjustment.adjustmentNumber}
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              {adjustment.warehouse?.name ?? '—'} &bull;{' '}
+              {adjustment.warehouse?.branch?.name ?? adjustment.warehouse?.name ?? '—'} &bull;{' '}
               {new Date(adjustment.adjustmentDate).toLocaleDateString()}
             </p>
           </div>

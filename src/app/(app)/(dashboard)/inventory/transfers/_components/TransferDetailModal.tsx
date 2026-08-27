@@ -342,6 +342,180 @@ function ItemSerialGroup({
   )
 }
 
+// "The wrong serial was sent" — surfaced only for someone holding the same
+// serial-override permission that gates a dispatch-time override, since
+// rewriting or repointing a serial record at receipt is the same class of
+// action. Two mutually exclusive corrections: a typo-fix rewrites the same
+// physical unit's recorded serial in place; a unit-swap repoints this line
+// at a different unit that actually arrived (search scoped to this item,
+// across every branch, since the true unit could be a stray record
+// anywhere). Both force quantityReceived to 1 — a correction only makes
+// sense for a unit that did show up.
+function SerialReceiveCorrection({
+  control,
+  setValue,
+  index,
+  itemId,
+  canOverrideSerial,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  itemId: string | undefined
+  canOverrideSerial: boolean
+}) {
+  const [openMode, setOpenMode] = useState<'typo' | 'swap' | null>(null)
+  const correctedSerialNumber = useWatch({ control, name: `lines.${index}.correctedSerialNumber` })
+  const replacementSerialNumberId = useWatch({
+    control,
+    name: `lines.${index}.replacementSerialNumberId`,
+  })
+  const replacementSerialLabel = useWatch({
+    control,
+    name: `lines.${index}.replacementSerialLabel`,
+  })
+  const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
+
+  if (!canOverrideSerial) return null
+
+  const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
+    ? 'typo'
+    : replacementSerialNumberId
+      ? 'swap'
+      : openMode
+
+  function clearCorrection() {
+    setOpenMode(null)
+    setValue(`lines.${index}.correctedSerialNumber`, '')
+    setValue(`lines.${index}.replacementSerialNumberId`, '')
+    setValue(`lines.${index}.replacementSerialLabel`, '')
+    setValue(`lines.${index}.correctionReason`, '')
+  }
+
+  if (!activeMode) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpenMode('typo')}
+        className="mt-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
+      >
+        Wrong serial received?
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <div className="mb-1.5 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setValue(`lines.${index}.replacementSerialNumberId`, '')
+              setValue(`lines.${index}.replacementSerialLabel`, '')
+              setOpenMode('typo')
+            }}
+            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              activeMode === 'typo' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
+            }`}
+          >
+            Fix typo
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setValue(`lines.${index}.correctedSerialNumber`, '')
+              setOpenMode('swap')
+            }}
+            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              activeMode === 'swap' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
+            }`}
+          >
+            Different unit arrived
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={clearCorrection}
+          className="text-amber-600 hover:text-amber-800"
+          aria-label="Cancel correction"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {activeMode === 'typo' ? (
+        <Controller
+          name={`lines.${index}.correctedSerialNumber`}
+          control={control}
+          render={({ field }) => (
+            <input
+              {...field}
+              value={field.value ?? ''}
+              type="text"
+              placeholder="Correct serial number"
+              onChange={(e) => {
+                field.onChange(e.target.value)
+                setValue(`lines.${index}.quantityReceived`, 1)
+              }}
+              className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+            />
+          )}
+        />
+      ) : (
+        <>
+          <SearchCombobox
+            value=""
+            onChange={() => {}}
+            onSelect={(option) => {
+              setValue(`lines.${index}.replacementSerialNumberId`, option.id, {
+                shouldValidate: true,
+              })
+              setValue(`lines.${index}.replacementSerialLabel`, option.primary)
+              setValue(`lines.${index}.quantityReceived`, 1)
+            }}
+            queryKey={`receive-serial-swap-search-${itemId}-${index}`}
+            placeholder="Search the serial that actually arrived…"
+            typeToSearchMessage="Type a serial number to search across every branch…"
+            emptyMessage="No matching serial numbers"
+            search={async (query) => {
+              const res = await getSerialNumbers({
+                itemId,
+                search: query || undefined,
+                status: 'in_stock',
+                limit: 25,
+                scope: 'override',
+              })
+              return (res.data?.data ?? []).map((s) => ({
+                id: s.id,
+                primary: s.serialNumber,
+                secondary:
+                  [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
+              }))
+            }}
+          />
+          {replacementSerialLabel && (
+            <p className="mt-1 text-[11px] text-amber-700">
+              Will link to: {replacementSerialLabel}
+            </p>
+          )}
+          <p className="mt-1 text-[11px] text-amber-600">
+            Not registered yet? Add it in the serial numbers module first, then search for it here.
+          </p>
+        </>
+      )}
+
+      <input
+        value={correctionReason}
+        onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
+        type="text"
+        placeholder="Reason for the correction (required)"
+        className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+      />
+    </div>
+  )
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -691,6 +865,7 @@ export default function TransferDetailModal({
         serialLabel: line.serialNumber?.serialNumber,
         itemLabel:
           (line.id && labelByLineId.get(line.id)) || line.item?.name || line.itemId || undefined,
+        itemId: line.itemId ?? line.item?.id ?? '',
         quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
       })),
       extraLines: [],
@@ -1012,7 +1187,24 @@ export default function TransferDetailModal({
                           </td>
                           {hasSerialLine && (
                             <td className="px-3 py-2 font-mono text-xs text-zinc-500">
-                              {line.serialNumber?.serialNumber ?? '—'}
+                              {line.receiptCorrectedFromSerial ? (
+                                <span
+                                  title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
+                                >
+                                  <span className="text-zinc-300 line-through">
+                                    {line.receiptCorrectedFromSerial.serialNumber}
+                                  </span>{' '}
+                                  {line.serialNumber?.serialNumber ?? '—'}
+                                </span>
+                              ) : line.receiptCorrectionReason ? (
+                                <span
+                                  title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
+                                >
+                                  {line.serialNumber?.serialNumber ?? '—'} *
+                                </span>
+                              ) : (
+                                (line.serialNumber?.serialNumber ?? '—')
+                              )}
                             </td>
                           )}
                           <td className="px-3 py-2 text-right font-medium text-zinc-700">
@@ -1368,69 +1560,80 @@ export default function TransferDetailModal({
                     {receiveLineFields.map((lineField, idx) => (
                       <div
                         key={lineField.id}
-                        className="flex items-center justify-between gap-3 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                        className="border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
                       >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-zinc-800">
-                            {lineField.itemLabel ?? '—'}
-                          </p>
-                          <p className="truncate text-xs text-zinc-400">
-                            {lineField.isSerial
-                              ? (lineField.serialLabel ?? '—')
-                              : `Remaining: ${lineField.dispatchedQty}`}
-                          </p>
-                        </div>
-                        <div className="shrink-0">
-                          {lineField.isSerial ? (
-                            <Controller
-                              name={`lines.${idx}.quantityReceived`}
-                              control={receiveForm.control}
-                              render={({ field }) => (
-                                <label className="flex items-center gap-1.5 text-sm text-zinc-600">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-zinc-800">
+                              {lineField.itemLabel ?? '—'}
+                            </p>
+                            <p className="truncate text-xs text-zinc-400">
+                              {lineField.isSerial
+                                ? (lineField.serialLabel ?? '—')
+                                : `Remaining: ${lineField.dispatchedQty}`}
+                            </p>
+                          </div>
+                          <div className="shrink-0">
+                            {lineField.isSerial ? (
+                              <Controller
+                                name={`lines.${idx}.quantityReceived`}
+                                control={receiveForm.control}
+                                render={({ field }) => (
+                                  <label className="flex items-center gap-1.5 text-sm text-zinc-600">
+                                    <input
+                                      type="checkbox"
+                                      checked={field.value === 1}
+                                      onChange={(e) => field.onChange(e.target.checked ? 1 : 0)}
+                                      className="h-4 w-4 rounded border-zinc-300 text-green-600 focus:ring-green-500"
+                                    />
+                                    Received
+                                  </label>
+                                )}
+                              />
+                            ) : (
+                              <Controller
+                                name={`lines.${idx}.quantityReceived`}
+                                control={receiveForm.control}
+                                render={({ field }) => (
                                   <input
-                                    type="checkbox"
-                                    checked={field.value === 1}
-                                    onChange={(e) => field.onChange(e.target.checked ? 1 : 0)}
-                                    className="h-4 w-4 rounded border-zinc-300 text-green-600 focus:ring-green-500"
+                                    type="number"
+                                    min={0}
+                                    max={lineField.dispatchedQty}
+                                    // Number('') is 0, which would otherwise
+                                    // snap the field straight back to "0" the
+                                    // instant it's cleared — NaN lets it sit
+                                    // visually blank while being edited.
+                                    value={Number.isNaN(field.value) ? '' : field.value}
+                                    onChange={(e) =>
+                                      field.onChange(
+                                        e.target.value === '' ? NaN : Number(e.target.value)
+                                      )
+                                    }
+                                    onBlur={() => {
+                                      if (Number.isNaN(field.value)) field.onChange(0)
+                                    }}
+                                    className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                                   />
-                                  Received
-                                </label>
-                              )}
-                            />
-                          ) : (
-                            <Controller
-                              name={`lines.${idx}.quantityReceived`}
-                              control={receiveForm.control}
-                              render={({ field }) => (
-                                <input
-                                  type="number"
-                                  min={0}
-                                  max={lineField.dispatchedQty}
-                                  // Number('') is 0, which would otherwise
-                                  // snap the field straight back to "0" the
-                                  // instant it's cleared — NaN lets it sit
-                                  // visually blank while being edited.
-                                  value={Number.isNaN(field.value) ? '' : field.value}
-                                  onChange={(e) =>
-                                    field.onChange(
-                                      e.target.value === '' ? NaN : Number(e.target.value)
-                                    )
-                                  }
-                                  onBlur={() => {
-                                    if (Number.isNaN(field.value)) field.onChange(0)
-                                  }}
-                                  className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                                />
-                              )}
-                            />
-                          )}
+                                )}
+                              />
+                            )}
+                          </div>
                         </div>
+                        {lineField.isSerial && (
+                          <SerialReceiveCorrection
+                            control={receiveForm.control}
+                            setValue={receiveForm.setValue}
+                            index={idx}
+                            itemId={lineField.itemId}
+                            canOverrideSerial={canOverrideSerial}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
                   {receiveForm.formState.errors.lines && (
                     <p className="mt-1 text-xs text-red-600">
-                      Check the quantities above — some values are invalid.
+                      Check the values above — some entries are invalid.
                     </p>
                   )}
                 </div>

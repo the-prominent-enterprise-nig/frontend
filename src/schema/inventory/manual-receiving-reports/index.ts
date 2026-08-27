@@ -24,6 +24,7 @@ const ManualRrWarehouseSchema = z.object({
   name: z.string(),
   code: z.string(),
   branchId: z.string().nullable().optional(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const ManualRrCreatedSerialSchema = z.object({

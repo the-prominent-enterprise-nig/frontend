@@ -82,9 +82,9 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
 
         <div className="flex flex-wrap gap-3">
           {/* A branch-scoped user's warehouse list is already backend-filtered
-              down to their own branch — with only one possible branch,
-              "All Branches" vs. picking it are the same result, so the
-              filter adds nothing. HQ/Business Owner sees every branch and
+              down to their own branch — with only one possible location,
+              "All Locations" vs. picking it are the same result, so the
+              filter adds nothing. HQ/Business Owner sees every location and
               keeps it. */}
           {warehouseOptions.length > 1 && (
             <select
@@ -92,7 +92,7 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Branches</option>
+              <option value="">All Locations</option>
               {warehouseOptions.map((wh) => (
                 <option key={wh.id} value={wh.id}>
                   {wh.branch?.name ?? wh.name}
@@ -164,7 +164,7 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
                       Item
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Reason
@@ -204,7 +204,7 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
                         )}
                       </td>
                       <td className="px-4 py-3 font-medium text-zinc-900">
-                        {adj.warehouse?.name ?? '—'}
+                        {adj.warehouse?.branch?.name ?? adj.warehouse?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600">

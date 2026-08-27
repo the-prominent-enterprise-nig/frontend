@@ -9,14 +9,10 @@ import { getPurchaseRequests } from '../_actions/get-purchase-requests'
 import { createPurchaseRequest } from '../_actions/create-purchase-request'
 import { updatePurchaseRequest } from '../_actions/update-purchase-request'
 import { submitPurchaseRequest } from '../_actions/submit-purchase-request'
-import { approvePurchaseRequest } from '../_actions/approve-purchase-request'
-import { rejectPurchaseRequest } from '../_actions/reject-purchase-request'
 import { cancelPurchaseRequest } from '../_actions/cancel-purchase-request'
 import type {
   CreatePurchaseRequestFormValues,
   UpdatePurchaseRequestFormValues,
-  ApprovePrFormValues,
-  RejectPrFormValues,
 } from '@/src/schema/inventory/purchase-requests'
 
 export function usePurchaseRequests() {
@@ -38,11 +34,11 @@ export function usePurchaseRequests() {
     placeholderData: keepPreviousData,
     staleTime: STALE.OPERATIONAL,
     // Scenario 26 — same gap found live in credit applications, item
-    // master, and stock adjustments: this is a maker-checker handoff
-    // across different people's browser tabs (Stock Controller submits,
-    // Branch Manager approves/rejects), and staleTime alone only refetches
-    // on THIS tab's own refocus/remount, not when someone else's action
-    // changes the record.
+    // master, and stock adjustments: an underspecified PR that stays at
+    // 'submitted' still needs someone else (Branch Manager/Business Owner)
+    // to manually convert it, across a different browser tab, and staleTime
+    // alone only refetches on THIS tab's own refocus/remount, not when
+    // someone else's action changes the record.
     refetchInterval: 10 * 1000,
   })
 
@@ -92,70 +88,30 @@ export function usePurchaseRequests() {
     onSuccess: (result) => {
       if (result.success) {
         showToast({
-          title: 'Purchase request submitted',
+          title: result.data?.convertedToPo
+            ? 'Purchase request submitted and converted to a PO'
+            : 'Purchase request submitted',
           description: result.message,
           status: 'success',
         })
-        queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
-      } else {
-        showToast({
-          title: 'Failed to submit purchase request',
-          description: result.message,
-          status: 'error',
-        })
-      }
-    },
-  })
-
-  const approveMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ApprovePrFormValues }) =>
-      approvePurchaseRequest(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Purchase request approved',
-          description: result.message,
-          status: 'success',
-        })
-        // Approving a fully-specified PR's final tier auto-converts it into
-        // a real PO server-side (PurchaseRequestService.approve()) — the
-        // Purchase Orders tab's own cache has no way to know that happened
-        // unless it's invalidated too, same as the explicit convertFromPr
-        // mutation in usePurchaseOrders.ts already does.
+        // A fully-specified PR auto-converts into a real PO in the same
+        // request (PurchaseRequestService.submit() — no separate approval
+        // step). The Purchase Orders tab's own cache has no way to know
+        // that happened unless it's invalidated too, same as the explicit
+        // convertFromPr mutation in usePurchaseOrders.ts already does.
         queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
         queryClient.invalidateQueries({ queryKey: ['purchase-orders'] })
         // The PR itself also drops out of the default (non-'converted')
         // list the instant this happens (purchase-request.service.ts's
         // findAll excludes status:'converted' by design) — follow it to
-        // where it actually lives now instead of leaving the approver
+        // where it actually lives now instead of leaving the submitter
         // looking at a list it just vanished from.
         if (result.data?.convertedToPo) {
           router.replace('/inventory/purchase-orders?tab=orders')
         }
       } else {
         showToast({
-          title: 'Failed to approve purchase request',
-          description: result.message,
-          status: 'error',
-        })
-      }
-    },
-  })
-
-  const rejectMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: RejectPrFormValues }) =>
-      rejectPurchaseRequest(id, data),
-    onSuccess: (result) => {
-      if (result.success) {
-        showToast({
-          title: 'Purchase request rejected',
-          description: result.message,
-          status: 'success',
-        })
-        queryClient.invalidateQueries({ queryKey: ['purchase-requests'] })
-      } else {
-        showToast({
-          title: 'Failed to reject purchase request',
+          title: 'Failed to submit purchase request',
           description: result.message,
           status: 'error',
         })
@@ -215,12 +171,6 @@ export function usePurchaseRequests() {
 
     submitPR: submitMutation.mutateAsync,
     isSubmitting: submitMutation.isPending,
-
-    approvePR: (id: string, data: ApprovePrFormValues) => approveMutation.mutateAsync({ id, data }),
-    isApproving: approveMutation.isPending,
-
-    rejectPR: (id: string, data: RejectPrFormValues) => rejectMutation.mutateAsync({ id, data }),
-    isRejecting: rejectMutation.isPending,
 
     cancelPR: cancelMutation.mutateAsync,
     isCancelling: cancelMutation.isPending,

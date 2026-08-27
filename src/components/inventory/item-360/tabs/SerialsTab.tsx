@@ -52,7 +52,7 @@ export default function SerialsTab({
               Serial #
             </th>
             <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Warehouse
+              Location
             </th>
             <th className="px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Type
@@ -88,7 +88,9 @@ export default function SerialsTab({
                 {serial.serialNumber}
               </td>
               <td className="px-2 py-2 text-zinc-600">
-                {(serial.warehouse ?? serial.currentWarehouse)?.name ?? '—'}
+                {(serial.warehouse ?? serial.currentWarehouse)?.branch?.name ??
+                  (serial.warehouse ?? serial.currentWarehouse)?.name ??
+                  '—'}
               </td>
               <td className="px-2 py-2 text-zinc-600">
                 {displayClassificationLabel(serial.item?.type?.name) ?? '—'}

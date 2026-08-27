@@ -14,8 +14,6 @@ export const PROCUREMENT_PERMISSIONS = {
   SUPPLIERS_MANAGE_DOCUMENTS: 'inventory:suppliers:manage_documents',
   PR_READ: 'inventory:purchase-requests:read',
   PR_CREATE: 'inventory:purchase-requests:create',
-  PR_APPROVE: 'inventory:purchase-requests:approve',
-  PR_REJECT: 'inventory:purchase-requests:reject',
   PR_CANCEL: 'inventory:purchase-requests:cancel',
   PR_UPDATE: 'inventory:purchase-requests:update',
   PO_READ: 'inventory:purchase-orders:read',

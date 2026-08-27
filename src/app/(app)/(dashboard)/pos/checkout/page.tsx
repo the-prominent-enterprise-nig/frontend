@@ -5508,6 +5508,7 @@ function NewCustomerModal({
 }) {
   const [form, setForm] = useState({
     firstName: '',
+    middleName: '',
     lastName: '',
     phone: '',
     email: '',
@@ -5597,6 +5598,7 @@ function NewCustomerModal({
     setSubmitting(true)
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
+      middleName: form.middleName.trim() || undefined,
       lastName: form.lastName.trim(),
       phoneNumber: form.phone.trim(),
       email: form.email.trim() || undefined,
@@ -5657,6 +5659,14 @@ function NewCustomerModal({
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
               value={form.lastName}
               onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.middleName}
+              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
             />
           </div>
           <div>

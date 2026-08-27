@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
-import { Bell } from 'lucide-react'
+import { ArrowRight, Bell, BellOff, CheckCheck } from 'lucide-react'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { showToast } from '@/src/components/ui/toast'
 import {
@@ -17,6 +18,7 @@ import {
   useNotificationsSocket,
   type NotificationPushPayload,
 } from '@/src/libs/hooks/useNotificationsSocket'
+import { groupByDateBucket } from './notification-types'
 import NotificationListItem from './NotificationListItem'
 import type { ApiResponse } from '@/src/libs/api/client'
 import type {
@@ -27,10 +29,11 @@ import type {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false)
+  const [unreadOnly, setUnreadOnly] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: unreadData } = useUnreadNotificationCount()
-  const { data: listData, isLoading } = useNotificationsList({}, open)
+  const { data: listData, isLoading } = useNotificationsList({ unreadOnly }, open)
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
 
@@ -40,7 +43,12 @@ export default function NotificationBell() {
         success: true,
         data: { count: (old?.data?.count ?? 0) + 1 },
       }))
-      const asItem: NotificationItem = { ...payload, isRead: false, readAt: null }
+      const asItem: NotificationItem = {
+        ...payload,
+        isRead: false,
+        readAt: null,
+        archivedAt: null,
+      }
       queryClient.setQueriesData<ApiResponse<NotificationListResponse>>(
         { queryKey: [LIST_KEY_PREFIX], exact: false },
         (old) =>
@@ -55,7 +63,8 @@ export default function NotificationBell() {
   })
 
   const unreadCount = unreadData?.data?.count ?? 0
-  const notifications = listData?.data?.data ?? []
+  const notifications = useMemo(() => listData?.data?.data ?? [], [listData])
+  const grouped = useMemo(() => groupByDateBucket(notifications), [notifications])
 
   function handleItemClick(notification: NotificationItem) {
     setOpen(false)
@@ -81,13 +90,13 @@ export default function NotificationBell() {
     <div className="relative">
       <button
         type="button"
-        aria-label="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
         onClick={() => setOpen((v) => !v)}
-        className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-50"
+        className="relative cursor-pointer rounded-full p-2 text-gray-500 transition-colors hover:bg-prominent-purple-50 hover:text-prominent-purple-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-prominent-purple-300"
       >
-        <Bell className="h-5 w-5 text-gray-500" strokeWidth={1.8} />
+        <Bell className="h-5 w-5" strokeWidth={1.8} />
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4.25 min-w-4.25 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4.25 min-w-4.25 items-center justify-center rounded-full bg-prominent-orange-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -96,42 +105,109 @@ export default function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2.5">
-              <p className="text-sm font-semibold text-zinc-900">Notifications</p>
+          <div className="animate-notif-dropdown absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/10">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-3.5 py-3">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-zinc-900">Notifications</p>
+                {unreadCount > 0 && (
+                  <span className="rounded-full bg-prominent-orange-50 px-1.5 py-0.5 text-[11px] font-semibold text-prominent-orange-700">
+                    {unreadCount} new
+                  </span>
+                )}
+              </div>
               {unreadCount > 0 && (
                 <button
                   type="button"
                   onClick={handleMarkAllRead}
-                  className="cursor-pointer text-xs font-medium text-prominent-orange-700 hover:underline"
+                  className="flex cursor-pointer items-center gap-1 text-xs font-medium text-prominent-orange-700 transition-colors hover:text-prominent-orange-800"
                 >
-                  Mark all as read
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Mark all read
                 </button>
               )}
             </div>
 
-            <div className="max-h-96 overflow-y-auto">
+            <div className="flex items-center gap-1 border-b border-zinc-100 px-3.5 py-2">
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(false)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  !unreadOnly
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setUnreadOnly(true)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  unreadOnly
+                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                Unread
+                {unreadCount > 0 && (
+                  <span className="rounded-full bg-prominent-orange-100 px-1.5 py-px text-[10px] font-semibold text-prominent-orange-700">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <div className="max-h-96 divide-y divide-zinc-50 overflow-y-auto">
               {isLoading && (
-                <div className="space-y-2 p-3">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
+                <div className="space-y-3 p-3">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                      <div className="flex-1 space-y-1.5 pt-0.5">
+                        <Skeleton className="h-3 w-3/4" />
+                        <Skeleton className="h-2.5 w-full" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
               {!isLoading && notifications.length === 0 && (
-                <p className="px-3 py-8 text-center text-sm text-zinc-400">No notifications yet</p>
+                <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
+                  <BellOff className="h-6 w-6 text-zinc-300" strokeWidth={1.5} />
+                  <p className="text-sm text-zinc-400">
+                    {unreadOnly ? "You're all caught up" : 'No notifications yet'}
+                  </p>
+                </div>
               )}
 
               {!isLoading &&
-                notifications.map((notification) => (
-                  <NotificationListItem
-                    key={notification.id}
-                    notification={notification}
-                    onClick={handleItemClick}
-                  />
+                grouped.map(([bucket, items]) => (
+                  <div key={bucket}>
+                    <p className="bg-zinc-50/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                      {bucket}
+                    </p>
+                    <div className="divide-y divide-zinc-50">
+                      {items.map((notification) => (
+                        <NotificationListItem
+                          key={notification.id}
+                          notification={notification}
+                          onClick={handleItemClick}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
             </div>
+
+            <Link
+              href="/notifications"
+              onClick={() => setOpen(false)}
+              className="group flex items-center justify-center gap-1.5 border-t border-zinc-100 px-3 py-2.5 text-center text-xs font-semibold text-prominent-purple-700 transition-colors hover:bg-prominent-purple-50"
+            >
+              View all notifications
+              <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+            </Link>
           </div>
         </>
       )}

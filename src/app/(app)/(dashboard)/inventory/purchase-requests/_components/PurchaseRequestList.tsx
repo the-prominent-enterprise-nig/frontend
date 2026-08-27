@@ -5,8 +5,6 @@ import { Plus, Loader2, Send } from 'lucide-react'
 import { usePurchaseRequests } from '../_hooks/usePurchaseRequests'
 import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrders'
 import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
-import { ApprovePrModal } from './ApprovePrModal'
-import { RejectPrModal } from './RejectPrModal'
 import { ConvertPrToPoModal } from './ConvertPrToPoModal'
 import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
 import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
@@ -19,8 +17,6 @@ const STATUS_TABS = [
   { label: 'All', value: undefined },
   { label: 'Draft', value: 'draft' },
   { label: 'Submitted', value: 'submitted' },
-  { label: 'Approved', value: 'approved' },
-  { label: 'Rejected', value: 'rejected' },
   { label: 'Converted', value: 'converted' },
 ] as const
 
@@ -28,8 +24,6 @@ function StatusBadge({ status }: { status: PurchaseRequestSummary['status'] }) {
   const styles: Record<string, string> = {
     draft: 'bg-zinc-100 text-zinc-600',
     submitted: 'bg-blue-100 text-blue-700',
-    approved: 'bg-green-100 text-green-700',
-    rejected: 'bg-red-100 text-red-700',
     cancelled: 'bg-zinc-100 text-zinc-500',
     converted: 'bg-purple-100 text-purple-700',
   }
@@ -57,39 +51,9 @@ function prTotal(pr: PurchaseRequestSummary): number {
   }, 0)
 }
 
-function ApprovalTierBadges({ pr }: { pr: PurchaseRequestSummary }) {
-  if (pr.status !== 'submitted') return null
-  return (
-    <div className="mt-1 flex flex-wrap gap-1">
-      {pr.approvals.map((approval) => {
-        const tierStyles: Record<string, string> = {
-          pending: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
-          approved: 'bg-green-100 text-green-700 border border-green-200',
-          rejected: 'bg-red-100 text-red-700 border border-red-200',
-        }
-        const tierLabels: Record<string, string> = {
-          pending: 'Pending Approval',
-          approved: 'Approved',
-          rejected: 'Rejected',
-        }
-        return (
-          <span
-            key={approval.id}
-            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${tierStyles[approval.status] ?? 'bg-zinc-100 text-zinc-600'}`}
-          >
-            {tierLabels[approval.status] ?? approval.status}
-          </span>
-        )
-      })}
-    </div>
-  )
-}
-
 export function PurchaseRequestList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE)
   const canEdit = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_UPDATE)
-  const canApprove = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_APPROVE)
-  const canReject = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_REJECT)
   const canCancel = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CANCEL)
   const canConvert = hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE)
 
@@ -107,10 +71,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
     isUpdating,
     submitPR,
     isSubmitting,
-    approvePR,
-    isApproving,
-    rejectPR,
-    isRejecting,
     cancelPR,
     isCancelling,
   } = usePurchaseRequests()
@@ -120,8 +80,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingPr, setEditingPr] = useState<PurchaseRequestSummary | null>(null)
   const [submittingPr, setSubmittingPr] = useState<PurchaseRequestSummary | null>(null)
-  const [approvingPr, setApprovingPr] = useState<PurchaseRequestSummary | null>(null)
-  const [rejectingPr, setRejectingPr] = useState<PurchaseRequestSummary | null>(null)
   const [convertingPr, setConvertingPr] = useState<PurchaseRequestSummary | null>(null)
   const [viewingPr, setViewingPr] = useState<PurchaseRequestSummary | null>(null)
 
@@ -224,7 +182,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={pr.status} />
-                      <ApprovalTierBadges pr={pr} />
                     </td>
                     <td className="px-4 py-3 text-zinc-600">
                       {pr.branch?.name ?? <span className="text-zinc-400">—</span>}
@@ -273,24 +230,14 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                         )}
                         {pr.status === 'submitted' && (
                           <>
-                            {canApprove && (
+                            {canConvert && (
                               <button
                                 type="button"
-                                onClick={() => setApprovingPr(pr)}
-                                disabled={isApproving}
-                                className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                                onClick={() => setConvertingPr(pr)}
+                                disabled={isConverting}
+                                className="rounded-md bg-prominent-purple-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
                               >
-                                Approve
-                              </button>
-                            )}
-                            {canReject && (
-                              <button
-                                type="button"
-                                onClick={() => setRejectingPr(pr)}
-                                disabled={isRejecting}
-                                className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                              >
-                                Reject
+                                Convert to PO
                               </button>
                             )}
                             {canCancel && (
@@ -304,16 +251,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                               </button>
                             )}
                           </>
-                        )}
-                        {pr.status === 'approved' && canConvert && (
-                          <button
-                            type="button"
-                            onClick={() => setConvertingPr(pr)}
-                            disabled={isConverting}
-                            className="rounded-md bg-prominent-purple-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
-                          >
-                            Convert to PO
-                          </button>
                         )}
                         {pr.status === 'converted' && pr.convertedToPo && (
                           <span className="text-xs text-purple-600 font-medium">
@@ -396,28 +333,6 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
           if (submittingPr) await submitPR(submittingPr.id)
         }}
         isConfirming={isSubmitting}
-      />
-
-      <ApprovePrModal
-        open={!!approvingPr}
-        onClose={() => setApprovingPr(null)}
-        pr={approvingPr}
-        onApprove={async (id, data) => {
-          await approvePR(id, data)
-          setApprovingPr(null)
-        }}
-        isApproving={isApproving}
-      />
-
-      <RejectPrModal
-        open={!!rejectingPr}
-        onClose={() => setRejectingPr(null)}
-        pr={rejectingPr}
-        onReject={async (id, data) => {
-          await rejectPR(id, data)
-          setRejectingPr(null)
-        }}
-        isRejecting={isRejecting}
       />
 
       <ConvertPrToPoModal

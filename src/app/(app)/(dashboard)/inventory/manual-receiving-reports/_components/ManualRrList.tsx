@@ -104,7 +104,7 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Branches</option>
+              <option value="">All Locations</option>
               {warehouseOptions.map((wh) => (
                 <option key={wh.id} value={wh.id}>
                   {wh.branch?.name ?? wh.name}
@@ -183,7 +183,7 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
                       Serial
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Reason
@@ -216,7 +216,9 @@ export default function ManualRrList({ session }: { session: SessionUser }) {
                       <td className="px-4 py-3 font-mono text-xs text-zinc-600">
                         {r.serialNumber}
                       </td>
-                      <td className="px-4 py-3 font-medium text-zinc-900">{r.warehouse.name}</td>
+                      <td className="px-4 py-3 font-medium text-zinc-900">
+                        {r.warehouse.branch?.name ?? r.warehouse.name}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
                           {ADJUSTMENT_REASON_LABELS[r.reasonCode]}

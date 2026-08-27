@@ -5,9 +5,9 @@ import { Loader2, X } from 'lucide-react'
 
 // Scenario 29 PO-15 — a plain "are you sure?" confirm for actions that
 // previously committed instantly with no confirmation at all (PR Submit, PO
-// Approve, PO Send, PO Close). Deliberately lighter than CancelPoModal/
-// ApprovePrModal (no reason/remarks field) — those two collect real data
-// alongside the confirmation, these four don't need to collect anything.
+// Approve, PO Send, PO Close). Deliberately lighter than CancelPoModal (no
+// reason field) — that one collects real data alongside the confirmation,
+// these four don't need to collect anything.
 type Props = {
   open: boolean
   onClose: () => void

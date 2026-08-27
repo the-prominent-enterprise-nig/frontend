@@ -104,7 +104,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
           >
-            <option value="">All Branches</option>
+            <option value="">All Locations</option>
             {warehouseOptions.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.branch?.name ?? w.name}
@@ -183,7 +183,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                       Item
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Qty

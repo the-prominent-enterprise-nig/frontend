@@ -119,7 +119,7 @@ export default function ReservationsPageView({ session }: { session: SessionUser
                       Item
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Qty
@@ -150,7 +150,10 @@ export default function ReservationsPageView({ session }: { session: SessionUser
                         )}
                       </td>
                       <td className="hidden px-4 py-3 text-zinc-600 sm:table-cell">
-                        {res.warehouse?.code ?? '—'}
+                        {res.warehouse?.branch?.name ??
+                          res.warehouse?.name ??
+                          res.warehouse?.code ??
+                          '—'}
                       </td>
                       <td className="px-4 py-3 text-center font-semibold text-zinc-700">
                         {res.reservedQty}

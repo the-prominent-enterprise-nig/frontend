@@ -136,7 +136,7 @@ export default function ReconciliationReport({
                   <thead>
                     <tr className="border-b border-zinc-100 bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       <th className="px-4 py-2">Item</th>
-                      <th className="px-4 py-2">Warehouse</th>
+                      <th className="px-4 py-2">Location</th>
                       <th className="px-4 py-2">Type</th>
                       <th className="px-4 py-2 text-right">Qty Change</th>
                       <th className="px-4 py-2">Reference</th>
@@ -261,7 +261,7 @@ export default function ReconciliationReport({
                     <tr className="border-b border-zinc-100 bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       <th className="px-4 py-2">Adjustment</th>
                       <th className="px-4 py-2">Reason</th>
-                      <th className="px-4 py-2">Warehouse</th>
+                      <th className="px-4 py-2">Location</th>
                       <th className="px-4 py-2">Approved</th>
                     </tr>
                   </thead>

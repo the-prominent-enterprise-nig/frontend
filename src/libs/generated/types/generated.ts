@@ -413,6 +413,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/audit-logs/resource-types': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Distinct resourceType values present in this tenant's audit trail — powers the Resource Type filter dropdown, always current since it reads actual data rather than a hardcoded list */
+    get: operations['AuditLogController_findDistinctResourceTypes']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/audit-logs/recent': {
     parameters: {
       query?: never
@@ -5070,42 +5087,8 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Submit PR for multi-tier approval */
+    /** Submit PR — auto-converts to PO if fully priced */
     post: operations['PurchaseRequestController_submit']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-requests/{id}/approve': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Approve the next pending approval tier */
-    post: operations['PurchaseRequestController_approve']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/procurement/purchase-requests/{id}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Reject the current pending approval tier */
-    post: operations['PurchaseRequestController_reject']
     delete?: never
     options?: never
     head?: never
@@ -12224,12 +12207,6 @@ export interface components {
       notes?: string
       lines: components['schemas']['CreatePurchaseRequestLineDto'][]
     }
-    ApprovePrDto: {
-      remarks?: string
-    }
-    RejectPrDto: {
-      reason: string
-    }
     CreatePoLineDto: {
       itemId: string
       quantity: number
@@ -15082,6 +15059,23 @@ export interface operations {
         page?: number
         limit?: number
       }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  AuditLogController_findDistinctResourceTypes: {
+    parameters: {
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -22827,7 +22821,7 @@ export interface operations {
   PurchaseRequestController_findAll: {
     parameters: {
       query?: {
-        status?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'converted' | 'cancelled'
+        status?: 'draft' | 'submitted' | 'converted' | 'cancelled'
         branchId?: string
         page?: number
         limit?: number
@@ -22919,52 +22913,6 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_approve: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ApprovePrDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  PurchaseRequestController_reject: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectPrDto']
-      }
-    }
     responses: {
       200: {
         headers: {
@@ -23920,6 +23868,8 @@ export interface operations {
         page?: number
         limit?: number
         unreadOnly?: boolean
+        /** @description true = only archived notifications (30+ days old); omitted/false = active only (the default everywhere else in the app) */
+        archived?: boolean
       }
       header?: never
       path?: never

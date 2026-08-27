@@ -105,13 +105,39 @@ export interface CreditInvestigation {
   updatedAt: string
 }
 
-export const CreateCreditApplicationFormSchema = z.object({
+// Sentinel `coMakerId` value meaning "fill in a brand-new co-maker below"
+// instead of picking one already on file for the applicant.
+export const NEW_CO_MAKER_VALUE = '__new__'
+
+const CreateCreditApplicationBaseSchema = z.object({
   // Audit-only — not shown as a form field. Sent when the actor is
   // branch-locked; otherwise omitted and the backend defaults it to the
   // enterprise's main branch (see CreditApplicationService.create()).
   branchId: z.string().optional(),
   applicantCustomerId: z.string().min(1, 'Applicant is required'),
+  // Applicant contact — prefilled from the selected customer once picked,
+  // and editable. These aren't part of the credit application payload:
+  // CreateCreditApplicationModal's submit handler diffs them against what
+  // was loaded and, if changed, saves them to the customer's real record
+  // via a separate PATCH /crm/customers/:id call before creating/updating
+  // the application itself.
+  applicantPhone: z.string().max(50).optional().or(z.literal('')),
+  applicantEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
+  // Holds an existing co-maker's id, the NEW_CO_MAKER_VALUE sentinel (fill
+  // in a brand-new co-maker below), or '' (no co-maker).
   coMakerId: z.string().optional(),
+  // Editable contact for whichever existing co-maker is selected above —
+  // same "diff and PATCH separately" treatment as applicantPhone/Email,
+  // via customersApi.updateCoMaker().
+  coMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
+  coMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
+  // Only used when coMakerId === NEW_CO_MAKER_VALUE — creates a co-maker on
+  // the applicant's profile via customersApi.addCoMaker() before the
+  // application itself is submitted.
+  newCoMakerName: z.string().max(255).optional().or(z.literal('')),
+  newCoMakerRelationship: z.string().max(100).optional().or(z.literal('')),
+  newCoMakerContactNumber: z.string().max(50).optional().or(z.literal('')),
+  newCoMakerEmail: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
   // An application can cover a bundle of models (2026-08-15, second pass) —
   // checkout enforces an exact match against the sale's installment lines.
   items: z
@@ -123,13 +149,44 @@ export const CreateCreditApplicationFormSchema = z.object({
     .min(1, 'At least one item is required'),
   itemDescription: z.string().max(500).optional(),
 })
-export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationFormSchema>
+
+export const CreateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.superRefine(
+  (data, ctx) => {
+    if (data.coMakerId === NEW_CO_MAKER_VALUE) {
+      if (!data.newCoMakerName?.trim()) {
+        ctx.addIssue({ code: 'custom', path: ['newCoMakerName'], message: 'Name is required' })
+      }
+      if (!data.newCoMakerRelationship?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerRelationship'],
+          message: 'Relationship is required',
+        })
+      }
+      if (!data.newCoMakerContactNumber?.trim()) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['newCoMakerContactNumber'],
+          message: 'Contact number is required',
+        })
+      }
+    } else if (data.coMakerId && !data.coMakerContactNumber?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['coMakerContactNumber'],
+        message: 'Contact number is required',
+      })
+    }
+  }
+)
+export type CreateCreditApplicationFormValues = z.infer<typeof CreateCreditApplicationBaseSchema>
 
 // Editing a draft only ever touches item/notes today (see
 // CreditApplicationDetail's "Edit" action) — applicant/co-maker/branch
 // aren't exposed for edit, but the backend's PATCH accepts any subset via
-// PartialType(CreateCreditApplicationDto), so this stays a full .partial().
-export const UpdateCreditApplicationFormSchema = CreateCreditApplicationFormSchema.partial()
+// PartialType(CreateCreditApplicationDto), so this stays a full .partial()
+// off the base (pre-refinement) schema.
+export const UpdateCreditApplicationFormSchema = CreateCreditApplicationBaseSchema.partial()
 export type UpdateCreditApplicationFormValues = z.infer<typeof UpdateCreditApplicationFormSchema>
 
 export const CancelCreditApplicationFormSchema = z.object({

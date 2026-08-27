@@ -32,7 +32,10 @@ export function useUnreadNotificationCount() {
 }
 
 /** Lazy — only fetches once the panel has been opened at least once. */
-export function useNotificationsList(params: { unreadOnly?: boolean } = {}, enabled: boolean) {
+export function useNotificationsList(
+  params: { page?: number; limit?: number; unreadOnly?: boolean; archived?: boolean } = {},
+  enabled: boolean
+) {
   return useQuery({
     queryKey: [LIST_KEY_PREFIX, params],
     queryFn: () => getNotifications({ page: 1, limit: 20, ...params }),
