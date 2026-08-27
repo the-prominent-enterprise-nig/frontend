@@ -411,9 +411,24 @@ export function printPurchaseOrderDocument(
       const unitPrice = Number(l.unitPrice ?? 0)
       const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
       const name = l.isFreebie ? `${item?.name ?? '—'} (Freebie)` : (item?.name ?? '—')
+      const srp = l.srp != null ? Number(l.srp) : null
+      const discounts = Array.isArray(l.discounts)
+        ? (l.discounts as { name?: string; type: string; value: number }[])
+        : []
+      const discountNote =
+        srp != null && discounts.length > 0
+          ? `<div class="discount-note">SRP ${fmt(srp)} · ${discounts
+              .map((d) => {
+                const amount = d.type === 'percentage' ? `${d.value}%` : fmt(d.value)
+                return esc(d.name ? `${d.name} (${amount})` : amount)
+              })
+              .join(
+                ' → '
+              )} off → ${fmt(l.discountedCost != null ? Number(l.discountedCost) : unitPrice)}</div>`
+          : ''
       return `<tr>
         <td class="num">${i + 1}</td>
-        <td>${esc(name)}</td>
+        <td>${esc(name)}${discountNote}</td>
         <td>${esc(l.description) || '—'}</td>
         <td class="right">${qty}</td>
         <td class="right">${fmt(unitPrice)}</td>
@@ -483,6 +498,7 @@ export function printPurchaseOrderDocument(
     .page-break { page-break-before: always; break-before: page; padding-top: 32px; }
     .mono { font-family: "Courier New", monospace; }
     .item-name { font-weight: 700; }
+    .discount-note { font-size: 11px; color: #555; margin-top: 2px; }
     .sn-table thead { display: table-header-group; }
     .sn-table tr { break-inside: avoid; }
     @media print { body { padding: 0; } .page-break { padding-top: 0; } button { display: none; } }
@@ -777,5 +793,160 @@ export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildCustomerLedgerHtml(ledger))
+  win.document.close()
+}
+
+/**
+ * Bespoke letterhead layout for the AR Invoice print/download — same
+ * typographic family as buildReceivingReportHtml()/buildStockTransferHtml()/
+ * printPurchaseOrderDocument() (title left / logo right, three-column info
+ * row, light #ccc-bordered table) instead of printInventoryDocument()'s bare
+ * generic shell (no logo, plain label/value grid) that AR Invoice used to
+ * share with AP Bill.
+ */
+export function buildARInvoiceHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const inv = doc.document as Record<string, unknown>
+  const customer = inv.customer as { name?: string; address?: string; taxId?: string } | undefined
+  const posTransaction = inv.posTransaction as { transactionNumber?: string } | null
+  const installmentDetail = inv.installmentDetail as {
+    termMonths: number | null
+    rebate: number | string | null
+    items: Record<string, unknown>[]
+  } | null
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const totalAmount = Number(inv.totalAmount ?? 0)
+  const amountPaid = Number(inv.amountPaid ?? 0)
+  const outstanding = totalAmount - amountPaid
+
+  const itemsRows = (installmentDetail?.items ?? [])
+    .map((l) => {
+      const item = l.item as { name?: string; brand?: { name?: string } | null } | null
+      const qty = Number(l.quantity ?? 0)
+      const unitPrice = Number(l.unitPrice ?? 0)
+      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
+      const brand = item?.brand ? ` — ${esc(item.brand.name)}` : ''
+      const serialNumber = l.serialNumber as {
+        serialNumber?: string
+        goodsReceiptLine?: {
+          goodsReceipt?: {
+            code?: string
+            supplier?: { name?: string } | null
+            purchaseOrderNumber?: string | null
+          } | null
+        } | null
+      } | null
+      const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
+      const serials = serialNumber
+        ? `<div class="mono" style="color:#7c3aed;font-size:11px;margin-top:2px">SN: ${esc(serialNumber.serialNumber)}${secondarySerialNumber ? ` / ${esc(secondarySerialNumber.serialNumber)}` : ''}</div>`
+        : ''
+      const goodsReceipt = serialNumber?.goodsReceiptLine?.goodsReceipt
+      const receiving = goodsReceipt
+        ? `<div style="color:#999;font-size:10px;margin-top:1px">RR: ${esc(goodsReceipt.code)}${goodsReceipt.supplier ? ` — ${esc(goodsReceipt.supplier.name)}` : ''}${goodsReceipt.purchaseOrderNumber ? ` · PO: ${esc(goodsReceipt.purchaseOrderNumber)}` : ''}</div>`
+        : ''
+      return `<tr>
+        <td>${esc(item?.name) || '—'}${brand}${serials}${receiving}</td>
+        <td class="right">${qty}</td>
+        <td class="right">${fmt(unitPrice)}</td>
+        <td class="right">${fmt(lineTotal)}</td>
+      </tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    h2 { font-size: 14px; margin: 0 0 4px; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .disclaimer { font-size: 12px; color: #666; margin: -6px 0 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .mono { font-family: "Courier New", monospace; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; }
+    .total-wrap td { padding: 5px 10px; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 130px; }
+    .total-wrap tr.strong td { font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>AR Invoice</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="meta-label">Bill To</p>
+        <p class="party-name">${esc(customer?.name) || '—'}</p>
+        ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
+        ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Invoice No.</p>
+        <p class="meta-value">${esc(doc.documentNumber)}</p>
+        <p class="meta-label">Invoice Date</p>
+        <p class="meta-value">${fmtDate(inv.invoiceDate)}</p>
+        <p class="meta-label">Due Date</p>
+        <p class="meta-value">${fmtDate(inv.dueDate)}</p>
+        <p class="meta-label">Status</p>
+        <p class="meta-value">${esc(inv.status) || '—'}</p>
+        ${posTransaction ? `<p class="meta-label">Source Sale</p><p class="meta-value">${esc(posTransaction.transactionNumber)}</p>` : ''}
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        ${enterprise?.companyTradingName ? `<p class="party-address">${esc(enterprise.companyTradingName)}</p>` : ''}
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+        ${enterprise?.taxId ? `<p class="party-address">TIN: ${esc(enterprise.taxId)}</p>` : ''}
+      </div>
+    </div>
+
+    ${
+      installmentDetail
+        ? `<h2>Financed items — full plan</h2>
+    <p class="disclaimer">Full price of everything on this ${installmentDetail.termMonths ?? '—'}-month plan — this invoice only covers 1 of ${installmentDetail.termMonths ?? '—'} monthly payments, not the full amount shown below.</p>
+    <table>
+      <thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Line total</th></tr></thead>
+      <tbody>${itemsRows}</tbody>
+    </table>
+    <p style="font-size:12px;color:#666;text-align:right;margin-top:6px">Rebate on this due date: ${fmt(Number(installmentDetail.rebate ?? 0))}</p>`
+        : ''
+    }
+
+    <div class="total-wrap">
+      <table>
+        <tr><td class="label">Subtotal</td><td class="value">${fmt(Number(inv.subtotal ?? 0))}</td></tr>
+        <tr><td class="label">Tax</td><td class="value">${fmt(Number(inv.taxAmount ?? 0))}</td></tr>
+        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
+        <tr><td class="label">Paid</td><td class="value">${fmt(amountPaid)}</td></tr>
+        <tr class="strong"><td class="label">Outstanding</td><td class="value">${fmt(outstanding)}</td></tr>
+      </table>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printARInvoiceDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildARInvoiceHtml(data))
   win.document.close()
 }

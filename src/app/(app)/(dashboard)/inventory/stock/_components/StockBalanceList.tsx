@@ -205,7 +205,7 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
                           <span className="text-zinc-600">
                             {bal.warehouse?.branch?.name ?? bal.warehouse?.name ?? '—'}
                           </span>
-                          {bal.warehouse?.code && (
+                          {bal.warehouse?.code && !bal.warehouse.branch && (
                             <span className="ml-1.5 text-xs text-zinc-400">
                               ({bal.warehouse.code})
                             </span>

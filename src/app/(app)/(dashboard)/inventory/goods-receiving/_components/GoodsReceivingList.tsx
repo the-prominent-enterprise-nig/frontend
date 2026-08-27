@@ -281,7 +281,7 @@ export default function GoodsReceivingList({ session }: { session: SessionUser }
                               <span>
                                 {balance.warehouse?.branch?.name ?? balance.warehouse?.name ?? '—'}
                               </span>
-                              {balance.warehouse?.code && (
+                              {balance.warehouse?.code && !balance.warehouse.branch && (
                                 <span className="ml-1.5 text-xs text-zinc-400">
                                   ({balance.warehouse.code})
                                 </span>
