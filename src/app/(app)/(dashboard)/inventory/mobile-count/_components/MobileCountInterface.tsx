@@ -85,7 +85,9 @@ export default function MobileCountInterface({ session: _ }: { session: SessionU
                         'Unknown Location'}
                     </p>
                     <p className="mt-0.5 text-sm text-zinc-400">
-                      {session.warehouse?.code ?? '—'} &bull;{' '}
+                      {session.warehouse?.code && !session.warehouse.branch && (
+                        <>{session.warehouse.code} &bull; </>
+                      )}
                       {session.scheduledDate
                         ? new Date(session.scheduledDate).toLocaleDateString()
                         : 'No date'}

@@ -253,12 +253,15 @@ export default function MovementsTab({ itemId }: Props) {
                         <>
                           {entry.warehouse && (
                             <span className="text-[11px] text-zinc-500">
-                              {entry.warehouse.code}
-                              {(entry.warehouse.branch?.name ?? entry.warehouse.name) && (
-                                <span className="text-zinc-400">
-                                  {' '}
-                                  · {entry.warehouse.branch?.name ?? entry.warehouse.name}
-                                </span>
+                              {entry.warehouse.branch ? (
+                                entry.warehouse.branch.name
+                              ) : (
+                                <>
+                                  {entry.warehouse.code}
+                                  {entry.warehouse.name && (
+                                    <span className="text-zinc-400"> · {entry.warehouse.name}</span>
+                                  )}
+                                </>
                               )}
                             </span>
                           )}
