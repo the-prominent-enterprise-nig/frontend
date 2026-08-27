@@ -3,6 +3,7 @@
 import { RefreshCw, Search, AlertTriangle, Package, X, Filter } from 'lucide-react'
 import { useStockBalance } from '../_hooks/useStockBalance'
 import { useUIShell } from '@/src/stores/ui-shell.store'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
 export default function StockBalanceList({ session: _session }: { session: SessionUser }) {
@@ -38,7 +39,7 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Balance</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Real-time view of on-hand, reserved, and available quantities across all branches.
+              Real-time view of on-hand, reserved, and available quantities across all locations.
             </p>
           </div>
           <button
@@ -66,19 +67,18 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
             />
           </div>
 
-          {/* Warehouse filter */}
-          <select
+          {/* Location filter */}
+          <SearchableSelect
+            className="w-56"
             value={warehouseFilter ?? ''}
-            onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Branches</option>
-            {warehouseOptions.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.branch?.name ?? wh.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setWarehouseFilter(v || undefined)}
+            placeholder="All Locations"
+            clearable
+            options={warehouseOptions.map((wh) => ({
+              value: wh.id,
+              label: wh.branch?.name ?? wh.name,
+            }))}
+          />
 
           {/* Below reorder toggle */}
           <button
@@ -161,7 +161,7 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
                       Item
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       On-Hand
@@ -202,7 +202,9 @@ export default function StockBalanceList({ session: _session }: { session: Sessi
                           <p className="mt-0.5 text-xs text-zinc-400 font-mono">{bal.item?.sku}</p>
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
-                          <span className="text-zinc-600">{bal.warehouse?.name ?? '—'}</span>
+                          <span className="text-zinc-600">
+                            {bal.warehouse?.branch?.name ?? bal.warehouse?.name ?? '—'}
+                          </span>
                           {bal.warehouse?.code && (
                             <span className="ml-1.5 text-xs text-zinc-400">
                               ({bal.warehouse.code})

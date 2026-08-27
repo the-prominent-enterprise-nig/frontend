@@ -167,6 +167,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                     value={field.value}
                     onChange={field.onChange}
                     error={errors.supplierId?.message}
+                    initialLabel={pr?.supplier?.name}
                   />
                 )}
               />
@@ -175,11 +176,11 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Warehouse + Expected Delivery */}
+            {/* Location + Expected Delivery */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Warehouse <span className="text-red-500">*</span>
+                  Location <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="warehouseId"
@@ -190,10 +191,10 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                       value={field.value ?? ''}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     >
-                      <option value="">Select warehouse…</option>
+                      <option value="">Select location…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.name}
+                          {wh.branch?.name ?? wh.name}
                         </option>
                       ))}
                     </select>
@@ -425,7 +426,21 @@ function ConvertPrToPoLineCard({
         <label className="block text-xs font-medium text-zinc-600">Discounts (off SRP)</label>
         {discountFields.map((discountField, discountIndex) => (
           <div key={discountField.id} className="flex items-center gap-2">
-            <div className="grid flex-1 grid-cols-2 gap-2">
+            <div className="grid flex-1 grid-cols-3 gap-2">
+              <Controller
+                name={`lines.${index}.discounts.${discountIndex}.name`}
+                control={control}
+                render={({ field: f }) => (
+                  <input
+                    {...f}
+                    value={f.value ?? ''}
+                    type="text"
+                    placeholder="Discount name"
+                    maxLength={100}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
               <Controller
                 name={`lines.${index}.discounts.${discountIndex}.type`}
                 control={control}
@@ -475,7 +490,7 @@ function ConvertPrToPoLineCard({
         ))}
         <button
           type="button"
-          onClick={() => appendDiscount({ type: 'percentage', value: 0 })}
+          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
           className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
         >
           <Plus className="h-3 w-3" />

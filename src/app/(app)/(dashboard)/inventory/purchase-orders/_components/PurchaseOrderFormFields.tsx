@@ -23,6 +23,10 @@ type Props = {
   setValue: UseFormSetValue<CreatePoFormValues>
   getValues: UseFormGetValues<CreatePoFormValues>
   open: boolean
+  // Edit mode only — the already-selected item's display name per line
+  // index, since the form itself only carries itemId. See CreatePoModal.tsx.
+  initialItemLabels?: (string | undefined)[]
+  initialSupplierLabel?: string
 }
 
 // The Supplier/Warehouse/Expected Delivery/Delivery Instructions/Notes/Line
@@ -38,6 +42,8 @@ export function PurchaseOrderFormFields({
   setValue,
   getValues,
   open,
+  initialItemLabels,
+  initialSupplierLabel,
 }: Props) {
   // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
   // decided once here at creation and carried through unedited to receiving
@@ -49,6 +55,19 @@ export function PurchaseOrderFormFields({
     staleTime: 5 * 60 * 1000,
   })
   const warehouses = warehousesQuery.data?.data?.data ?? []
+
+  // Location is a native, uncontrolled <select> (register(), not Controller)
+  // — on edit, reset() sets warehouseId in RHF's internal state as soon as
+  // the modal opens, almost always before this async query resolves. Setting
+  // a <select>'s DOM value to an id with no matching <option> yet doesn't
+  // retroactively apply once the real option appears; RHF's own state is
+  // still correct throughout, only the visible selection is stale. Re-apply
+  // once the options actually exist to force the DOM back in sync.
+  useEffect(() => {
+    if (warehousesQuery.data) {
+      setValue('warehouseId', getValues('warehouseId'))
+    }
+  }, [warehousesQuery.data, setValue, getValues])
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
@@ -79,6 +98,7 @@ export function PurchaseOrderFormFields({
               value={field.value}
               onChange={field.onChange}
               error={errors.supplierId?.message}
+              initialLabel={initialSupplierLabel}
             />
           )}
         />
@@ -87,19 +107,19 @@ export function PurchaseOrderFormFields({
         )}
       </div>
 
-      {/* Warehouse */}
+      {/* Location */}
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Warehouse <span className="text-red-500">*</span>
+          Location <span className="text-red-500">*</span>
         </label>
         <select
           {...register('warehouseId')}
           className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         >
-          <option value="">Select warehouse…</option>
+          <option value="">Select location…</option>
           {warehouses.map((wh) => (
             <option key={wh.id} value={wh.id}>
-              {wh.name}
+              {wh.branch?.name ?? wh.name}
             </option>
           ))}
         </select>
@@ -160,6 +180,7 @@ export function PurchaseOrderFormFields({
               canRemove={fields.length > 1}
               onRemove={() => remove(index)}
               fmtAmount={fmtAmount}
+              initialItemLabel={initialItemLabels?.[index]}
             />
           ))}
         </div>
@@ -174,7 +195,7 @@ export function PurchaseOrderFormFields({
               description: undefined,
               notes: undefined,
               srp: undefined,
-              discounts: [{ type: 'percentage', value: 0 }],
+              discounts: [{ name: undefined, type: 'percentage', value: 0 }],
               isFreebie: false,
             })
           }
@@ -204,6 +225,7 @@ type LineCardProps = {
   canRemove: boolean
   onRemove: () => void
   fmtAmount: (n: number) => string
+  initialItemLabel?: string
 }
 
 // One line's whole card — Item/Quantity/SRP/discount chain/Unit Price/
@@ -220,6 +242,7 @@ function PurchaseOrderLineCard({
   canRemove,
   onRemove,
   fmtAmount,
+  initialItemLabel,
 }: LineCardProps) {
   const {
     fields: discountFields,
@@ -291,6 +314,7 @@ function PurchaseOrderLineCard({
               value={f.value}
               onChange={f.onChange}
               error={errors.lines?.[index]?.itemId?.message}
+              initialLabel={initialItemLabel}
             />
           )}
         />
@@ -339,7 +363,14 @@ function PurchaseOrderLineCard({
         {discountFields.map((discountField, discountIndex) => {
           return (
             <div key={discountField.id} className="flex items-center gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2">
+              <div className="grid flex-1 grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Discount name"
+                  maxLength={100}
+                  {...register(`lines.${index}.discounts.${discountIndex}.name`)}
+                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
                 <select
                   {...register(`lines.${index}.discounts.${discountIndex}.type`)}
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
@@ -373,7 +404,7 @@ function PurchaseOrderLineCard({
         })}
         <button
           type="button"
-          onClick={() => appendDiscount({ type: 'percentage', value: 0 })}
+          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
           className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
         >
           <Plus className="h-3 w-3" />

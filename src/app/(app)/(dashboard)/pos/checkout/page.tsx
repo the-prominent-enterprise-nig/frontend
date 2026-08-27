@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Receipt,
-  Zap,
   User,
   UserPlus,
   PauseCircle,
@@ -236,8 +235,6 @@ const REF_METHODS: PosPaymentMethod[] = [
   'tpf',
   'qr',
 ]
-
-const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -3886,39 +3883,6 @@ export default function CheckoutPage() {
                   )
                 })}
 
-                {/* Quick cash denomination buttons */}
-                {payments.some((p) => p.method === 'cash') && (
-                  <div className="mt-1">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                      Quick Amount
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        onClick={() => {
-                          const idx = payments.findIndex((p) => p.method === 'cash')
-                          if (idx >= 0) updatePayment(idx, { amount: totalAmount })
-                        }}
-                        className="flex items-center gap-0.5 rounded-lg bg-purple-200 px-2 py-1 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-300"
-                      >
-                        <Zap size={10} />
-                        Exact
-                      </button>
-                      {CASH_DENOMINATIONS.map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            const idx = payments.findIndex((p) => p.method === 'cash')
-                            if (idx >= 0) updatePayment(idx, { amount: d })
-                          }}
-                          className="rounded-lg border border-purple-200 bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.96]"
-                        >
-                          ₱{d}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Reference number — required for card / bank / gift card / custom with ref field */}
                 {payments.some(
                   (p) => p.amount > 0 && (REF_METHODS.includes(p.method) || p.refFieldLabel)
@@ -5662,6 +5626,7 @@ function NewCustomerModal({
 }) {
   const [form, setForm] = useState({
     firstName: '',
+    middleName: '',
     lastName: '',
     phone: '',
     email: '',
@@ -5751,6 +5716,7 @@ function NewCustomerModal({
     setSubmitting(true)
     const res = await createWalkInCustomer({
       firstName: form.firstName.trim(),
+      middleName: form.middleName.trim() || undefined,
       lastName: form.lastName.trim(),
       phoneNumber: form.phone.trim(),
       email: form.email.trim() || undefined,
@@ -5811,6 +5777,14 @@ function NewCustomerModal({
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
               value={form.lastName}
               onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Middle Name</label>
+            <input
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              value={form.middleName}
+              onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
             />
           </div>
           <div>

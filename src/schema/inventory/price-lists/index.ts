@@ -113,3 +113,30 @@ export const PriceListListResponseSchema = z.object({
 
 export type PriceList = z.infer<typeof PriceListSchema>
 export type PriceListListResponse = z.infer<typeof PriceListListResponseSchema>
+
+export const ItemPriceGuideTermSchema = z.object({
+  termMonths: z.number(),
+  monthlyInstallment: z.union([z.string(), z.number()]),
+  ppd: z.union([z.string(), z.number()]).optional().nullable(),
+})
+export type ItemPriceGuideTerm = z.infer<typeof ItemPriceGuideTermSchema>
+
+export const ItemPriceGuideEntrySchema = z.object({
+  priceUseType: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional().nullable(),
+  }),
+  priceListId: z.string(),
+  priceListName: z.string(),
+  price: z.union([z.string(), z.number()]),
+  floorPrice: z.union([z.string(), z.number()]).optional().nullable(),
+  downPayment: z.union([z.string(), z.number()]).optional().nullable(),
+  minQty: z.union([z.string(), z.number()]).optional().nullable(),
+  cmAmount: z.union([z.string(), z.number()]).optional().nullable(),
+  creditAmount: z.union([z.string(), z.number()]).optional().nullable(),
+  terms: z.array(ItemPriceGuideTermSchema).default([]),
+})
+export type ItemPriceGuideEntry = z.infer<typeof ItemPriceGuideEntrySchema>
+
+export const ItemPriceGuideSchema = z.array(ItemPriceGuideEntrySchema)

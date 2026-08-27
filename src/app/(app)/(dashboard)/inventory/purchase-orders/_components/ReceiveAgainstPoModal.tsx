@@ -569,7 +569,26 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                   render={({ field: f }) => (
                                     <input
                                       value={isNaN(f.value) ? '' : f.value}
-                                      onChange={(e) => f.onChange(e.target.valueAsNumber)}
+                                      onChange={(e) => {
+                                        const next = e.target.valueAsNumber
+                                        f.onChange(next)
+                                        // Serial boxes below are rendered per-unit and registered
+                                        // individually — react-hook-form doesn't clear a hidden
+                                        // index's value when the array shrinks, so a lowered qty
+                                        // (partial receipt) left stale empty slots that silently
+                                        // failed the serials-length refine and blocked submit.
+                                        const nextCount = Number.isFinite(next)
+                                          ? Math.max(0, Math.floor(next))
+                                          : 0
+                                        setValue(
+                                          `lines.${idx}.serialNumbers`,
+                                          (watchedLines?.[idx]?.serialNumbers ?? []).slice(
+                                            0,
+                                            nextCount
+                                          ),
+                                          { shouldValidate: true }
+                                        )
+                                      }}
                                       onBlur={f.onBlur}
                                       type="number"
                                       min="0"

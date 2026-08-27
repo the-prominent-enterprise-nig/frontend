@@ -83,9 +83,9 @@ export function useItemMaster() {
   const [approvalStatus, setApprovalStatus] = useState<ItemApprovalStatus | undefined>(undefined)
   const [primaryCategoryId, setPrimaryCategoryId] = useState<string | undefined>(undefined)
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
-    'createdAt'
+    'name'
   )
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [selectedBundleItem, setSelectedBundleItem] = useState<ItemSummary | null>(null)
   const [removingComponentId, setRemovingComponentId] = useState<string | null>(null)
 
@@ -371,8 +371,8 @@ export function useItemMaster() {
     setLifecycle(undefined)
     setApprovalStatus(undefined)
     setPrimaryCategoryId(undefined)
-    setSortBy('createdAt')
-    setSortOrder('desc')
+    setSortBy('name')
+    setSortOrder('asc')
     setPage(1)
   }
 

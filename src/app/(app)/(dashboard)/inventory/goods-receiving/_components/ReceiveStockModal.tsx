@@ -17,7 +17,12 @@ import {
 } from '../../purchase-requests/_components/ItemSearchCombobox'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
-type WarehouseOption = { id: string; name: string; code: string }
+type WarehouseOption = {
+  id: string
+  name: string
+  code: string
+  branch?: { id: string; name: string } | null
+}
 
 type Props = {
   isOpen: boolean
@@ -352,20 +357,20 @@ export default function ReceiveStockModal({
               </p>
             </div>
 
-            {/* Destination Warehouse */}
+            {/* Destination Location */}
             <div className="sm:w-1/2">
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Destination Warehouse <span className="text-red-500">*</span>
+                Destination Location <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="warehouseId"
                 control={control}
                 render={({ field }) => (
                   <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select warehouse…</option>
+                    <option value="">Select location…</option>
                     {warehouses.map((wh) => (
                       <option key={wh.id} value={wh.id}>
-                        {wh.name}
+                        {wh.branch?.name ?? wh.name}
                       </option>
                     ))}
                   </select>

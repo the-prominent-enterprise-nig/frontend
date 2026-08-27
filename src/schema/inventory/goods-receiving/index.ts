@@ -70,6 +70,7 @@ const StockBalanceWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 export const StockBalanceSchema = z.object({

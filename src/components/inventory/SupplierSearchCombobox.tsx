@@ -7,14 +7,16 @@ type Props = {
   value: string
   onChange: (id: string) => void
   error?: string
+  initialLabel?: string
 }
 
-export function SupplierSearchCombobox({ value, onChange, error }: Props) {
+export function SupplierSearchCombobox({ value, onChange, error, initialLabel }: Props) {
   return (
     <SearchCombobox
       value={value}
       onChange={onChange}
       error={error}
+      initialLabel={initialLabel}
       queryKey="suppliers-search"
       placeholder="Search supplier by name or code…"
       typeToSearchMessage="Type to search suppliers…"

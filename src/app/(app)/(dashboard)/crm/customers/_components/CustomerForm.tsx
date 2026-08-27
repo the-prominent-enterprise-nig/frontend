@@ -26,6 +26,7 @@ import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
 type FormState = {
   customerCode: string
   firstName: string
+  middleName: string
   lastName: string
   customerType: CustomerType
   companyName: string
@@ -53,6 +54,7 @@ type FormState = {
 const empty: FormState = {
   customerCode: '',
   firstName: '',
+  middleName: '',
   lastName: '',
   customerType: 'individual',
   companyName: '',
@@ -137,13 +139,16 @@ export default function CustomerForm({ id }: { id?: string }) {
     customersApi.get(id).then((res) => {
       if (res.success && res.data) {
         const c = res.data
-        // `name` is stored as a single field — split on the first space so
-        // the form can present it the same way the create side collects it.
-        const [firstName, ...lastParts] = c.name.split(' ')
+        // Prefer the real stored firstName/lastName (developer-requested
+        // 2026-08-27) — only fall back to splitting the merged `name` on
+        // its first space for a customer saved before those columns
+        // existed and never re-saved since.
+        const [splitFirst, ...splitLastParts] = c.name.split(' ')
         const loaded: FormState = {
           customerCode: c.customerCode,
-          firstName: firstName ?? '',
-          lastName: lastParts.join(' '),
+          firstName: c.firstName ?? splitFirst ?? '',
+          middleName: c.middleName ?? '',
+          lastName: c.lastName ?? splitLastParts.join(' '),
           customerType: c.customerType,
           companyName: c.companyName ?? '',
           businessCategory: c.businessCategory ?? '',
@@ -232,6 +237,9 @@ export default function CustomerForm({ id }: { id?: string }) {
 
     const shared = {
       name: `${form.firstName} ${form.lastName}`.trim(),
+      firstName: form.firstName,
+      middleName: form.middleName || undefined,
+      lastName: form.lastName,
       customerType: form.customerType,
       companyName: form.customerType === 'business' ? form.companyName || undefined : undefined,
       businessCategory:
@@ -357,7 +365,7 @@ export default function CustomerForm({ id }: { id?: string }) {
           />
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <Field
             label="First name *"
             value={form.firstName}
@@ -369,6 +377,12 @@ export default function CustomerForm({ id }: { id?: string }) {
             value={form.lastName}
             maxLength={120}
             onChange={(v) => setField('lastName', v)}
+          />
+          <Field
+            label="Middle name"
+            value={form.middleName}
+            maxLength={120}
+            onChange={(v) => setField('middleName', v)}
           />
         </div>
         {errors.name && <p className="-mt-3 text-[12px] text-red-600">{errors.name}</p>}

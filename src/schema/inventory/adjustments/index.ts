@@ -27,6 +27,7 @@ const AdjustmentWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 const AdjustmentLineItemSchema = z.object({

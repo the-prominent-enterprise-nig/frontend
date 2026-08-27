@@ -157,7 +157,7 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                       SKU
                     </th>
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
-                      Warehouse
+                      Location
                     </th>
                     <th className="hidden px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
                       Old Cost
@@ -197,7 +197,7 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                           </code>
                         </td>
                         <td className="hidden px-4 py-3 text-zinc-600 md:table-cell">
-                          {record.warehouse?.name ?? '—'}
+                          {record.warehouse?.branch?.name ?? record.warehouse?.name ?? '—'}
                         </td>
                         <td className="hidden px-4 py-3 text-right text-zinc-600 md:table-cell">
                           {formatCurrency(record.oldCost)}
@@ -274,17 +274,17 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                 )}
               </div>
 
-              {/* Warehouse */}
+              {/* Location */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Warehouse <span className="text-red-500">*</span>
+                  Location <span className="text-red-500">*</span>
                 </label>
                 <select
                   value={form.warehouseId}
                   onChange={(e) => setForm((f) => ({ ...f, warehouseId: e.target.value }))}
                   className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
                 >
-                  <option value="">Select a warehouse…</option>
+                  <option value="">Select a location…</option>
                   {warehouseOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}

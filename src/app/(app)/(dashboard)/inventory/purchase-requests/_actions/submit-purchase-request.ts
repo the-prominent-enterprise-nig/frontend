@@ -6,7 +6,18 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
-export async function submitPurchaseRequest(id: string): Promise<ApiResponse<{ id: string }>> {
+export interface SubmitPurchaseRequestResult {
+  id: string
+  status: string
+  // Set when this PR already had a supplier + fully priced lines, so the
+  // backend auto-converted it to a real PO in the same request
+  // (PurchaseRequestService.submit() — there's no separate approval step).
+  convertedToPo: { id: string; code: string; status: string } | null
+}
+
+export async function submitPurchaseRequest(
+  id: string
+): Promise<ApiResponse<SubmitPurchaseRequestResult>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -19,7 +30,9 @@ export async function submitPurchaseRequest(id: string): Promise<ApiResponse<{ i
     }
   }
 
-  const result = await api.post<{ id: string }>(`/procurement/purchase-requests/${id}/submit`)
+  const result = await api.post<SubmitPurchaseRequestResult>(
+    `/procurement/purchase-requests/${id}/submit`
+  )
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')

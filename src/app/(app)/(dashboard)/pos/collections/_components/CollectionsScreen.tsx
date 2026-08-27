@@ -3,21 +3,20 @@
 import { useEffect, useState } from 'react'
 import { Search, AlertTriangle, Banknote, CheckCircle2, Loader2, Users, X } from 'lucide-react'
 import { useCustomerInstallmentSchedules, useCollectionsCustomers } from '../../_hooks/usePos'
-import { getBranches } from '../../_actions/pos-actions'
+import {
+  getBranches,
+  getPaymentMethods,
+  getEnabledBranchPaymentMethods,
+} from '../../_actions/pos-actions'
 import { collectorsApi } from '@/src/libs/api/crm'
 import { getSessionOrNull } from '@/src/libs/auth/actions/get-session'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
-import {
-  ARInvoices,
-  fmtMoney,
-  fmtDate,
-  PAYMENT_METHOD_OPTIONS,
-  type PaymentMethod,
-} from '@/src/libs/data/AccountingV2Data'
+import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
 import type {
   PosCustomer,
   CollectionsCustomer,
   InstallmentScheduleLineWithInvoice,
+  PaymentMethodConfig,
 } from '@/src/schema/pos'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -74,6 +73,87 @@ function useDebounced(value: string, delayMs: number): string {
     return () => clearTimeout(t)
   }, [value, delayMs])
   return debounced
+}
+
+// Of POS's full configured-method set (cash, card, gcash, maya, gift_card,
+// store_credit, loyalty_points, bank_transfer, tpf, qr, custom), only these
+// map onto something that makes sense for paying down an AR due — the rest
+// are POS-sale-specific tenders (gift card redemption, loyalty points, a
+// financier settlement) with nothing equivalent in Collections.
+const COLLECTIONS_METHOD_KEYS: Record<string, PaymentMethod> = {
+  cash: 'CASH',
+  card: 'CARD',
+  bank_transfer: 'BANK_TRANSFER',
+  qr: 'QR',
+}
+
+// 'Check' has no POS equivalent (not a PosPaymentMethod at all) — kept as a
+// fixed extra choice alongside the branch's configured methods below, same
+// as it's always worked in this form.
+const CHECK_PAYMENT_OPTION: CollectionsPaymentOption = {
+  id: 'CHECK',
+  label: 'Check',
+  method: 'CHECK',
+  configId: undefined,
+  options: [],
+}
+
+type CollectionsPaymentOption = {
+  /** Select value — the PosPaymentMethodConfig id, or 'CHECK'. */
+  id: string
+  label: string
+  method: PaymentMethod
+  configId?: string
+  /** Named sub-choices (which bank/gateway) — empty when the method has none. */
+  options: { id: string; name: string }[]
+}
+
+// Same per-branch configured payment methods POS checkout uses (Scenario 37),
+// narrowed to the subset that makes sense for Collections — see
+// COLLECTIONS_METHOD_KEYS above. Mirrors checkout/page.tsx's own two-call
+// composition (tenant-wide configs for metadata/options + branch-scoped
+// enabled keys for gating) rather than introducing a third fetch pattern.
+function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOption[] {
+  const [configured, setConfigured] = useState<PaymentMethodConfig[]>([])
+  const [enabledKeys, setEnabledKeys] = useState<Set<string> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getPaymentMethods().then((res) => {
+      if (!cancelled && res.success && res.data) setConfigured(res.data.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const request = branchId ? getEnabledBranchPaymentMethods(branchId) : Promise.resolve(null)
+    request.then((res) => {
+      if (cancelled) return
+      setEnabledKeys(res?.success && res.data ? new Set(res.data) : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [branchId])
+
+  const configuredOptions = configured
+    .filter((m) => m.isEnabled && m.key && m.key in COLLECTIONS_METHOD_KEYS)
+    .filter((m) => !enabledKeys || enabledKeys.has(m.key!))
+    .sort((a, b) => a.displayOrder - b.displayOrder)
+    .map(
+      (m): CollectionsPaymentOption => ({
+        id: m.id,
+        label: m.label,
+        method: COLLECTIONS_METHOD_KEYS[m.key!],
+        configId: m.id,
+        options: m.options.filter((o) => o.isEnabled),
+      })
+    )
+
+  return [...configuredOptions, CHECK_PAYMENT_OPTION]
 }
 
 // A due is eligible for bulk/early-payment selection once it's past DRAFT
@@ -517,6 +597,8 @@ function CollectPaymentModal({
     rebateAmount: String(suggestedRebate ?? 0),
     paymentDate: todayIso(),
     method: 'CASH' as PaymentMethod,
+    paymentMethodConfigId: '',
+    paymentMethodOptionId: '',
     reference: '',
     notes: '',
     branchId: '',
@@ -564,6 +646,18 @@ function CollectPaymentModal({
       })
   }, [form.branchId])
 
+  const paymentMethods = useCollectionsPaymentMethods(form.branchId)
+  // Falls through to Cash (same default this form always had) until the
+  // cashier explicitly picks something else, or the branch's methods don't
+  // include what they'd previously picked — derived at render rather than
+  // synced into form.method via an effect; onSubmit below reads this
+  // directly instead of trusting form.method/form.paymentMethodConfigId to
+  // already be in sync with it.
+  const selectedPaymentMethod =
+    paymentMethods.find((m) => m.id === form.paymentMethodConfigId) ??
+    paymentMethods.find((m) => m.method === 'CASH') ??
+    paymentMethods[0]
+
   const totalApplied =
     (Number(form.amount) || 0) +
     (Number(form.withholdingAmount) || 0) +
@@ -587,6 +681,9 @@ function CollectPaymentModal({
       amount: Number(form.amount),
       withholdingAmount: Number(form.withholdingAmount || 0),
       rebateAmount: Number(form.rebateAmount || 0),
+      method: selectedPaymentMethod?.method ?? form.method,
+      paymentMethodConfigId: selectedPaymentMethod?.configId,
+      paymentMethodOptionId: form.paymentMethodOptionId || undefined,
       branchId: form.branchId || undefined,
       collectorId: form.collectorId || undefined,
     })
@@ -754,21 +851,6 @@ function CollectPaymentModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
-              <select
-                value={form.method}
-                onChange={(e) => setForm({ ...form, method: e.target.value as PaymentMethod })}
-                className={fieldClass}
-              >
-                {PAYMENT_METHOD_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
               <BranchSearchCombobox
                 key={branchDefault?.id ?? 'no-default'}
@@ -778,6 +860,49 @@ function CollectPaymentModal({
                 placeholder="Search branch…"
               />
             </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
+              <select
+                value={selectedPaymentMethod?.id ?? ''}
+                onChange={(e) => {
+                  const opt = paymentMethods.find((m) => m.id === e.target.value)
+                  setForm({
+                    ...form,
+                    paymentMethodConfigId: e.target.value,
+                    method: opt?.method ?? form.method,
+                    paymentMethodOptionId: '',
+                  })
+                }}
+                className={fieldClass}
+              >
+                {paymentMethods.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPaymentMethod && selectedPaymentMethod.options.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  {selectedPaymentMethod.label}
+                </label>
+                <select
+                  value={form.paymentMethodOptionId}
+                  onChange={(e) => setForm({ ...form, paymentMethodOptionId: e.target.value })}
+                  className={fieldClass}
+                >
+                  <option value="">Select {selectedPaymentMethod.label.toLowerCase()}…</option>
+                  {selectedPaymentMethod.options.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
@@ -836,9 +961,10 @@ function CollectPaymentModal({
 
 /**
  * Shopee-style bulk/early-payment ("Pay Selected") — settles several of a
- * customer's own upcoming installment dues in one submit, requiring a
- * reference number (unlike the single-payment modal above, where it's
- * optional). Per-line amounts are read-only here (same default formula
+ * customer's own upcoming installment dues in one submit. Reference (the OR
+ * number) is only required once a Collector is picked — that's the only time
+ * an OR actually gets physically cut; a walk-in payment with no collector has
+ * none to record. Per-line amounts are read-only here (same default formula
  * CollectPaymentModal uses: outstanding minus the suggested rebate) — a
  * cashier needing a custom partial amount on one due still uses the single
  * "Collect" flow for that line instead.
@@ -868,7 +994,6 @@ function BulkCollectPaymentModal({
   const runningTotal = payableLines.reduce((sum, p) => sum + p.amount, 0)
 
   const [paymentDate, setPaymentDate] = useState(todayIso())
-  const [method, setMethod] = useState<PaymentMethod>('CASH')
   const [reference, setReference] = useState('')
   const [notes, setNotes] = useState('')
   const [branchId, setBranchId] = useState('')
@@ -880,6 +1005,20 @@ function BulkCollectPaymentModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overpaidCount, setOverpaidCount] = useState<number | null>(null)
+
+  const paymentMethods = useCollectionsPaymentMethods(branchId)
+  // '' until the cashier actually picks one — defaults to Cash (same default
+  // this form always had) by falling through when nothing's picked yet, or
+  // the previously picked method isn't offered by the newly chosen branch.
+  // Derived at render instead of synced via an effect, so there's no
+  // setState-in-effect cascade for what's really just a display default.
+  const [paymentMethodConfigId, setPaymentMethodConfigId] = useState('')
+  const [paymentMethodOptionId, setPaymentMethodOptionId] = useState('')
+  const selectedPaymentMethod =
+    paymentMethods.find((m) => m.id === paymentMethodConfigId) ??
+    paymentMethods.find((m) => m.method === 'CASH') ??
+    paymentMethods[0]
+  const method = selectedPaymentMethod?.method ?? 'CASH'
 
   useEffect(() => {
     let cancelled = false
@@ -914,7 +1053,9 @@ function BulkCollectPaymentModal({
       })),
       paymentDate,
       method,
-      reference,
+      paymentMethodConfigId: selectedPaymentMethod?.configId,
+      paymentMethodOptionId: paymentMethodOptionId || undefined,
+      reference: reference || undefined,
       notes: notes || undefined,
       branchId: branchId || undefined,
       collectorId: collectorId || undefined,
@@ -1026,21 +1167,6 @@ function BulkCollectPaymentModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
-              <select
-                value={method}
-                onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-                className={fieldClass}
-              >
-                {PAYMENT_METHOD_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
               <BranchSearchCombobox
                 key={branchDefault?.id ?? 'no-default'}
@@ -1053,6 +1179,44 @@ function BulkCollectPaymentModal({
                 placeholder="Search branch…"
               />
             </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
+              <select
+                value={selectedPaymentMethod?.id ?? ''}
+                onChange={(e) => {
+                  setPaymentMethodConfigId(e.target.value)
+                  setPaymentMethodOptionId('')
+                }}
+                className={fieldClass}
+              >
+                {paymentMethods.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPaymentMethod && selectedPaymentMethod.options.length > 0 && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  {selectedPaymentMethod.label}
+                </label>
+                <select
+                  value={paymentMethodOptionId}
+                  onChange={(e) => setPaymentMethodOptionId(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="">Select {selectedPaymentMethod.label.toLowerCase()}…</option>
+                  {selectedPaymentMethod.options.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
@@ -1072,15 +1236,24 @@ function BulkCollectPaymentModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Reference <span className="text-red-500">*</span>
+                Reference {collectorId && <span className="text-red-500">*</span>}
               </label>
               <input
-                required
+                required={!!collectorId}
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="OR number"
                 className={fieldClass}
               />
+              {collectorId ? (
+                <p className="mt-1 text-[12px] text-zinc-400">
+                  Required — the OR the collector wrote out for this payment.
+                </p>
+              ) : (
+                <p className="mt-1 text-[12px] text-zinc-400">
+                  Optional for a walk-in payment with no collector on hand to cut an OR.
+                </p>
+              )}
             </div>
 
             <div>
@@ -1108,7 +1281,7 @@ function BulkCollectPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || !reference.trim()}
+              disabled={submitting || (!!collectorId && !reference.trim())}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

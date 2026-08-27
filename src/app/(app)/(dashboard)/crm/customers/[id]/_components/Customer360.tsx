@@ -471,7 +471,12 @@ export default function Customer360({
                       {s.termMonths} months · Total {formatPeso(s.totalPayable)}
                     </p>
                   </div>
-                  <ChevronRight size={16} className="shrink-0 text-gray-300" />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {s.installmentAccount && (
+                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
+                    )}
+                    <ChevronRight size={16} className="text-gray-300" />
+                  </div>
                 </button>
               ))}
             </div>
@@ -765,6 +770,34 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelled',
 }
 
+// The plan's overall finished/ongoing state — distinct from
+// InstallmentStatusBadge above, which marks one due-date line's own AR
+// status. closed/early_closed/written_off all mean "no longer active", just
+// via different paths (paid off on schedule, paid off early, or written off
+// as uncollectible).
+const INSTALLMENT_PLAN_STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  closed: 'Closed',
+  early_closed: 'Paid Off Early',
+  written_off: 'Written Off',
+}
+
+function InstallmentPlanStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    active: 'bg-blue-100 text-blue-700',
+    closed: 'bg-green-100 text-green-700',
+    early_closed: 'bg-green-100 text-green-700',
+    written_off: 'bg-red-100 text-red-700',
+  }
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
+    >
+      {INSTALLMENT_PLAN_STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
 function InstallmentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PAID: 'bg-green-100 text-green-700',
@@ -895,12 +928,22 @@ function InstallmentScheduleDetailModal({
             </ul>
           </div>
 
-          <Link
-            href={`/accounting/ar-invoices?customerId=${customerId}`}
-            className="mt-4 inline-block text-[12px] text-prominent-orange-700 hover:underline"
-          >
-            View full AR ledger →
-          </Link>
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+            {schedule.installmentAccount && (
+              <Link
+                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
+                className="inline-block text-[12px] font-medium text-prominent-orange-700 hover:underline"
+              >
+                View customer ledger →
+              </Link>
+            )}
+            <Link
+              href={`/accounting/ar-invoices?customerId=${customerId}`}
+              className="inline-block text-[12px] text-prominent-orange-700 hover:underline"
+            >
+              View full AR ledger →
+            </Link>
+          </div>
         </div>
       </div>
     </>

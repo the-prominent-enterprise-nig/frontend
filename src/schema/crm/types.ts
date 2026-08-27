@@ -140,6 +140,11 @@ export interface Customer {
   tenantId: string
   customerCode: string
   name: string
+  // Real stored name parts (developer-requested 2026-08-27) — null for a
+  // customer created before these existed and never re-saved since.
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
   customerType: CustomerType
   companyName?: string | null
   businessCategory?: 'private' | 'government' | null
@@ -301,6 +306,12 @@ export interface CollectorDetail extends Collector {
 export interface AccountingCustomerLite {
   id: string
   name: string
+  // Real stored name parts (developer-requested 2026-08-27) — null for a
+  // customer created before these existed and never re-saved since; `name`
+  // stays the field to display when they're not all present.
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
   phone?: string | null
   email?: string | null
 }
@@ -371,6 +382,9 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   unitItems: {
     id: string
     itemName: string | null
+    // The paper ledger's "Type" field (e.g. "WASHING MACHINE") — distinct
+    // from itemName/brand/modelNumber, the item's category.
+    itemType: string | null
     modelNumber: string | null
     brand: string | null
     serialNumber: string | null
@@ -407,6 +421,31 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   branch?: { id: string; name: string; code: string } | null
   collector?: { id: string; stubNumber: string; name: string } | null
   arInvoice?: { id: string; invoiceNumber: string; status: string } | null
+}
+
+// Chronological ledger row (Date/Ref/Inst./Description/Debit/Credit/Due/
+// Outstanding) — format-matched to a legacy paper customer ledger, see
+// InstallmentAccountService.getLedger()'s doc comment for the row scheme
+// and which paper-form fields/rows aren't reproducible from this schema.
+export interface InstallmentLedgerRow {
+  date: string
+  ref: string
+  /** Installment line number this row belongs to; 0 for non-bill rows. */
+  inst: number
+  description: string
+  debit: number
+  credit: number
+  /** This row's own net effect (debit − credit). */
+  due: number
+  outstanding: number
+}
+
+export interface InstallmentLedger {
+  account: InstallmentAccountDetail
+  saleReference: string | null
+  saleDate: string | null
+  firstInstallmentDate: string | null
+  rows: InstallmentLedgerRow[]
 }
 
 export const CategoryGraduationStatusEnum = z.enum(['pending', 'approved', 'rejected'])

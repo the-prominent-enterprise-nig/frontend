@@ -254,8 +254,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               lifecycle ||
               approvalStatus ||
               primaryCategoryId ||
-              sortBy !== 'createdAt' ||
-              sortOrder !== 'desc') && (
+              sortBy !== 'name' ||
+              sortOrder !== 'asc') && (
               <button
                 type="button"
                 onClick={resetFilters}

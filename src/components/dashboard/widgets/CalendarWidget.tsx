@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, CalendarDays, List } from 'lucide-react'
-import { useWidgetSize, useWidgetHeader } from '../WidgetSizeContext'
+import { ChevronLeft, ChevronRight, CalendarDays, List, Clock, Cake } from 'lucide-react'
+import { useWidgetSize } from '../WidgetSizeContext'
 import DayPopover from './DayPopover'
 import { api } from '@/src/libs/api/client'
 import {
@@ -47,13 +47,6 @@ function dateKey(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-// Short time for schedule left column: "9:00", "2:00", "11:30"
-function formatTimeShort(t: string): string {
-  const [h, m] = t.split(':').map(Number)
-  const hour = h % 12 || 12
-  return `${hour}:${String(m).padStart(2, '0')}`
-}
-
 function groupEventsByDate(list: CalendarEvent[]): Record<string, CalendarEvent[]> {
   const result: Record<string, CalendarEvent[]> = {}
   for (const ev of list) {
@@ -66,7 +59,6 @@ type View = 'calendar' | 'events'
 
 export default function CalendarWidget() {
   const { variant } = useWidgetSize()
-  const { setHeaderExtra } = useWidgetHeader()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth())
   const [year, setYear] = useState(now.getFullYear())
@@ -119,36 +111,6 @@ export default function CalendarWidget() {
     return [...(birthdayEvents[key] ?? []), ...(events[key] ?? [])]
   }
 
-  useEffect(() => {
-    setHeaderExtra(
-      <div className="flex shrink-0 items-center rounded-full bg-zinc-100 p-0.5">
-        <button
-          onClick={() => setView('calendar')}
-          title="Calendar view"
-          className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
-            view === 'calendar'
-              ? 'bg-white shadow-sm text-purple-600'
-              : 'text-zinc-400 hover:text-zinc-600'
-          }`}
-        >
-          <CalendarDays className="h-3 w-3" />
-        </button>
-        <button
-          onClick={() => setView('events')}
-          title="Events view"
-          className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
-            view === 'events'
-              ? 'bg-white shadow-sm text-purple-600'
-              : 'text-zinc-400 hover:text-zinc-600'
-          }`}
-        >
-          <List className="h-3 w-3" />
-        </button>
-      </div>
-    )
-    return () => setHeaderExtra(null)
-  }, [view, setHeaderExtra])
-
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const raw: (number | null)[] = [
@@ -157,7 +119,6 @@ export default function CalendarWidget() {
   ]
   const totalCells = Math.ceil(raw.length / 7) * 7
   const cells = [...raw, ...Array(totalCells - raw.length).fill(null)]
-  const numRows = totalCells / 7
   const monthName = new Date(year, month).toLocaleString('default', { month: 'long' })
 
   const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
@@ -201,7 +162,9 @@ export default function CalendarWidget() {
           const dayNum = Number(ev.date.split('-')[2])
           return (
             <div key={ev.id} className="flex items-center gap-2 text-xs text-zinc-600">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${ev.id.startsWith('birthday-') ? 'bg-pink-500' : 'bg-prominent-purple-500'}`}
+              />
               <span className="shrink-0 font-medium text-zinc-800">
                 {monthName} {dayNum}
               </span>
@@ -213,100 +176,140 @@ export default function CalendarWidget() {
     )
   }
 
-  return (
-    <div className="flex flex-col gap-2">
-      {/* Month nav — shown in both views */}
-      <div className="flex items-center justify-between">
+  const viewToggle = (
+    <div className="flex shrink-0 items-center rounded-full bg-zinc-100 p-0.5">
+      <button
+        onClick={() => setView('calendar')}
+        title="Calendar view"
+        className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+          view === 'calendar'
+            ? 'bg-white text-prominent-purple-700 shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-600'
+        }`}
+      >
+        <CalendarDays className="h-3 w-3" />
+      </button>
+      <button
+        onClick={() => setView('events')}
+        title="Events view"
+        className={`flex h-6 w-6 items-center justify-center rounded-full transition ${
+          view === 'events'
+            ? 'bg-white text-prominent-purple-700 shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-600'
+        }`}
+      >
+        <List className="h-3 w-3" />
+      </button>
+    </div>
+  )
+
+  // Month nav — shown in both views, alongside the calendar/events toggle.
+  // Both flanks are flex-1 so the month label sits truly centered (like
+  // CRM's) no matter how wide the toggle grouped into the right flank is.
+  const navRow = (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex flex-1 items-center">
         <button
-          className="rounded p-0.5 transition hover:bg-zinc-100"
+          className="rounded-lg p-1.5 hover:bg-zinc-100"
           onClick={() => {
             const d = new Date(year, month - 1)
             setMonth(d.getMonth())
             setYear(d.getFullYear())
           }}
         >
-          <ChevronLeft className="h-3.5 w-3.5 text-zinc-500" />
+          <ChevronLeft className="h-4 w-4 text-zinc-500" />
         </button>
-        <p className="text-xs font-semibold text-zinc-900">
-          {monthName} {year}
-        </p>
+      </div>
+      <p className="shrink-0 text-center text-sm font-semibold text-zinc-900">
+        {monthName} {year}
+      </p>
+      <div className="flex flex-1 items-center justify-end gap-2">
         <button
-          className="rounded p-0.5 transition hover:bg-zinc-100"
+          className="rounded-lg p-1.5 hover:bg-zinc-100"
           onClick={() => {
             const d = new Date(year, month + 1)
             setMonth(d.getMonth())
             setYear(d.getFullYear())
           }}
         >
-          <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />
+          <ChevronRight className="h-4 w-4 text-zinc-500" />
         </button>
+        {viewToggle}
       </div>
+    </div>
+  )
 
-      {/* Calendar grid */}
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Nav bar and grid as two separate cards, matching CRM exactly */}
       {view === 'calendar' && (
-        <div className="overflow-hidden rounded-lg border border-zinc-200">
-          <div className="grid grid-cols-7 border-b border-zinc-200 bg-zinc-50">
-            {DAYS.map((d, i) => (
-              <div
-                key={d}
-                className={`py-1.5 text-center text-[10px] font-semibold text-zinc-400 ${i < 6 ? 'border-r border-zinc-200' : ''}`}
-              >
-                {d}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7">
-            {cells.map((day, i) => {
-              const col = i % 7
-              const row = Math.floor(i / 7)
-              const isLastCol = col === 6
-              const isLastRow = row === numRows - 1
-              const isToday = isCurrentMonth && day === today
-              const key = day !== null ? dateKey(year, month, day) : null
-              const hasEvent = key !== null && allEventsForDate(key).length > 0
-              const isSelected = key !== null && key === selectedDate
-              return (
+        <>
+          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">{navRow}</div>
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+            <div className="grid grid-cols-7 border-b border-zinc-200 bg-zinc-50">
+              {DAYS.map((d) => (
                 <div
-                  key={i}
-                  onClick={day !== null ? (e) => handleCellClick(day, e) : undefined}
-                  className={[
-                    'group flex flex-col items-center justify-center gap-0.5 py-1.5',
-                    !isLastCol ? 'border-r border-zinc-100' : '',
-                    !isLastRow ? 'border-b border-zinc-100' : '',
-                    day === null ? 'bg-zinc-50/60' : 'cursor-pointer',
-                    isSelected ? 'bg-purple-50' : day !== null ? 'hover:bg-zinc-50' : '',
-                  ]
-                    .join(' ')
-                    .trim()}
+                  key={d}
+                  className="border-r border-zinc-200 py-2 text-center text-[11px] font-semibold text-zinc-400 last:border-r-0"
                 >
-                  {day !== null && (
-                    <>
-                      <span
-                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-medium transition ${
-                          isToday
-                            ? 'bg-purple-600 font-bold text-white'
-                            : isSelected
-                              ? 'bg-purple-100 text-purple-700'
-                              : 'text-zinc-700 group-hover:bg-white group-hover:shadow-sm'
-                        }`}
-                      >
-                        {day}
-                      </span>
-                      {hasEvent && <span className="h-1 w-1 rounded-full bg-purple-400" />}
-                    </>
-                  )}
+                  {d}
                 </div>
-              )
-            })}
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {cells.map((day, i) => {
+                const isToday = isCurrentMonth && day === today
+                const key = day !== null ? dateKey(year, month, day) : null
+                const hasOwnEvent = key !== null && (events[key] ?? []).length > 0
+                const hasBirthday = key !== null && (birthdayEvents[key] ?? []).length > 0
+                const isSelected = key !== null && key === selectedDate
+                return (
+                  <div
+                    key={i}
+                    onClick={day !== null ? (e) => handleCellClick(day, e) : undefined}
+                    className={`flex min-h-[64px] flex-col items-center gap-1 border-b border-r border-zinc-100 py-2 last:border-r-0 ${
+                      day === null
+                        ? 'bg-zinc-50/60'
+                        : `cursor-pointer ${isSelected ? 'bg-purple-50' : 'hover:bg-zinc-50'}`
+                    }`}
+                  >
+                    {day !== null && (
+                      <>
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium ${
+                            isToday
+                              ? 'bg-prominent-purple-700 font-bold text-white'
+                              : isSelected
+                                ? 'bg-purple-100 text-prominent-purple-700'
+                                : 'text-zinc-700'
+                          }`}
+                        >
+                          {day}
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          {hasOwnEvent && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-prominent-purple-500" />
+                          )}
+                          {hasBirthday && <span className="h-1.5 w-1.5 rounded-full bg-pink-500" />}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Schedule list */}
+      {/* Schedule list — nav bar as its own card, matching the calendar view */}
       {view === 'events' && (
         <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">{navRow}</div>
           {monthEvents.length === 0 ? (
-            <p className="rounded-lg bg-zinc-50 p-3 text-xs text-zinc-400">No events this month.</p>
+            <div className="rounded-xl border border-dashed border-zinc-300 bg-white py-8 text-center shadow-sm">
+              <p className="text-xs font-medium text-zinc-500">No events this month.</p>
+            </div>
           ) : (
             (() => {
               // Group by date
@@ -314,21 +317,8 @@ export default function CalendarWidget() {
               for (const ev of monthEvents) {
                 grouped[ev.date] = [...(grouped[ev.date] ?? []), ev]
               }
-              const upcomingEntries = Object.entries(grouped)
-                .sort(([a], [b]) => a.localeCompare(b))
-                // only today and future; past is accessible via calendar grid
-                .filter(([key]) => {
-                  const dayNum = Number(key.split('-')[2])
-                  return !isCurrentMonth || dayNum >= today
-                })
-              if (upcomingEntries.length === 0) {
-                return (
-                  <p className="rounded-lg bg-zinc-50 p-3 text-xs text-zinc-400">
-                    No upcoming events this month.
-                  </p>
-                )
-              }
-              return upcomingEntries.map(([key, dayEvents]) => {
+              const sortedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
+              return sortedEntries.map(([key, dayEvents]) => {
                 const dayNum = Number(key.split('-')[2])
                 const isToday = isCurrentMonth && dayNum === today
                 const d = new Date(key + 'T00:00:00')
@@ -337,29 +327,39 @@ export default function CalendarWidget() {
                   ? `Today, ${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
                   : `${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
                 return (
-                  <div key={key}>
+                  <div
+                    key={key}
+                    className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                  >
                     <p
-                      className={`mb-1.5 text-[11px] font-bold ${isToday ? 'text-zinc-900' : 'text-zinc-500'}`}
+                      className={`mb-1 text-[12px] font-bold ${isToday ? 'text-zinc-900' : 'text-zinc-500'}`}
                     >
                       {dateLabel}
                     </p>
                     <div className="flex flex-col divide-y divide-zinc-100">
-                      {dayEvents.map((ev) => (
-                        <div key={ev.id} className="flex items-start gap-2.5 py-1.5">
-                          <span className="w-9 shrink-0 pt-0.5 text-right text-[11px] font-semibold tabular-nums text-zinc-500">
-                            {ev.startTime ? (
-                              formatTimeShort(ev.startTime)
-                            ) : (
-                              <span className="text-[9px] font-normal">All day</span>
-                            )}
-                          </span>
-                          <span className="mt-1 w-0.5 shrink-0 self-stretch rounded-full bg-purple-500" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium text-zinc-900">{ev.title}</p>
-                            <p className="text-[10px] text-zinc-400">{formatEventTime(ev)}</p>
+                      {dayEvents.map((ev) => {
+                        const isBirthday = ev.id.startsWith('birthday-')
+                        const Icon = isBirthday ? Cake : ev.startTime ? Clock : CalendarDays
+                        return (
+                          <div key={ev.id} className="flex items-start gap-2.5 py-1.5">
+                            <span
+                              className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                                isBirthday ? 'bg-pink-50' : 'bg-purple-50'
+                              }`}
+                            >
+                              <Icon
+                                className={`h-3.5 w-3.5 ${isBirthday ? 'text-pink-600' : 'text-prominent-purple-700'}`}
+                              />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-medium text-zinc-900">
+                                {ev.title}
+                              </p>
+                              <p className="text-[10px] text-zinc-400">{formatEventTime(ev)}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )

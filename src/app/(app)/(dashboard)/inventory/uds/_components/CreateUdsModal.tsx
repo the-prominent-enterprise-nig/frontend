@@ -196,7 +196,7 @@ export default function CreateUdsModal({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Location</label>
                 <Controller
                   name="warehouseId"
                   control={control}
@@ -225,7 +225,7 @@ export default function CreateUdsModal({
                 />
                 {lockedToWarehouseId && (
                   <p className="mt-1 text-xs text-zinc-400">
-                    UDS are always issued from your own branch.
+                    UDS are always issued from your own location.
                   </p>
                 )}
               </div>

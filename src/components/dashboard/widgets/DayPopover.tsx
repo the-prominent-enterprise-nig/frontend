@@ -129,8 +129,8 @@ function TimeSelect({
         placeholder={placeholder}
         className={`w-full rounded-lg border px-2.5 py-1.5 text-xs tabular-nums outline-none transition ${
           open
-            ? 'border-purple-400 ring-1 ring-purple-200'
-            : 'border-zinc-200 hover:border-purple-300'
+            ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-200'
+            : 'border-zinc-200 hover:border-prominent-purple-300'
         } ${inputVal ? 'text-zinc-800' : 'text-zinc-400'}`}
       />
       {open && (
@@ -145,7 +145,9 @@ function TimeSelect({
               onMouseDown={(e) => e.preventDefault()} // keep input focused
               onClick={() => handleSelect(slot)}
               className={`w-full px-3 py-2 text-left text-xs transition ${
-                slot === value ? 'bg-purple-600 text-white' : 'text-zinc-700 hover:bg-zinc-50'
+                slot === value
+                  ? 'bg-prominent-purple-700 text-white'
+                  : 'text-zinc-700 hover:bg-zinc-50'
               }`}
             >
               {formatSlot(slot)}
@@ -254,7 +256,11 @@ export default function DayPopover({ date, events, anchor, onClose, onAdd }: Pro
         )}
         {events.map((ev) => (
           <div key={ev.id} className="flex items-start gap-2">
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-400" />
+            <span
+              className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                ev.id.startsWith('birthday-') ? 'bg-pink-500' : 'bg-prominent-purple-500'
+              }`}
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs text-zinc-700">{ev.title}</p>
               <p className="text-[10px] text-zinc-400">{formatEventTime(ev)}</p>
@@ -275,14 +281,14 @@ export default function DayPopover({ date, events, anchor, onClose, onAdd }: Pro
               if (e.key === 'Escape') handleCancel()
             }}
             placeholder="Event title"
-            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200"
+            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-800 placeholder-zinc-400 outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-200"
           />
 
           {/* All day toggle */}
           <label className="flex cursor-pointer items-center gap-2">
             <div
               onClick={() => setAllDay((v) => !v)}
-              className={`relative h-4 w-7 rounded-full transition ${allDay ? 'bg-purple-500' : 'bg-zinc-300'}`}
+              className={`relative h-4 w-7 rounded-full transition ${allDay ? 'bg-prominent-purple-600' : 'bg-zinc-300'}`}
             >
               <span
                 className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${allDay ? 'left-3.5' : 'left-0.5'}`}
@@ -310,7 +316,7 @@ export default function DayPopover({ date, events, anchor, onClose, onAdd }: Pro
             <button
               onClick={handleSave}
               disabled={!title.trim()}
-              className="flex-1 rounded-lg bg-purple-600 py-1.5 text-xs font-medium text-white transition hover:bg-purple-700 disabled:opacity-40"
+              className="flex-1 rounded-lg bg-prominent-purple-700 py-1.5 text-xs font-medium text-white transition hover:bg-prominent-purple-800 disabled:opacity-40"
             >
               Save
             </button>
@@ -323,7 +329,7 @@ export default function DayPopover({ date, events, anchor, onClose, onAdd }: Pro
         <div className="px-3 pb-3">
           <button
             onClick={() => setMode('create')}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-1.5 text-xs text-zinc-500 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-600"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-1.5 text-xs text-zinc-500 transition hover:border-prominent-purple-300 hover:bg-purple-50 hover:text-prominent-purple-700"
           >
             <Plus className="h-3 w-3" />
             New event

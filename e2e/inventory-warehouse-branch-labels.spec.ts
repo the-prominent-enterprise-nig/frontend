@@ -8,23 +8,24 @@ import { gotoReady } from './utils'
 // as warehouse-centric ("All Warehouses", "...across all warehouses").
 // Branches and warehouses are different things: only the 2 real warehouses
 // (PANAY, NEGROS) should ever read as "Warehouse" — everything else should
-// show its real branch name, and the page framing itself should say
-// "branch." Fixed by reading the same `wh.branch?.name ?? wh.name` fallback
-// already used elsewhere in the app (Transfers, Reorder Rules, Costing)
-// instead of the warehouse's own internal code/name, and renaming the
-// placeholder/subtitle copy from "Warehouse(s)" to "Branch(es)".
-test('Inventory > Stock warehouse filter shows branch names, not raw WH-## codes, and the 2 real warehouses by their own name', async ({
+// show its real branch name, and the page framing itself should use the
+// umbrella term "Location." Fixed by reading the same
+// `wh.branch?.name ?? wh.name` fallback already used elsewhere in the app
+// (Transfers, Reorder Rules, Costing) instead of the warehouse's own
+// internal code/name, and renaming the placeholder/subtitle copy from
+// "Warehouse(s)"/"Branch(es)" to "Location(s)".
+test('Inventory > Stock location filter shows branch names, not raw WH-## codes, and the 2 real warehouses by their own name', async ({
   page,
 }) => {
   await gotoReady(page, '/inventory/stock')
 
-  await expect(page.getByText('across all branches', { exact: false })).toBeVisible()
+  await expect(page.getByText('across all locations', { exact: false })).toBeVisible()
 
-  const select = page.locator('select').filter({ hasText: 'All Branches' })
+  const select = page.locator('select').filter({ hasText: 'All Locations' })
   await expect(select).toBeVisible()
 
   // The warehouse list loads via a separate async query after navigation —
-  // wait for it to actually populate past the static "All Branches" option.
+  // wait for it to actually populate past the static "All Locations" option.
   await expect(select.locator('option')).not.toHaveCount(1)
 
   const optionTexts = await select.locator('option').allTextContents()

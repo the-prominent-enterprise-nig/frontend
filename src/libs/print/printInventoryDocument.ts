@@ -1,3 +1,5 @@
+import type { InstallmentLedger } from '@/src/schema/crm/types'
+
 export interface PrintDocumentEnvelope {
   documentType: string
   documentNumber: string
@@ -414,5 +416,212 @@ export function printPurchaseOrderDocument(
 
     <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`)
+  win.document.close()
+}
+
+/**
+ * Bespoke print layout for the Customer Ledger (developer-requested,
+ * 2026-08-27, format-matched 2026-08-27 against a photo of the client's
+ * actual paper "Customer Ledger" form) — doesn't reuse
+ * printInventoryDocument()'s generic Enterprise shell since there's no
+ * server-side document envelope for this view (the ledger is already fully
+ * loaded client-side via installmentAccountsApi.getLedger()).
+ *
+ * Reproduces the paper form's own grid-of-boxed-cells layout (value on top,
+ * small caps label underneath, thin borders around every cell) rather than
+ * the label-above-value meta style the rest of this file's documents use —
+ * this one specific document is meant to visually match that paper form.
+ * "NIG Marketing Corporation" is hardcoded as the letterhead since this
+ * layout only exists to match that one client's form; not reusable as a
+ * generic multi-tenant letterhead.
+ *
+ * Field groups, in the paper form's own row order — 1-6 are the bordered
+ * grid (table.form-grid), always exactly 4 columns wide per row (row 1's
+ * Sales Invoice No./SI Date share one cell precisely so it doesn't become
+ * a 5th column and throw off every other row's alignment); 7-9 are plain
+ * italic "Label : value" lines below the grid instead of more boxed cells
+ * — mixing those into the bordered table was what made the grid
+ * misalign in the first place, and doesn't match the paper form anyway:
+ *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
+ *   2. Brand / Type / Model / Serial
+ *   3. Agent / Unit Manager / Collector / FMI
+ *   4. LCP / Down / Amt. Financed / Inst. Diff.
+ *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
+ *   6. PN / IC / Total Price
+ *   7. Total Payments / Total Penalty / Penalty Balance (column 1)
+ *   8. Total Rebates / Total Billing / Required DP (column 2)
+ *   9. DP Balance / Tot. Amt. Due / Tot. Amt. Out (column 3)
+ * Lastname/Firstname/Middle (developer-requested 2026-08-27) come from the
+ * customer's own real stored name-part columns now, falling back to the
+ * single merged `name` in the Lastname cell only for the rare customer
+ * created before those columns existed and never re-saved since. The one
+ * thing the paper form has that this still can't reproduce is "Unit
+ * Manager" — no such role exists anywhere in this system, left blank.
+ */
+export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
+  const { account, rows } = ledger
+
+  const fmt = (n: number | string) =>
+    Number(n).toLocaleString('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+    })
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const unitItem = account.unitItems[0]
+
+  const cell = (label: string, value: string, colspan = 1) =>
+    `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
+
+  // The paper form's Total Payments/Penalty/Rebates/Billing/etc. block is
+  // plain italic "Label : value" text below the bordered grid, not more
+  // boxed cells — mixing it into table.form-grid was what made that row's
+  // column count (and so its alignment against every other row) inconsistent.
+  const totalLine = (label: string, value: string) =>
+    `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
+
+  const ledgerRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${fmtDate(r.date)}</td>
+        <td class="mono">${esc(r.ref)}</td>
+        <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
+        <td>${esc(r.description)}</td>
+        <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
+        <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
+        <td class="right">${fmt(r.due)}</td>
+        <td class="right"><strong>${fmt(r.outstanding)}</strong></td>
+      </tr>`
+    )
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 12px; font-weight: 700; }
+    table.form-grid { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+    table.form-grid td { border: 1px solid #333; padding: 2px 6px; vertical-align: top; line-height: 1.2; }
+    .cell-value { margin: 0; font-weight: 700; font-size: 11px; }
+    .cell-label { margin: 0; color: #555; font-size: 9px; }
+    .split-cell { display: flex; gap: 8px; }
+    .split-cell-divider { border-left: 1px solid #ccc; padding-left: 8px; }
+    .totals { display: flex; width: 100%; margin: 4px 0 8px; }
+    .totals-col { flex: 1; }
+    .totals-line { margin: 1px 0; font-style: italic; font-size: 10.5px; }
+    .totals-label { display: inline-block; min-width: 92px; }
+    .totals-value { font-style: normal; font-weight: 700; }
+    h2 { font-size: 11px; font-weight: 700; margin: 8px 0 3px; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+    table.ledger { width: 100%; border-collapse: collapse; margin-top: 2px; }
+    table.ledger th, table.ledger td { border: 1px solid #ccc; padding: 3px 6px; font-size: 10.5px; line-height: 1.2; }
+    table.ledger th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">Customer Ledger</span>
+    </div>
+
+    <table class="form-grid">
+      <tr>
+        ${cell('Lastname', account.customer.lastName ?? account.customer.name)}
+        ${cell('Firstname', account.customer.firstName ?? '—')}
+        ${cell('Middle', account.customer.middleName ?? '—')}
+        <td>
+          <div class="split-cell">
+            <div>
+              <p class="cell-value">${esc(ledger.saleReference ?? '—')}</p>
+              <p class="cell-label">Sales Invoice No.</p>
+            </div>
+            <div class="split-cell-divider">
+              <p class="cell-value">${esc(fmtDate(ledger.saleDate))}</p>
+              <p class="cell-label">SI Date</p>
+            </div>
+          </div>
+        </td>
+      </tr>
+      ${
+        unitItem
+          ? `<tr>
+        ${cell('Brand', unitItem.brand ?? '—')}
+        ${cell('Type', unitItem.itemType ?? '—')}
+        ${cell('Model', unitItem.modelNumber ?? '—')}
+        ${cell('Serial', unitItem.serialNumber ?? '—')}
+      </tr>`
+          : ''
+      }
+      <tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—')}
+        ${cell('Unit Manager', '—')}
+        ${cell(
+          'Collector',
+          account.collector
+            ? `${account.collector.stubNumber} — ${account.collector.name}`
+            : 'Unassigned'
+        )}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+      </tr>
+      <tr>
+        ${cell('LCP', fmt(account.listedCashPrice))}
+        ${cell('Down', fmt(account.downPayment))}
+        ${cell('Amt. Financed', fmt(account.amountFinanced))}
+        ${cell('Inst. Diff.', fmt(account.interestDifferential))}
+      </tr>
+      <tr>
+        ${cell('Scheme', account.priceUseType?.name ?? '—')}
+        ${cell('MI', fmt(account.monthlyInstallment))}
+        ${cell('Term', `${account.termMonths} months`)}
+        ${cell('Branch', account.branch?.name ?? '—')}
+      </tr>
+      <tr>
+        ${cell('PN', fmt(account.pnv))}
+        ${cell('IC', fmt(account.insuranceCharge ?? 0))}
+        ${cell('Total Price', fmt(account.totalPrice), 2)}
+      </tr>
+    </table>
+
+    <div class="totals">
+      <div class="totals-col">
+        ${totalLine('Total Payments', fmt(account.totalPayments))}
+        ${totalLine('Total Penalty', '—')}
+        ${totalLine('Penalty Balance', fmt(account.penalty))}
+      </div>
+      <div class="totals-col">
+        ${totalLine('Total Rebates', fmt(account.totalRebates))}
+        ${totalLine('Total Billing', fmt(account.totalBilling))}
+        ${totalLine('Required DP', fmt(account.downPayment))}
+      </div>
+      <div class="totals-col">
+        ${totalLine('DP Balance', fmt(account.dpBalance))}
+        ${totalLine('Tot. Amt. Due', fmt(account.totalDue))}
+        ${totalLine('Tot. Amt. Out', fmt(account.currentBalance))}
+      </div>
+    </div>
+
+    <h2>Ledger</h2>
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>${ledgerRows || '<tr><td colspan="8" style="text-align:center;color:#999">No ledger activity yet.</td></tr>'}</tbody>
+    </table>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildCustomerLedgerHtml(ledger))
   win.document.close()
 }

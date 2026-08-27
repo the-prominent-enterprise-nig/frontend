@@ -176,15 +176,18 @@ export const NOTIFICATION_TYPE_META: Record<NotificationType, NotificationTypeMe
     status: 'resolved',
     getHref: batchHoldHref,
   },
-  purchase_request_approval_needed: {
+  purchase_request_needs_conversion: {
     icon: FileText,
     status: 'needs-action',
     getHref: purchaseRequestHref,
   },
-  purchase_request_resolved: {
+  // The PR is already converted at this point — findAll() filters converted
+  // PRs off the default Purchase Requests view, so routing there would be a
+  // dead end. The resulting PO now lives on the Purchase Orders tab instead.
+  purchase_request_auto_converted: {
     icon: FileText,
     status: 'resolved',
-    getHref: purchaseRequestHref,
+    getHref: purchaseOrderHref,
   },
   purchase_order_approval_needed: {
     icon: Truck,

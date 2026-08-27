@@ -23,6 +23,7 @@ const ReservationWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
+  branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
 })
 
 export const ReservationSchema = z.object({

@@ -237,6 +237,11 @@ export function getTransactionById(id: string) {
 export interface Customer {
   id: string | number
   name: string
+  // Real stored name parts (developer-requested 2026-08-27) — null for a
+  // customer created before these existed and never re-saved since.
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
   customerCode?: string
   customerType?: CustomerType
   email?: string | null
@@ -255,10 +260,13 @@ export interface Customer {
   defaultWithholdingAtc?: string | null
 }
 
-/** Create/update accepts firstName/lastName split — the backend joins them
- * into the unified `name` field server-side; reads always return `name`. */
+/** Create/update sends firstName/lastName/middleName split — the backend
+ * both persists these as their own columns AND joins firstName+lastName
+ * into the unified `name` field (developer-requested 2026-08-27; middleName
+ * has no equivalent in `name`). Reads return both `name` and the parts. */
 export interface CustomerInput {
   firstName: string
+  middleName?: string | null
   lastName: string
   email?: string | null
   phoneNumber?: string | null
