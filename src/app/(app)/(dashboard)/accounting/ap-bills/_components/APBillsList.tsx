@@ -8,7 +8,7 @@ import {
   Pencil,
   Trash2,
   Inbox,
-  DollarSign,
+  PhilippinePeso,
   FileText,
   Printer,
   Undo2,
@@ -28,6 +28,7 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import Tooltip from '@/src/components/ui/Tooltip'
 import VoucherPanel from './VoucherPanel'
 import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
 import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
@@ -246,60 +247,77 @@ export default function APBillsList() {
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       {b.status === 'DRAFT' && (
-                        <button
-                          onClick={() => receive(b.id)}
-                          title="Receive"
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <Inbox className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Receive">
+                          <button
+                            onClick={() => receive(b.id)}
+                            aria-label="Receive"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <Inbox className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
-                        <button
-                          onClick={() => setPayingFor(b)}
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Record payment">
+                          <button
+                            onClick={() => setPayingFor(b)}
+                            aria-label="Record payment"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <PhilippinePeso className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {latestChequePayment(b) && (
-                        <button
-                          onClick={() => printCheque(b)}
-                          title="Print Cheque"
-                          disabled={printingChequeFor === b.id}
-                          className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Print cheque">
+                          <button
+                            onClick={() => printCheque(b)}
+                            aria-label="Print cheque"
+                            disabled={printingChequeFor === b.id}
+                            className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {b.supplierId && ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
-                        <button
-                          onClick={() => setDebitMemoFor(b)}
-                          title="Issue supplier debit memo (return)"
-                          className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
-                        >
-                          <Undo2 className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Issue supplier debit memo (return)">
+                          <button
+                            onClick={() => setDebitMemoFor(b)}
+                            aria-label="Issue supplier debit memo"
+                            className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                          >
+                            <Undo2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
-                      <button
-                        onClick={() => setVoucherFor(b)}
-                        title="Voucher"
-                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setEditing(b)}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => del(b.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <Tooltip label="Voucher">
+                        <button
+                          onClick={() => setVoucherFor(b)}
+                          aria-label="Voucher"
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Edit">
+                        <button
+                          onClick={() => setEditing(b)}
+                          aria-label="Edit"
+                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Delete">
+                        <button
+                          onClick={() => del(b.id)}
+                          aria-label="Delete"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
