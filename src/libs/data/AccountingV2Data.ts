@@ -880,16 +880,48 @@ export const APPaymentMethods = {
 
 // ============ Business Expenses ============
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
+// Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
+// Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'OTHER'
+export type SpecialAccountType =
+  | 'EMPLOYEE_CASH_ADVANCE'
+  | 'EMPLOYEE_CASH_LOAN'
+  | 'CASH_LOAN_OTHERS'
+  | 'CA_LIQUIDATION'
+// The three types a liquidation can actually close out.
+export type LiquidatableType = 'EMPLOYEE_CASH_ADVANCE' | 'EMPLOYEE_CASH_LOAN' | 'CASH_LOAN_OTHERS'
+// Scenario 40 Part 6 — one entry is now a header + N lines. Which
+// dimension is fixed at the header vs. varies per line depends on
+// payeeType: CUSTOMER/SUPPLIER fixes the payee and lets each line pick its
+// own category; OTHER fixes the Special Account category and lets each
+// line pick its own recipient.
+export interface BusinessExpenseLine {
+  id: string
+  lineNumber: number
+  categoryAccountId: string
+  categoryAccount?: { id: string; name: string; number?: string } | null
+  employeeId?: string | null
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
+  payee?: string | null
+  description?: string | null
+  amount: number
+  taxCode?: string | null
+  taxAmount: number
+}
 export interface BusinessExpense {
   id: string
   expenseNumber: string
   expenseDate: string
+  payeeType?: PayeeType | null
   supplierId?: string | null
   supplier?: { id: string; name: string } | null
+  customerId?: string | null
+  customer?: { id: string; name: string } | null
+  specialAccountType?: SpecialAccountType | null
+  liquidatesType?: LiquidatableType | null
   payee?: string | null
   description?: string | null
-  categoryAccountId: string
-  categoryAccount?: { id: string; name: string; number?: string } | null
+  lines: BusinessExpenseLine[]
   subtotal: number
   taxAmount: number
   totalAmount: number
@@ -897,7 +929,6 @@ export interface BusinessExpense {
   bankAccountId?: string | null
   reference?: string | null
   costCenter?: string | null
-  taxCode?: string | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
 }
@@ -916,6 +947,27 @@ export const Expenses = {
   record: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/record`, {}),
   void: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/void`, {}),
   remove: (id: string) => api.delete(`/expenses/${id}`),
+  // Scenario 40 Part 2 — outstanding balance for a person/party on a
+  // Special Account type, shown before a CA-Liquidation amount is entered.
+  getSpecialAccountBalance: (params: {
+    specialAccountType: LiquidatableType
+    employeeId?: string
+    payee?: string
+  }) => api.get<{ outstanding: number }>('/expenses/special-account-balance', params as any),
+}
+
+// ─── Employees (search-pick a Special Account expense payee) ──
+export interface EmployeeLite {
+  id: string
+  employeeCode: string
+  firstName: string
+  lastName: string
+  middleName?: string | null
+  branch?: { id: string; name: string } | null
+}
+export const EmployeesApi = {
+  search: (search?: string) =>
+    api.get<EmployeeLite[]>('/accounting/employees', search ? { search } : undefined),
 }
 
 // ============ Bank Accounts ============
@@ -1111,6 +1163,19 @@ export const BankAdjusting = {
   }) => api.post<any>('/bank-accounts/adjusting-entry', body),
 }
 
+// Scenario 40 Gap 5 — inter-account transfer (e.g. funding a Petty Cash
+// Fund / the Revolving Fund from the main operating account).
+export const BankTransfers = {
+  create: (body: {
+    sourceBankAccountId: string
+    destinationBankAccountId: string
+    amount: number
+    date: string
+    reference?: string
+    description?: string
+  }) => api.post<any>('/bank-accounts/transfer', body),
+}
+
 // ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============
 export type ClearingSettlementType = 'card' | 'ewallet' | 'bank_transfer' | 'tpf'
 
@@ -1213,6 +1278,59 @@ export const UnidentifiedBankCredits = {
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
       body
     ),
+}
+
+// ============ Employee Appliance Loans (Scenario 40 Part 4) ============
+export type EmployeeApplianceLoanStatus = 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
+export interface EmployeeApplianceLoanPaymentRow {
+  id: string
+  amount: number
+  paymentDate: string
+  note?: string | null
+  journalEntryId?: string | null
+}
+export interface EmployeeApplianceLoan {
+  id: string
+  loanNumber: string
+  employeeId: string
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
+  itemDescription: string
+  listedCashPrice: number
+  downPayment: number
+  amountFinanced: number
+  termMonths: number
+  miFactor: number
+  monthlyInstallment: number
+  pnv: number
+  totalPrice: number
+  interestDifferential: number
+  ppd: number
+  openingBalance: number
+  currentBalance: number
+  status: EmployeeApplianceLoanStatus
+  startDate: string
+  nextDueDate?: string | null
+  journalEntryId?: string | null
+  payments?: EmployeeApplianceLoanPaymentRow[]
+}
+export const EmployeeApplianceLoans = {
+  list: (params?: { search?: string; status?: string; employeeId?: string }) =>
+    api.get<{ items: EmployeeApplianceLoan[]; total: number }>(
+      '/employee-appliance-loans',
+      params as any
+    ),
+  get: (id: string) => api.get<EmployeeApplianceLoan>(`/employee-appliance-loans/${id}`),
+  create: (body: {
+    employeeId: string
+    itemDescription: string
+    listedCashPrice: number
+    downPayment: number
+    termMonths: number
+    miFactor: number
+    startDate?: string
+  }) => api.post<EmployeeApplianceLoan>('/employee-appliance-loans', body),
+  recordPayment: (id: string, body: { amount: number; paymentDate: string; note?: string }) =>
+    api.post<EmployeeApplianceLoanPaymentRow>(`/employee-appliance-loans/${id}/payments`, body),
 }
 
 // ============ Helpers ============
