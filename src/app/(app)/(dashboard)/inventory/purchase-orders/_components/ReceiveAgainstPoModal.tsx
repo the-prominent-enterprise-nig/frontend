@@ -30,7 +30,6 @@ const ReceivePoLineSchema = z
     quantityReceived: z.number().positive('Must be greater than 0'),
     unitCost: z.number().min(0).optional(),
     batchNumber: z.string().optional(),
-    expiryDate: z.string().optional(),
     qualityHold: z.boolean(),
     notes: z.string().optional(),
     // Not sent to the server — carried on the line purely so the refine()
@@ -125,7 +124,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
         quantityReceived: remaining > 0 ? remaining : Number(l.quantity),
         unitCost: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : undefined,
         batchNumber: '',
-        expiryDate: '',
         qualityHold: false,
         notes: '',
         selected: defaultLineSelected(l),
@@ -227,7 +225,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
           quantityReceived: l.quantityReceived,
           unitCost: l.unitCost,
           batchNumber: l.batchNumber || undefined,
-          expiryDate: l.expiryDate || undefined,
           qualityHold: l.qualityHold,
           notes: l.notes || undefined,
           ...(l.serialNumbers && l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers }),
@@ -476,9 +473,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[110px]">
                           Batch No.
                         </th>
-                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[120px]">
-                          Expiry Date
-                        </th>
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
                           QC Hold
                         </th>
@@ -643,22 +637,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                 />
                               </td>
 
-                              {/* Expiry */}
-                              <td className="px-3 py-3">
-                                <Controller
-                                  name={`lines.${idx}.expiryDate`}
-                                  control={control}
-                                  render={({ field: f }) => (
-                                    <input
-                                      {...f}
-                                      value={f.value ?? ''}
-                                      type="date"
-                                      className={cellInputClass}
-                                    />
-                                  )}
-                                />
-                              </td>
-
                               {/* QC Hold */}
                               <td className="px-3 py-3 text-center">
                                 <Controller
@@ -703,7 +681,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
 
                             {isSerialTracked && expandedSerialRows.has(idx) && (
                               <tr className="bg-zinc-50">
-                                <td colSpan={canViewCost ? 11 : 10} className="px-4 py-3">
+                                <td colSpan={canViewCost ? 10 : 9} className="px-4 py-3">
                                   <p className="mb-2 text-xs font-medium text-zinc-600">
                                     Enter the serial number for each unit —{' '}
                                     {Math.max(
