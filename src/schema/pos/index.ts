@@ -248,6 +248,10 @@ export interface PosTransaction {
   tpfProviderId?: string | null
   tpfReferenceNumber?: string | null
   tpfApprovedAmount?: number | null
+  /** Present on create()/findOne() — one per distinct financing term used in
+   * the cart. Used to split the down payment's tendered rows across
+   * schedules via addPayment's installmentScheduleId. */
+  installmentSchedules?: { id: string; downPayment: number }[]
 }
 
 // Scenario 23 Gap 1 — every invoice a transaction produced (the charge
@@ -335,6 +339,10 @@ export interface CreateTransactionInput {
   taxAmount?: number
   subtotal: number
   totalAmount: number
+  /** Optional flat add-on collected now regardless of payment mode — never
+   * counts toward an installment line's financed amount or its 10% down
+   * payment floor. Defaults to 0. */
+  deliveryFee?: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
@@ -518,6 +526,10 @@ export interface AddPaymentInput {
   currency?: string
   fxRate?: number
   notes?: string
+  /** Tags this payment as funding a specific installment schedule's down
+   * payment, instead of the transaction's cash/TPF total — restricts
+   * paymentMethod to cash/bank_transfer/qr/card server-side. */
+  installmentScheduleId?: string
 }
 
 // Parked Sale

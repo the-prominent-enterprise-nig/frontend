@@ -439,6 +439,28 @@ export default function CheckoutPage() {
   // clearing account. Same transaction-scoped treatment as cardTxnMode/
   // cashSubMode above; only meaningful while cashSubMode is bank_transfer.
   const [bankTransferVerifiedAtRegister, setBankTransferVerifiedAtRegister] = useState(false)
+
+  // Down payment — its own payment-method identity, independent of the cash/
+  // credit-card state above (a mixed cart can show both blocks at once).
+  // dpPaymentMode starts unset on purpose: the cashier must explicitly
+  // choose Cash or Credit/Debit for the DP before a payment row is even
+  // offered, rather than inheriting a default silently.
+  const [dpPaymentMode, setDpPaymentMode] = useState<'cash' | 'credit_card' | undefined>()
+  const [dpPayments, setDpPayments] = useState<PaymentRow[]>([])
+  const [dpCardTerminalOptionId, setDpCardTerminalOptionId] = useState<string | undefined>()
+  const [dpCardTxnMode, setDpCardTxnMode] = useState<PosCardTxnMode>('straight')
+  const [dpCardInstallmentTerm, setDpCardInstallmentTerm] = useState<number | undefined>()
+  const [dpCashSubMode, setDpCashSubMode] = useState<'cash_on_hand' | 'bank_transfer' | 'qr'>(
+    'cash_on_hand'
+  )
+  const [dpCashPaymentOptionId, setDpCashPaymentOptionId] = useState<string | undefined>()
+  const [dpBankTransferVerifiedAtRegister, setDpBankTransferVerifiedAtRegister] = useState(false)
+
+  // Optional flat delivery fee — collected now via the regular Payment
+  // section regardless of payment mode, kept out of subtotal/totalAmount so
+  // it never affects an installment line's financed amount or 10% floor.
+  const [deliveryFeeInput, setDeliveryFeeInput] = useState('')
+
   // Configured payment methods from API — falls back to hardcoded list if not loaded
   const [configuredMethods, setConfiguredMethods] = useState<
     import('@/src/schema/pos').PaymentMethodConfig[]
@@ -1060,12 +1082,29 @@ export default function CheckoutPage() {
         0
       ) * 100
     ) / 100
-  const tenderTarget =
-    Math.round((cashLinesTotal + tpfLinesTotal + installmentDownPaymentsTotal) * 100) / 100
+  const deliveryFeeAmount = Math.max(0, parseFloat(deliveryFeeInput) || 0)
+  // Grand total including the delivery fee, for customer-facing display only
+  // (submit buttons, mobile bar, Order Summary) — totalAmount itself stays
+  // fee-exclusive since it's what every per-line/down-payment calc is based on.
+  const grandTotalWithFee = Math.round((totalAmount + deliveryFeeAmount) * 100) / 100
+
+  // Full separation (see the Down Payment Method block below): the DP no
+  // longer shares this pool — it's tendered and tagged separately so its
+  // payment method can be restricted to Cash/Credit-Debit and posted
+  // against its own installment schedule, not inferred by amount order. The
+  // delivery fee rides in here too — it's due now regardless of payment
+  // mode, even on a cart that's otherwise 100% installment.
+  const tenderTarget = Math.round((cashLinesTotal + tpfLinesTotal + deliveryFeeAmount) * 100) / 100
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
   const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
+
+  const dpTenderTarget = installmentDownPaymentsTotal
+  const dpTotalPaid = Math.round(dpPayments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
+  const dpBalance = Math.max(0, Math.round((dpTenderTarget - dpTotalPaid) * 100) / 100)
+  const dpChange =
+    dpTotalPaid > dpTenderTarget ? Math.round((dpTotalPaid - dpTenderTarget) * 100) / 100 : 0
 
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
@@ -1105,6 +1144,16 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleMode, tenderTarget, payments.length])
 
+  // Symmetric cleanup: if every cart line moves off cash/TPF (e.g. the last
+  // one gets switched to installment), the row the effect above added must
+  // not linger — otherwise payments.length > 0 keeps satisfying the Totals
+  // block below and shows a stale, meaningless "Total Tendered" for a bucket
+  // that no longer has anything in it.
+  useEffect(() => {
+    if (saleMode !== 'sale' || tenderTarget > 0 || payments.length === 0) return
+    setPayments([])
+  }, [saleMode, tenderTarget, payments.length])
+
   // Scenario 37 — keep every payment row that's still on its default (the
   // cashier hasn't picked a different method from the row's own dropdown)
   // live-synced with Item Payment Mode's current selection. Without this,
@@ -1134,6 +1183,43 @@ export default function CheckoutPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasCreditCardLine, hasCashLine, cashSubMode, configuredMethods, paymentMethodEditOpen])
+
+  // Down payment: only auto-add a row once the cashier has explicitly chosen
+  // Cash or Credit/Debit (dpPaymentMode) — never before, since forcing that
+  // choice first is the point.
+  useEffect(() => {
+    if (saleMode !== 'sale' || !dpPaymentMode || dpPayments.length > 0) return
+    addDpPaymentRow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleMode, dpPaymentMode, dpPayments.length])
+
+  // Unlike the cash/card rows above, a DP row's method is never user-
+  // editable via its own dropdown — it's fully derived from dpPaymentMode/
+  // dpCashSubMode, so every existing row is kept in sync here with no
+  // "edit open" escape hatch.
+  useEffect(() => {
+    const preferredKey = preferredDpPaymentMethodKey()
+    if (!preferredKey) return
+    const cfg = configuredMethods.find((m) => m.key === preferredKey)
+    setDpPayments((prev) => {
+      let changed = false
+      const next = prev.map((p) => {
+        if (p.method === preferredKey && p.configId === cfg?.id) return p
+        changed = true
+        return {
+          ...p,
+          method: preferredKey,
+          configId: cfg?.id,
+          referenceNumber: '',
+          refFieldLabel: cfg?.referenceFieldLabel ?? undefined,
+          refRequired: cfg?.referenceIsRequired,
+          refRegex: cfg?.referenceFieldRegex ?? undefined,
+        }
+      })
+      return changed ? next : prev
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dpPaymentMode, dpCashSubMode, configuredMethods])
 
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
@@ -1483,13 +1569,11 @@ export default function CheckoutPage() {
         const downPaymentInput =
           l.priceListDownPayment != null
             ? Number(l.priceListDownPayment).toFixed(2)
-            : (
-                Math.round(
-                  displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) *
-                    l.quantity *
-                    0.1 *
-                    100
-                ) / 100
+            : // Whole pesos, rounded UP — never centavos, and never below the
+              // 10% floor (ceil instead of round guarantees that even if the
+              // exact 10% has a fractional remainder).
+              Math.ceil(
+                displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity * 0.1
               ).toFixed(2)
         return { ...l, financingTermId, downPaymentInput }
       })
@@ -1698,6 +1782,43 @@ export default function CheckoutPage() {
     setPayments((prev) => prev.filter((_, i) => i !== idx))
   }
 
+  // Down payment method is never inferred/defaulted the way
+  // preferredPaymentMethodKey() is above — it's null until the cashier
+  // explicitly picks Cash or Credit/Debit via dpPaymentMode, on purpose.
+  function preferredDpPaymentMethodKey(): PosPaymentMethod | null {
+    if (dpPaymentMode === 'credit_card') return 'card'
+    if (dpPaymentMode === 'cash') {
+      return dpCashSubMode === 'cash_on_hand'
+        ? 'cash'
+        : dpCashSubMode === 'bank_transfer'
+          ? 'bank_transfer'
+          : 'qr'
+    }
+    return null
+  }
+
+  function addDpPaymentRow() {
+    const preferredKey = preferredDpPaymentMethodKey()
+    if (!preferredKey) return
+    const cfg = configuredMethods.find((m) => m.key === preferredKey)
+    setDpPayments((prev) => [
+      ...prev,
+      {
+        method: preferredKey,
+        amount: 0,
+        referenceNumber: '',
+        configId: cfg?.id,
+        refFieldLabel: cfg?.referenceFieldLabel ?? undefined,
+        refRequired: cfg?.referenceIsRequired,
+        refRegex: cfg?.referenceFieldRegex ?? undefined,
+      },
+    ])
+  }
+
+  function updateDpPayment(idx: number, patch: Partial<PaymentRow>) {
+    setDpPayments((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  }
+
   // ─── Park sale ─────────────────────────────────────────────────────────────
 
   async function handleParkSale() {
@@ -1848,16 +1969,50 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      const missingRef = payments.find(
-        (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
-      )
+      // CR Number (collection receipt) is required for every payment now, not
+      // just card/bank/QR — mirrors the down payment section, which has
+      // always required one regardless of method.
+      const missingRef = payments.find((p) => p.amount > 0 && !p.referenceNumber.trim())
       if (missingRef) {
-        setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+        setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
       }
       const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
       if (cardPaymentPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
         setError('Select a Term for the card installment payment (Item Payment Mode).')
+        return
+      }
+    }
+
+    // Down payment — forced re-choice, then its own tender validation,
+    // separate from the cash/TPF checks above (full separation, see
+    // dpPayments). Never reached while offline: installment lines already
+    // block the sale earlier when isOffline.
+    if (inhouseInstallmentCartLines.length > 0) {
+      if (!dpPaymentMode) {
+        setError('Choose how the down payment will be paid — Cash or Credit/Debit Card.')
+        return
+      }
+      if (dpPayments.length === 0) {
+        setError('Add a down payment method.')
+        return
+      }
+      if (dpBalance > 0.009) {
+        setError(`Down payment underpaid by ${fmt(dpBalance)}.`)
+        return
+      }
+      // Unlike the cash/TPF payments above, every DP row needs a reference
+      // number regardless of method — it doubles as the receipt/OR number
+      // issued at the time the down payment is collected, so plain cash
+      // isn't exempt the way it is elsewhere.
+      const missingDpRef = dpPayments.find((p) => p.amount > 0 && !p.referenceNumber.trim())
+      if (missingDpRef) {
+        setError("Enter the down payment collection's receipt/reference number.")
+        return
+      }
+      const dpCardPaymentPending = dpPayments.some((p) => p.method === 'card' && p.amount > 0)
+      if (dpCardPaymentPending && dpCardTxnMode === 'installment' && !dpCardInstallmentTerm) {
+        setError('Select a Term for the down payment card installment (Down Payment Method).')
         return
       }
     }
@@ -1881,7 +2036,8 @@ export default function CheckoutPage() {
         discountAmount: promoDiscount,
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
-        totalAmount,
+        totalAmount: grandTotalWithFee,
+        deliveryFee: deliveryFeeAmount || undefined,
         isTaxExempt,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
@@ -1942,7 +2098,8 @@ export default function CheckoutPage() {
           discountAmount: promoDiscount,
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
-          totalAmount,
+          totalAmount: grandTotalWithFee,
+          deliveryFee: deliveryFeeAmount || undefined,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           managerOverride: managerOverrideApproved || undefined,
@@ -2063,7 +2220,7 @@ export default function CheckoutPage() {
           setSubmitting(false)
           setPendingApproval({
             releaseFormRequestId,
-            totalAmount,
+            totalAmount: grandTotalWithFee,
             serialLines: displayLines,
             creditApplicationId:
               inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
@@ -2087,10 +2244,8 @@ export default function CheckoutPage() {
       }
 
       if (tenderTarget > 0) {
-        // Covers both the cash-mode lines' total and every installment
-        // line's down payment in one pass — the backend's addPayment()
-        // allocates a single lump-sum tender across whichever of those
-        // applies (see TransactionsService.allocatePayments).
+        // Cash-mode lines' total + TPF total in one pass — the down payment
+        // is tendered separately below, tagged to its own schedule.
         let remaining = tenderTarget
         for (const p of payments.filter((p) => p.amount > 0)) {
           const actualAmount = parseFloat(Math.min(p.amount, remaining).toFixed(2))
@@ -2132,6 +2287,66 @@ export default function CheckoutPage() {
         }
       }
 
+      // Down payment: full separation means these rows are tagged to a
+      // specific installment schedule instead of being pooled with the
+      // cash/TPF payments above. A cart can have more than one schedule
+      // (distinct financing terms) even though the cashier only picked one
+      // DP payment method for the whole sale, so dpPayments' rows are
+      // greedily split across each schedule's own downPayment amount, in
+      // order — same technique as the backend's own allocatePayments, just
+      // scoped to distributing same-method-family rows across schedules,
+      // never mixing methods.
+      if (dpTenderTarget > 0 && txData?.installmentSchedules) {
+        const dpRows = dpPayments.filter((p) => p.amount > 0)
+        let rowIdx = 0
+        let remainingInRow = dpRows[0] ? dpRows[0].amount : 0
+        for (const schedule of txData.installmentSchedules) {
+          let need = Number(schedule.downPayment)
+          while (need > 0.009 && rowIdx < dpRows.length) {
+            const row = dpRows[rowIdx]
+            const take = parseFloat(Math.min(need, remainingInRow).toFixed(2))
+            if (take > 0.009) {
+              const payRes = await addPayment(txId, {
+                paymentMethod: row.method,
+                amount: take,
+                referenceNumber: row.referenceNumber || undefined,
+                paymentMethodConfigId: row.configId,
+                paymentMethodOptionId:
+                  row.method === 'card'
+                    ? dpCardTerminalOptionId
+                    : row.method === 'bank_transfer' || row.method === 'qr'
+                      ? dpCashPaymentOptionId
+                      : row.paymentMethodOptionId,
+                cardTxnMode: row.method === 'card' ? dpCardTxnMode : undefined,
+                cardInstallmentTerm: row.method === 'card' ? dpCardInstallmentTerm : undefined,
+                bankTransferVerifiedAtRegister:
+                  row.method === 'bank_transfer' ? dpBankTransferVerifiedAtRegister : undefined,
+                installmentScheduleId: schedule.id,
+              })
+              if (!payRes.success) {
+                const isRefFail =
+                  payRes.error?.includes('REFERENCE_VALIDATION_FAILED') ||
+                  payRes.error?.toLowerCase().includes('reference validation')
+                const label = row.refFieldLabel ?? PAYMENT_LABELS[row.method] ?? 'Reference'
+                setError(
+                  isRefFail
+                    ? `Invalid ${label} format — please check the value and try again.`
+                    : `Transaction created but the down payment failed: ${payRes.error}`
+                )
+                setSubmitting(false)
+                return
+              }
+            }
+            need -= take
+            remainingInRow -= take
+            if (remainingInRow <= 0.009) {
+              rowIdx += 1
+              remainingInRow = dpRows[rowIdx] ? dpRows[rowIdx].amount : 0
+            }
+          }
+        }
+      }
+
       // Redeem loyalty points if that method was used
       if (loyaltyPaymentRow && loyaltyPaymentRow.amount > 0 && loyaltyAccount) {
         const pointsToRedeem = Math.max(
@@ -2140,7 +2355,7 @@ export default function CheckoutPage() {
         )
         const redeemRes = await redeemPoints(loyaltyAccount.id, {
           points: pointsToRedeem,
-          orderTotal: tenderTarget,
+          orderTotal: tenderTarget - deliveryFeeAmount,
           posTransactionId: txId,
         })
         if (!redeemRes.success) {
@@ -2150,14 +2365,22 @@ export default function CheckoutPage() {
         }
       }
 
-      // Earn loyalty points — silent fail
+      // Earn loyalty points — silent fail. Points accrue on everything
+      // actually collected today, cash/TPF and down payment alike (the DP's
+      // own tender rows above are separate from `payments` but still real
+      // money collected now), same as before the DP's payment method was
+      // split out into its own tender pool.
       let loyaltyEarned = false
       if (loyaltyAccount) {
         try {
-          const pointsEarned = Math.floor(tenderTarget * (loyaltyProgram?.pointsPerUnit ?? 1))
+          // The delivery fee is a cost pass-through, not a purchase amount —
+          // excluded from what earns points, same reasoning as the redeem
+          // orderTotal above.
+          const collectedToday = tenderTarget - deliveryFeeAmount + dpTenderTarget
+          const pointsEarned = Math.floor(collectedToday * (loyaltyProgram?.pointsPerUnit ?? 1))
           const earnRes = await earnPoints(loyaltyAccount.id, {
             points: pointsEarned,
-            transactionAmount: tenderTarget,
+            transactionAmount: collectedToday,
             posTransactionId: txId,
           })
           loyaltyEarned = !!earnRes.success
@@ -2185,7 +2408,7 @@ export default function CheckoutPage() {
       setSuccess({
         transactionId: txId,
         transactionNumber: txData?.transactionNumber ?? txId,
-        change,
+        change: change + dpChange,
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
@@ -2392,7 +2615,7 @@ export default function CheckoutPage() {
     return (
       <SuccessScreen
         success={success}
-        totalAmount={totalAmount}
+        totalAmount={grandTotalWithFee}
         selectedCustomer={selectedCustomer}
         onReset={resetSale}
         fmt={fmt}
@@ -3112,10 +3335,27 @@ export default function CheckoutPage() {
                   <span>—</span>
                 </div>
               )}
+              {saleMode === 'sale' && (
+                <div className="flex items-center justify-between gap-2">
+                  <span>Delivery fee (optional)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    aria-label="Delivery fee"
+                    placeholder="0.00"
+                    value={deliveryFeeInput}
+                    onChange={(e) => setDeliveryFeeInput(e.target.value)}
+                    className="w-24 rounded-lg border border-purple-200 px-2 py-1 text-right font-mono text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                  />
+                </div>
+              )}
             </div>
             <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900">{fmt(totalAmount)}</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {fmt(saleMode === 'sale' ? grandTotalWithFee : totalAmount)}
+              </span>
             </div>
 
             {/* Tax exempt toggle */}
@@ -3289,9 +3529,13 @@ export default function CheckoutPage() {
                   const lineSaleAmount =
                     displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity
                   const minDownPayment = 0.1 * lineSaleAmount
+                  // Whole pesos, rounded up — matches the auto-fill in
+                  // setLineFinancingTermId() so the displayed floor is never
+                  // a centavo amount the field itself won't accept.
+                  const minDownPaymentWhole = Math.ceil(minDownPayment)
                   const downPaymentValue = line.downPaymentInput
                     ? parseFloat(line.downPaymentInput) || 0
-                    : minDownPayment
+                    : minDownPaymentWhole
                   const downPaymentEditingThisLine = !!downPaymentEditOpen[line.lineId]
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
@@ -3382,17 +3626,29 @@ export default function CheckoutPage() {
                                   <input
                                     type="number"
                                     min={0}
-                                    step={0.01}
+                                    step={1}
                                     placeholder="Down payment"
                                     autoFocus
                                     value={line.downPaymentInput ?? ''}
                                     onChange={(e) =>
                                       setLineDownPaymentInput(groupLineIds, e.target.value)
                                     }
+                                    onBlur={(e) => {
+                                      // Normalize to a whole peso on blur (round up,
+                                      // never below the 10% floor) rather than
+                                      // fighting the cashier's typing keystroke by
+                                      // keystroke.
+                                      const parsed = parseFloat(e.target.value)
+                                      if (!Number.isFinite(parsed)) return
+                                      setLineDownPaymentInput(
+                                        groupLineIds,
+                                        Math.ceil(parsed).toFixed(2)
+                                      )
+                                    }}
                                     className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                                   />
                                   <p className="text-xs text-gray-500">
-                                    Must be at least {fmt(minDownPayment)} and no more than{' '}
+                                    Must be at least {fmt(minDownPaymentWhole)} and no more than{' '}
                                     {fmt(lineSaleAmount)}.
                                   </p>
                                   <button
@@ -3605,25 +3861,202 @@ export default function CheckoutPage() {
                     })()}
                   </div>
                 )}
+                {inhouseInstallmentCartLines.length > 0 && (
+                  <div
+                    data-testid="dp-payment-mode-toggle"
+                    className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
+                  >
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">
+                      Down Payment Method
+                      <span className="ml-1 font-normal text-gray-500">
+                        ({fmt(installmentDownPaymentsTotal)})
+                      </span>
+                    </p>
+                    <div className="flex gap-1.5">
+                      {(['cash', 'credit_card'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setDpPaymentMode(mode)}
+                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                            dpPaymentMode === mode
+                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          {mode === 'cash' ? 'Cash' : 'Debit/Credit Card'}
+                        </button>
+                      ))}
+                    </div>
+                    {!dpPaymentMode && (
+                      <p className="mt-1.5 text-[12px] text-amber-700">
+                        Required before checkout can be completed.
+                      </p>
+                    )}
+                    {dpPaymentMode === 'cash' && (
+                      <div className="mt-2.5 border-t border-prominent-purple-100 pt-2.5">
+                        <p className="mb-1.5 text-xs font-medium text-gray-800">
+                          Down Payment — Cash
+                        </p>
+                        <div className="flex gap-1.5">
+                          {(['cash_on_hand', 'bank_transfer', 'qr'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => {
+                                setDpCashSubMode(mode)
+                                setDpCashPaymentOptionId(undefined)
+                                if (mode !== 'bank_transfer')
+                                  setDpBankTransferVerifiedAtRegister(false)
+                              }}
+                              className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                                dpCashSubMode === mode
+                                  ? 'bg-purple-200 text-purple-700'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                            >
+                              {mode === 'cash_on_hand'
+                                ? 'Cash on Hand'
+                                : mode === 'bank_transfer'
+                                  ? 'Bank Transfer'
+                                  : 'QR'}
+                            </button>
+                          ))}
+                        </div>
+                        {dpCashSubMode !== 'cash_on_hand' &&
+                          (() => {
+                            const config = configuredMethods.find((m) => m.key === dpCashSubMode)
+                            const options = config?.options.filter((o) => o.isEnabled) ?? []
+                            if (options.length === 0) return null
+                            const label = dpCashSubMode === 'bank_transfer' ? 'Bank' : 'Gateway'
+                            return (
+                              <select
+                                aria-label={`Down payment ${label}`}
+                                className="mt-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                                value={dpCashPaymentOptionId ?? ''}
+                                onChange={(e) =>
+                                  setDpCashPaymentOptionId(e.target.value || undefined)
+                                }
+                              >
+                                <option value="">{`Select ${label.toLowerCase()}…`}</option>
+                                {options.map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )
+                          })()}
+                        {dpCashSubMode === 'bank_transfer' && (
+                          <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={dpBankTransferVerifiedAtRegister}
+                              onChange={(e) =>
+                                setDpBankTransferVerifiedAtRegister(e.target.checked)
+                              }
+                              className="h-3.5 w-3.5 rounded border-gray-300"
+                            />
+                            Verified at register — the credit already landed, post straight to Cash
+                            in Bank
+                          </label>
+                        )}
+                      </div>
+                    )}
+                    {dpPaymentMode === 'credit_card' && (
+                      <div className="mt-2.5 border-t border-prominent-purple-100 pt-2.5">
+                        <p className="mb-1.5 text-xs font-medium text-gray-800">
+                          Down Payment — Credit/Debit Card
+                        </p>
+                        {(() => {
+                          const cardConfig = configuredMethods.find((m) => m.key === 'card')
+                          const terminalOptions =
+                            cardConfig?.options.filter((o) => o.isEnabled) ?? []
+                          return (
+                            <>
+                              {terminalOptions.length > 0 && (
+                                <select
+                                  aria-label="Down payment POS Terminal"
+                                  className="mb-1.5 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                                  value={dpCardTerminalOptionId ?? ''}
+                                  onChange={(e) =>
+                                    setDpCardTerminalOptionId(e.target.value || undefined)
+                                  }
+                                >
+                                  <option value="">Select pos terminal…</option>
+                                  {terminalOptions.map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              <div className="flex gap-1.5">
+                                {(['straight', 'installment'] as const).map((mode) => (
+                                  <button
+                                    key={mode}
+                                    type="button"
+                                    onClick={() => {
+                                      setDpCardTxnMode(mode)
+                                      if (mode === 'straight') setDpCardInstallmentTerm(undefined)
+                                    }}
+                                    className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                                      dpCardTxnMode === mode
+                                        ? mode === 'installment'
+                                          ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                                          : 'bg-purple-200 text-purple-700'
+                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    {mode === 'straight' ? 'Straight' : 'Installment'}
+                                  </button>
+                                ))}
+                              </div>
+                              {dpCardTxnMode === 'installment' && (
+                                <select
+                                  aria-label="Down payment card term"
+                                  className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${!dpCardInstallmentTerm ? 'border-amber-300 bg-amber-50' : 'border-purple-200'}`}
+                                  value={dpCardInstallmentTerm ?? ''}
+                                  onChange={(e) =>
+                                    setDpCardInstallmentTerm(
+                                      e.target.value ? Number(e.target.value) : undefined
+                                    )
+                                  }
+                                >
+                                  <option value="">Select term… * required</option>
+                                  {[3, 6, 9, 12, 18, 24].map((m) => (
+                                    <option key={m} value={m}>
+                                      {m} months
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Payment */}
           <div className="flex-1 p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-700">
-                {saleMode === 'reserve' ? 'Deposit (optional)' : 'Payment'}
-              </p>
-              {(saleMode === 'reserve' || (saleMode === 'sale' && tenderTarget > 0)) && (
+            {saleMode === 'reserve' && (
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-700">
+                  Deposit (optional)
+                </p>
                 <button
                   onClick={addPaymentRow}
                   className="flex items-center gap-1 rounded-lg bg-purple-200 px-2.5 py-1 text-xs font-medium text-purple-700 hover:bg-purple-300"
                 >
                   <Plus size={11} /> Add
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {saleMode === 'sale' && hasChargeOrInstallmentLine && (
               <div className="mb-3 space-y-2">
@@ -3747,30 +4180,50 @@ export default function CheckoutPage() {
             )}
 
             {saleMode === 'sale' && tenderTarget <= 0 ? (
-              <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
-                Nothing to collect at checkout for this cart.
-              </p>
-            ) : payments.length === 0 ? (
+              // A down-payment-only cart (all lines on inhouse installment,
+              // nothing cash/TPF) still owes money today — just via the
+              // separate Down Payment section below, not this one. Saying
+              // "nothing to collect" here would flatly contradict that.
+              inhouseInstallmentCartLines.length === 0 && (
+                <p className="rounded-lg bg-gray-100 px-3 py-2 text-center text-xs text-gray-500">
+                  Nothing to collect at checkout for this cart.
+                </p>
+              )
+            ) : saleMode === 'reserve' && payments.length === 0 ? (
               <button
                 onClick={addPaymentRow}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-5 text-sm text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
               >
-                <Plus size={14} />{' '}
-                {saleMode === 'reserve' ? 'Add deposit (optional)' : 'Add payment method'}
+                <Plus size={14} /> Add deposit (optional)
               </button>
-            ) : (
+            ) : payments.length === 0 ? null : (
               <div className="space-y-2">
                 {payments.map((p, i) => {
+                  if (saleMode === 'sale') {
+                    // Method is fully decided by Item Payment Mode above (Cash's
+                    // own sub-choice, or Credit/Debit Card) — no separate method
+                    // picker or split-tender here, just how much was tendered.
+                    return (
+                      <input
+                        key={i}
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        aria-label="Amount tendered"
+                        className="w-full rounded-lg border border-purple-200 px-3 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                        placeholder="0.00"
+                        value={p.amount === 0 ? '' : p.amount}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value)
+                          updatePayment(i, { amount: isNaN(val) ? 0 : val })
+                        }}
+                      />
+                    )
+                  }
                   return (
                     <div key={i} className="space-y-1">
                       <div className="flex items-center gap-2">
                         <div className="relative min-w-0 flex-1">
-                          {/* Scenario 37's default still comes from Item Payment
-                              Mode, but the dropdown itself stays visible so a
-                              split tender or a method Item Payment Mode doesn't
-                              cover (Gift Card/Store Credit/Loyalty Points) is one
-                              click away instead of needing "Use a different
-                              method" first. */}
                           <select
                             aria-label="Payment method"
                             className="w-full appearance-none cursor-pointer rounded-lg border border-purple-200 bg-white py-2 pl-2 pr-6 text-xs text-gray-800 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
@@ -3856,20 +4309,29 @@ export default function CheckoutPage() {
                   )
                 })}
 
-                {/* Reference number — required for card / bank / gift card / custom with ref field */}
+                {/* Reference number / CR Number — required for every sale-mode
+                    payment regardless of method (mirrors the down payment
+                    section below); reserve mode keeps the narrower
+                    card/bank/QR-only requirement it always had. */}
                 {payments.some(
-                  (p) => p.amount > 0 && (REF_METHODS.includes(p.method) || p.refFieldLabel)
+                  (p) =>
+                    p.amount > 0 &&
+                    (saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel)
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        p.amount > 0 && (REF_METHODS.includes(p.method) || p.refFieldLabel)
+                        p.amount > 0 &&
+                        (saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel)
                       const label =
                         p.refFieldLabel ??
-                        (PAYMENT_LABELS[p.method]
-                          ? `${PAYMENT_LABELS[p.method]} reference`
-                          : 'Reference')
-                      const isRequired = p.refRequired ?? REF_METHODS.includes(p.method)
+                        (saleMode === 'sale'
+                          ? 'CR Number'
+                          : PAYMENT_LABELS[p.method]
+                            ? `${PAYMENT_LABELS[p.method]} reference`
+                            : 'Reference')
+                      const isRequired =
+                        p.refRequired ?? (saleMode === 'sale' || REF_METHODS.includes(p.method))
                       // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
                       // Gateway (qr) all live in Item Payment Mode now (transaction-
                       // scoped, see hasCreditCardLine/hasCashLine) — not repeated
@@ -3885,8 +4347,8 @@ export default function CheckoutPage() {
                       return needsRef ? (
                         <div key={i} className="space-y-1.5">
                           <input
-                            className={`w-full rounded-lg border px-3 py-1.5 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${isRequired && !p.referenceNumber.trim() ? 'border-amber-300 bg-amber-50 placeholder:text-amber-500' : 'border-purple-200'}`}
-                            placeholder={`${label}${isRequired ? ' * required' : ''}`}
+                            className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                            placeholder={`${label}${isRequired ? ' *' : ''}`}
                             value={p.referenceNumber}
                             onChange={(e) => updatePayment(i, { referenceNumber: e.target.value })}
                           />
@@ -3915,34 +4377,109 @@ export default function CheckoutPage() {
             )}
 
             {/* Totals */}
-            {payments.length > 0 && (
-              <div className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm">
-                <div className="flex justify-between text-gray-700">
-                  <span>{saleMode === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
-                  <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
+            {(saleMode === 'reserve' ? payments.length > 0 : tenderTarget > 0) &&
+              payments.length > 0 && (
+                <div className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm">
+                  <div className="flex justify-between text-gray-700">
+                    <span>{saleMode === 'reserve' ? 'Deposit Tendered' : 'Total Tendered'}</span>
+                    <span className="font-mono font-medium text-gray-700">{fmt(totalPaid)}</span>
+                  </div>
+                  {saleMode === 'reserve' ? (
+                    reserveBalance > 0.009 && (
+                      <div className="flex items-center justify-between rounded-lg bg-gray-200 px-3 py-2 text-gray-700">
+                        <span>Remaining at fulfilment</span>
+                        <span className="font-mono">{fmt(reserveBalance)}</span>
+                      </div>
+                    )
+                  ) : (
+                    <>
+                      {balance > 0.009 && (
+                        <div className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">
+                          <span>Still Needed</span>
+                          <span className="font-mono">{fmt(balance)}</span>
+                        </div>
+                      )}
+                      {change > 0.009 && (
+                        <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 font-bold text-green-700">
+                          <span>Change</span>
+                          <span className="font-mono">{fmt(change)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                {saleMode === 'reserve' ? (
-                  reserveBalance > 0.009 && (
-                    <div className="flex items-center justify-between rounded-lg bg-gray-200 px-3 py-2 text-gray-700">
-                      <span>Remaining at fulfilment</span>
-                      <span className="font-mono">{fmt(reserveBalance)}</span>
+              )}
+
+            {/* Down Payment — full separation from the cash/TPF pool above:
+                its own tender rows, tagged to a specific installment
+                schedule on submit, method locked to whatever Down Payment
+                Method chose (Item Payment Mode section). */}
+            {saleMode === 'sale' && inhouseInstallmentCartLines.length > 0 && (
+              <div className="mt-4 border-t border-prominent-purple-200 pt-4">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-prominent-purple-700">
+                  Down Payment
+                </p>
+
+                {!dpPaymentMode ? (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    Choose Cash or Credit/Debit Card above first.
+                  </p>
+                ) : dpPayments.length === 0 ? null : (
+                  <div className="space-y-2">
+                    {dpPayments.map((p, i) => (
+                      <div key={i} className="space-y-1.5">
+                        {/* Method is already fixed by Down Payment Method /
+                            Down Payment — Cash above — just how much was
+                            tendered for it. */}
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          aria-label="Down payment amount tendered"
+                          className="w-full rounded-lg border border-purple-200 px-3 py-2 text-right font-mono text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                          placeholder="0.00"
+                          value={p.amount === 0 ? '' : p.amount}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value)
+                            updateDpPayment(i, { amount: isNaN(val) ? 0 : val })
+                          }}
+                        />
+                        {p.amount > 0 && (
+                          <input
+                            className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                            placeholder="Down Payment CR Number *"
+                            value={p.referenceNumber}
+                            onChange={(e) =>
+                              updateDpPayment(i, { referenceNumber: e.target.value })
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {dpPayments.length > 0 && (
+                  <div className="mt-3 space-y-1.5 border-t border-prominent-purple-100 pt-3 text-sm">
+                    <div className="flex justify-between text-gray-700">
+                      <span>Down Payment Tendered</span>
+                      <span className="font-mono font-medium text-gray-700">
+                        {fmt(dpTotalPaid)}
+                      </span>
                     </div>
-                  )
-                ) : (
-                  <>
-                    {balance > 0.009 && (
+                    {dpBalance > 0.009 && (
                       <div className="flex items-center justify-between rounded-lg bg-red-50 px-3 py-2 font-bold text-red-700">
                         <span>Still Needed</span>
-                        <span className="font-mono">{fmt(balance)}</span>
+                        <span className="font-mono">{fmt(dpBalance)}</span>
                       </div>
                     )}
-                    {change > 0.009 && (
+                    {dpChange > 0.009 && (
                       <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 font-bold text-green-700">
                         <span>Change</span>
-                        <span className="font-mono">{fmt(change)}</span>
+                        <span className="font-mono">{fmt(dpChange)}</span>
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             )}
@@ -4002,27 +4539,35 @@ export default function CheckoutPage() {
                             ? 'Select a financing term for every installment item'
                             : saleMode === 'sale' && installmentMissingCreditApplication
                               ? 'Select an approved credit application'
-                              : saleMode === 'sale' && tpfMissingReference
-                                ? 'Select a TPF provider and enter a reference number'
+                              : saleMode === 'sale' &&
+                                  inhouseInstallmentCartLines.length > 0 &&
+                                  !dpPaymentMode
+                                ? 'Choose a down payment method'
                                 : saleMode === 'sale' &&
-                                    !hasChargeOrInstallmentLine &&
-                                    !selectedCustomer
-                                  ? 'Select a customer'
-                                  : saleMode === 'sale' && balance > 0.009
-                                    ? `Underpaid by ${fmt(balance)}`
-                                    : saleMode === 'sale' && loyaltyOverBalance
-                                      ? 'Insufficient loyalty points'
-                                      : needsManagerOverride && !managerOverrideApproved
-                                        ? 'Manager override required'
-                                        : cart.some((l) => l.isSerialTracked)
-                                          ? `Submit for Approval — ${fmt(totalAmount)}`
-                                          : saleMode === 'reserve'
-                                            ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                            : allCharge
-                                              ? `Issue Charge Invoice — ${fmt(totalAmount)}`
-                                              : allInstallment
-                                                ? `Create Installment Plan — ${fmt(totalAmount)}`
-                                                : `Confirm Sale — ${fmt(totalAmount)}`
+                                    inhouseInstallmentCartLines.length > 0 &&
+                                    dpBalance > 0.009
+                                  ? `Down payment underpaid by ${fmt(dpBalance)}`
+                                  : saleMode === 'sale' && tpfMissingReference
+                                    ? 'Select a TPF provider and enter a reference number'
+                                    : saleMode === 'sale' &&
+                                        !hasChargeOrInstallmentLine &&
+                                        !selectedCustomer
+                                      ? 'Select a customer'
+                                      : saleMode === 'sale' && balance > 0.009
+                                        ? `Underpaid by ${fmt(balance)}`
+                                        : saleMode === 'sale' && loyaltyOverBalance
+                                          ? 'Insufficient loyalty points'
+                                          : needsManagerOverride && !managerOverrideApproved
+                                            ? 'Manager override required'
+                                            : cart.some((l) => l.isSerialTracked)
+                                              ? `Submit for Approval — ${fmt(grandTotalWithFee)}`
+                                              : saleMode === 'reserve'
+                                                ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                : allCharge
+                                                  ? `Issue Charge Invoice — ${fmt(grandTotalWithFee)}`
+                                                  : allInstallment
+                                                    ? `Create Installment Plan — ${fmt(grandTotalWithFee)}`
+                                                    : `Confirm Sale — ${fmt(grandTotalWithFee)}`
 
               const colorClass =
                 saleMode === 'reserve'
