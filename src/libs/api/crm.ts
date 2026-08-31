@@ -25,6 +25,7 @@ import type {
   DuplicatePair,
   CollectionsCalendarResponse,
   InstallmentLedger,
+  AgingReportResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type {
@@ -313,6 +314,8 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
+  agingReport: (filters?: { asOf?: string; branchId?: string; collectorId?: string }) =>
+    api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──

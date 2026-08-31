@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
@@ -23,9 +23,6 @@ import {
   X,
   Search,
   User,
-  Users,
-  List,
-  ChevronDown,
   ChevronRight,
   Loader2,
 } from 'lucide-react'
@@ -69,8 +66,14 @@ const INVOICE_STATUS_BADGE: Record<string, string> = {
 
 export default function ARInvoicesList({
   initialCustomerId,
+  dedicatedCustomer = false,
 }: {
   initialCustomerId?: string
+  /** True when rendered at the dedicated /accounting/ar-invoices/customer/[id]
+   * route rather than the general list with a customerId filter applied —
+   * swaps the page header/customer picker for a customer-scoped one instead
+   * of the generic "Filtered to X / Clear filter" banner. */
+  dedicatedCustomer?: boolean
 } = {}) {
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
@@ -105,20 +108,6 @@ export default function ARInvoicesList({
   const [customerResults, setCustomerResults] = useState<ARInvoiceCustomerResult[]>([])
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
   const [searchingCustomers, setSearchingCustomers] = useState(false)
-  // Group-by-customer view — a display mode over the same `items` this
-  // screen already loads (findAll() is unpaginated), not a separate query.
-  // Flat list stays the default; grouped is opt-in via the toggle below.
-  const [groupByCustomer, setGroupByCustomer] = useState(false)
-  const [expandedCustomers, setExpandedCustomers] = useState<Set<string>>(new Set())
-  const toggleCustomerGroup = (customerId: string) => {
-    setExpandedCustomers((prev) => {
-      const next = new Set(prev)
-      if (next.has(customerId)) next.delete(customerId)
-      else next.add(customerId)
-      return next
-    })
-  }
-
   const load = useCallback(async () => {
     setLoading(true)
     const res = await ARInvoices.list({
@@ -245,8 +234,23 @@ export default function ARInvoicesList({
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold">AR Invoices</h2>
-          <p className="text-sm text-gray-500">Customer invoices and receivables.</p>
+          {dedicatedCustomer ? (
+            <>
+              <Link
+                href="/accounting/ar-invoices"
+                className="mb-1 inline-block text-xs font-medium text-purple-700 hover:underline"
+              >
+                ← All AR Invoices
+              </Link>
+              <h2 className="text-2xl font-bold">{customerFilterName ?? 'Customer'}</h2>
+              <p className="text-sm text-gray-500">AR invoices for this customer.</p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold">AR Invoices</h2>
+              <p className="text-sm text-gray-500">Customer invoices and receivables.</p>
+            </>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -273,55 +277,57 @@ export default function ARInvoicesList({
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="relative min-w-56 flex-1">
-          <label className="mb-1 block text-xs font-semibold text-gray-600">Customer</label>
-          <div className="relative">
-            <Search
-              size={15}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-8 text-sm focus:border-purple-500 focus:outline-none"
-              placeholder="Search by name or phone…"
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-              onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
-              onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
-            />
-            {searchingCustomers && (
-              <Loader2
-                size={14}
-                className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+        {!dedicatedCustomer && (
+          <div className="relative min-w-56 flex-1">
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Customer</label>
+            <div className="relative">
+              <Search
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
-            )}
-          </div>
-          {customerSearchOpen && (
-            <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
-              {customerResults.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
-              ) : (
-                customerResults.map((c) => (
-                  <button
-                    key={c.id}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
-                    onMouseDown={() => {
-                      setCustomerFilter(c.id)
-                      setCustomerFilterName(c.name)
-                      setCustomerSearch('')
-                      setCustomerSearchOpen(false)
-                    }}
-                  >
-                    <User size={13} className="shrink-0 text-gray-400" />
-                    <div>
-                      <p className="font-medium text-gray-900">{c.name}</p>
-                      {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
-                    </div>
-                  </button>
-                ))
+              <input
+                className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-8 text-sm focus:border-purple-500 focus:outline-none"
+                placeholder="Search by name or phone…"
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 150)}
+                onFocus={() => customerResults.length > 0 && setCustomerSearchOpen(true)}
+              />
+              {searchingCustomers && (
+                <Loader2
+                  size={14}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-gray-400"
+                />
               )}
             </div>
-          )}
-        </div>
+            {customerSearchOpen && (
+              <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg">
+                {customerResults.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-gray-500">No customers found</p>
+                ) : (
+                  customerResults.map((c) => (
+                    <button
+                      key={c.id}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                      onMouseDown={() => {
+                        setCustomerFilter(c.id)
+                        setCustomerFilterName(c.name)
+                        setCustomerSearch('')
+                        setCustomerSearchOpen(false)
+                      }}
+                    >
+                      <User size={13} className="shrink-0 text-gray-400" />
+                      <div>
+                        <p className="font-medium text-gray-900">{c.name}</p>
+                        {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
             Invoice # or Transaction #
@@ -350,28 +356,8 @@ export default function ARInvoicesList({
             Clear
           </button>
         )}
-        <div className="ml-auto flex items-center rounded-lg border border-gray-200 p-0.5">
-          <button
-            onClick={() => setGroupByCustomer(false)}
-            aria-pressed={!groupByCustomer}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              !groupByCustomer ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            <List className="w-4 h-4" /> Flat list
-          </button>
-          <button
-            onClick={() => setGroupByCustomer(true)}
-            aria-pressed={groupByCustomer}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              groupByCustomer ? 'bg-purple-100 text-purple-700' : 'text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            <Users className="w-4 h-4" /> By customer
-          </button>
-        </div>
       </div>
-      {customerFilter && (
+      {customerFilter && !dedicatedCustomer && (
         <div className="mb-4 flex items-center justify-between rounded-lg bg-purple-50 px-3 py-2 text-sm text-purple-800">
           <span>Filtered to {customerFilterName ?? 'this customer'}</span>
           <button
@@ -414,70 +400,7 @@ export default function ARInvoicesList({
                   No invoices.
                 </td>
               </tr>
-            ) : groupByCustomer ? (
-              customerGroups.map((g) => (
-                <Fragment key={g.customerId}>
-                  <tr
-                    onClick={() => toggleCustomerGroup(g.customerId)}
-                    className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
-                  >
-                    <td className="px-3 py-2" colSpan={2}>
-                      <div className="flex items-center gap-2">
-                        {expandedCustomers.has(g.customerId) ? (
-                          <ChevronDown className="w-4 h-4 shrink-0 text-gray-400" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
-                        )}
-                        <span className="truncate">{g.customerName}</span>
-                        <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
-                          {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-xs" colSpan={2}>
-                      {g.overdueCount > 0 && (
-                        <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
-                    <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {g.dueNow > 0 ? (
-                        <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                      <Link
-                        href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
-                        className="text-xs font-medium text-purple-700 hover:underline"
-                      >
-                        Statement
-                      </Link>
-                    </td>
-                  </tr>
-                  {expandedCustomers.has(g.customerId) &&
-                    g.invoices.map((i) => (
-                      <InvoiceRow
-                        key={i.id}
-                        i={i}
-                        onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
-                        onSend={() => send(i.id)}
-                        onPay={() => setPayingFor(i)}
-                        onHistory={() => setHistoryFor(i)}
-                        onCredit={() => setCreditingFor(i)}
-                        onDebit={() => setDebitingFor(i)}
-                        onEdit={() => setEditing(i)}
-                        onVoid={() => setVoidingFor(i)}
-                        onDelete={() => setDeletingFor(i)}
-                      />
-                    ))}
-                </Fragment>
-              ))
-            ) : (
+            ) : customerFilter ? (
               items.map((i) => (
                 <InvoiceRow
                   key={i.id}
@@ -492,6 +415,48 @@ export default function ARInvoicesList({
                   onVoid={() => setVoidingFor(i)}
                   onDelete={() => setDeletingFor(i)}
                 />
+              ))
+            ) : (
+              customerGroups.map((g) => (
+                <tr
+                  key={g.customerId}
+                  onClick={() => router.push(`/accounting/ar-invoices/customer/${g.customerId}`)}
+                  className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
+                >
+                  <td className="px-3 py-2" colSpan={2}>
+                    <div className="flex items-center gap-2">
+                      <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+                      <span className="truncate">{g.customerName}</span>
+                      <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
+                        {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs" colSpan={2}>
+                    {g.overdueCount > 0 && (
+                      <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {g.dueNow > 0 ? (
+                      <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2" />
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <Link
+                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
+                      className="text-xs font-medium text-purple-700 hover:underline"
+                    >
+                      Statement
+                    </Link>
+                  </td>
+                </tr>
               ))
             )}
           </tbody>

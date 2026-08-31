@@ -267,7 +267,6 @@ function ExpenseForm({
     taxAmount: String(initial?.taxAmount ?? ''),
     paymentMethod: initial?.paymentMethod ?? 'CASH',
     reference: initial?.reference ?? '',
-    costCenter: initial?.costCenter ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -398,22 +397,13 @@ function ExpenseForm({
               </select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Reference (OR / receipt #)">
-              <input
-                value={form.reference}
-                onChange={(e) => setForm({ ...form, reference: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
+          <Field label="Reference (OR / receipt #)">
+            <input
+              value={form.reference}
+              onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
           <div className="text-sm text-gray-600 text-right">
             Total: <span className="font-semibold">{fmtMoney(total)}</span>
           </div>

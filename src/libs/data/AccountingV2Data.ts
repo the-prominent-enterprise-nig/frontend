@@ -710,12 +710,30 @@ export interface APBill {
   billDate: string
   dueDate: string
   description?: string
+  // The supplier's own invoice number, as printed on their invoice —
+  // distinct from billNumber above, which is our internal AP bill number.
+  supplierInvoiceReferenceNo?: string | null
   subtotal: number
+  // Input tax (VAT) on this purchase.
   taxAmount: number
+  // Withholding tax withheld from the supplier — defaults to the
+  // supplier's configured withholding rate × subtotal (editable override).
+  // Posted to WHT Payable and counted toward amountPaid when the bill is
+  // received, not at payment time.
+  withholdingAmount?: number
   totalAmount: number
   amountPaid: number
   status: string
   costCenter?: string
+  // How this bill will be paid — captured on the bill (while still DRAFT)
+  // instead of at Record Payment. Feeds APPaymentMethodConfig resolution.
+  sourceOfPayment?: string | null
+  // Payment/transfer reference — captured on the bill instead of at Record
+  // Payment.
+  referenceNumber?: string | null
+  // Cheque/payment-instrument serial number — captured on the bill instead
+  // of at Record Payment (was APPaymentPayment.chequeNumber's input).
+  serialNumber?: string | null
   payments?: APBillPayment[]
   // True when scaffolded automatically from a goods receipt rather than
   // typed in by hand — see ap-bills.service.ts's createOrAttachDraftFromReceipt.

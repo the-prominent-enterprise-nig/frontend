@@ -1,4 +1,4 @@
-import type { InstallmentLedger } from '@/src/schema/crm/types'
+import type { InstallmentLedger, AgingReportResponse } from '@/src/schema/crm/types'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -793,6 +793,195 @@ export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildCustomerLedgerHtml(ledger))
+  win.document.close()
+}
+
+/**
+ * AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE"
+ * spreadsheet the client maintained by hand (prisma/data/Aging_Accounts
+ * Receivable - Final_Aging.csv), sourced from this system's own
+ * InstallmentAccount data via installmentAccountsApi.agingReport(). Grouped
+ * Branch -> Collector (the legacy sheet's Area/Area Supervisor/Operation
+ * grouping has no equivalent in this schema). The legend below is
+ * transcribed verbatim from the source file's own header rows, including
+ * the Hiligaynon glosses — that's the client's own wording, not ours.
+ *
+ * OVER (OVER-30 amount) always renders "—" — no penalty/days-overdue rule
+ * exists yet to compute it from; deferred rather than guessed. NO ARS
+ * renders "—" (not 0) for a pre-backfill account whose nextDueDate hasn't
+ * been set yet — flagged as needing review, not silently reported as current.
+ */
+export function buildAgingReportHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | string | null) =>
+    n === null
+      ? '—'
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtInt = (n: number | null) => (n === null ? '—' : n.toLocaleString('en-PH'))
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const columns = [
+    '#',
+    'br',
+    'SI No.',
+    'SI Date',
+    'Customer Name',
+    'Address',
+    'Type',
+    'Term',
+    'MI',
+    'FMI Date',
+    'DP',
+    'DP Bal',
+    'OB',
+    'MI DUE',
+    'pnlty',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'NOT MVG',
+    'Last OR Date',
+    'Last ORlastnum',
+    'Last ORAmt',
+    'OVER',
+  ]
+  // Every numeric column right-aligns its header to match its cells; text/
+  // date columns stay left-aligned.
+  const rightAlignedColumns = new Set([
+    '#',
+    'Term',
+    'MI',
+    'DP',
+    'DP Bal',
+    'OB',
+    'MI DUE',
+    'pnlty',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'NOT MVG',
+    'Last ORAmt',
+    'OVER',
+  ])
+
+  const row = (
+    r: (typeof report.branches)[number]['collectors'][number]['rows'][number],
+    n: number
+  ) => `<tr>
+    <td class="right">${n}</td>
+    <td>${esc(r.branchName)}</td>
+    <td class="mono">${esc(r.siNo)}</td>
+    <td>${fmtDate(r.siDate)}</td>
+    <td>${esc(r.customerName)}</td>
+    <td>${esc(r.address ?? '—')}</td>
+    <td>${esc(r.type ?? '—')}</td>
+    <td class="right">${r.term ?? '—'}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td>${fmtDate(r.fmiDate)}</td>
+    <td class="right">${fmt(r.dp)}</td>
+    <td class="right">${fmt(r.dpBal)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.pnlty)}</td>
+    <td class="right">${fmtInt(r.noArs)}</td>
+    <td class="right">${r.mosRun}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${fmt(r.totalPrice)}</td>
+    <td class="right">${r.totPricePercent}%</td>
+    <td class="right">${fmt(r.lcp)}</td>
+    <td class="right">${r.notMvg}</td>
+    <td>${fmtDate(r.lastOrDate)}</td>
+    <td class="mono">${esc(r.lastOrLastnum ?? '—')}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+    <td class="right">${fmt(r.over)}</td>
+  </tr>`
+
+  const subtotalRow = (
+    label: string,
+    s: (typeof report.branches)[number]['subtotal']
+  ) => `<tr class="subtotal">
+    <td colspan="10">${esc(label)} (${s.count})</td>
+    <td class="right">${fmt(s.dp)}</td>
+    <td></td>
+    <td class="right">${fmt(s.ob)}</td>
+    <td class="right">${fmt(s.miDue)}</td>
+    <td class="right">${fmt(s.pnlty)}</td>
+    <td></td>
+    <td class="right">${fmt(s.totalPayt)}</td>
+    <td class="right">${fmt(s.totalPrice)}</td>
+    <td colspan="6"></td>
+    <td class="right">${fmt(s.lcp)}</td>
+  </tr>`
+
+  const branchSections = report.branches
+    .map((branch) => {
+      const collectorSections = branch.collectors
+        .map((collector) => {
+          let n = 0
+          const rows = collector.rows.map((r) => row(r, ++n)).join('')
+          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(collector.collectorLabel)}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
+        })
+        .join('')
+      return `<tr class="group-header branch"><td colspan="${columns.length}">AREA: ${esc(branch.branchName)}</td></tr>${collectorSections}${subtotalRow('Branch subtotal', branch.subtotal)}`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>AR Aging Report</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .letterhead h1 { font-size: 15px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    .legend { border: 1px solid #ccc; padding: 4px 8px; margin-bottom: 8px; font-size: 8.5px; color: #333; }
+    .legend p { margin: 1px 0; }
+    h2 { font-size: 12px; margin: 4px 0; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #ccc; padding: 2px 4px; line-height: 1.2; white-space: nowrap; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    tr.group-header td { background: #ececec; font-weight: 700; }
+    tr.group-header.branch td { background: #ddd; font-weight: 700; text-transform: uppercase; }
+    tr.subtotal td { background: #fafafa; font-weight: 700; font-style: italic; }
+    .grand-total { margin-top: 8px; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">AGING OF ACCOUNTS RECEIVABLE — As of ${fmtDate(report.asOf)}</span>
+    </div>
+
+    <div class="legend">
+      <p><strong>LCP</strong> - List Cash Price · <strong>AF</strong> - Amount Financed (LCP - Down payment) · <strong>ID</strong> - Installment Differential (Total Price - LCP)</p>
+      <p><strong>PNV</strong> - Promissory Note Value (MI * Terms) · <strong>Total Price</strong> - PNV + Downpayment · Early closure formula: =ID/Terms x Mos Run + LCP - Total Pay't</p>
+      <p><strong>NO ARS</strong> - Number of months the customer's account is past due (pila ka bulan ang due ni customer)</p>
+      <p><strong>MOS RUN</strong> - Number of months that have elapsed since the invoice date (pila ka bulan ang nagdalagan halin pagkwa ni customer)</p>
+      <p><strong>NOT MVG</strong> - Number of months since the customer's last payment (pila ka bulan halin sang last nga bayad ni customer)</p>
+      <p><strong>OVER</strong> - not yet computed — pending a documented penalty/days-overdue rule, deferred from this pass.</p>
+    </div>
+
+    <table class="aging">
+      <thead><tr>${columns.map((c) => `<th${rightAlignedColumns.has(c) ? ' class="right"' : ''}>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${branchSections || `<tr><td colspan="${columns.length}" style="text-align:center;color:#999">No active accounts.</td></tr>`}</tbody>
+    </table>
+
+    <p class="grand-total">Grand Total (${report.grandTotal.count} accounts): TOTAL PAY'T ${fmt(report.grandTotal.totalPayt)} · TOTAL PRICE ${fmt(report.grandTotal.totalPrice)} · OB ${fmt(report.grandTotal.ob)}</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAgingReportDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildAgingReportHtml(report))
   win.document.close()
 }
 
