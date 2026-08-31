@@ -310,10 +310,9 @@ export default function ARInvoicesList({
                       key={c.id}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50"
                       onMouseDown={() => {
-                        setCustomerFilter(c.id)
-                        setCustomerFilterName(c.name)
                         setCustomerSearch('')
                         setCustomerSearchOpen(false)
+                        router.push(`/accounting/ar-invoices/customer/${c.id}`)
                       }}
                     >
                       <User size={13} className="shrink-0 text-gray-400" />

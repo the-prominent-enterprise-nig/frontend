@@ -25,6 +25,7 @@ import type {
   DuplicatePair,
   CollectionsCalendarResponse,
   InstallmentLedger,
+  CustomerLedger,
   AgingReportResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
@@ -134,6 +135,7 @@ export const customersApi = {
         reminders: Reminder[]
       }
     >(`/crm/customers/${id}/360`),
+  getLedger: (id: string) => api.get<CustomerLedger>(`/crm/customers/${id}/ledger`),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),

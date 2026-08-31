@@ -113,6 +113,10 @@ type CollectionsPaymentOption = {
 // COLLECTIONS_METHOD_KEYS above. Mirrors checkout/page.tsx's own two-call
 // composition (tenant-wide configs for metadata/options + branch-scoped
 // enabled keys for gating) rather than introducing a third fetch pattern.
+// Cash and Card are exempt from the branch-level gate below — a cashier
+// should always be able to collect those two regardless of whether a branch
+// remembered to explicitly enable them in payment method settings; only
+// Bank Transfer/QR stay branch-gated.
 function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOption[] {
   const [configured, setConfigured] = useState<PaymentMethodConfig[]>([])
   const [enabledKeys, setEnabledKeys] = useState<Set<string> | null>(null)
@@ -141,7 +145,7 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
 
   const configuredOptions = configured
     .filter((m) => m.isEnabled && m.key && m.key in COLLECTIONS_METHOD_KEYS)
-    .filter((m) => !enabledKeys || enabledKeys.has(m.key!))
+    .filter((m) => !enabledKeys || m.key === 'cash' || m.key === 'card' || enabledKeys.has(m.key!))
     .sort((a, b) => a.displayOrder - b.displayOrder)
     .map(
       (m): CollectionsPaymentOption => ({
@@ -156,10 +160,9 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
   return [...configuredOptions, CHECK_PAYMENT_OPTION]
 }
 
-// A due is eligible for bulk/early-payment selection once it's past DRAFT
-// (never posted) and hasn't been settled/voided — the same set MovementsTab
-// et al. call "collectable", just without the isNextDue restriction that
-// only the single-due "Collect" button needs.
+// A due is eligible for selection (and payment, via "Pay Selected") once
+// it's past DRAFT (never posted) and hasn't been settled/voided — the same
+// set MovementsTab et al. call "collectable".
 function isEligibleForBulkPay(line: InstallmentScheduleLineWithInvoice): boolean {
   return !['DRAFT', 'CANCELLED', 'PAID'].includes(line.arInvoice.status)
 }
@@ -185,6 +188,34 @@ function toggleLineSelection(
     for (let i = idx; i < eligible.length; i++) next.delete(eligible[i].arInvoice.id)
   }
   return next
+}
+
+// Splits a bulk payment's Total/Rebate across the selected dues (given in
+// due order) the same way the read-only defaults always implied: settle one
+// due in full — its rebate capped at its own suggestedRebate, its amount
+// capped at what it still needs — before any leftover Total/Rebate flows to
+// the next due. Whatever's left once every due is fully covered lands on the
+// last due as an overpayment (matching the backend's own per-line
+// overpayment check), rather than being silently dropped.
+function allocateBulkPayment(
+  lines: { line: InstallmentScheduleLineWithInvoice; suggestedRebate: number | null }[],
+  totalAmount: number,
+  totalRebate: number
+): { line: InstallmentScheduleLineWithInvoice; amount: number; rebateAmount: number }[] {
+  let remainingAmount = Math.max(totalAmount, 0)
+  let remainingRebate = Math.max(totalRebate, 0)
+  return lines.map(({ line, suggestedRebate }, i) => {
+    const outstanding = Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0)
+    const cap = suggestedRebate ?? 0
+    const rebateAmount = Math.round(Math.min(remainingRebate, cap) * 100) / 100
+    remainingRebate = Math.max(Math.round((remainingRebate - rebateAmount) * 100) / 100, 0)
+    const neededAmount = Math.max(Math.round((outstanding - rebateAmount) * 100) / 100, 0)
+    const isLast = i === lines.length - 1
+    const amount =
+      Math.round((isLast ? remainingAmount : Math.min(remainingAmount, neededAmount)) * 100) / 100
+    remainingAmount = Math.max(Math.round((remainingAmount - amount) * 100) / 100, 0)
+    return { line, rebateAmount, amount }
+  })
 }
 
 function CollectionsCustomerRow({
@@ -251,13 +282,6 @@ export default function CollectionsScreen() {
   const [query, setQuery] = useState('')
   const [branchId, setBranchId] = useState('')
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
-  const [collectingLine, setCollectingLine] = useState<{
-    line: InstallmentScheduleLineWithInvoice
-    // Suggested rebate (PPD) for this due — sourced from the parent
-    // schedule's linked InstallmentAccount, since the line itself doesn't
-    // carry it. Null when the schedule has no linked account.
-    suggestedRebate: number | null
-  } | null>(null)
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
   const [showBulkPay, setShowBulkPay] = useState(false)
 
@@ -432,7 +456,6 @@ export default function CollectionsScreen() {
                           const isFullyPaid = line.arInvoice.status === 'PAID'
                           const isNextDue = line.lineNumber === nextDueLineNumber
                           const isEligible = isEligibleForBulkPay(line)
-                          const collectable = isEligible && isNextDue
                           const isSelected = selectedInvoiceIds.has(line.arInvoice.id)
                           return (
                             <li
@@ -480,32 +503,6 @@ export default function CollectionsScreen() {
                                   Paid
                                 </span>
                               )}
-                              {collectable && (
-                                <button
-                                  disabled={selectedInvoiceIds.size > 0}
-                                  onClick={() =>
-                                    setCollectingLine({
-                                      line,
-                                      // ppd comes over the wire as a string (Prisma Decimal JSON
-                                      // serialization) — coerce explicitly, same convention this
-                                      // codebase already uses for downPayment/floorPrice/minQty.
-                                      suggestedRebate:
-                                        s.installmentAccount?.ppd != null
-                                          ? Number(s.installmentAccount.ppd)
-                                          : null,
-                                    })
-                                  }
-                                  title={
-                                    selectedInvoiceIds.size > 0
-                                      ? 'Dues are selected below — use "Pay Selected" to collect them together, or clear the selection to collect this one individually.'
-                                      : undefined
-                                  }
-                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
-                                >
-                                  <Banknote className="h-3.5 w-3.5" />
-                                  Collect
-                                </button>
-                              )}
                             </li>
                           )
                         })}
@@ -519,28 +516,8 @@ export default function CollectionsScreen() {
         )}
       </div>
 
-      {collectingLine && (
-        <CollectPaymentModal
-          line={collectingLine.line}
-          suggestedRebate={collectingLine.suggestedRebate}
-          customerName={customer?.name}
-          defaultBranchId={branchId || undefined}
-          onClose={() => setCollectingLine(null)}
-          onCollected={async () => {
-            // Wait for both refetches before closing — otherwise the list
-            // (and this due's own data, if reopened right away) can briefly
-            // still reflect the pre-payment state. The modal's own submit
-            // button stays in its spinner/disabled state for this whole
-            // span (see CollectPaymentModal's onSubmit), so there's no
-            // interactive-but-stale window for a fast click-through to hit.
-            await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
-            setCollectingLine(null)
-          }}
-        />
-      )}
-
       {showBulkPay && (
-        <BulkCollectPaymentModal
+        <CollectPaymentModal
           lines={selectedPayableLines}
           customerName={customer?.name}
           defaultBranchId={branchId || undefined}
@@ -556,18 +533,32 @@ export default function CollectionsScreen() {
   )
 }
 
+/**
+ * Collects payment against whichever of a customer's installment dues are
+ * checked below (Shopee-style "Pay Selected") — one due or several at once,
+ * same shell/field set either way, both defaulting to paying every checked
+ * due off in full. Amount/Total and Rebate are always editable; for a batch,
+ * allocateBulkPayment() splits whatever's typed across the checked dues in
+ * due order — settling one in full before any leftover flows to the next,
+ * same order the defaults already imply — so a custom partial amount on an
+ * earlier due still just means checking only that one. Reference (the OR
+ * number) is only required once a Collector is picked, in both modes —
+ * that's the only time an OR actually gets physically cut; a walk-in
+ * payment with no collector has none to record.
+ */
 function CollectPaymentModal({
-  line,
-  suggestedRebate,
+  lines,
   customerName,
   defaultBranchId,
   onClose,
   onCollected,
 }: {
-  line: InstallmentScheduleLineWithInvoice
-  /** Suggested rebate (PPD) for this due, from the schedule's linked
-   * InstallmentAccount — null if there's no linked account. */
-  suggestedRebate: number | null
+  lines: {
+    line: InstallmentScheduleLineWithInvoice
+    /** Suggested rebate (PPD) for this due, from the schedule's linked
+     * InstallmentAccount — null if there's no linked account. */
+    suggestedRebate: number | null
+  }[]
   customerName?: string
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
@@ -578,25 +569,41 @@ function CollectPaymentModal({
    * spinner/disabled state up until the modal is genuinely safe to close. */
   onCollected: () => Promise<void>
 }) {
-  const invoice = line.arInvoice
-  const outstanding = Math.max(invoice.totalAmount - invoice.amountPaid, 0)
-  // Defense-in-depth: the list view already hides "Collect" entirely for a
-  // fully-paid due (see isFullyPaid there), so this should be unreachable in
-  // the normal flow — but if it is reached (stale list, race with another
-  // cashier), hard-block submit here too instead of only allowing it through
-  // as an overpayment.
-  const isFullyPaid = invoice.status === 'PAID'
+  // Distinguishes the single-due UI (an "Outstanding" reference row) from
+  // the batch UI (an itemized dues list) — both share the same editable
+  // Amount/Total + Rebate fields below.
+  const single = lines.length === 1 ? lines[0] : null
+  const outstanding = single
+    ? Math.max(single.line.arInvoice.totalAmount - single.line.arInvoice.amountPaid, 0)
+    : 0
+  // Defense-in-depth: the list view already hides the checkbox entirely for
+  // a fully-paid due (see isEligibleForBulkPay), so this should be
+  // unreachable in the normal flow — but if it is reached (stale list, race
+  // with another cashier), hard-block submit here too instead of only
+  // allowing it through as an overpayment.
+  const isFullyPaid = single?.line.arInvoice.status === 'PAID'
+
+  // Sums across every selected due — used for the rebate cap and for the
+  // Total/Rebate fields' initial values (paying each due off in full is the
+  // sensible starting point; the cashier can edit either field from there).
+  const outstandingSum = lines.reduce(
+    (sum, { line }) => sum + Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0),
+    0
+  )
+  const rebateCapSum = lines.reduce((sum, { suggestedRebate }) => sum + (suggestedRebate ?? 0), 0)
+  const outstandingTotal = single ? outstanding : outstandingSum
+  const rebateCap = single ? (single.suggestedRebate ?? 0) : rebateCapSum
+
   const [form, setForm] = useState({
-    // outstanding is always a valid non-negative number (Math.max(...) above),
-    // so this never needs a `|| ''` fallback — that idiom would blank the
-    // field out for a legitimately-zero outstanding balance (0 is falsy).
-    // Nets out the suggested rebate so accepting both defaults as-is settles
-    // the due exactly, rather than over-collecting (cash + rebate > owed).
-    amount: String(Math.max(Math.round((outstanding - (suggestedRebate ?? 0)) * 100) / 100, 0)),
+    // outstandingTotal/rebateCap are always valid non-negative numbers, so
+    // this never needs a `|| ''` fallback — that idiom would blank the field
+    // out for a legitimately-zero amount (0 is falsy). Nets out the
+    // suggested rebate so accepting both defaults as-is settles the due(s)
+    // exactly, rather than over-collecting (cash + rebate > owed).
+    amount: String(Math.max(Math.round((outstandingTotal - rebateCap) * 100) / 100, 0)),
     withholdingAmount: '0',
-    rebateAmount: String(suggestedRebate ?? 0),
+    rebateAmount: String(rebateCap),
     paymentDate: todayIso(),
-    method: 'CASH' as PaymentMethod,
     paymentMethodConfigId: '',
     paymentMethodOptionId: '',
     reference: '',
@@ -614,6 +621,7 @@ function CollectPaymentModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overpaymentResult, setOverpaymentResult] = useState<{
+    overpaidCount: number
     overpaidAmount: number
     wasClosedAccount: boolean
   } | null>(null)
@@ -650,9 +658,7 @@ function CollectPaymentModal({
   // Falls through to Cash (same default this form always had) until the
   // cashier explicitly picks something else, or the branch's methods don't
   // include what they'd previously picked — derived at render rather than
-  // synced into form.method via an effect; onSubmit below reads this
-  // directly instead of trusting form.method/form.paymentMethodConfigId to
-  // already be in sync with it.
+  // synced into form state via an effect.
   const selectedPaymentMethod =
     paymentMethods.find((m) => m.id === form.paymentMethodConfigId) ??
     paymentMethods.find((m) => m.method === 'CASH') ??
@@ -662,40 +668,91 @@ function CollectPaymentModal({
     (Number(form.amount) || 0) +
     (Number(form.withholdingAmount) || 0) +
     (Number(form.rebateAmount) || 0)
-  const wouldOverpay = totalApplied > outstanding + 0.01
-  const rebateExceedsCap = (Number(form.rebateAmount) || 0) > (suggestedRebate ?? 0) + 0.01
+  const wouldOverpay = totalApplied > outstandingTotal + 0.01
+  const rebateExceedsCap = (Number(form.rebateAmount) || 0) > rebateCap + 0.01
   const isBackdatedOrPostdated = !isToday(form.paymentDate)
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
   // again on a date that already has a payment, so this just tells the
   // cashier that's what's about to happen.
-  const alreadyPaidOnChosenDate = hasPaymentOnDate(line, form.paymentDate)
+  const alreadyPaidOnChosenDate = single ? hasPaymentOnDate(single.line, form.paymentDate) : false
+  // Live per-due split of whatever's currently typed into Total/Rebate —
+  // drives both the dues-list preview below and the actual bulk submit
+  // payload, so what the cashier sees is exactly what gets recorded.
+  const bulkAllocated = allocateBulkPayment(
+    lines,
+    Number(form.amount) || 0,
+    Number(form.rebateAmount) || 0
+  )
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
-    const res = await ARInvoices.recordPayment(invoice.id, {
-      ...form,
-      amount: Number(form.amount),
-      withholdingAmount: Number(form.withholdingAmount || 0),
-      rebateAmount: Number(form.rebateAmount || 0),
-      method: selectedPaymentMethod?.method ?? form.method,
-      paymentMethodConfigId: selectedPaymentMethod?.configId,
-      paymentMethodOptionId: form.paymentMethodOptionId || undefined,
-      branchId: form.branchId || undefined,
-      collectorId: form.collectorId || undefined,
-    })
-    if (!res.success) {
-      setSubmitting(false)
-      setError(res.message || res.error || 'Failed to collect payment')
-      return
-    }
-    if (res.data?.overpayment) {
-      setSubmitting(false)
-      setOverpaymentResult(res.data.overpayment)
-      return
+
+    if (single) {
+      const res = await ARInvoices.recordPayment(single.line.arInvoice.id, {
+        amount: Number(form.amount),
+        paymentDate: form.paymentDate,
+        withholdingAmount: Number(form.withholdingAmount || 0),
+        rebateAmount: Number(form.rebateAmount || 0),
+        method: selectedPaymentMethod?.method ?? 'CASH',
+        paymentMethodConfigId: selectedPaymentMethod?.configId,
+        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        reference: form.reference || undefined,
+        notes: form.notes || undefined,
+        branchId: form.branchId || undefined,
+        collectorId: form.collectorId || undefined,
+      })
+      if (!res.success) {
+        setSubmitting(false)
+        setError(res.message || res.error || 'Failed to collect payment')
+        return
+      }
+      if (res.data?.overpayment) {
+        setSubmitting(false)
+        setOverpaymentResult({
+          overpaidCount: 1,
+          overpaidAmount: res.data.overpayment.overpaidAmount,
+          wasClosedAccount: res.data.overpayment.wasClosedAccount,
+        })
+        return
+      }
+    } else {
+      const res = await ARInvoices.recordBulkPayment({
+        lines: bulkAllocated.map((p) => ({
+          invoiceId: p.line.arInvoice.id,
+          amount: p.amount,
+          rebateAmount: p.rebateAmount,
+        })),
+        paymentDate: form.paymentDate,
+        method: selectedPaymentMethod?.method ?? 'CASH',
+        paymentMethodConfigId: selectedPaymentMethod?.configId,
+        paymentMethodOptionId: form.paymentMethodOptionId || undefined,
+        reference: form.reference || undefined,
+        notes: form.notes || undefined,
+        branchId: form.branchId || undefined,
+        collectorId: form.collectorId || undefined,
+      })
+      if (!res.success) {
+        setSubmitting(false)
+        setError(res.message || res.error || 'Failed to collect payment')
+        return
+      }
+      const overpaidPayments = (res.data?.payments ?? []).filter((p) => p.overpayment)
+      if (overpaidPayments.length > 0) {
+        setSubmitting(false)
+        setOverpaymentResult({
+          overpaidCount: overpaidPayments.length,
+          overpaidAmount: overpaidPayments.reduce(
+            (sum, p) => sum + (p.overpayment?.overpaidAmount ?? 0),
+            0
+          ),
+          wasClosedAccount: overpaidPayments.some((p) => p.overpayment?.wasClosedAccount),
+        })
+        return
+      }
     }
     // Stays "submitting" (spinner, buttons disabled) until the parent's
     // refetch actually lands — this component unmounts right after, so
@@ -704,25 +761,39 @@ function CollectPaymentModal({
   }
 
   if (overpaymentResult) {
+    const { overpaidCount, overpaidAmount, wasClosedAccount } = overpaymentResult
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600" />
             </div>
             <h3 className="text-lg font-semibold text-zinc-900">
-              {overpaymentResult.wasClosedAccount
-                ? 'Overpayment on a closed account'
-                : 'Payment recorded as an overpayment'}
+              {single
+                ? wasClosedAccount
+                  ? 'Overpayment on a closed account'
+                  : 'Payment recorded as an overpayment'
+                : `${overpaidCount} payment${overpaidCount !== 1 ? 's' : ''} recorded as an overpayment`}
             </h3>
             <p className="text-sm text-zinc-600">
-              This payment was <span className="font-semibold">not rejected</span> — it exceeds what
-              was owed by{' '}
-              <span className="font-semibold">{fmtMoney(overpaymentResult.overpaidAmount)}</span>.
-              {overpaymentResult.wasClosedAccount &&
-                ' This installment due was already fully paid before this payment.'}{' '}
-              A manager can cancel this specific payment from Accounting → AR Invoices if needed.
+              {single ? (
+                <>
+                  This payment was <span className="font-semibold">not rejected</span> — it exceeds
+                  what was owed by <span className="font-semibold">{fmtMoney(overpaidAmount)}</span>
+                  .
+                  {wasClosedAccount &&
+                    ' This installment due was already fully paid before this payment.'}{' '}
+                  A manager can cancel this specific payment from Accounting → AR Invoices if
+                  needed.
+                </>
+              ) : (
+                <>
+                  This batch was <span className="font-semibold">not rejected</span> —{' '}
+                  {overpaidCount} of the {lines.length} payments exceeded what was owed. A manager
+                  can cancel any specific payment from Accounting → AR Invoices if needed.
+                </>
+              )}
             </p>
             <button
               onClick={onCollected}
@@ -738,16 +809,21 @@ function CollectPaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+      <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
               <Banknote className="h-5 w-5 text-prominent-purple-700" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Collect Payment</h2>
+              <h2 className="text-lg font-semibold text-zinc-900">
+                {single ? 'Collect Payment' : 'Pay Selected Dues'}
+              </h2>
               <p className="text-sm text-zinc-500">
-                {customerName ?? 'Customer'} · due {fmtDate(invoice.dueDate)}
+                {customerName ?? 'Customer'} ·{' '}
+                {single
+                  ? `due ${fmtDate(single.line.arInvoice.dueDate)}`
+                  : `${lines.length} due${lines.length !== 1 ? 's' : ''}`}
               </p>
             </div>
           </div>
@@ -761,8 +837,8 @@ function CollectPaymentModal({
         </div>
 
         <form onSubmit={onSubmit} noValidate>
-          <div className="space-y-4 px-6 py-5">
-            {isFullyPaid && (
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto px-6 py-5">
+            {single && isFullyPaid && (
               <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[12px] text-red-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 This due is already fully paid — any additional amount would be an overpayment, and
@@ -770,14 +846,14 @@ function CollectPaymentModal({
                 reversing a mistaken payment), use Accounting → AR Invoices.
               </div>
             )}
-            {!isFullyPaid && alreadyPaidOnChosenDate && (
+            {single && !isFullyPaid && alreadyPaidOnChosenDate && (
               <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />A payment was already collected
                 for this due on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}.
                 This will be recorded as an additional payment toward the remaining balance.
               </div>
             )}
-            {!isFullyPaid && !alreadyPaidOnChosenDate && isBackdatedOrPostdated && (
+            {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdatedOrPostdated && (
               <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
@@ -785,15 +861,69 @@ function CollectPaymentModal({
               </div>
             )}
 
-            <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
-              <span className="text-[13px] text-zinc-500">Outstanding</span>
-              <span className="text-base font-semibold text-zinc-900">{fmtMoney(outstanding)}</span>
-            </div>
+            {single ? (
+              <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
+                <span className="text-[13px] text-zinc-500">Outstanding</span>
+                <span className="text-base font-semibold text-zinc-900">
+                  {fmtMoney(outstanding)}
+                </span>
+              </div>
+            ) : (
+              // Reference only — the cashier may not end up giving the
+              // rebate at all, so this shows both outcomes per due up
+              // front rather than assuming it's applied. What actually
+              // gets collected/submitted is whatever's typed into
+              // Total/Rebate below (see bulkAllocated).
+              <div className="overflow-hidden rounded-lg border border-zinc-200">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-zinc-50 text-left text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                      <th className="px-3 py-2 font-medium">Due</th>
+                      <th className="px-3 py-2 text-right font-medium">Without rebate</th>
+                      <th className="px-3 py-2 text-right font-medium">Rebate</th>
+                      <th className="px-3 py-2 text-right font-medium">With rebate</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {lines.map(({ line, suggestedRebate }) => {
+                      const dueOutstanding = Math.max(
+                        line.arInvoice.totalAmount - line.arInvoice.amountPaid,
+                        0
+                      )
+                      const cap = suggestedRebate ?? 0
+                      const withRebate = Math.max(Math.round((dueOutstanding - cap) * 100) / 100, 0)
+                      return (
+                        <tr key={line.arInvoice.id}>
+                          <td className="px-3 py-2 text-zinc-700">
+                            Payment {line.lineNumber} · due {fmtDate(line.arInvoice.dueDate)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-zinc-500">
+                            {fmtMoney(dueOutstanding)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-emerald-600">
+                            {cap > 0 ? `−${fmtMoney(cap)}` : fmtMoney(0)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-zinc-900">
+                            {fmtMoney(withRebate)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!single && rebateCapSum > 0 && (
+              <p className="text-[12px] text-zinc-400">
+                Rebate is about {((rebateCapSum / outstandingSum) * 100).toFixed(1)}% of the amount
+                due.
+              </p>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Amount received <span className="text-red-500">*</span>
+                  {single ? 'Amount received' : 'Total'} <span className="text-red-500">*</span>
                 </label>
                 <input
                   required
@@ -819,10 +949,13 @@ function CollectPaymentModal({
               </div>
             </div>
             {!isFullyPaid && wouldOverpay && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
+              <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                This exceeds the outstanding balance by {fmtMoney(totalApplied - outstanding)}. It
-                will still be recorded and flagged as an overpayment.
+                This exceeds the outstanding balance{single
+                  ? ''
+                  : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}. The
+                extra will automatically apply toward the next unpaid due on this schedule — or be
+                recorded as a flagged overpayment if there isn&apos;t one.
               </div>
             )}
 
@@ -839,13 +972,14 @@ function CollectPaymentModal({
                 className={fieldClass}
               />
               <p className="mt-1 text-[12px] text-zinc-400">
-                {suggestedRebate
-                  ? `Up to ${fmtMoney(suggestedRebate)} for this account.`
-                  : 'No rebate available on this due.'}
+                {rebateCap
+                  ? `Up to ${fmtMoney(rebateCap)} ${single ? 'for this account' : 'across the selected dues'}.`
+                  : `No rebate available on ${single ? 'this due' : 'these dues'}.`}
               </p>
               {rebateExceedsCap && (
                 <p className="mt-1 text-[12px] font-medium text-red-600">
-                  Rebate can&apos;t exceed {fmtMoney(suggestedRebate ?? 0)} for this account.
+                  Rebate can&apos;t exceed {fmtMoney(rebateCap)}{' '}
+                  {single ? 'for this account' : 'across the selected dues'}.
                 </p>
               )}
             </div>
@@ -865,15 +999,13 @@ function CollectPaymentModal({
               <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
               <select
                 value={selectedPaymentMethod?.id ?? ''}
-                onChange={(e) => {
-                  const opt = paymentMethods.find((m) => m.id === e.target.value)
+                onChange={(e) =>
                   setForm({
                     ...form,
                     paymentMethodConfigId: e.target.value,
-                    method: opt?.method ?? form.method,
                     paymentMethodOptionId: '',
                   })
-                }}
+                }
                 className={fieldClass}
               >
                 {paymentMethods.map((opt) => (
@@ -921,331 +1053,17 @@ function CollectPaymentModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Reference</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Reference {form.collectorId && <span className="text-red-500">*</span>}
+              </label>
               <input
+                required={!!form.collectorId}
                 value={form.reference}
                 onChange={(e) => setForm({ ...form, reference: e.target.value })}
                 placeholder="OR number"
                 className={fieldClass}
               />
-            </div>
-
-            {error && (
-              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || isFullyPaid || rebateExceedsCap}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? 'Collecting…' : 'Collect payment'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Shopee-style bulk/early-payment ("Pay Selected") — settles several of a
- * customer's own upcoming installment dues in one submit. Reference (the OR
- * number) is only required once a Collector is picked — that's the only time
- * an OR actually gets physically cut; a walk-in payment with no collector has
- * none to record. Per-line amounts are read-only here (same default formula
- * CollectPaymentModal uses: outstanding minus the suggested rebate) — a
- * cashier needing a custom partial amount on one due still uses the single
- * "Collect" flow for that line instead.
- */
-function BulkCollectPaymentModal({
-  lines,
-  customerName,
-  defaultBranchId,
-  onClose,
-  onCollected,
-}: {
-  lines: {
-    line: InstallmentScheduleLineWithInvoice
-    suggestedRebate: number | null
-  }[]
-  customerName?: string
-  defaultBranchId?: string
-  onClose: () => void
-  onCollected: () => Promise<void>
-}) {
-  const payableLines = lines.map(({ line, suggestedRebate }) => {
-    const outstanding = Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0)
-    const rebateAmount = suggestedRebate ?? 0
-    const amount = Math.max(Math.round((outstanding - rebateAmount) * 100) / 100, 0)
-    return { line, rebateAmount, amount }
-  })
-  const runningTotal = payableLines.reduce((sum, p) => sum + p.amount, 0)
-
-  const [paymentDate, setPaymentDate] = useState(todayIso())
-  const [reference, setReference] = useState('')
-  const [notes, setNotes] = useState('')
-  const [branchId, setBranchId] = useState('')
-  const [collectorId, setCollectorId] = useState('')
-  const [branchDefault, setBranchDefault] = useState<{ id: string; name: string } | null>(null)
-  const [collectors, setCollectors] = useState<{ id: string; name: string; stubNumber: string }[]>(
-    []
-  )
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [overpaidCount, setOverpaidCount] = useState<number | null>(null)
-
-  const paymentMethods = useCollectionsPaymentMethods(branchId)
-  // '' until the cashier actually picks one — defaults to Cash (same default
-  // this form always had) by falling through when nothing's picked yet, or
-  // the previously picked method isn't offered by the newly chosen branch.
-  // Derived at render instead of synced via an effect, so there's no
-  // setState-in-effect cascade for what's really just a display default.
-  const [paymentMethodConfigId, setPaymentMethodConfigId] = useState('')
-  const [paymentMethodOptionId, setPaymentMethodOptionId] = useState('')
-  const selectedPaymentMethod =
-    paymentMethods.find((m) => m.id === paymentMethodConfigId) ??
-    paymentMethods.find((m) => m.method === 'CASH') ??
-    paymentMethods[0]
-  const method = selectedPaymentMethod?.method ?? 'CASH'
-
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([getSessionOrNull(), getBranches()]).then(([session, branchesRes]) => {
-      if (cancelled) return
-      const targetId = session?.branchId || defaultBranchId
-      const match = (branchesRes.data ?? []).find((b) => b.id === targetId)
-      if (!match) return
-      setBranchDefault({ id: match.id, name: match.name })
-      setBranchId((current) => current || match.id)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [defaultBranchId])
-
-  useEffect(() => {
-    collectorsApi.list({ limit: 200, ...(branchId ? { branchId } : {}) }).then((res) => {
-      if (res.success && res.data) setCollectors(res.data.data)
-    })
-  }, [branchId])
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    setError(null)
-    const res = await ARInvoices.recordBulkPayment({
-      lines: payableLines.map((p) => ({
-        invoiceId: p.line.arInvoice.id,
-        amount: p.amount,
-        rebateAmount: p.rebateAmount,
-      })),
-      paymentDate,
-      method,
-      paymentMethodConfigId: selectedPaymentMethod?.configId,
-      paymentMethodOptionId: paymentMethodOptionId || undefined,
-      reference: reference || undefined,
-      notes: notes || undefined,
-      branchId: branchId || undefined,
-      collectorId: collectorId || undefined,
-    })
-    if (!res.success) {
-      setSubmitting(false)
-      setError(res.message || res.error || 'Failed to collect payment')
-      return
-    }
-    const overpaid = (res.data?.payments ?? []).filter((p) => p.overpayment).length
-    if (overpaid > 0) {
-      setSubmitting(false)
-      setOverpaidCount(overpaid)
-      return
-    }
-    // Stays "submitting" until the parent's refetch lands, same contract as
-    // CollectPaymentModal's onSubmit.
-    await onCollected()
-  }
-
-  if (overpaidCount != null) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-              <AlertTriangle className="h-6 w-6 text-amber-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-zinc-900">
-              {overpaidCount} payment{overpaidCount !== 1 ? 's' : ''} recorded as an overpayment
-            </h3>
-            <p className="text-sm text-zinc-600">
-              This batch was <span className="font-semibold">not rejected</span> — {overpaidCount}{' '}
-              of the {payableLines.length} payments exceeded what was owed. A manager can cancel any
-              specific payment from Accounting → AR Invoices if needed.
-            </p>
-            <button
-              onClick={onCollected}
-              className="mt-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800"
-            >
-              Got it
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prominent-purple-50">
-              <Banknote className="h-5 w-5 text-prominent-purple-700" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Pay Selected Dues</h2>
-              <p className="text-sm text-zinc-500">
-                {customerName ?? 'Customer'} · {payableLines.length} due
-                {payableLines.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form onSubmit={onSubmit} noValidate>
-          <div className="max-h-[70vh] space-y-4 overflow-y-auto px-6 py-5">
-            <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
-              {payableLines.map(({ line, amount }) => (
-                <li
-                  key={line.arInvoice.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]"
-                >
-                  <span className="text-zinc-700">
-                    Payment {line.lineNumber} · due {fmtDate(line.arInvoice.dueDate)}
-                  </span>
-                  <span className="font-medium text-zinc-900">{fmtMoney(amount)}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-3">
-              <span className="text-[13px] text-zinc-500">Total</span>
-              <span className="text-base font-semibold text-zinc-900">
-                {fmtMoney(runningTotal)}
-              </span>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Payment date <span className="text-red-500">*</span>
-              </label>
-              <input
-                required
-                type="date"
-                max={todayIso()}
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
-                className={fieldClass}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
-              <BranchSearchCombobox
-                key={branchDefault?.id ?? 'no-default'}
-                value={branchId}
-                onChange={(id) => {
-                  setBranchId(id)
-                  setCollectorId('')
-                }}
-                initialLabel={branchDefault?.name}
-                placeholder="Search branch…"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Method</label>
-              <select
-                value={selectedPaymentMethod?.id ?? ''}
-                onChange={(e) => {
-                  setPaymentMethodConfigId(e.target.value)
-                  setPaymentMethodOptionId('')
-                }}
-                className={fieldClass}
-              >
-                {paymentMethods.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedPaymentMethod && selectedPaymentMethod.options.length > 0 && (
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  {selectedPaymentMethod.label}
-                </label>
-                <select
-                  value={paymentMethodOptionId}
-                  onChange={(e) => setPaymentMethodOptionId(e.target.value)}
-                  className={fieldClass}
-                >
-                  <option value="">Select {selectedPaymentMethod.label.toLowerCase()}…</option>
-                  {selectedPaymentMethod.options.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Collector</label>
-              <select
-                value={collectorId}
-                onChange={(e) => setCollectorId(e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">Walk-in / none</option>
-                {collectors.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.stubNumber} — {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Reference {collectorId && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                required={!!collectorId}
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-                placeholder="OR number"
-                className={fieldClass}
-              />
-              {collectorId ? (
+              {form.collectorId ? (
                 <p className="mt-1 text-[12px] text-zinc-400">
                   Required — the OR the collector wrote out for this payment.
                 </p>
@@ -1259,8 +1077,8 @@ function BulkCollectPaymentModal({
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
               <input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 className={fieldClass}
               />
             </div>
@@ -1281,11 +1099,20 @@ function BulkCollectPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || (!!collectorId && !reference.trim())}
+              disabled={
+                submitting ||
+                isFullyPaid ||
+                rebateExceedsCap ||
+                (!!form.collectorId && !form.reference.trim())
+              }
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? 'Collecting…' : `Pay ${fmtMoney(runningTotal)}`}
+              {submitting
+                ? 'Collecting…'
+                : single
+                  ? 'Collect payment'
+                  : `Pay ${fmtMoney(Number(form.amount) || 0)}`}
             </button>
           </div>
         </form>

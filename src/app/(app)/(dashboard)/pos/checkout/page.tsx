@@ -113,6 +113,7 @@ import type {
   LoyaltyAccount,
   LoyaltyProgram,
   PosTransaction,
+  PosTransactionInvoice,
   SyncTransactionItem,
   FinancingTerm,
   TpfProvider,
@@ -622,6 +623,7 @@ export default function CheckoutPage() {
       installmentProvider?: InstallmentProvider | null
       installmentPreview?: InstallmentPreview | null
     }[]
+    invoices?: PosTransactionInvoice[]
   } | null>(null)
 
   // Pending manager approval (serial-tracked sale awaiting Release Form review)
@@ -2412,6 +2414,7 @@ export default function CheckoutPage() {
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         loyaltyEarned,
+        invoices: txData?.invoices ?? [],
         lineOutcomes: cart.map((l) => ({
           lineId: l.lineId,
           itemName: l.itemName,
@@ -5308,6 +5311,7 @@ function SuccessScreen({
       installmentProvider?: InstallmentProvider | null
       installmentPreview?: InstallmentPreview | null
     }[]
+    invoices?: PosTransactionInvoice[]
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -5320,6 +5324,7 @@ function SuccessScreen({
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
 }) {
+  const { branchName } = usePosBranchContext()
   const [branding, setBranding] = useState<{
     receiptLogoUrl: string | null
     receiptHeaderText: string | null
@@ -5365,13 +5370,31 @@ function SuccessScreen({
 
   return (
     <div className="flex min-h-full items-start justify-center bg-zinc-50 p-6">
-      <div className="flex w-full max-w-4xl flex-col items-stretch gap-6 lg:flex-row lg:items-start">
-        {/* ── Left: Sale info + actions ─────────────────────────────────── */}
-        <div
-          className={`flex w-full flex-col gap-4 rounded-2xl border bg-white p-8 shadow-sm lg:w-96 lg:shrink-0 ${borderColor}`}
-        >
+      <div className="w-full max-w-sm">
+        <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${borderColor}`}>
+          {/* Branding header */}
+          <div className="flex flex-col items-center gap-2 border-b border-gray-100 px-6 py-5">
+            {branding?.receiptLogoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={branding.receiptLogoUrl}
+                alt="logo"
+                className="h-10 w-auto max-w-28 object-contain"
+              />
+            )}
+            {headerLines.length > 0 && (
+              <div className="flex flex-col items-center gap-0.5">
+                {headerLines.map((line, i) => (
+                  <p key={i} className="text-xs font-medium text-gray-700">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Icon + title */}
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-3 px-8 pb-4 pt-6">
             <div className={`flex h-14 w-14 items-center justify-center rounded-full ${iconBg}`}>
               {success.offlineBuffered ? (
                 <WifiOff size={28} className="text-amber-600" />
@@ -5406,14 +5429,12 @@ function SuccessScreen({
                   {installmentOutcomes.length > 0 &&
                     `${installmentOutcomes.length} item${installmentOutcomes.length !== 1 ? 's' : ''} on installment`}
                 </p>
-              ) : (
-                <p className="mt-1 font-mono text-xs text-gray-400">{success.transactionNumber}</p>
-              )}
+              ) : null}
             </div>
           </div>
 
           {installmentOutcomes.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 px-6 pb-4">
               {installmentOutcomes.map((o) => (
                 <div
                   key={o.lineId}
@@ -5452,8 +5473,109 @@ function SuccessScreen({
             </div>
           )}
 
+          {/* Sale details */}
+          <div className="space-y-1 border-t border-dashed border-gray-200 px-6 py-3">
+            {branchName && (
+              <div className="flex justify-between text-[11px] text-gray-500">
+                <span>Branch</span>
+                <span className="text-right font-medium text-gray-700">{branchName}</span>
+              </div>
+            )}
+            {selectedCustomer && (
+              <div className="flex justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">Customer</span>
+                <span className="text-right font-medium text-gray-700">
+                  {customerDisplayName(selectedCustomer)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between text-[11px] text-gray-500">
+              <span>Date</span>
+              <span>{receiptDate}</span>
+            </div>
+            <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+              <span className="shrink-0">TXN #</span>
+              <span className="break-all text-right font-mono text-[10px]">
+                {success.transactionNumber}
+              </span>
+            </div>
+            {/* Installment terms bill one invoice per due date, all created
+                at sale time — only the first (the plan's reference number)
+                belongs on the receipt, not every future month's. */}
+            {(success.invoices ?? [])
+              .filter((inv) => inv.lineNumber === null || inv.lineNumber === 1)
+              .map((inv) => (
+                <div
+                  key={inv.id}
+                  className="flex items-start justify-between gap-2 text-[11px] text-gray-500"
+                >
+                  <span className="shrink-0">Invoice #</span>
+                  <span className="break-all text-right font-mono text-[10px]">
+                    {inv.invoiceNumber}
+                  </span>
+                </div>
+              ))}
+          </div>
+
+          {/* Items */}
+          <div className="space-y-2.5 border-t border-dashed border-gray-200 px-6 py-3">
+            {cart.map((line) => {
+              const displayUnitPrice = displayUnitPriceWithTax(
+                line,
+                activeTaxRate,
+                inclusivePricing
+              )
+              const displayLineTotal = displayUnitPrice * line.quantity
+              return (
+                <div key={line.lineId} className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-medium text-gray-800">
+                      {line.itemName}
+                    </p>
+                    {line.serialNumberLabel && (
+                      <p className="truncate text-[10px] text-gray-400">
+                        SN: {line.serialNumberLabel}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-gray-400">
+                      {line.quantity} × {fmt(displayUnitPrice)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-[11px] font-semibold text-gray-900">
+                    {fmt(displayLineTotal)}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Payments */}
+          <div className="space-y-1.5 border-t border-dashed border-gray-200 px-6 py-3">
+            {payments
+              .filter((p) => p.amount > 0)
+              .map((p, i) => (
+                <div key={i} className="text-[11px] text-gray-500">
+                  <div className="flex justify-between">
+                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>{fmt(p.amount)}</span>
+                  </div>
+                  {p.referenceNumber && (
+                    <div className="text-right text-[10px] text-gray-400">
+                      CR# {p.referenceNumber}
+                    </div>
+                  )}
+                </div>
+              ))}
+            {promoDiscount > 0 && (
+              <div className="flex justify-between text-[11px] text-green-600">
+                <span>Discount</span>
+                <span>−{fmt(promoDiscount)}</span>
+              </div>
+            )}
+          </div>
+
           {/* Total charged */}
-          <div className="rounded-xl bg-gray-50 px-6 py-4 text-center">
+          <div className="border-t border-gray-100 bg-gray-50 px-6 py-4 text-center">
             <p className="text-sm text-gray-500">Total Charged</p>
             <p className="text-3xl font-bold text-gray-900">{fmt(totalAmount)}</p>
             {success.change > 0 && (
@@ -5464,125 +5586,27 @@ function SuccessScreen({
           </div>
 
           {success.journalEntryId && (
-            <p className="text-center font-mono text-[10px] text-gray-400">
+            <p className="px-6 pt-3 text-center font-mono text-[10px] text-gray-400">
               JE: {success.journalEntryId}
             </p>
           )}
           {success.loyaltyEarned && selectedCustomer && (
-            <p className="text-center text-xs font-medium text-purple-500">
+            <p className="px-6 pt-2 text-center text-xs font-medium text-purple-500">
               Points earned for {customerDisplayName(selectedCustomer)}
             </p>
           )}
 
-          <button
-            onClick={onReset}
-            className="w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
-          >
-            New Sale
-          </button>
+          <p className="px-6 py-4 text-center text-[10px] text-gray-400">
+            Thank you for your purchase!
+          </p>
         </div>
 
-        {/* ── Right: Receipt preview ────────────────────────────────────── */}
-        <div className="w-full lg:w-72 lg:shrink-0">
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            {/* Branding header */}
-            <div className="flex flex-col items-center gap-2 border-b border-gray-100 px-6 py-6">
-              {branding?.receiptLogoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={branding.receiptLogoUrl}
-                  alt="logo"
-                  className="h-12 w-auto max-w-32 object-contain"
-                />
-              )}
-              {headerLines.length > 0 ? (
-                <div className="flex flex-col items-center gap-0.5">
-                  {headerLines.map((line, i) => (
-                    <p key={i} className="text-xs font-medium text-gray-700">
-                      {line}
-                    </p>
-                  ))}
-                </div>
-              ) : !branding?.receiptLogoUrl ? (
-                <p className="text-sm font-semibold text-gray-700">Receipt</p>
-              ) : null}
-            </div>
-
-            {/* Date + TXN */}
-            <div className="space-y-1 border-b border-dashed border-gray-200 px-5 py-3">
-              <div className="flex justify-between text-[11px] text-gray-500">
-                <span>Date</span>
-                <span>{receiptDate}</span>
-              </div>
-              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">TXN #</span>
-                <span className="break-all text-right font-mono text-[10px]">
-                  {success.transactionNumber}
-                </span>
-              </div>
-            </div>
-
-            {/* Items */}
-            <div className="space-y-2.5 border-b border-dashed border-gray-200 px-5 py-3">
-              {cart.map((line) => {
-                const displayUnitPrice = displayUnitPriceWithTax(
-                  line,
-                  activeTaxRate,
-                  inclusivePricing
-                )
-                const displayLineTotal = displayUnitPrice * line.quantity
-                return (
-                  <div key={line.lineId} className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[11px] font-medium text-gray-800">
-                        {line.itemName}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        {line.quantity} × {fmt(displayUnitPrice)}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-[11px] font-semibold text-gray-900">
-                      {fmt(displayLineTotal)}
-                    </p>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Totals + payments */}
-            <div className="space-y-1 border-b border-gray-100 px-5 py-3">
-              {payments
-                .filter((p) => p.amount > 0)
-                .map((p, i) => (
-                  <div key={i} className="flex justify-between text-[11px] text-gray-500">
-                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
-                    <span>{fmt(p.amount)}</span>
-                  </div>
-                ))}
-              {promoDiscount > 0 && (
-                <div className="flex justify-between text-[11px] text-green-600">
-                  <span>Discount</span>
-                  <span>−{fmt(promoDiscount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between border-t border-gray-100 pt-1.5 text-sm font-bold text-gray-900">
-                <span>Total</span>
-                <span>{fmt(totalAmount)}</span>
-              </div>
-              {success.change > 0 && (
-                <div className="flex justify-between text-[11px] font-medium text-green-600">
-                  <span>Change</span>
-                  <span>{fmt(success.change)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 py-4 text-center">
-              <p className="text-[10px] text-gray-400">Thank you for your purchase!</p>
-            </div>
-          </div>
-        </div>
+        <button
+          onClick={onReset}
+          className="mt-4 w-full rounded-xl bg-purple-700 px-8 py-3 text-sm font-bold text-white hover:bg-purple-800"
+        >
+          New Sale
+        </button>
       </div>
     </div>
   )

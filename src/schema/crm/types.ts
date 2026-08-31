@@ -448,6 +448,31 @@ export interface InstallmentLedger {
   rows: InstallmentLedgerRow[]
 }
 
+// Unified per-customer ledger — merges installment, charge, and cash sales
+// into one chronological table instead of separate per-source views. Rows
+// use the same shape as InstallmentLedgerRow; totals summarize across all
+// sources instead of one installment account's specific paper-form fields.
+export interface CustomerLedger {
+  customer: {
+    id: string
+    customerCode: string
+    name: string
+    email: string | null
+    phone: string | null
+  }
+  // What was bought, per purchase — shown above the ledger table (like the
+  // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
+  // row rather than folded into that row's description text.
+  items: { date: string; ref: string; itemLabel: string }[]
+  rows: InstallmentLedgerRow[]
+  totals: {
+    totalBilled: number
+    totalPaid: number
+    totalRebates: number
+    outstanding: number
+  }
+}
+
 // AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE" sheet,
 // grouped Branch -> Collector. A row is either an installment account
 // (installment-specific fields populated) or a standalone AR invoice with no

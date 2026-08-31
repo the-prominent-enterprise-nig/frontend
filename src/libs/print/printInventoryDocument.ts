@@ -1,4 +1,4 @@
-import type { InstallmentLedger, AgingReportResponse } from '@/src/schema/crm/types'
+import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -668,6 +668,16 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
     )
     .join('')
+  const ledgerTotalRow =
+    rows.length > 0
+      ? `<tr class="total-row">
+        <td colspan="4"><strong>Total</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td></td>
+        <td></td>
+      </tr>`
+      : ''
 
   return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
@@ -689,6 +699,7 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
     table.ledger { width: 100%; border-collapse: collapse; margin-top: 2px; }
     table.ledger th, table.ledger td { border: 1px solid #ccc; padding: 3px 6px; font-size: 10.5px; line-height: 1.2; }
     table.ledger th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    tr.total-row td { border-top: 2px solid #333; background: #f5f5f5; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
     @media print { body { padding: 0; } button { display: none; } }
@@ -783,6 +794,7 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
         </tr>
       </thead>
       <tbody>${ledgerRows || '<tr><td colspan="8" style="text-align:center;color:#999">No ledger activity yet.</td></tr>'}</tbody>
+      <tfoot>${ledgerTotalRow}</tfoot>
     </table>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
@@ -793,6 +805,139 @@ export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildCustomerLedgerHtml(ledger))
+  win.document.close()
+}
+
+/**
+ * Unified per-customer ledger print (CustomerLedgerView.tsx) — same
+ * Date/Ref/Inst./Description/Debit/Credit/Due/Outstanding row table and
+ * total-row footer as buildCustomerLedgerHtml() above, but a simpler header:
+ * this ledger merges installment, charge, and cash sales for one customer,
+ * so there's no single sale/item/agent/financing-scheme to show in the
+ * paper-form-style grid — those fields don't apply across sources. See
+ * CustomerService.getCustomerLedger()'s doc comment for what's merged.
+ */
+export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
+  const { customer, items, rows, totals } = ledger
+
+  const fmt = (n: number | string) =>
+    Number(n).toLocaleString('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+    })
+  const fmtDate = (v: string) => new Date(v).toLocaleDateString('en-PH')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const ledgerRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${fmtDate(r.date)}</td>
+        <td class="mono">${esc(r.ref)}</td>
+        <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
+        <td>${esc(r.description)}</td>
+        <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
+        <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
+        <td class="right">${fmt(r.due)}</td>
+        <td class="right"><strong>${fmt(r.outstanding)}</strong></td>
+      </tr>`
+    )
+    .join('')
+  const ledgerTotalRow =
+    rows.length > 0
+      ? `<tr class="total-row">
+        <td colspan="4"><strong>Total</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td></td>
+        <td></td>
+      </tr>`
+      : ''
+  const itemRows = items
+    .map(
+      (item) => `<tr>
+        <td>${fmtDate(item.date)}</td>
+        <td class="mono">${esc(item.ref)}</td>
+        <td>${esc(item.itemLabel)}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(customer.customerCode)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 12px; font-weight: 700; }
+    .customer-info { margin-bottom: 8px; }
+    .customer-info p { margin: 1px 0; }
+    .totals { display: flex; width: 100%; margin: 4px 0 8px; }
+    .totals-col { flex: 1; }
+    .totals-line { margin: 1px 0; font-style: italic; font-size: 10.5px; }
+    .totals-label { display: inline-block; min-width: 92px; }
+    .totals-value { font-style: normal; font-weight: 700; }
+    h2 { font-size: 11px; font-weight: 700; margin: 8px 0 3px; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+    table.items, table.ledger { width: 100%; border-collapse: collapse; margin-top: 2px; }
+    table.items th, table.items td, table.ledger th, table.ledger td { border: 1px solid #ccc; padding: 3px 6px; font-size: 10.5px; line-height: 1.2; }
+    table.items th, table.ledger th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    tr.total-row td { border-top: 2px solid #333; background: #f5f5f5; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">Customer Ledger</span>
+    </div>
+
+    <div class="customer-info">
+      <p><strong>${esc(customer.name)}</strong> (${esc(customer.customerCode)})</p>
+      <p>${esc(customer.email ?? '—')} · ${esc(customer.phone ?? '—')}</p>
+    </div>
+
+    <div class="totals">
+      <div class="totals-col">${totalLineHtml('Total Billed', fmt(totals.totalBilled))}</div>
+      <div class="totals-col">${totalLineHtml('Total Paid', fmt(totals.totalPaid))}</div>
+      <div class="totals-col">${totalLineHtml('Total Rebates', fmt(totals.totalRebates))}</div>
+      <div class="totals-col">${totalLineHtml('Outstanding', fmt(totals.outstanding))}</div>
+    </div>
+
+    ${
+      items.length > 0
+        ? `<h2>Items Purchased</h2>
+    <table class="items">
+      <thead><tr><th>Date</th><th>Ref</th><th>Item</th></tr></thead>
+      <tbody>${itemRows}</tbody>
+    </table>`
+        : ''
+    }
+
+    <h2>Ledger</h2>
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>${ledgerRows || '<tr><td colspan="8" style="text-align:center;color:#999">No ledger activity yet.</td></tr>'}</tbody>
+      <tfoot>${ledgerTotalRow}</tfoot>
+    </table>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+function totalLineHtml(label: string, value: string): string {
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  return `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
+}
+
+export function printUnifiedCustomerLedgerDocument(ledger: CustomerLedger): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildUnifiedCustomerLedgerHtml(ledger))
   win.document.close()
 }
 

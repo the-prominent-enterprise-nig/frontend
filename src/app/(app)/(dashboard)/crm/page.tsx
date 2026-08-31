@@ -11,7 +11,6 @@ import {
   ArrowUpRight,
   ChevronRight,
   Layers,
-  Funnel,
   MessageSquare,
   Phone,
   Mail,
@@ -540,13 +539,6 @@ export default function CrmDashboardPage() {
               <UserPlus className="h-3.5 w-3.5 text-gray-500" />
               New Lead
             </Link>
-            <Link
-              href="/crm/pipeline"
-              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <Funnel className="h-3.5 w-3.5 text-gray-500" />
-              Pipeline
-            </Link>
             <button
               onClick={load}
               disabled={spinning}
@@ -572,7 +564,7 @@ export default function CrmDashboardPage() {
               sub="Active stages only"
               icon={TrendingUp}
               iconBg="bg-emerald-500"
-              href="/crm/pipeline"
+              href="/crm/leads"
               loading={loading}
             />
             <KpiCard
@@ -581,7 +573,7 @@ export default function CrmDashboardPage() {
               sub="Closed won deals"
               icon={Award}
               iconBg="bg-violet-500"
-              href="/crm/pipeline"
+              href="/crm/leads"
               loading={loading}
             />
             <KpiCard
@@ -735,7 +727,7 @@ export default function CrmDashboardPage() {
                 <p className="text-xs text-gray-400">Lead count and value per stage</p>
               </div>
               <Link
-                href="/crm/pipeline"
+                href="/crm/leads"
                 className="flex items-center gap-0.5 text-xs text-orange-600 hover:text-orange-700"
               >
                 View <ChevronRight className="h-3 w-3" />
@@ -1072,7 +1064,6 @@ export default function CrmDashboardPage() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
             {(
               [
-                { label: 'Pipeline', href: '/crm/pipeline', icon: Funnel },
                 { label: 'Leads', href: '/crm/leads', icon: Users },
                 { label: 'Customers', href: '/crm/customers', icon: Contact },
                 { label: 'Reminders', href: '/crm/reminders', icon: BellRing },
