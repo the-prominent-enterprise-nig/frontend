@@ -24,6 +24,8 @@ import type {
   DuplicateCheckResult,
   DuplicatePair,
   CollectionsCalendarResponse,
+  CustomerSourceChannel,
+  InteractionType,
   InstallmentLedger,
   CustomerLedger,
   AgingReportResponse,
@@ -95,6 +97,14 @@ export const leadsApi = {
     api.get<PipelineColumn[]>('/crm/leads/pipeline', tenantId ? { tenantId } : undefined, {
       tags: ['crm:pipeline'],
     }),
+  // Scenario 29 (CRM dashboard) — real server-side status counts/win rate,
+  // not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ active: number; won: number; lost: number; archived: number; winRate: number }>(
+      '/crm/leads/status-summary',
+      undefined,
+      { tags: ['crm:leads'] }
+    ),
   get: (id: string) =>
     api.get<Lead & { stage: PipelineStage; interactions: Interaction[]; reminders: Reminder[] }>(
       `/crm/leads/${id}`
@@ -126,6 +136,22 @@ export const customersApi = {
     api.get<PaginatedResponse<Customer>>('/crm/customers', filters, {
       tags: ['crm:customers'],
     }),
+  // Scenario 29 (CRM dashboard) — real server-side counts per source
+  // channel, not derived from the capped `list()` fetch.
+  sourceSummary: () =>
+    api.get<{ sourceChannel: CustomerSourceChannel; count: number }[]>(
+      '/crm/customers/source-summary',
+      undefined,
+      { tags: ['crm:customers'] }
+    ),
+  // Scenario 29 (CRM dashboard) — real server-side active/inactive/blocked
+  // counts, not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ active: number; inactive: number; blocked: number }>(
+      '/crm/customers/status-summary',
+      undefined,
+      { tags: ['crm:customers'] }
+    ),
   get: (id: string) => api.get<Customer>(`/crm/customers/${id}`),
   get360: (id: string) =>
     api.get<
@@ -176,6 +202,12 @@ export const interactionsApi = {
     api.get<PaginatedResponse<Interaction>>('/crm/interactions', filters),
   create: (body: CreateInteractionInput) => api.post<Interaction>('/crm/interactions', body),
   remove: (id: string) => api.delete(`/crm/interactions/${id}`),
+  // Scenario 29 (CRM dashboard) follow-up — real server-side counts per
+  // interaction type, not derived from the capped `list()` fetch.
+  typeSummary: () =>
+    api.get<{ interactionType: InteractionType; count: number }[]>(
+      '/crm/interactions/type-summary'
+    ),
 }
 
 // ─── Reminders ──────────────────────────────────────────────
@@ -195,6 +227,12 @@ export const remindersApi = {
   list: (filters?: ReminderFilters) =>
     api.get<PaginatedResponse<Reminder>>('/crm/reminders', filters),
   mine: (userId: string) => api.get<Reminder[]>('/crm/reminders/mine', { userId }),
+  // Scenario 29 follow-up — real server-side Total Pending/Overdue/Due
+  // Today counts, not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ totalPending: number; overdue: number; dueToday: number }>(
+      '/crm/reminders/status-summary'
+    ),
   create: (body: CreateReminderInput) => api.post<Reminder>('/crm/reminders', body),
   update: (id: string, body: UpdateReminderInput) =>
     api.patch<Reminder>(`/crm/reminders/${id}`, body),
