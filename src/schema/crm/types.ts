@@ -402,6 +402,11 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   ppd: number | string
   openingBalance: number | string
   dpBalance: number | string
+  nextDueDate?: string | null
+  // Carried-forward partial payment toward the next not-yet-fully-covered
+  // due — a lump sum can settle several months at once (recordPayment()),
+  // so anything under one monthlyInstallment sits here until topped up.
+  partialPaymentOnNextDue: number | string
   lastOrNumber?: string | null
   lastOrDate?: string | null
   lastOrAmount?: number | string | null
