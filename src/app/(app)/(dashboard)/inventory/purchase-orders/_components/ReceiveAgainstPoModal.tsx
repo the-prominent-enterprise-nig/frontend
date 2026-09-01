@@ -601,9 +601,10 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                   render={({ field: f }) => (
                                     <input
                                       value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                      onChange={(e) =>
-                                        f.onChange(e.target.valueAsNumber || undefined)
-                                      }
+                                      onChange={(e) => {
+                                        const next = e.target.valueAsNumber
+                                        f.onChange(Number.isNaN(next) ? undefined : next)
+                                      }}
                                       onBlur={f.onBlur}
                                       type="number"
                                       min="0"
