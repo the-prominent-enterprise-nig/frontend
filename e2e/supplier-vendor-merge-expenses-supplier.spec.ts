@@ -3,16 +3,24 @@ import { gotoReady } from './utils'
 
 // Scenario 33 (Supplier/Vendor merge) Part 3 — Business Expenses previously
 // had a "Vendor" selector (BusinessExpense.vendorId); repointed to Supplier.
-// Verifies the "New Expense" form now has a Supplier field instead, and
-// that an expense created through it shows the supplier as its payee in the
-// list. Self-cleaning: deletes the DRAFT expense it creates.
+// Verifies the "New Expense" form has a Supplier field, and that an expense
+// created through it shows the supplier as its payee in the list.
+// Self-cleaning: deletes the DRAFT expense it creates.
 //
-// The Supplier field is targeted positionally (2nd <select> in the form,
-// after Category) rather than via getByLabel: this form's Field component
-// wraps both the label text AND the <select> in one <label>, so the
-// select's computed accessible name is "Supplier" plus its own option
-// text — getByLabel(..., { exact: true }) never matches, and a non-exact
-// match collides with "Payee (when no supplier)".
+// Scenario 40 Gap 1 (2026-08-31) — the form now gates on a Payee type
+// (Customer/Supplier/Other) before showing Category/Supplier at all, so this
+// test now clicks "Supplier" first.
+//
+// Scenario 40 (developer feedback, 2026-08-31) — the form moved from a
+// modal to its own page (/accounting/expenses/new), per the meeting
+// reference example. "New Expense"/"Cancel" are links now, and Save
+// navigates back to the list instead of closing an overlay.
+//
+// Scenario 40 Part 6 (2026-08-31) — Category is now a per-line field inside
+// an "Add line" table (aria-label="Category"), and Amount replaced the old
+// header-level "Subtotal *" (aria-label="Amount"). The Supplier select now
+// carries aria-label="Supplier" too, so both are targeted directly instead
+// of positionally.
 test.describe('Accounting — Expenses supplier link', () => {
   test('creates an expense with a linked supplier and shows it as the payee', async ({ page }) => {
     await gotoReady(page, '/accounting/expenses')
@@ -22,12 +30,15 @@ test.describe('Accounting — Expenses supplier link', () => {
       await page.locator('tbody tr td:first-child').allTextContents()
     )
 
-    await page.getByRole('button', { name: 'New Expense' }).click()
+    await page.getByRole('link', { name: 'New Expense' }).click()
+    await page.waitForURL('**/accounting/expenses/new')
     await expect(page.getByRole('heading', { name: 'New Expense' })).toBeVisible({
       timeout: 10_000,
     })
 
-    const categorySelect = page.getByLabel('Category (expense account) *')
+    await page.getByRole('button', { name: 'Supplier', exact: true }).click()
+
+    const categorySelect = page.getByLabel('Category', { exact: true })
     await categorySelect
       .locator('option')
       .nth(1)
@@ -35,9 +46,7 @@ test.describe('Accounting — Expenses supplier link', () => {
       .catch(() => {})
     await categorySelect.selectOption({ index: 1 })
 
-    // 2nd <select> in the form: Category, Supplier, Payment Method in that
-    // order (see comment above on why this isn't getByLabel('Supplier')).
-    const supplierSelect = page.locator('form select').nth(1)
+    const supplierSelect = page.getByLabel('Supplier', { exact: true })
     await supplierSelect
       .locator('option')
       .nth(1)
@@ -48,13 +57,10 @@ test.describe('Accounting — Expenses supplier link', () => {
     await supplierSelect.selectOption({ index: 1 })
     const supplierLabel = (await supplierSelect.locator('option').nth(1).textContent())?.trim()
 
-    const subtotalInput = page.getByLabel('Subtotal *')
-    await subtotalInput.fill('250')
+    await page.getByLabel('Amount', { exact: true }).fill('250')
 
     await page.getByRole('button', { name: 'Save' }).click()
-    await expect(page.getByRole('heading', { name: 'New Expense' })).toHaveCount(0, {
-      timeout: 10_000,
-    })
+    await page.waitForURL('**/accounting/expenses', { timeout: 10_000 })
 
     await expect(page.locator('tbody')).not.toContainText('Loading...', { timeout: 10_000 })
     await expect

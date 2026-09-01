@@ -58,6 +58,10 @@ function renderApBillBody(doc: PrintDocumentEnvelope): string {
     ${purchaseOrder ? `<div><p class="label">PO Reference</p><p>${purchaseOrder.code ?? '—'}</p></div>` : ''}
     ${siNumbers.length ? `<div><p class="label">Supplier Invoice #</p><p>${siNumbers.join(', ')}</p></div>` : ''}
     ${drNumbers.length ? `<div><p class="label">Delivery Receipt #</p><p>${drNumbers.join(', ')}</p></div>` : ''}
+    ${bill.supplierInvoiceReferenceNo ? `<div><p class="label">Supplier Invoice Reference No.</p><p>${bill.supplierInvoiceReferenceNo}</p></div>` : ''}
+    ${bill.sourceOfPayment ? `<div><p class="label">Source of Payment</p><p>${bill.sourceOfPayment}</p></div>` : ''}
+    ${bill.referenceNumber ? `<div><p class="label">Reference Number</p><p>${bill.referenceNumber}</p></div>` : ''}
+    ${bill.serialNumber ? `<div><p class="label">Serial Number</p><p>${bill.serialNumber}</p></div>` : ''}
   </div>
   ${
     rrRows
@@ -69,7 +73,8 @@ function renderApBillBody(doc: PrintDocumentEnvelope): string {
   <h2>Amount</h2>
   <table><tbody>
     <tr><td>Subtotal</td><td style="text-align:right">${fmt(Number(bill.subtotal ?? 0))}</td></tr>
-    <tr><td>Tax</td><td style="text-align:right">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
+    <tr><td>Input Tax (VAT)</td><td style="text-align:right">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
+    ${Number(bill.withholdingAmount ?? 0) > 0 ? `<tr><td>Withholding Tax</td><td style="text-align:right">${fmt(Number(bill.withholdingAmount ?? 0))}</td></tr>` : ''}
     <tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${fmt(totalAmount)}</strong></td></tr>
     <tr><td>Paid</td><td style="text-align:right">${fmt(amountPaid)}</td></tr>
     <tr><td><strong>Outstanding</strong></td><td style="text-align:right"><strong>${fmt(outstanding)}</strong></td></tr>
@@ -129,7 +134,7 @@ export default function APBillDetail({ id }: { id: string }) {
           href="/accounting/ap-bills"
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to AP Bills
+          <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
         </Link>
         <p className="text-red-600">{error ?? 'Not found'}</p>
       </div>
@@ -169,6 +174,11 @@ export default function APBillDetail({ id }: { id: string }) {
             {siNumbers.length > 0 && (
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                 SI: {siNumbers.join(', ')}
+              </span>
+            )}
+            {bill.supplierInvoiceReferenceNo && (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                Invoice Ref: {bill.supplierInvoiceReferenceNo}
               </span>
             )}
             <span
@@ -212,16 +222,53 @@ export default function APBillDetail({ id }: { id: string }) {
             <span className="text-left font-medium tabular-nums text-gray-800">
               {fmtMoney(bill.subtotal)}
             </span>
-            <span className="text-gray-500">Tax</span>
+            <span className="text-gray-500">Input Tax (VAT)</span>
             <span className="text-left font-medium tabular-nums text-gray-800">
               {fmtMoney(bill.taxAmount)}
             </span>
+            {(bill.withholdingAmount ?? 0) > 0 && (
+              <>
+                <span className="text-gray-500">Withholding Tax</span>
+                <span className="text-left font-medium tabular-nums text-gray-800">
+                  {fmtMoney(bill.withholdingAmount ?? 0)}
+                </span>
+              </>
+            )}
             <span className="border-t border-gray-100 pt-1.5 font-semibold text-gray-600">
               Total
             </span>
             <span className="border-t border-gray-100 pt-1.5 text-left font-semibold tabular-nums text-gray-900">
               {fmtMoney(bill.totalAmount)}
             </span>
+            {(bill.sourceOfPayment || bill.referenceNumber || bill.serialNumber) && (
+              <>
+                <span className="col-span-2 mt-1 border-t border-gray-100 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  How this bill is paid
+                </span>
+                {bill.sourceOfPayment && (
+                  <>
+                    <span className="text-gray-500">Source of Payment</span>
+                    <span className="text-left font-medium text-gray-800">
+                      {bill.sourceOfPayment}
+                    </span>
+                  </>
+                )}
+                {bill.referenceNumber && (
+                  <>
+                    <span className="text-gray-500">Reference Number</span>
+                    <span className="text-left font-medium text-gray-800">
+                      {bill.referenceNumber}
+                    </span>
+                  </>
+                )}
+                {bill.serialNumber && (
+                  <>
+                    <span className="text-gray-500">Serial Number</span>
+                    <span className="text-left font-medium text-gray-800">{bill.serialNumber}</span>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
         <button
@@ -323,6 +370,13 @@ export default function APBillDetail({ id }: { id: string }) {
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Payment history</h2>
+        {(bill.withholdingAmount ?? 0) > 0 && (
+          <p className="mb-2 text-[13px] text-gray-500">
+            Withholding tax of{' '}
+            <span className="font-semibold">{fmtMoney(bill.withholdingAmount ?? 0)}</span> was
+            withheld and posted when this bill was received.
+          </p>
+        )}
         {(!bill.payments || bill.payments.length === 0) && (
           <p className="py-4 text-center text-[13px] text-gray-400">No payments recorded yet.</p>
         )}

@@ -31,11 +31,6 @@ export const ACCOUNTING_PERMISSIONS = {
   DISBURSEMENT_UPDATE: 'accounting:disbursement:update',
   DISBURSEMENT_DELETE: 'accounting:disbursement:delete',
 
-  LIQUIDATION_READ: 'accounting:liquidation:read',
-  LIQUIDATION_CREATE: 'accounting:liquidation:create',
-  LIQUIDATION_UPDATE: 'accounting:liquidation:update',
-  LIQUIDATION_DELETE: 'accounting:liquidation:delete',
-
   EXPENSE_READ: 'accounting:expense:read',
   EXPENSE_CREATE: 'accounting:expense:create',
   EXPENSE_UPDATE: 'accounting:expense:update',
@@ -94,6 +89,10 @@ export const ACCOUNTING_PERMISSIONS = {
   BANK_ACCOUNTS_DELETE: 'accounting:bank-accounts:delete',
   BANK_ACCOUNTS_RECONCILE: 'accounting:bank-accounts:reconcile',
   BANK_ACCOUNTS_ADJUST: 'accounting:bank-accounts:adjust',
+  BANK_ACCOUNTS_TRANSFER: 'accounting:bank-accounts:transfer',
+
+  EMPLOYEE_APPLIANCE_LOAN_READ: 'accounting:employee-appliance-loan:read',
+  EMPLOYEE_APPLIANCE_LOAN_CREATE: 'accounting:employee-appliance-loan:create',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -176,10 +175,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:disbursement:create': 'Create disbursements',
   'accounting:disbursement:update': 'Edit disbursements and change status',
   'accounting:disbursement:delete': 'Delete disbursements',
-  'accounting:liquidation:read': 'View liquidations',
-  'accounting:liquidation:create': 'Create liquidations',
-  'accounting:liquidation:update': 'Edit liquidations and change status',
-  'accounting:liquidation:delete': 'Delete liquidations',
   'accounting:expense:read': 'View expenses',
   'accounting:expense:create': 'Create expenses',
   'accounting:expense:update': 'Edit expenses',
@@ -231,6 +226,11 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:bank-accounts:reconcile': 'Create and complete a bank reconciliation',
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
+  'accounting:bank-accounts:transfer':
+    'Transfer money between two bank/fund accounts (e.g. funding Petty Cash / the Revolving Fund)',
+  'accounting:employee-appliance-loan:read': 'View employee appliance loans',
+  'accounting:employee-appliance-loan:create':
+    'Create an employee appliance loan and record payments against it',
   'accounting:budget:read': 'View budgets + variance reports',
   'accounting:budget:create': 'Create budgets per account/dimension/period',
   'accounting:budget:update': 'Edit budgets',

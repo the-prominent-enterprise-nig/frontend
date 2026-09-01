@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, CheckCircle, X, FileEdit, ArrowRightLeft } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, RefreshCw, CheckCircle, X, FileEdit, ArrowRightLeft, Landmark } from 'lucide-react'
 import {
   BankAccounts,
   BankAdjusting,
@@ -87,6 +88,12 @@ export default function BankRecon() {
           >
             <ArrowRightLeft className="w-4 h-4" /> Settle Clearing Account
           </button>
+          <Link
+            href="/accounting/bank-reconciliation/transfer"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 border border-indigo-200 rounded-lg"
+          >
+            <Landmark className="w-4 h-4" /> Fund Transfer
+          </Link>
           <button
             onClick={() => setCreating(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"

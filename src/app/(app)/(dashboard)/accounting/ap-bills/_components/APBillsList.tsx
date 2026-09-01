@@ -8,7 +8,7 @@ import {
   Pencil,
   Trash2,
   Inbox,
-  DollarSign,
+  PhilippinePeso,
   FileText,
   Printer,
   Undo2,
@@ -28,6 +28,7 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import Tooltip from '@/src/components/ui/Tooltip'
 import VoucherPanel from './VoucherPanel'
 import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
 import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
@@ -123,7 +124,7 @@ export default function APBillsList() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold">AP Bills</h2>
+          <h2 className="text-2xl font-bold">AP Invoices</h2>
           <p className="text-sm text-gray-500">Supplier bills and payables.</p>
         </div>
         <div className="flex gap-2">
@@ -246,60 +247,77 @@ export default function APBillsList() {
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       {b.status === 'DRAFT' && (
-                        <button
-                          onClick={() => receive(b.id)}
-                          title="Receive"
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <Inbox className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Receive">
+                          <button
+                            onClick={() => receive(b.id)}
+                            aria-label="Receive"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <Inbox className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
-                        <button
-                          onClick={() => setPayingFor(b)}
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Record payment">
+                          <button
+                            onClick={() => setPayingFor(b)}
+                            aria-label="Record payment"
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <PhilippinePeso className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {latestChequePayment(b) && (
-                        <button
-                          onClick={() => printCheque(b)}
-                          title="Print Cheque"
-                          disabled={printingChequeFor === b.id}
-                          className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Print cheque">
+                          <button
+                            onClick={() => printCheque(b)}
+                            aria-label="Print cheque"
+                            disabled={printingChequeFor === b.id}
+                            className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
                       {b.supplierId && ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
-                        <button
-                          onClick={() => setDebitMemoFor(b)}
-                          title="Issue supplier debit memo (return)"
-                          className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
-                        >
-                          <Undo2 className="w-4 h-4" />
-                        </button>
+                        <Tooltip label="Issue supplier debit memo (return)">
+                          <button
+                            onClick={() => setDebitMemoFor(b)}
+                            aria-label="Issue supplier debit memo"
+                            className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
+                          >
+                            <Undo2 className="w-4 h-4" />
+                          </button>
+                        </Tooltip>
                       )}
-                      <button
-                        onClick={() => setVoucherFor(b)}
-                        title="Voucher"
-                        className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setEditing(b)}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => del(b.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <Tooltip label="Voucher">
+                        <button
+                          onClick={() => setVoucherFor(b)}
+                          aria-label="Voucher"
+                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Edit">
+                        <button
+                          onClick={() => setEditing(b)}
+                          aria-label="Edit"
+                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Delete">
+                        <button
+                          onClick={() => del(b.id)}
+                          aria-label="Delete"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
@@ -376,8 +394,16 @@ function BillForm({
       initial?.dueDate?.slice(0, 10) ??
       new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
     description: initial?.description ?? '',
+    supplierInvoiceReferenceNo: initial?.supplierInvoiceReferenceNo ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
+    // Left blank on a new bill so the backend auto-calculates it from the
+    // supplier's withholding rate; pre-filled here so editing an existing
+    // bill shows (and can override) what was actually computed.
+    withholdingAmount: initial?.withholdingAmount != null ? String(initial.withholdingAmount) : '',
+    sourceOfPayment: initial?.sourceOfPayment ?? '',
+    referenceNumber: initial?.referenceNumber ?? '',
+    serialNumber: initial?.serialNumber ?? '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -436,8 +462,15 @@ function BillForm({
       ...form,
       purchaseOrderId: form.purchaseOrderId || undefined,
       goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
+      supplierInvoiceReferenceNo: form.supplierInvoiceReferenceNo || undefined,
       subtotal: Number(form.subtotal),
       taxAmount: Number(form.taxAmount || 0),
+      // Omit entirely when blank so the backend auto-calculates from the
+      // supplier's withholding rate instead of overriding it with 0.
+      withholdingAmount: form.withholdingAmount === '' ? undefined : Number(form.withholdingAmount),
+      sourceOfPayment: form.sourceOfPayment || undefined,
+      referenceNumber: form.referenceNumber || undefined,
+      serialNumber: form.serialNumber || undefined,
     }
     const res = initial ? await APBills.update(initial.id, payload) : await APBills.create(payload)
     setSaving(false)
@@ -545,6 +578,14 @@ function BillForm({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
+          <Field label="Supplier Invoice Reference No.">
+            <input
+              value={form.supplierInvoiceReferenceNo}
+              onChange={(e) => setForm({ ...form, supplierInvoiceReferenceNo: e.target.value })}
+              placeholder="The number printed on the supplier's own invoice"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
@@ -556,7 +597,7 @@ function BillForm({
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
             </Field>
-            <Field label="Tax">
+            <Field label="Input Tax (VAT)">
               <input
                 type="number"
                 step="0.01"
@@ -566,6 +607,55 @@ function BillForm({
               />
             </Field>
           </div>
+          <Field label="Withholding Tax">
+            <input
+              type="number"
+              step="0.01"
+              value={form.withholdingAmount}
+              onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
+              placeholder="Auto-calculated from the supplier's withholding rate if left blank"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </Field>
+          {initial && (
+            <>
+              <div className="pt-1 border-t text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                How this bill will be paid
+              </div>
+              <Field label="Source of Payment">
+                <select
+                  value={form.sourceOfPayment}
+                  onChange={(e) => setForm({ ...form, sourceOfPayment: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  <option value="">— Select —</option>
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="gcash">GCash</option>
+                  <option value="card">Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </Field>
+              <Field label="Reference Number">
+                <input
+                  value={form.referenceNumber}
+                  onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              {form.sourceOfPayment === 'check' && (
+                <Field label="Serial Number (Cheque No.)">
+                  <input
+                    value={form.serialNumber}
+                    onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
+                    placeholder="e.g. 0001234"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                  />
+                </Field>
+              )}
+            </>
+          )}
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
               {error}
@@ -611,15 +701,11 @@ function PayBill({
   )
   const [form, setForm] = useState({
     amount: String(out),
-    withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
-    method: '',
-    reference: '',
-    chequeNumber: '',
     notes: '',
     // Which bank/cash fund the money actually paid out of — distinct from
-    // Method (how it was paid). Optional: not every payment goes through a
-    // tracked fund account.
+    // sourceOfPayment (how it was paid). Optional: not every payment goes
+    // through a tracked fund account.
     bankAccountId: '',
   })
   const [saving, setSaving] = useState(false)
@@ -628,7 +714,6 @@ function PayBill({
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
   }, [])
-  const totalSettled = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -636,8 +721,6 @@ function PayBill({
     const res = await APBills.recordPayment(bill.id, {
       ...form,
       amount: Number(form.amount),
-      withholdingAmount: Number(form.withholdingAmount || 0),
-      chequeNumber: form.method === 'check' ? form.chequeNumber || undefined : undefined,
       bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
@@ -666,6 +749,14 @@ function PayBill({
           <div className="text-sm text-gray-600">
             Outstanding: <span className="font-semibold">{fmtMoney(out)}</span>
           </div>
+          {(bill.withholdingAmount ?? 0) > 0 && (
+            <div className="text-xs text-gray-500">
+              Withholding tax of{' '}
+              <span className="font-semibold">{fmtMoney(bill.withholdingAmount ?? 0)}</span> was
+              already withheld and posted when this bill was received — the outstanding balance
+              above already reflects it.
+            </div>
+          )}
           <Field label="Cash Paid *">
             <input
               required
@@ -676,18 +767,6 @@ function PayBill({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Withholding Tax (if you withheld from supplier)">
-            <input
-              type="number"
-              step="0.01"
-              value={form.withholdingAmount}
-              onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <div className="text-xs text-gray-500">
-            Total settled on AP: <span className="font-semibold">{fmtMoney(totalSettled)}</span>
-          </div>
           <Field label="Payment Date *">
             <input
               required
@@ -697,39 +776,16 @@ function PayBill({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Method">
-            <select
-              value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              <option value="cash">Cash</option>
-              <option value="check">Check</option>
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="gcash">GCash</option>
-              <option value="card">Card</option>
-              <option value="other">Other</option>
-            </select>
-          </Field>
-          {form.method === 'check' && (
-            <Field label="Cheque Number *">
-              <input
-                required
-                value={form.chequeNumber}
-                onChange={(e) => setForm({ ...form, chequeNumber: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                placeholder="e.g. 0001234"
-              />
-            </Field>
+          {(bill.sourceOfPayment || bill.referenceNumber || bill.serialNumber) && (
+            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 space-y-0.5">
+              <p className="font-semibold text-gray-600">
+                Set on the bill (edit the bill to change these):
+              </p>
+              {bill.sourceOfPayment && <p>Source of Payment: {bill.sourceOfPayment}</p>}
+              {bill.referenceNumber && <p>Reference Number: {bill.referenceNumber}</p>}
+              {bill.serialNumber && <p>Serial Number: {bill.serialNumber}</p>}
+            </div>
           )}
-          <Field label="Reference">
-            <input
-              value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
           <Field label="Source of Fund">
             <select
               value={form.bankAccountId}

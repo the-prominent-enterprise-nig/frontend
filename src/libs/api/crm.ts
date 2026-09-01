@@ -25,6 +25,8 @@ import type {
   DuplicatePair,
   CollectionsCalendarResponse,
   InstallmentLedger,
+  CustomerLedger,
+  AgingReportResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
 import type {
@@ -133,6 +135,7 @@ export const customersApi = {
         reminders: Reminder[]
       }
     >(`/crm/customers/${id}/360`),
+  getLedger: (id: string) => api.get<CustomerLedger>(`/crm/customers/${id}/ledger`),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
@@ -313,6 +316,8 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
+  agingReport: (filters?: { asOf?: string; branchId?: string; collectorId?: string }) =>
+    api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──

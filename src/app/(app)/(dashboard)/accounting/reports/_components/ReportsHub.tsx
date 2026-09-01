@@ -9,6 +9,7 @@ import {
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 import GlReconciliationView from './GlReconciliationView'
+import AgingReportView from '@/src/app/(app)/(dashboard)/crm/installment-accounts/aging-report/_components/AgingReportView'
 
 type Tab =
   | 'trial-balance'
@@ -63,9 +64,14 @@ export default function ReportsHub() {
   )
 
   const load = async () => {
-    // Reconciliation is self-contained (GlReconciliationView fetches its
-    // own three endpoints) — nothing for this hub's shared data state to do.
-    if (tab === 'reconciliation') return
+    // Reconciliation and AR Aging are self-contained (each fetches its own
+    // data) — nothing for this hub's shared data state to do. AR Aging used
+    // to be the generic invoice-bucketed Reports.aging('ar', asOf) view;
+    // it's now AgingReportView, the installment-account-based report
+    // matching the client's real "AGING OF ACCOUNTS RECEIVABLE" sheet —
+    // Reports.aging('ar', ...) itself is untouched, just no longer called
+    // from here.
+    if (tab === 'reconciliation' || tab === 'ar-aging') return
     setLoading(true)
     setData(null)
     let res: any
@@ -74,7 +80,6 @@ export default function ReportsHub() {
       res = await Reports.pnl(startDate, endDate, branchId || undefined, pnlView)
     else if (tab === 'balance-sheet') res = await Reports.balanceSheet(asOf)
     else if (tab === 'cash-flow') res = await Reports.cashFlow(startDate, endDate)
-    else if (tab === 'ar-aging') res = await Reports.aging('ar', asOf)
     else if (tab === 'ap-aging') res = await Reports.aging('ap', asOf)
     else if (tab === 'grni') res = await Reports.grni()
     else if (tab === 'customer-statement') {
@@ -107,7 +112,7 @@ export default function ReportsHub() {
   }, [tab, branches.length])
 
   const needsDateRange = ['pnl', 'cash-flow', 'cost-center'].includes(tab)
-  const needsAsOf = ['trial-balance', 'balance-sheet', 'ar-aging', 'ap-aging'].includes(tab)
+  const needsAsOf = ['trial-balance', 'balance-sheet', 'ap-aging'].includes(tab)
   const needsCustomer = tab === 'customer-statement'
   const needsBranch = tab === 'pnl'
 
@@ -145,7 +150,7 @@ export default function ReportsHub() {
       </div>
 
       <div
-        className={`flex flex-wrap gap-3 mb-4 items-end ${tab === 'reconciliation' ? 'hidden' : ''}`}
+        className={`flex flex-wrap gap-3 mb-4 items-end ${tab === 'reconciliation' || tab === 'ar-aging' ? 'hidden' : ''}`}
       >
         {needsAsOf && (
           <div>
@@ -240,10 +245,16 @@ export default function ReportsHub() {
       </div>
 
       <div
-        className={tab === 'reconciliation' ? '' : 'bg-white border border-gray-200 rounded-lg p-4'}
+        className={
+          tab === 'reconciliation' || tab === 'ar-aging'
+            ? ''
+            : 'bg-white border border-gray-200 rounded-lg p-4'
+        }
       >
         {tab === 'reconciliation' ? (
           <GlReconciliationView />
+        ) : tab === 'ar-aging' ? (
+          <AgingReportView />
         ) : !data ? (
           <div className="text-center text-gray-400 py-8">
             {needsCustomer && !customerId
@@ -260,8 +271,6 @@ export default function ReportsHub() {
           <BalanceSheetView data={data} />
         ) : tab === 'cash-flow' ? (
           <CashFlowView data={data} />
-        ) : tab === 'ar-aging' ? (
-          <AgingView data={data} type="ar" />
         ) : tab === 'ap-aging' ? (
           <AgingView data={data} type="ap" />
         ) : tab === 'grni' ? (
@@ -648,7 +657,7 @@ function CostCenterView({ data }: { data: any }) {
       headers={[
         'Cost Center',
         'AR Invoiced (Revenue)',
-        'AP Bills',
+        'AP Invoices',
         'Expenses',
         'Fixed Assets',
         'Total Cost',

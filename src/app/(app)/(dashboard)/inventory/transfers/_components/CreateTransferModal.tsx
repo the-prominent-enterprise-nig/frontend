@@ -20,6 +20,7 @@ import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
 import { getItem } from '../../items/_actions/get-item'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 
@@ -343,16 +344,14 @@ export default function CreateTransferModal({
                   name="fromWarehouseId"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select source…</option>
-                      {warehouses
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder="Search source branch…"
+                      options={warehouses
                         .filter((wh) => wh.id !== lockedToWarehouseId)
-                        .map((wh) => (
-                          <option key={wh.id} value={wh.id}>
-                            {branchLabel(wh)}
-                          </option>
-                        ))}
-                    </select>
+                        .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
+                    />
                   )}
                 />
                 {errors.fromWarehouseId && (
@@ -369,26 +368,26 @@ export default function CreateTransferModal({
                   control={control}
                   render={({ field }) =>
                     lockedToWarehouseId ? (
-                      <select
-                        {...field}
+                      <SearchableSelect
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
                         disabled
-                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
-                      >
-                        <option value={lockedToWarehouseId}>
-                          {branchLabel(ownBranchWarehouses[0])}
-                        </option>
-                      </select>
+                        options={[
+                          {
+                            value: lockedToWarehouseId,
+                            label: branchLabel(ownBranchWarehouses[0]),
+                          },
+                        ]}
+                      />
                     ) : (
-                      <select {...field} className={`${fieldClass} bg-white`}>
-                        <option value="">Select destination…</option>
-                        {(currentUserBranchId ? ownBranchWarehouses : warehouses)
+                      <SearchableSelect
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        placeholder="Search destination branch…"
+                        options={(currentUserBranchId ? ownBranchWarehouses : warehouses)
                           .filter((wh) => wh.id !== fromId)
-                          .map((wh) => (
-                            <option key={wh.id} value={wh.id}>
-                              {branchLabel(wh)}
-                            </option>
-                          ))}
-                      </select>
+                          .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
+                      />
                     )
                   }
                 />

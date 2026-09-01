@@ -25,7 +25,6 @@ import {
   FilePlus,
   FileSpreadsheet,
   ClipboardCheck,
-  Funnel,
   HandCoins,
   House,
   IdCard,
@@ -235,7 +234,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
       },
       {
-        label: 'AP Bills',
+        label: 'AP Invoices',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
@@ -251,6 +250,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+      },
+      {
+        label: 'Employee Appliance Loans',
+        href: '/accounting/employee-appliance-loans',
+        icon: HandCoins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_APPLIANCE_LOAN_READ,
       },
       {
         label: 'Customers',
@@ -364,6 +369,22 @@ const navItemsBySegment: Record<string, NavConfig> = {
         activeWhen: ['/pos', '/pos/checkout', '/pos/transactions'],
       },
       {
+        label: 'Management',
+        href: '/pos/sessions',
+        icon: Monitor,
+        requiredPermission: 'pos:sessions:read',
+        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
+        // already covered by that item's own activeWhen) — Management no
+        // longer has anything to do with Terminals.
+        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
+      },
+      {
+        label: 'Collections',
+        href: '/pos/collections',
+        icon: Coins,
+        requiredPermission: 'pos:collections:manage',
+      },
+      {
         label: 'Credit Applications',
         href: '/pos/credit-applications',
         icon: CreditCard,
@@ -379,14 +400,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         usePrefix: true,
       },
       {
-        label: 'Management',
-        href: '/pos/sessions',
-        icon: Monitor,
-        requiredPermission: 'pos:sessions:read',
-        // '/pos/terminals' moved under Settings (/pos/settings/terminals,
-        // already covered by that item's own activeWhen) — Management no
-        // longer has anything to do with Terminals.
-        activeWhen: ['/pos/sessions', '/pos/cash-drawer'],
+        label: 'Cash-in-Transit',
+        href: '/pos/cash-in-transit',
+        icon: Wallet,
+        requiredPermission: 'pos:cash-in-transit:read',
+      },
+      {
+        label: 'Void Requests',
+        href: '/pos/void-requests',
+        icon: ShieldCheck,
+        requiredPermission: 'pos:transactions:read',
       },
       {
         // Sidebar gate must match the page's own guard
@@ -401,18 +424,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:transaction:override',
       },
       {
-        label: 'Void Requests',
-        href: '/pos/void-requests',
-        icon: ShieldCheck,
-        requiredPermission: 'pos:transactions:read',
-      },
-      {
-        label: 'Service Jobs',
-        href: '/pos/service-jobs',
-        icon: Wrench,
-        requiredPermission: 'pos:service-drafts:read',
-      },
-      {
         label: 'Release Approvals',
         href: '/pos/release-approvals',
         icon: PackageCheck,
@@ -425,6 +436,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/return-refund-approvals',
         icon: Undo2,
         requiredPermission: 'pos:transaction:override',
+      },
+      {
+        label: 'Service Jobs',
+        href: '/pos/service-jobs',
+        icon: Wrench,
+        requiredPermission: 'pos:service-drafts:read',
       },
       {
         label: 'Promotions',
@@ -465,18 +482,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ],
       },
       {
-        label: 'Cash-in-Transit',
-        href: '/pos/cash-in-transit',
-        icon: Wallet,
-        requiredPermission: 'pos:cash-in-transit:read',
-      },
-      {
-        label: 'Collections',
-        href: '/pos/collections',
-        icon: Coins,
-        requiredPermission: 'pos:collections:manage',
-      },
-      {
         // Every POS role needs their own PIN (checkout PIN entry, manager
         // approvals) — kept separate from the Settings item above so hiding
         // that one from Cashier doesn't also remove their only way to reach
@@ -501,12 +506,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/crm',
         icon: House,
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
-      {
-        label: 'Pipeline',
-        href: '/crm/pipeline',
-        icon: Funnel,
-        requiredPermission: CRM_PERMISSIONS.PIPELINE_READ,
       },
       {
         label: 'Leads',

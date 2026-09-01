@@ -203,13 +203,17 @@ export default function Customer360({
               this customer's AR invoices was buried inside an Installment
               Plan row's detail modal — which didn't exist at all for a
               charge-only customer with no installment plans. This is a
-              direct, always-visible link regardless of purchase history. */}
+              direct, always-visible link regardless of purchase history.
+              Repointed to the unified customer ledger (installment + charge
+              + cash sales merged into one debit/credit table) instead of
+              the raw AR invoice list — the AR invoices list itself stays
+              reachable from Accounting → AR Invoices. */}
           <Link
-            href={`/accounting/ar-invoices?customerId=${id}`}
+            href={`/crm/customers/${id}/ledger`}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             <Receipt className="h-4 w-4" />
-            View AR Ledger
+            View Customer Ledger
           </Link>
           {canScheduleReminder && (
             <button
@@ -263,11 +267,11 @@ export default function Customer360({
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Full width (lg:col-span-3) — the Address row wraps to several
-            lines for a real PH address, and cramming that into a 1/3-width
-            column read badly (developer-flagged, 2026-08-09). */}
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
+      <div className="mt-6">
+        {/* Full width — the Address row wraps to several lines for a real
+            PH address, and cramming that into a 1/3-width column read badly
+            (developer-flagged, 2026-08-09). */}
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Contact</h2>
           <dl className="space-y-2 text-[13px]">
             <Row label="Email" value={data.email ?? '—'} />
@@ -276,66 +280,43 @@ export default function Customer360({
             <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
           </dl>
         </section>
+      </div>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
-          {historyLoading ? (
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
+          {installmentLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
+          ) : installmentError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
+          ) : installmentSchedules.length === 0 ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
-              Loading transaction history…
-            </p>
-          ) : historyError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : transactionHistory.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No transactions for this customer.
+              No installment plans for this customer.
             </p>
           ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) => (
-                  <li
-                    key={tx.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium text-gray-800">
-                        {tx.transactionNumber}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.transactionType}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.status}
-                      </span>
-                    </div>
-                    <span className="flex items-center gap-3 text-gray-600">
-                      <span>
-                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                      <span>
-                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
-                      </span>
-                      <span className="font-medium text-gray-800">
-                        {formatPeso(tx.totalAmount)}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
-              )}
-            </>
+            <div className="space-y-2">
+              {installmentSchedules.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setScheduleDetailTarget(s)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
+                    <p className="mt-0.5 text-[12px] text-gray-500">
+                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {s.installmentAccount && (
+                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
+                    )}
+                    <ChevronRight size={16} className="text-gray-300" />
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </section>
       </div>
@@ -426,10 +407,10 @@ export default function Customer360({
               </ul>
               {upcomingPayables.length > 10 && (
                 <Link
-                  href={`/accounting/ar-invoices?customerId=${id}`}
+                  href={`/crm/customers/${id}/ledger`}
                   className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                 >
-                  +{upcomingPayables.length - 10} more — View full AR ledger →
+                  +{upcomingPayables.length - 10} more — View full customer ledger →
                 </Link>
               )}
             </>
@@ -441,45 +422,6 @@ export default function Customer360({
               {installmentAccounts.length !== 1 ? 's' : ''} on file — see aggregate balances in CRM
               Collections Accounts below.
             </p>
-          )}
-        </section>
-      </div>
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
-          {installmentLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
-          ) : installmentError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
-          ) : installmentSchedules.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No installment plans for this customer.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {installmentSchedules.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setScheduleDetailTarget(s)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
-                >
-                  <div>
-                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
-                    <p className="mt-0.5 text-[12px] text-gray-500">
-                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {s.installmentAccount && (
-                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
-                    )}
-                    <ChevronRight size={16} className="text-gray-300" />
-                  </div>
-                </button>
-              ))}
-            </div>
           )}
         </section>
       </div>
@@ -625,6 +567,70 @@ export default function Customer360({
                   : 'Consent not yet given'}
               </div>
             </div>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) => (
+                  <li
+                    key={tx.id}
+                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-gray-800">
+                        {tx.transactionNumber}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.transactionType}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {tx.status}
+                      </span>
+                    </div>
+                    <span className="flex items-center gap-3 text-gray-600">
+                      <span>
+                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                      <span>
+                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {transactionHistory.length >= 20 && (
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  Showing the most recent 20 transactions.
+                </p>
+              )}
+            </>
           )}
         </section>
       </div>
@@ -834,19 +840,29 @@ function InstallmentScheduleDetailModal({
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
           <button
             onClick={onClose}
             className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
           >
             <X size={18} />
           </button>
-          <h2 className="mb-1 text-lg font-bold text-gray-900">
+          <h2 className="mb-1 pr-8 text-lg font-bold text-gray-900">
             {productLabel(schedule.posTransactionLines)}
           </h2>
-          <p className="mb-4 text-sm text-gray-500">
-            {schedule.posTransaction?.transactionNumber ?? schedule.id}
-          </p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-500">
+              {schedule.posTransaction?.transactionNumber ?? schedule.id}
+            </p>
+            {schedule.installmentAccount && (
+              <Link
+                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+              >
+                View customer ledger →
+              </Link>
+            )}
+          </div>
 
           {/* Developer-requested (2026-08-09): the header's "+1 more" hides
               what the other item(s) actually are, and the combined
@@ -926,23 +942,6 @@ function InstallmentScheduleDetailModal({
                 </li>
               ))}
             </ul>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
-            {schedule.installmentAccount && (
-              <Link
-                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
-                className="inline-block text-[12px] font-medium text-prominent-orange-700 hover:underline"
-              >
-                View customer ledger →
-              </Link>
-            )}
-            <Link
-              href={`/accounting/ar-invoices?customerId=${customerId}`}
-              className="inline-block text-[12px] text-prominent-orange-700 hover:underline"
-            >
-              View full AR ledger →
-            </Link>
           </div>
         </div>
       </div>
