@@ -202,6 +202,8 @@ export const SerialMovementEntrySchema = z.object({
   label: z.string(),
   description: z.string(),
   referenceCode: z.string().nullable(),
+  customerName: z.string().nullable().optional(),
+  invoiceNumber: z.string().nullable().optional(),
 })
 export type SerialMovementEntry = z.infer<typeof SerialMovementEntrySchema>
 

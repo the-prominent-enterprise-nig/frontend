@@ -11,7 +11,6 @@ import {
   ArrowUpRight,
   ChevronRight,
   Layers,
-  Funnel,
   MessageSquare,
   Phone,
   Mail,
@@ -29,7 +28,6 @@ import {
   remindersApi,
   interactionsApi,
   segmentsApi,
-  pipelineStagesApi,
 } from '@/src/libs/api/crm'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -66,6 +64,25 @@ function fmtDateTime(dateStr?: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+// The dashboard's own /crm/reminders fetch already includes these relations
+// server-side (reminder.service.ts findAll()) — just wasn't being rendered.
+function reminderTarget(r: any): { label: string; href: string } | null {
+  if (r.customer?.name && r.customerId) {
+    return { label: r.customer.name, href: `/crm/customers/${r.customerId}` }
+  }
+  if (r.lead && r.leadId) {
+    const name = [r.lead.firstName, r.lead.lastName].filter(Boolean).join(' ')
+    return { label: name || 'Lead', href: `/crm/leads/${r.leadId}` }
+  }
+  if (r.installmentAccount?.accountNumber && r.installmentAccountId) {
+    return {
+      label: r.installmentAccount.accountNumber,
+      href: `/crm/installment-accounts/${r.installmentAccountId}`,
+    }
+  }
+  return null
 }
 
 function leadStatusCls(status: string) {
@@ -320,7 +337,6 @@ const INIT = {
   dueTodayCount: 0,
   totalInteractions: 0,
   totalSegments: 0,
-  totalSegmentMembers: 0,
   leadStatusChart: [] as { label: string; value: number; color: string }[],
   pipelineStageChart: [] as { label: string; value: number; color: string; badge?: string }[],
   customerSourceChart: [] as { label: string; value: number; color: string; badge?: string }[],
@@ -349,11 +365,14 @@ export default function CrmDashboardPage() {
     const settled = await Promise.allSettled([
       leadsApi.list({ limit: 200 }), // 0
       leadsApi.pipeline(), // 1 — PipelineColumn[]
-      customersApi.list({ limit: 200 }), // 2
+      customersApi.list({ limit: 1 }), // 2 — only meta.total is read; see below
       remindersApi.list({ limit: 200 }), // 3
       interactionsApi.list({ limit: 100 }), // 4
       segmentsApi.list(), // 5 — CustomerSegment[]
-      pipelineStagesApi.list(), // 6 — PipelineStage[]
+      leadsApi.statusSummary(), // 6 — real counts, not capped like list()
+      customersApi.sourceSummary(), // 7 — real counts, not capped like list()
+      customersApi.statusSummary(), // 8 — real counts, not capped like list()
+      interactionsApi.typeSummary(), // 9 — real counts, not capped like list()
     ])
 
     function pick(i: number): any {
@@ -382,20 +401,21 @@ export default function CrmDashboardPage() {
     // ── Leads ─────────────────────────────────────────────────────────────────
     const leadList = arr(0)
     const totalLeads = total(0)
-    const activeLeads = leadList.filter((l: any) => l.status === 'active').length
-    const wonLeads = leadList.filter((l: any) => l.status === 'won').length
-    const lostLeads = leadList.filter((l: any) => l.status === 'lost').length
-    const winRate = wonLeads + lostLeads > 0 ? (wonLeads / (wonLeads + lostLeads)) * 100 : 0
+    // Scenario 29 — Win Rate/Lead Status/Won-Lost come from a real
+    // server-side aggregate (leadsApi.statusSummary()), not leadList's own
+    // 200-row fetch cap, which undercounts/skews once a tenant has more
+    // leads than that.
+    const statusSummary = pick(6) ?? { active: 0, won: 0, lost: 0, archived: 0, winRate: 0 }
+    const activeLeads = statusSummary.active
+    const wonLeads = statusSummary.won
+    const lostLeads = statusSummary.lost
+    const winRate = statusSummary.winRate
 
     const leadStatusChart = [
       { label: 'Active', value: activeLeads, color: '#0ea5e9' },
       { label: 'Won', value: wonLeads, color: '#10b981' },
       { label: 'Lost', value: lostLeads, color: '#ef4444' },
-      {
-        label: 'Archived',
-        value: leadList.filter((l: any) => l.status === 'archived').length,
-        color: '#94a3b8',
-      },
+      { label: 'Archived', value: statusSummary.archived, color: '#94a3b8' },
     ].filter((s) => s.value > 0)
 
     // ── Pipeline ──────────────────────────────────────────────────────────────
@@ -415,14 +435,19 @@ export default function CrmDashboardPage() {
       .sort((a: any, b: any) => b.value - a.value)
 
     // ── Customers ─────────────────────────────────────────────────────────────
-    const customerList = arr(2)
+    // Only `meta.total` from this fetch is used now — activeCustomers and
+    // the source breakdown both moved to real aggregates below, so there's
+    // no longer any reason to pull actual customer rows here.
     const totalCustomers = total(2)
-    const activeCustomers = customerList.filter((c: any) => c.status === 'active').length
+    const activeCustomers = (pick(8) ?? { active: 0 }).active
 
+    // Scenario 29 — real server-side counts per source channel
+    // (customersApi.sourceSummary()), not a capped list fetch.
+    const sourceSummary = arr(7) as { sourceChannel: string; count: number }[]
     const sourceGroups: Record<string, number> = {}
-    customerList.forEach((c: any) => {
-      const src = c.sourceChannel ?? 'other'
-      sourceGroups[src] = (sourceGroups[src] ?? 0) + 1
+    sourceSummary.forEach(({ sourceChannel, count }) => {
+      const src = sourceChannel ?? 'other'
+      sourceGroups[src] = (sourceGroups[src] ?? 0) + count
     })
     const customerSourceChart = Object.entries(sourceGroups)
       .map(([k, v], i) => ({
@@ -434,13 +459,19 @@ export default function CrmDashboardPage() {
       .sort((a, b) => b.value - a.value)
 
     // ── Reminders ─────────────────────────────────────────────────────────────
+    // `isOverdue`/`status: 'overdue'` are never populated by the /crm/reminders
+    // endpoint this dashboard calls (only /crm/reminders/mine computes
+    // isOverdue, and no write path ever sets status to 'overdue') — mirror
+    // Accounting's own live date-comparison pattern instead (accounting/page.tsx).
     const reminderList = arr(3)
-    const overdueRemindersList = reminderList.filter(
-      (r: any) => r.isOverdue || r.status === 'overdue'
-    )
+    const isReminderOverdue = (r: any) =>
+      r.status === 'pending' && new Date(r.dueAt).getTime() < now.getTime()
+    const overdueRemindersList = reminderList
+      .filter(isReminderOverdue)
+      .sort((a: any, b: any) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
     const overdueReminders = overdueRemindersList.length
     const pendingRemindersList = reminderList
-      .filter((r: any) => r.status === 'pending' && !r.isOverdue)
+      .filter((r: any) => r.status === 'pending' && !isReminderOverdue(r))
       .sort((a: any, b: any) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
     const pendingReminders = pendingRemindersList.length
     const dueTodayCount = pendingRemindersList.filter((r: any) => {
@@ -452,10 +483,13 @@ export default function CrmDashboardPage() {
     const interactionList = arr(4)
     const totalInteractions = total(4)
 
+    // Scenario 29 — real server-side counts per interaction type
+    // (interactionsApi.typeSummary()), not interactionList's own 100-row cap.
+    const typeSummary = arr(9) as { interactionType: string; count: number }[]
     const typeGroups: Record<string, number> = {}
-    interactionList.forEach((i: any) => {
-      const t = i.interactionType ?? 'other'
-      typeGroups[t] = (typeGroups[t] ?? 0) + 1
+    typeSummary.forEach(({ interactionType, count }) => {
+      const t = interactionType ?? 'other'
+      typeGroups[t] = (typeGroups[t] ?? 0) + count
     })
     const interactionTypeChart = Object.entries(typeGroups)
       .map(([k, v]) => ({
@@ -469,10 +503,6 @@ export default function CrmDashboardPage() {
     // ── Segments ──────────────────────────────────────────────────────────────
     const segList = arr(5)
     const totalSegments = segList.length
-    const totalSegmentMembers = segList.reduce(
-      (sum: number, sg: any) => sum + (Number(sg.memberCount) || 0),
-      0
-    )
 
     setS({
       loaded: true,
@@ -491,7 +521,6 @@ export default function CrmDashboardPage() {
       dueTodayCount,
       totalInteractions,
       totalSegments,
-      totalSegmentMembers,
       leadStatusChart,
       pipelineStageChart,
       customerSourceChart,
@@ -515,6 +544,22 @@ export default function CrmDashboardPage() {
 
   useEffect(() => {
     load()
+    // Scenario 29 — this dashboard previously only ever fetched once on
+    // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+    // POS's own overview page (refetchInterval: 30_000 +
+    // refetchOnWindowFocus: true), the working reference pattern already
+    // established in this codebase.
+    const interval = setInterval(load, 30_000)
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('focus', load)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', load)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [load])
 
   const loading = !s.loaded
@@ -539,13 +584,6 @@ export default function CrmDashboardPage() {
             >
               <UserPlus className="h-3.5 w-3.5 text-gray-500" />
               New Lead
-            </Link>
-            <Link
-              href="/crm/pipeline"
-              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <Funnel className="h-3.5 w-3.5 text-gray-500" />
-              Pipeline
             </Link>
             <button
               onClick={load}
@@ -572,7 +610,7 @@ export default function CrmDashboardPage() {
               sub="Active stages only"
               icon={TrendingUp}
               iconBg="bg-emerald-500"
-              href="/crm/pipeline"
+              href="/crm/leads"
               loading={loading}
             />
             <KpiCard
@@ -581,7 +619,7 @@ export default function CrmDashboardPage() {
               sub="Closed won deals"
               icon={Award}
               iconBg="bg-violet-500"
-              href="/crm/pipeline"
+              href="/crm/leads"
               loading={loading}
             />
             <KpiCard
@@ -735,7 +773,7 @@ export default function CrmDashboardPage() {
                 <p className="text-xs text-gray-400">Lead count and value per stage</p>
               </div>
               <Link
-                href="/crm/pipeline"
+                href="/crm/leads"
                 className="flex items-center gap-0.5 text-xs text-orange-600 hover:text-orange-700"
               >
                 View <ChevronRight className="h-3 w-3" />
@@ -964,21 +1002,37 @@ export default function CrmDashboardPage() {
               <EmptyState message="No overdue reminders" />
             ) : (
               <div className="space-y-2">
-                {s.overdueRemindersList.map((r: any, i: number) => (
-                  <div key={r.id ?? i} className="rounded-lg border border-red-100 bg-red-50 p-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
-                      >
-                        {fmtStatus(r.reminderType ?? r.status)}
-                      </span>
-                      <span className="text-[10px] text-red-600 font-medium">
-                        Due {fmtDateShort(r.dueAt)}
-                      </span>
+                {s.overdueRemindersList.map((r: any, i: number) => {
+                  const target = reminderTarget(r)
+                  return (
+                    <div
+                      key={r.id ?? i}
+                      className="rounded-lg border border-red-100 bg-red-50 p-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
+                        >
+                          {fmtStatus(r.reminderType ?? r.status)}
+                        </span>
+                        <span className="text-[10px] text-red-600 font-medium">
+                          Due {fmtDateShort(r.dueAt)}
+                        </span>
+                      </div>
+                      {target && (
+                        <Link
+                          href={target.href}
+                          className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                        >
+                          {target.label}
+                        </Link>
+                      )}
+                      {r.note && (
+                        <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                      )}
                     </div>
-                    {r.note && <p className="text-[10px] text-gray-600 mt-1 truncate">{r.note}</p>}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1003,22 +1057,35 @@ export default function CrmDashboardPage() {
               <EmptyState message="No upcoming reminders" />
             ) : (
               <div className="space-y-2">
-                {s.pendingRemindersList.map((r: any, i: number) => (
-                  <div
-                    key={r.id ?? i}
-                    className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
-                        {r.reminderType ?? 'reminder'}
-                      </span>
-                      <span className="text-[10px] text-amber-700 font-medium">
-                        {fmtDateTime(r.dueAt)}
-                      </span>
+                {s.pendingRemindersList.map((r: any, i: number) => {
+                  const target = reminderTarget(r)
+                  return (
+                    <div
+                      key={r.id ?? i}
+                      className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
+                          {r.reminderType ?? 'reminder'}
+                        </span>
+                        <span className="text-[10px] text-amber-700 font-medium">
+                          {fmtDateTime(r.dueAt)}
+                        </span>
+                      </div>
+                      {target && (
+                        <Link
+                          href={target.href}
+                          className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                        >
+                          {target.label}
+                        </Link>
+                      )}
+                      {r.note && (
+                        <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                      )}
                     </div>
-                    {r.note && <p className="text-[10px] text-gray-600 mt-1 truncate">{r.note}</p>}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1072,7 +1139,6 @@ export default function CrmDashboardPage() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
             {(
               [
-                { label: 'Pipeline', href: '/crm/pipeline', icon: Funnel },
                 { label: 'Leads', href: '/crm/leads', icon: Users },
                 { label: 'Customers', href: '/crm/customers', icon: Contact },
                 { label: 'Reminders', href: '/crm/reminders', icon: BellRing },

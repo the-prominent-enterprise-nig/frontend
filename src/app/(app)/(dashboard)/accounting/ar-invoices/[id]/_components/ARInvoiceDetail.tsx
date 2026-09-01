@@ -4,10 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2, Download, Loader2 } from 'lucide-react'
 import { ARInvoices, fmtMoney, fmtDate, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
-import {
-  printInventoryDocument,
-  type PrintDocumentEnvelope,
-} from '@/src/libs/print/printInventoryDocument'
+import { printARInvoiceDocument } from '@/src/libs/print/printInventoryDocument'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -19,80 +16,6 @@ const INVOICE_STATUS_BADGE: Record<string, string> = {
   PARTIAL: 'bg-amber-50 text-amber-700',
   OVERDUE: 'bg-red-50 text-red-700',
   PAID: 'bg-emerald-50 text-emerald-700',
-}
-
-// Scenario 25 — print-ready AR Invoice body, mirroring PurchaseOrderList's
-// renderPoBody pattern (same printInventoryDocument() shell). Includes the
-// installment item/rebate breakdown when present so the printed document
-// and the on-screen view never disagree on content.
-function renderInvoiceBody(doc: PrintDocumentEnvelope): string {
-  const inv = doc.document as Record<string, unknown>
-  const customer = inv.customer as { name?: string } | undefined
-  const posTransaction = inv.posTransaction as { transactionNumber?: string } | null
-  const installmentDetail = inv.installmentDetail as {
-    termMonths: number | null
-    rebate: number | string | null
-    items: Record<string, unknown>[]
-  } | null
-  const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDateStr = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
-  const totalAmount = Number(inv.totalAmount ?? 0)
-  const amountPaid = Number(inv.amountPaid ?? 0)
-  const outstanding = totalAmount - amountPaid
-
-  const itemsRows = (installmentDetail?.items ?? [])
-    .map((l) => {
-      const item = l.item as { name?: string; brand?: { name?: string } | null } | null
-      const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
-      const brand = item?.brand ? ` — ${item.brand.name}` : ''
-      const serialNumber = l.serialNumber as {
-        serialNumber?: string
-        goodsReceiptLine?: {
-          goodsReceipt?: {
-            code?: string
-            supplier?: { name?: string } | null
-            purchaseOrderNumber?: string | null
-          } | null
-        } | null
-      } | null
-      const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
-      const serials = serialNumber
-        ? `<div style="font-size:10px;color:#7c3aed">SN: ${serialNumber.serialNumber}${secondarySerialNumber ? ` / ${secondarySerialNumber.serialNumber}` : ''}</div>`
-        : ''
-      const goodsReceipt = serialNumber?.goodsReceiptLine?.goodsReceipt
-      const receiving = goodsReceipt
-        ? `<div style="font-size:10px;color:#999">RR: ${goodsReceipt.code}${goodsReceipt.supplier ? ` — ${goodsReceipt.supplier.name}` : ''}${goodsReceipt.purchaseOrderNumber ? ` · PO: ${goodsReceipt.purchaseOrderNumber}` : ''}</div>`
-        : ''
-      return `<tr><td>${item?.name ?? '—'}${brand}${serials}${receiving}</td><td style="text-align:right">${qty}</td><td style="text-align:right">${fmt(unitPrice)}</td><td style="text-align:right">${fmt(lineTotal)}</td></tr>`
-    })
-    .join('')
-
-  return `<h2>Invoice Details</h2><div class="meta">
-    <div><p class="label">Customer</p><p>${customer?.name ?? '—'}</p></div>
-    <div><p class="label">Invoice Date</p><p>${fmtDateStr(inv.invoiceDate)}</p></div>
-    <div><p class="label">Due Date</p><p>${fmtDateStr(inv.dueDate)}</p></div>
-    <div><p class="label">Status</p><p>${inv.status ?? '—'}</p></div>
-    ${posTransaction ? `<div><p class="label">Source Sale</p><p>${posTransaction.transactionNumber ?? '—'}</p></div>` : ''}
-  </div>
-  ${
-    installmentDetail
-      ? `<h2>Items — ${installmentDetail.termMonths ?? '—'}-month installment</h2>
-  <table><thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Line Total</th></tr></thead>
-  <tbody>${itemsRows}</tbody></table>
-  <p style="font-size:12px;color:#666;text-align:right;margin-top:4px">Rebate on this due date: ${fmt(Number(installmentDetail.rebate ?? 0))}</p>`
-      : ''
-  }
-  <h2>Amount</h2>
-  <table><tbody>
-    <tr><td>Subtotal</td><td style="text-align:right">${fmt(Number(inv.subtotal ?? 0))}</td></tr>
-    <tr><td>Tax</td><td style="text-align:right">${fmt(Number(inv.taxAmount ?? 0))}</td></tr>
-    <tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${fmt(totalAmount)}</strong></td></tr>
-    <tr><td>Paid</td><td style="text-align:right">${fmt(amountPaid)}</td></tr>
-    <tr><td><strong>Outstanding</strong></td><td style="text-align:right"><strong>${fmt(outstanding)}</strong></td></tr>
-  </tbody></table>`
 }
 
 export default function ARInvoiceDetail({ id }: { id: string }) {
@@ -113,7 +36,7 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
     setDownloading(true)
     const res = await ARInvoices.getDocument(id)
     setDownloading(false)
-    if (res.success && res.data) printInventoryDocument(res.data, 'AR Invoice', renderInvoiceBody)
+    if (res.success && res.data) printARInvoiceDocument(res.data)
   }
 
   if (loading) {
@@ -174,22 +97,42 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
               </span>
             )}
           </div>
-          <div className="mt-1.5 flex flex-col gap-1 text-xs text-gray-400">
+          <div className="mt-2 grid max-w-xs grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
             {invoice.posTransaction && (
-              <span>
-                Source sale:{' '}
-                <Link
-                  href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
-                  className="text-purple-600 hover:underline"
-                >
-                  {invoice.posTransaction.transactionNumber}
-                </Link>
-              </span>
+              <>
+                <span className="text-gray-500">Source sale</span>
+                <span className="text-left font-medium">
+                  <Link
+                    href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+                    className="text-purple-600 hover:underline"
+                  >
+                    {invoice.posTransaction.transactionNumber}
+                  </Link>
+                </span>
+              </>
             )}
-            <span>Invoice date: {fmtDate(invoice.invoiceDate)}</span>
-            <span>Due date: {fmtDate(invoice.dueDate)}</span>
-            <span>Subtotal: {fmtMoney(invoice.subtotal)}</span>
-            <span>Tax: {fmtMoney(invoice.taxAmount)}</span>
+            <span className="text-gray-500">Invoice date</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtDate(invoice.invoiceDate)}
+            </span>
+            <span className="text-gray-500">Due date</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtDate(invoice.dueDate)}
+            </span>
+            <span className="text-gray-500">Subtotal</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtMoney(invoice.subtotal)}
+            </span>
+            <span className="text-gray-500">Tax</span>
+            <span className="text-left font-medium tabular-nums text-gray-800">
+              {fmtMoney(invoice.taxAmount)}
+            </span>
+            <span className="border-t border-gray-100 pt-1.5 font-semibold text-gray-600">
+              Total
+            </span>
+            <span className="border-t border-gray-100 pt-1.5 text-left font-semibold tabular-nums text-gray-900">
+              {fmtMoney(invoice.totalAmount)}
+            </span>
           </div>
         </div>
         <button
@@ -250,7 +193,7 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
                           <span className="text-gray-500"> — {l.item.brand.name}</span>
                         ) : null}
                         {l.serialNumber && (
-                          <p className="font-mono text-sm font-semibold text-purple-600">
+                          <p className="text-sm font-semibold text-purple-600">
                             SN: {l.serialNumber.serialNumber}
                             {l.secondarySerialNumber &&
                               ` / ${l.secondarySerialNumber.serialNumber}`}

@@ -370,7 +370,7 @@ export default function ReceivingReportsTab() {
                     PO Reference
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                    Warehouse
+                    Location
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                     Lines

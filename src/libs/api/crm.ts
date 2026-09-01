@@ -3,6 +3,7 @@ import type {
   PipelineStage,
   Lead,
   Customer,
+  CoMaker,
   Interaction,
   Reminder,
   CustomerSegment,
@@ -23,9 +24,18 @@ import type {
   DuplicateCheckResult,
   DuplicatePair,
   CollectionsCalendarResponse,
+  CustomerSourceChannel,
+  InteractionType,
+  InstallmentLedger,
+  CustomerLedger,
+  AgingReportResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
-import type { CreateCustomerInput, UpdateCustomerInput } from '@/src/schema/crm/customer'
+import type {
+  CreateCustomerInput,
+  UpdateCustomerInput,
+  CoMakerFormValues,
+} from '@/src/schema/crm/customer'
 import type { CreateInteractionInput } from '@/src/schema/crm/interaction'
 import type {
   CreateReminderInput,
@@ -87,6 +97,14 @@ export const leadsApi = {
     api.get<PipelineColumn[]>('/crm/leads/pipeline', tenantId ? { tenantId } : undefined, {
       tags: ['crm:pipeline'],
     }),
+  // Scenario 29 (CRM dashboard) — real server-side status counts/win rate,
+  // not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ active: number; won: number; lost: number; archived: number; winRate: number }>(
+      '/crm/leads/status-summary',
+      undefined,
+      { tags: ['crm:leads'] }
+    ),
   get: (id: string) =>
     api.get<Lead & { stage: PipelineStage; interactions: Interaction[]; reminders: Reminder[] }>(
       `/crm/leads/${id}`
@@ -118,6 +136,22 @@ export const customersApi = {
     api.get<PaginatedResponse<Customer>>('/crm/customers', filters, {
       tags: ['crm:customers'],
     }),
+  // Scenario 29 (CRM dashboard) — real server-side counts per source
+  // channel, not derived from the capped `list()` fetch.
+  sourceSummary: () =>
+    api.get<{ sourceChannel: CustomerSourceChannel; count: number }[]>(
+      '/crm/customers/source-summary',
+      undefined,
+      { tags: ['crm:customers'] }
+    ),
+  // Scenario 29 (CRM dashboard) — real server-side active/inactive/blocked
+  // counts, not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ active: number; inactive: number; blocked: number }>(
+      '/crm/customers/status-summary',
+      undefined,
+      { tags: ['crm:customers'] }
+    ),
   get: (id: string) => api.get<Customer>(`/crm/customers/${id}`),
   get360: (id: string) =>
     api.get<
@@ -127,6 +161,7 @@ export const customersApi = {
         reminders: Reminder[]
       }
     >(`/crm/customers/${id}/360`),
+  getLedger: (id: string) => api.get<CustomerLedger>(`/crm/customers/${id}/ledger`),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
@@ -140,6 +175,14 @@ export const customersApi = {
     api.post('/crm/customers/duplicates/dismiss', { customerAId, customerBId }),
   merge: (survivorId: string, duplicateId: string, fieldOverrides?: Partial<UpdateCustomerInput>) =>
     api.post<Customer>(`/crm/customers/${survivorId}/merge`, { duplicateId, fieldOverrides }),
+  // Single-row co-maker writes — unlike `update`'s coMakers[] array (which
+  // replaces the whole set and reassigns every id), these only ever touch
+  // one co-maker, so anything else pointing at it (e.g. a Credit
+  // Application's coMakerId) stays linked.
+  addCoMaker: (customerId: string, body: CoMakerFormValues) =>
+    api.post<CoMaker>(`/crm/customers/${customerId}/co-makers`, body),
+  updateCoMaker: (customerId: string, coMakerId: string, body: Partial<CoMakerFormValues>) =>
+    api.patch<CoMaker>(`/crm/customers/${customerId}/co-makers/${coMakerId}`, body),
 }
 
 // ─── Interactions ───────────────────────────────────────────
@@ -159,6 +202,12 @@ export const interactionsApi = {
     api.get<PaginatedResponse<Interaction>>('/crm/interactions', filters),
   create: (body: CreateInteractionInput) => api.post<Interaction>('/crm/interactions', body),
   remove: (id: string) => api.delete(`/crm/interactions/${id}`),
+  // Scenario 29 (CRM dashboard) follow-up — real server-side counts per
+  // interaction type, not derived from the capped `list()` fetch.
+  typeSummary: () =>
+    api.get<{ interactionType: InteractionType; count: number }[]>(
+      '/crm/interactions/type-summary'
+    ),
 }
 
 // ─── Reminders ──────────────────────────────────────────────
@@ -178,6 +227,12 @@ export const remindersApi = {
   list: (filters?: ReminderFilters) =>
     api.get<PaginatedResponse<Reminder>>('/crm/reminders', filters),
   mine: (userId: string) => api.get<Reminder[]>('/crm/reminders/mine', { userId }),
+  // Scenario 29 follow-up — real server-side Total Pending/Overdue/Due
+  // Today counts, not derived from the capped `list()` fetch.
+  statusSummary: () =>
+    api.get<{ totalPending: number; overdue: number; dueToday: number }>(
+      '/crm/reminders/status-summary'
+    ),
   create: (body: CreateReminderInput) => api.post<Reminder>('/crm/reminders', body),
   update: (id: string, body: UpdateReminderInput) =>
     api.patch<Reminder>(`/crm/reminders/${id}`, body),
@@ -230,6 +285,7 @@ export const installmentAccountsApi = {
       tags: ['crm:installment-accounts'],
     }),
   get: (id: string) => api.get<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`),
+  getLedger: (id: string) => api.get<InstallmentLedger>(`/crm/installment-accounts/${id}/ledger`),
   create: (body: CreateInstallmentAccountInput) =>
     api.post<InstallmentAccountDetail>('/crm/installment-accounts', body),
   update: (id: string, body: UpdateInstallmentAccountInput) =>
@@ -298,6 +354,8 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
+  agingReport: (filters?: { asOf?: string; branchId?: string; collectorId?: string }) =>
+    api.get<AgingReportResponse>('/crm/installment-accounts/reports/aging', filters),
 }
 
 // ─── Accounting Customers (used to link installment accounts) ──

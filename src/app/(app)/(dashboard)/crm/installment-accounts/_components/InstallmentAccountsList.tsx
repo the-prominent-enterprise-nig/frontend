@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, Search, Wallet, Calculator } from 'lucide-react'
+import { Plus, Search, Wallet, Calculator, FileClock } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import PriceCheckModal from '@/src/components/crm/PriceCheckModal'
@@ -120,6 +120,13 @@ export default function InstallmentAccountsList({ canCreate }: { canCreate: bool
             <Calculator className="h-4 w-4" />
             Price checker
           </button>
+          <Link
+            href="/crm/installment-accounts/aging-report"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:flex-none"
+          >
+            <FileClock className="h-4 w-4" />
+            AR Aging Report
+          </Link>
           {canCreate && (
             <Link
               href="/crm/installment-accounts/new"

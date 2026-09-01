@@ -17,7 +17,7 @@ export default function PriceUseSelector({ priceUseTypes, value, onChange, isLoa
   return (
     <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
       <Tag size={14} className="shrink-0 text-gray-400" />
-      <label htmlFor="price-use-type" className="shrink-0 text-xs font-semibold text-gray-600">
+      <label htmlFor="price-use-type" className="sr-only">
         Price Use
       </label>
       <select

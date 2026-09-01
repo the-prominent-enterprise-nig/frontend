@@ -79,7 +79,7 @@ export default function CreateCountModal({
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">New Count Session</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">Schedule a stock count for a warehouse.</p>
+            <p className="mt-0.5 text-sm text-zinc-500">Schedule a stock count for a location.</p>
           </div>
           <button
             type="button"
@@ -94,7 +94,7 @@ export default function CreateCountModal({
           <div className="space-y-5 px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Warehouse <span className="text-red-500">*</span>
+                Location <span className="text-red-500">*</span>
               </label>
               {onlyWarehouse ? (
                 <>
@@ -113,7 +113,7 @@ export default function CreateCountModal({
                   control={control}
                   render={({ field }) => (
                     <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select warehouse…</option>
+                      <option value="">Select location…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
                           {wh.branch?.name ?? wh.name}

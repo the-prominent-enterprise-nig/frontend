@@ -10,6 +10,7 @@ type Params = {
   page?: number
   limit?: number
   itemId?: string
+  categoryId?: string
   warehouseId?: string
   status?: string
   search?: string
@@ -33,6 +34,7 @@ export async function getSerialNumbers(
     page: params.page,
     limit: params.limit,
     itemId: params.itemId,
+    categoryId: params.categoryId,
     warehouseId: params.warehouseId,
     status: params.status,
     search: params.search,

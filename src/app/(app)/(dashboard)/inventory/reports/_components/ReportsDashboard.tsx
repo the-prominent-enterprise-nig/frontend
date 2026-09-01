@@ -189,16 +189,16 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             </div>
 
             <label htmlFor="report-warehouse-filter" className="sr-only">
-              Filter by warehouse
+              Filter by location
             </label>
             <select
               id="report-warehouse-filter"
-              aria-label="Filter by warehouse"
+              aria-label="Filter by location"
               value={warehouseFilter ?? ''}
               onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
             >
-              <option value="">All Branches</option>
+              <option value="">All Locations</option>
               {warehouseOptions.map((wh) => (
                 <option key={wh.id} value={wh.id}>
                   {wh.branch?.name ?? wh.name}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, AlertTriangle } from 'lucide-react'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import {
@@ -24,8 +24,23 @@ import {
  * can't be used as a reliable area key downstream; the code can). */
 export default function PhilippineAddressPicker({
   onChange,
+  initialBarangayCode,
+  initialAddress,
 }: {
   onChange: (value: { address: string; barangayCode: string }) => void
+  /** Edit-only: the customer's already-saved barangay code. Resolved once
+   * (client-side, from the same cached datasets used for normal picking)
+   * up through city/province/region so an editor sees where the customer
+   * is actually located instead of four blank dropdowns. */
+  initialBarangayCode?: string
+  /** The already-saved free-text address, used only to best-effort recover
+   * the street/building line — everything else in it is redundant with the
+   * resolved region/province/city/barangay names and gets stripped off the
+   * end. Best-effort because the address is just a flat string, not
+   * structured columns; if it doesn't end with the resolved chain (e.g. it
+   * predates barangayCode, or was hand-edited), whatever's left over is
+   * used as-is rather than guessed at further. */
+  initialAddress?: string
 }) {
   const [regionList, setRegionList] = useState<PhRegion[]>([])
   const [provinceList, setProvinceList] = useState<PhProvince[]>([])
@@ -46,11 +61,68 @@ export default function PhilippineAddressPicker({
   const [loadingCities, setLoadingCities] = useState(false)
   const [loadingBarangays, setLoadingBarangays] = useState(false)
 
+  // Resolved once from initialBarangayCode, then consumed level by level by
+  // the three cascading effects below (each auto-selects the matching code
+  // once it appears in that level's freshly-loaded list) — applying it this
+  // way, rather than setting all four codes directly, means it can't race
+  // ahead of (and get reset by) the very effects that load each level's
+  // options. Left in place after use: harmless, since a later normal
+  // cascading reset only ever short-circuits into it when the new list
+  // still happens to contain the matching code anyway.
+  const [target, setTarget] = useState<{
+    regionCode: string
+    provinceCode: string
+    cityCode: string
+    barangayCode: string
+  } | null>(null)
+  const hydratingFor = useRef<string | null>(null)
+
   useEffect(() => {
     fetchRegions()
       .then((r) => setRegionList(Array.isArray(r) ? r : []))
       .finally(() => setLoadingRegions(false))
   }, [])
+
+  useEffect(() => {
+    if (!initialBarangayCode || hydratingFor.current === initialBarangayCode) return
+    hydratingFor.current = initialBarangayCode
+    Promise.all([fetchRegions(), fetchProvinces(), fetchCities(), fetchBarangays()]).then(
+      ([regions, provinces, cities, barangays]) => {
+        const brgy = barangays.find((b) => b.brgy_code === initialBarangayCode)
+        const city = brgy && cities.find((c) => c.city_code === brgy.city_code)
+        const province = city && provinces.find((p) => p.province_code === city.province_code)
+        const region = province && regions.find((r) => r.region_code === province.region_code)
+        if (!brgy || !city || !province || !region) return
+
+        setTarget({
+          regionCode: region.region_code,
+          provinceCode: province.province_code,
+          cityCode: city.city_code,
+          barangayCode: brgy.brgy_code,
+        })
+        setRegionCode(region.region_code)
+
+        if (initialAddress) {
+          // The composed string is `[street, brgy, city, province, region,
+          // "Philippines"].join(', ')` — strip that known tail off the end
+          // (in order) to recover whatever street portion was typed.
+          let remainder = initialAddress
+          for (const part of [
+            'Philippines',
+            region.region_name,
+            province.province_name,
+            city.city_name,
+            brgy.brgy_name,
+          ]) {
+            const suffix = `, ${part}`
+            if (!remainder.endsWith(suffix)) break
+            remainder = remainder.slice(0, -suffix.length)
+          }
+          setStreet(remainder)
+        }
+      }
+    )
+  }, [initialBarangayCode, initialAddress])
 
   useEffect(() => {
     setProvinceList([])
@@ -62,9 +134,15 @@ export default function PhilippineAddressPicker({
     if (!regionCode) return
     setLoadingProvinces(true)
     fetchProvinces()
-      .then((all) => setProvinceList(all.filter((p) => p.region_code === regionCode)))
+      .then((all) => {
+        const filtered = all.filter((p) => p.region_code === regionCode)
+        setProvinceList(filtered)
+        if (target && filtered.some((p) => p.province_code === target.provinceCode)) {
+          setProvinceCode(target.provinceCode)
+        }
+      })
       .finally(() => setLoadingProvinces(false))
-  }, [regionCode])
+  }, [regionCode, target])
 
   useEffect(() => {
     setCityList([])
@@ -74,9 +152,15 @@ export default function PhilippineAddressPicker({
     if (!provinceCode) return
     setLoadingCities(true)
     fetchCities()
-      .then((all) => setCityList(all.filter((c) => c.province_code === provinceCode)))
+      .then((all) => {
+        const filtered = all.filter((c) => c.province_code === provinceCode)
+        setCityList(filtered)
+        if (target && filtered.some((c) => c.city_code === target.cityCode)) {
+          setCityCode(target.cityCode)
+        }
+      })
       .finally(() => setLoadingCities(false))
-  }, [provinceCode])
+  }, [provinceCode, target])
 
   useEffect(() => {
     setBarangayList([])
@@ -84,9 +168,15 @@ export default function PhilippineAddressPicker({
     if (!cityCode) return
     setLoadingBarangays(true)
     fetchBarangays()
-      .then((all) => setBarangayList(all.filter((b) => b.city_code === cityCode)))
+      .then((all) => {
+        const filtered = all.filter((b) => b.city_code === cityCode)
+        setBarangayList(filtered)
+        if (target && filtered.some((b) => b.brgy_code === target.barangayCode)) {
+          setBarangayCode(target.barangayCode)
+        }
+      })
       .finally(() => setLoadingBarangays(false))
-  }, [cityCode])
+  }, [cityCode, target])
 
   // Compose and bubble up the formatted address (plus the raw barangayCode,
   // for area-based collector assignment) whenever any part changes. Fires

@@ -186,11 +186,11 @@ export default function ReleaseHoldModal({
               </div>
             )}
 
-            {/* Destination warehouse (release / partial release) */}
+            {/* Destination location (release / partial release) */}
             {(action === 'release' || action === 'partial_release') && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Destination Warehouse
+                  Destination Location
                   <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
                 </label>
                 <Controller
@@ -201,7 +201,7 @@ export default function ReleaseHoldModal({
                       {...field}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     >
-                      <option value="">Same warehouse</option>
+                      <option value="">Same location</option>
                       {warehouseOptions.map((w) => (
                         <option key={w.id} value={w.id}>
                           {w.branch?.name ?? w.name}

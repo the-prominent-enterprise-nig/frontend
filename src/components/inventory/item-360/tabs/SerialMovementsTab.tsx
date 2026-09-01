@@ -89,7 +89,9 @@ export default function SerialMovementsTab({
         <div className="min-w-0">
           <p className="font-mono text-sm font-semibold text-zinc-800">{serial.serialNumber}</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {(serial.warehouse ?? serial.currentWarehouse)?.name ?? 'Unknown warehouse'}
+            {(serial.warehouse ?? serial.currentWarehouse)?.branch?.name ??
+              (serial.warehouse ?? serial.currentWarehouse)?.name ??
+              'Unknown location'}
           </p>
         </div>
         <span
@@ -132,6 +134,11 @@ export default function SerialMovementsTab({
                 {entry.referenceCode && (
                   <p className="mt-0.5 font-mono text-[11px] text-zinc-400">
                     {entry.referenceCode}
+                  </p>
+                )}
+                {entry.invoiceNumber && (
+                  <p className="mt-0.5 font-mono text-[11px] text-zinc-400">
+                    Invoice: {entry.invoiceNumber}
                   </p>
                 )}
               </div>

@@ -311,12 +311,12 @@ export default function CreditApplicationDetail({
                 <dd className="text-zinc-700">{application.applicantCustomer.customerCode}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-zinc-500">Contact</dt>
-                <dd className="text-zinc-700">
-                  {application.applicantCustomer.phone ??
-                    application.applicantCustomer.email ??
-                    '—'}
-                </dd>
+                <dt className="text-zinc-500">Phone</dt>
+                <dd className="text-zinc-700">{application.applicantCustomer.phone ?? '—'}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-zinc-500">Email</dt>
+                <dd className="text-zinc-700">{application.applicantCustomer.email ?? '—'}</dd>
               </div>
             </dl>
           </div>
@@ -334,8 +334,12 @@ export default function CreditApplicationDetail({
                   <dd className="text-zinc-700">{application.coMaker.relationship}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500">Contact</dt>
+                  <dt className="text-zinc-500">Phone</dt>
                   <dd className="text-zinc-700">{application.coMaker.contactNumber}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Email</dt>
+                  <dd className="text-zinc-700">{application.coMaker.email ?? '—'}</dd>
                 </div>
               </dl>
             ) : (

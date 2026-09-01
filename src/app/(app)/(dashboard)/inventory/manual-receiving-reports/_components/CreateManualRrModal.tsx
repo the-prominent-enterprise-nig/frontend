@@ -121,14 +121,14 @@ export default function CreateManualRrModal({
 
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600">
-              Warehouse <span className="text-red-500">*</span>
+              Location <span className="text-red-500">*</span>
             </label>
             <Controller
               name="warehouseId"
               control={form.control}
               render={({ field: f }) => (
                 <select {...f} className={fieldClass}>
-                  <option value="">Select a warehouse…</option>
+                  <option value="">Select a location…</option>
                   {warehouseOptions.map((wh) => (
                     <option key={wh.id} value={wh.id}>
                       {wh.branch?.name ?? wh.name}

@@ -27,6 +27,9 @@ export async function receiveTransfer(
     lines: parsed.data.lines.map((line) => ({
       stockTransferLineId: line.stockTransferLineId,
       quantityReceived: line.quantityReceived,
+      correctedSerialNumber: line.correctedSerialNumber || undefined,
+      replacementSerialNumberId: line.replacementSerialNumberId || undefined,
+      correctionReason: line.correctionReason || undefined,
     })),
     extraLines: parsed.data.extraLines?.map((line) => ({
       itemId: line.itemId,

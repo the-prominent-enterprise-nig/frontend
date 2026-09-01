@@ -20,7 +20,14 @@ export type ReasonCode = z.infer<typeof ReasonCodeEnum>
 export const RevaluationRecordSchema = z.object({
   id: z.string(),
   item: z.object({ id: z.string(), name: z.string(), sku: z.string() }).optional(),
-  warehouse: z.object({ id: z.string(), name: z.string(), code: z.string() }).optional(),
+  warehouse: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      code: z.string(),
+      branch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+    })
+    .optional(),
   oldCost: z.number().optional(),
   newCost: z.number(),
   reasonCode: z.string(),

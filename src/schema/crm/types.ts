@@ -140,6 +140,11 @@ export interface Customer {
   tenantId: string
   customerCode: string
   name: string
+  // Real stored name parts (developer-requested 2026-08-27) — null for a
+  // customer created before these existed and never re-saved since.
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
   customerType: CustomerType
   companyName?: string | null
   businessCategory?: 'private' | 'government' | null
@@ -301,6 +306,12 @@ export interface CollectorDetail extends Collector {
 export interface AccountingCustomerLite {
   id: string
   name: string
+  // Real stored name parts (developer-requested 2026-08-27) — null for a
+  // customer created before these existed and never re-saved since; `name`
+  // stays the field to display when they're not all present.
+  firstName?: string | null
+  middleName?: string | null
+  lastName?: string | null
   phone?: string | null
   email?: string | null
 }
@@ -371,6 +382,9 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   unitItems: {
     id: string
     itemName: string | null
+    // The paper ledger's "Type" field (e.g. "WASHING MACHINE") — distinct
+    // from itemName/brand/modelNumber, the item's category.
+    itemType: string | null
     modelNumber: string | null
     brand: string | null
     serialNumber: string | null
@@ -407,6 +421,130 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   branch?: { id: string; name: string; code: string } | null
   collector?: { id: string; stubNumber: string; name: string } | null
   arInvoice?: { id: string; invoiceNumber: string; status: string } | null
+}
+
+// Chronological ledger row (Date/Ref/Inst./Description/Debit/Credit/Due/
+// Outstanding) — format-matched to a legacy paper customer ledger, see
+// InstallmentAccountService.getLedger()'s doc comment for the row scheme
+// and which paper-form fields/rows aren't reproducible from this schema.
+export interface InstallmentLedgerRow {
+  date: string
+  ref: string
+  /** Installment line number this row belongs to; 0 for non-bill rows. */
+  inst: number
+  description: string
+  debit: number
+  credit: number
+  /** This row's own net effect (debit − credit). */
+  due: number
+  outstanding: number
+}
+
+export interface InstallmentLedger {
+  account: InstallmentAccountDetail
+  saleReference: string | null
+  saleDate: string | null
+  firstInstallmentDate: string | null
+  rows: InstallmentLedgerRow[]
+}
+
+// Unified per-customer ledger — merges installment, charge, and cash sales
+// into one chronological table instead of separate per-source views. Rows
+// use the same shape as InstallmentLedgerRow; totals summarize across all
+// sources instead of one installment account's specific paper-form fields.
+export interface CustomerLedger {
+  customer: {
+    id: string
+    customerCode: string
+    name: string
+    email: string | null
+    phone: string | null
+  }
+  // What was bought, per purchase — shown above the ledger table (like the
+  // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
+  // row rather than folded into that row's description text.
+  items: { date: string; ref: string; itemLabel: string }[]
+  rows: InstallmentLedgerRow[]
+  totals: {
+    totalBilled: number
+    totalPaid: number
+    totalRebates: number
+    outstanding: number
+  }
+}
+
+// AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE" sheet,
+// grouped Branch -> Collector. A row is either an installment account
+// (installment-specific fields populated) or a standalone AR invoice with no
+// linked installment account (those fields null — term/mi/fmiDate/dp/dpBal/
+// miDue/pnlty/lcp/type). `over` (OVER-30 amount) is always null — no
+// penalty/days-overdue rule exists yet to compute it from (deferred, not
+// guessed). `noArs` is null, not 0, when an installment account's
+// nextDueDate hasn't been backfilled yet — render as "needs review", not a
+// fabricated value; for a standalone invoice row it's always computed from
+// the invoice's own dueDate, never null.
+export interface AgingReportRow {
+  accountId: string
+  accountNumber: string
+  branchId: string | null
+  branchName: string
+  collectorId: string | null
+  collectorLabel: string
+  siNo: string
+  siDate: string
+  customerName: string
+  address: string | null
+  type: string | null
+  term: number | null
+  mi: number | null
+  fmiDate: string | null
+  dp: number | null
+  dpBal: number | null
+  ob: number
+  miDue: number | null
+  pnlty: number | null
+  noArs: number | null
+  mosRun: number
+  totalPayt: number
+  totalPrice: number
+  totPricePercent: number
+  lcp: number | null
+  notMvg: number
+  lastOrDate: string | null
+  lastOrLastnum: string | null
+  lastOrAmt: number | null
+  over: number | null
+}
+
+export interface AgingReportSubtotal {
+  count: number
+  dp: number
+  ob: number
+  miDue: number
+  pnlty: number
+  totalPayt: number
+  totalPrice: number
+  lcp: number
+}
+
+export interface AgingReportCollectorGroup {
+  collectorId: string | null
+  collectorLabel: string
+  rows: AgingReportRow[]
+  subtotal: AgingReportSubtotal
+}
+
+export interface AgingReportBranchGroup {
+  branchId: string | null
+  branchName: string
+  collectors: AgingReportCollectorGroup[]
+  subtotal: AgingReportSubtotal
+}
+
+export interface AgingReportResponse {
+  asOf: string
+  branches: AgingReportBranchGroup[]
+  grandTotal: AgingReportSubtotal
 }
 
 export const CategoryGraduationStatusEnum = z.enum(['pending', 'approved', 'rejected'])

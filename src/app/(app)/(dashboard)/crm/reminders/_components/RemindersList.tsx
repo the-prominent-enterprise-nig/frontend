@@ -23,6 +23,14 @@ import type { Reminder, ReminderType } from '@/src/schema/crm/types'
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
+// `isOverdue`/`status: 'overdue'` are never populated by the /crm/reminders
+// endpoint this page calls (only /crm/reminders/mine computes isOverdue, and
+// no write path ever sets status to 'overdue') — mirror the CRM dashboard's
+// own fix (crm/page.tsx) with a live date comparison instead.
+function isReminderOverdue(reminder: Reminder): boolean {
+  return reminder.status === 'pending' && new Date(reminder.dueAt).getTime() < Date.now()
+}
+
 function fmtRelative(dateStr: string) {
   const diff = new Date(dateStr).getTime() - Date.now()
   const abs = Math.abs(diff)
@@ -144,7 +152,7 @@ function ReminderCard({
   onComplete: (id: string) => void
   completing: string | null
 }) {
-  const isOverdue = reminder.isOverdue || reminder.status === 'overdue'
+  const isOverdue = isReminderOverdue(reminder)
   const meta = TYPE_META[reminder.reminderType] ?? TYPE_META.other
   const Icon = meta.icon
   const isDone = completing === reminder.id
@@ -280,6 +288,7 @@ function SectionHeader({
 
 export default function RemindersList() {
   const [reminders, setReminders] = useState<Reminder[]>([])
+  const [summary, setSummary] = useState({ totalPending: 0, overdue: 0, dueToday: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState<string | null>(null)
@@ -288,13 +297,19 @@ export default function RemindersList() {
   const load = useCallback(async () => {
     setSpinning(true)
     setError(null)
-    const res = await remindersApi.list({ limit: 200 })
-    if (res.success && res.data) {
-      const items: Reminder[] = Array.isArray(res.data) ? res.data : ((res.data as any).data ?? [])
+    const [listRes, summaryRes] = await Promise.all([
+      remindersApi.list({ limit: 200 }),
+      remindersApi.statusSummary(),
+    ])
+    if (listRes.success && listRes.data) {
+      const items: Reminder[] = Array.isArray(listRes.data)
+        ? listRes.data
+        : ((listRes.data as any).data ?? [])
       setReminders(items)
     } else {
-      setError(res.error ?? 'Failed to load reminders')
+      setError(listRes.error ?? 'Failed to load reminders')
     }
+    if (summaryRes.success && summaryRes.data) setSummary(summaryRes.data)
     setLoading(false)
     setSpinning(false)
   }, [])
@@ -313,15 +328,13 @@ export default function RemindersList() {
     setCompleting(null)
   }
 
-  const overdue = reminders.filter((r) => r.isOverdue || r.status === 'overdue')
-  const upcoming = reminders.filter((r) => r.status === 'pending' && !r.isOverdue)
-  const totalPending = overdue.length + upcoming.length
-
-  const dueToday = upcoming.filter((r) => {
-    const d = new Date(r.dueAt)
-    const now = new Date()
-    return d.toDateString() === now.toDateString()
-  }).length
+  // The rendered list below (still capped at 200, matching the fetch above)
+  // splits into these two sections; the stat tiles use `summary` instead —
+  // real DB counts, not derived from this same capped array, so they stay
+  // correct even for a tenant with more than 200 open reminders.
+  const overdue = reminders.filter(isReminderOverdue)
+  const upcoming = reminders.filter((r) => r.status === 'pending' && !isReminderOverdue(r))
+  const { totalPending, overdue: overdueCount, dueToday } = summary
 
   return (
     <div className="min-h-full bg-zinc-50">
@@ -359,14 +372,14 @@ export default function RemindersList() {
               },
               {
                 label: 'Overdue',
-                value: overdue.length,
+                value: overdueCount,
                 icon: AlertTriangle,
                 style:
-                  overdue.length > 0
+                  overdueCount > 0
                     ? 'bg-red-50 border-red-200 text-red-800'
                     : 'bg-white border-gray-200 text-gray-900',
                 iconStyle:
-                  overdue.length > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500',
+                  overdueCount > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500',
               },
               {
                 label: 'Due Today',

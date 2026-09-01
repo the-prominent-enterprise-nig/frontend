@@ -1,18 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, RefreshCw, Pencil, Trash2, CheckCircle, Ban, X, Search } from 'lucide-react'
-import {
-  Expenses,
-  APBillSuppliers,
-  type BusinessExpense,
-  type APBillSupplierOption,
-  fmtMoney,
-  fmtDate,
-} from '@/src/libs/data/AccountingV2Data'
+import Link from 'next/link'
+import { Plus, RefreshCw, Pencil, Trash2, CheckCircle, Ban, Search } from 'lucide-react'
+import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
-
-const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -20,16 +12,39 @@ const STATUS_STYLES: Record<string, string> = {
   VOID: 'bg-red-50 text-red-600',
 }
 
+// Scenario 40 Part 6 — payee is fixed at the header for CUSTOMER/SUPPLIER,
+// but varies per line for OTHER (each line has its own recipient).
+function payeeLabel(x: BusinessExpense): string {
+  if (x.supplier?.name) return x.supplier.name
+  if (x.customer?.name) return x.customer.name
+  if (x.payee) return x.payee
+  if (x.payeeType === 'OTHER' && x.lines.length > 0) {
+    if (x.lines.length === 1) {
+      const l = x.lines[0]
+      if (l.employee) return `${l.employee.firstName} ${l.employee.lastName}`
+      if (l.payee) return l.payee
+    } else {
+      return `${x.lines.length} recipients`
+    }
+  }
+  return '—'
+}
+
+// Category is fixed at the header for OTHER (every line shares it), but
+// varies per line for CUSTOMER/SUPPLIER.
+function categoryLabel(x: BusinessExpense): string {
+  if (x.lines.length === 0) return '—'
+  const first = x.lines[0].categoryAccount?.name ?? '—'
+  return x.lines.length > 1 ? `${first} +${x.lines.length - 1} more` : first
+}
+
 export default function ExpensesList() {
   const [items, setItems] = useState<BusinessExpense[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [editing, setEditing] = useState<BusinessExpense | null>(null)
-  const [creating, setCreating] = useState(false)
 
   const expenseAccounts = accounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE')
 
@@ -51,7 +66,6 @@ export default function ExpensesList() {
     getAccounts({ limit: 500 }).then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
     )
-    APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
   }, [])
 
   const del = async (id: string) => {
@@ -89,12 +103,12 @@ export default function ExpensesList() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          <button
-            onClick={() => setCreating(true)}
+          <Link
+            href="/accounting/expenses/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
             <Plus className="w-4 h-4" /> New Expense
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -166,8 +180,13 @@ export default function ExpensesList() {
                 <tr key={x.id}>
                   <td className="px-3 py-2 font-mono text-xs">{x.expenseNumber}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(x.expenseDate)}</td>
-                  <td className="px-3 py-2">{x.supplier?.name ?? x.payee ?? '—'}</td>
-                  <td className="px-3 py-2">{x.categoryAccount?.name ?? '—'}</td>
+                  <td className="px-3 py-2">{payeeLabel(x)}</td>
+                  <td className="px-3 py-2">
+                    {categoryLabel(x)}
+                    {x.specialAccountType === 'CA_LIQUIDATION' && (
+                      <span className="ml-1 text-[11px] text-purple-600">(Liquidation)</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">{fmtMoney(x.subtotal)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(x.taxAmount)}</td>
                   <td className="px-3 py-2 text-right font-medium">{fmtMoney(x.totalAmount)}</td>
@@ -201,12 +220,12 @@ export default function ExpensesList() {
                       )}
                       {x.status === 'DRAFT' && (
                         <>
-                          <button
-                            onClick={() => setEditing(x)}
+                          <Link
+                            href={`/accounting/expenses/${x.id}/edit`}
                             className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
                           >
                             <Pencil className="w-4 h-4" />
-                          </button>
+                          </Link>
                           <button
                             onClick={() => del(x.id)}
                             className="p-1.5 text-red-600 hover:bg-red-50 rounded"
@@ -223,232 +242,6 @@ export default function ExpensesList() {
           </tbody>
         </table>
       </div>
-
-      {(creating || editing) && (
-        <ExpenseForm
-          initial={editing}
-          suppliers={suppliers}
-          expenseAccounts={expenseAccounts}
-          onClose={() => {
-            setCreating(false)
-            setEditing(null)
-          }}
-          onSaved={() => {
-            setCreating(false)
-            setEditing(null)
-            load()
-          }}
-        />
-      )}
     </div>
-  )
-}
-
-function ExpenseForm({
-  initial,
-  suppliers,
-  expenseAccounts,
-  onClose,
-  onSaved,
-}: {
-  initial: BusinessExpense | null
-  suppliers: APBillSupplierOption[]
-  expenseAccounts: Account[]
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    expenseDate: initial?.expenseDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    supplierId: initial?.supplierId ?? '',
-    payee: initial?.payee ?? '',
-    description: initial?.description ?? '',
-    categoryAccountId: initial?.categoryAccountId ?? '',
-    subtotal: String(initial?.subtotal ?? ''),
-    taxAmount: String(initial?.taxAmount ?? ''),
-    paymentMethod: initial?.paymentMethod ?? 'CASH',
-    reference: initial?.reference ?? '',
-    costCenter: initial?.costCenter ?? '',
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const total = (Number(form.subtotal) || 0) + (Number(form.taxAmount) || 0)
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    setError(null)
-    const payload = {
-      ...form,
-      supplierId: form.supplierId || undefined,
-      payee: form.payee || undefined,
-      subtotal: Number(form.subtotal),
-      taxAmount: Number(form.taxAmount || 0),
-    }
-    const res = initial
-      ? await Expenses.update(initial.id, payload)
-      : await Expenses.create(payload)
-    setSaving(false)
-    if (!res.success) {
-      setError(res.message || res.error || 'Save failed')
-      return
-    }
-    onSaved()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">{initial ? 'Edit Expense' : 'New Expense'}</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Date *">
-              <input
-                required
-                type="date"
-                value={form.expenseDate}
-                onChange={(e) => setForm({ ...form, expenseDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Category (expense account) *">
-              <select
-                required
-                value={form.categoryAccountId}
-                onChange={(e) => setForm({ ...form, categoryAccountId: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— Select —</option>
-                {expenseAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Supplier">
-              <select
-                value={form.supplierId}
-                onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— None —</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Payee (when no supplier)">
-              <input
-                value={form.payee}
-                onChange={(e) => setForm({ ...form, payee: e.target.value })}
-                placeholder="e.g. Meralco"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
-          <Field label="Description">
-            <input
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Subtotal *">
-              <input
-                required
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.subtotal}
-                onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Input VAT">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.taxAmount}
-                onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Payment Method">
-              <select
-                value={form.paymentMethod}
-                onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                {PAYMENT_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m.replace('_', ' ')}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Reference (OR / receipt #)">
-              <input
-                value={form.reference}
-                onChange={(e) => setForm({ ...form, reference: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Cost Center">
-              <input
-                value={form.costCenter}
-                onChange={(e) => setForm({ ...form, costCenter: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
-          <div className="text-sm text-gray-600 text-right">
-            Total: <span className="font-semibold">{fmtMoney(total)}</span>
-          </div>
-          {error && (
-            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-              {error}
-            </div>
-          )}
-          <div className="flex justify-end gap-2 pt-3 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
-      {children}
-    </label>
   )
 }

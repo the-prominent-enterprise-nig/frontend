@@ -231,7 +231,7 @@ export default function CountSessionView({
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Count Session</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              {count.warehouse?.name ?? '—'} &bull;{' '}
+              {count.warehouse?.branch?.name ?? count.warehouse?.name ?? '—'} &bull;{' '}
               {new Date(count.scheduledDate ?? '').toLocaleDateString()}
             </p>
           </div>
