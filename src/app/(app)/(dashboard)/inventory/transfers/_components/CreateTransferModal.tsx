@@ -312,206 +312,208 @@ export default function CreateTransferModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">New Stock Transfer Request</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Submitted as a request — routed to the source branch, or to head office first if
-              approval is required.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">New Stock Transfer Request</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Submitted as a request — routed to the source branch, or to head office first if
+            approval is required.
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close dialog"
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-5 px-6 py-5">
-            {/* From / To — a warehouse or a branch, either can appear here */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  From <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="fromWarehouseId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      placeholder="Search source branch…"
-                      options={warehouses
-                        .filter((wh) => wh.id !== lockedToWarehouseId)
-                        .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
-                    />
-                  )}
-                />
-                {errors.fromWarehouseId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.fromWarehouseId.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  To <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="toWarehouseId"
-                  control={control}
-                  render={({ field }) =>
-                    lockedToWarehouseId ? (
-                      <SearchableSelect
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        disabled
-                        options={[
-                          {
-                            value: lockedToWarehouseId,
-                            label: branchLabel(ownBranchWarehouses[0]),
-                          },
-                        ]}
-                      />
-                    ) : (
-                      <SearchableSelect
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        placeholder="Search destination branch…"
-                        options={(currentUserBranchId ? ownBranchWarehouses : warehouses)
-                          .filter((wh) => wh.id !== fromId)
-                          .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
-                      />
-                    )
-                  }
-                />
-                {lockedToWarehouseId && (
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Requests are always routed to your own branch.
-                  </p>
-                )}
-                {errors.toWarehouseId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.toWarehouseId.message}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Dates */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Transfer Date <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="transferDate"
-                  control={control}
-                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                />
-                {errors.transferDate && (
-                  <p className="mt-1 text-xs text-red-600">{errors.transferDate.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Expected Arrival
-                </label>
-                <Controller
-                  name="expectedArrival"
-                  control={control}
-                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                />
-                {(arrivalBeforeTransfer || errors.expectedArrival) && (
-                  <p className="mt-1 text-xs text-red-600">
-                    {errors.expectedArrival?.message ??
-                      'Expected arrival cannot be before the transfer date'}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Reason */}
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          {/* From / To — a warehouse or a branch, either can appear here */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Reason</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                From <span className="text-red-500">*</span>
+              </label>
               <Controller
-                name="reason"
+                name="fromWarehouseId"
                 control={control}
                 render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. Rebalancing stock for upcoming campaign"
-                    className={fieldClass}
+                  <SearchableSelect
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    placeholder="Search source branch…"
+                    options={warehouses
+                      .filter((wh) => wh.id !== lockedToWarehouseId)
+                      .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
                   />
                 )}
               />
+              {errors.fromWarehouseId && (
+                <p className="mt-1 text-xs text-red-600">{errors.fromWarehouseId.message}</p>
+              )}
             </div>
 
-            {/* Line Items */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label className="text-sm font-medium text-zinc-700">
-                  Items <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => append({ itemId: '', quantity: 1 })}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Item
-                </button>
-              </div>
-
-              {errors.lines?.root && (
-                <p className="mb-2 text-xs text-red-600">{errors.lines.root.message}</p>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                To <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="toWarehouseId"
+                control={control}
+                render={({ field }) =>
+                  lockedToWarehouseId ? (
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      disabled
+                      options={[
+                        {
+                          value: lockedToWarehouseId,
+                          label: branchLabel(ownBranchWarehouses[0]),
+                        },
+                      ]}
+                    />
+                  ) : (
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder="Search destination branch…"
+                      options={(currentUserBranchId ? ownBranchWarehouses : warehouses)
+                        .filter((wh) => wh.id !== fromId)
+                        .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
+                    />
+                  )
+                }
+              />
+              {lockedToWarehouseId && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  Requests are always routed to your own branch.
+                </p>
               )}
-              {typeof errors.lines?.message === 'string' && (
-                <p className="mb-2 text-xs text-red-600">{errors.lines.message}</p>
+              {errors.toWarehouseId && (
+                <p className="mt-1 text-xs text-red-600">{errors.toWarehouseId.message}</p>
               )}
-
-              <div className="space-y-2">
-                {fields.map((field, index) => (
-                  <TransferLineRow
-                    key={field.id}
-                    control={control}
-                    index={index}
-                    canRemove={fields.length > 1}
-                    onRemove={() => fields.length > 1 && remove(index)}
-                    itemError={errors.lines?.[index]?.itemId?.message}
-                    quantityError={errors.lines?.[index]?.quantity?.message}
-                  />
-                ))}
-              </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || arrivalBeforeTransfer}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Submitting…' : 'Submit Request'}
-            </button>
+          {/* Dates */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Transfer Date <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="transferDate"
+                control={control}
+                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+              />
+              {errors.transferDate && (
+                <p className="mt-1 text-xs text-red-600">{errors.transferDate.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Expected Arrival
+              </label>
+              <Controller
+                name="expectedArrival"
+                control={control}
+                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+              />
+              {(arrivalBeforeTransfer || errors.expectedArrival) && (
+                <p className="mt-1 text-xs text-red-600">
+                  {errors.expectedArrival?.message ??
+                    'Expected arrival cannot be before the transfer date'}
+                </p>
+              )}
+            </div>
           </div>
-        </form>
-      </div>
+
+          {/* Reason */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">Reason</label>
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  type="text"
+                  placeholder="e.g. Rebalancing stock for upcoming campaign"
+                  className={fieldClass}
+                />
+              )}
+            />
+          </div>
+
+          {/* Line Items */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-sm font-medium text-zinc-700">
+                Items <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => append({ itemId: '', quantity: 1 })}
+                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Item
+              </button>
+            </div>
+
+            {errors.lines?.root && (
+              <p className="mb-2 text-xs text-red-600">{errors.lines.root.message}</p>
+            )}
+            {typeof errors.lines?.message === 'string' && (
+              <p className="mb-2 text-xs text-red-600">{errors.lines.message}</p>
+            )}
+
+            <div className="space-y-2">
+              {fields.map((field, index) => (
+                <TransferLineRow
+                  key={field.id}
+                  control={control}
+                  index={index}
+                  canRemove={fields.length > 1}
+                  onRemove={() => fields.length > 1 && remove(index)}
+                  itemError={errors.lines?.[index]?.itemId?.message}
+                  quantityError={errors.lines?.[index]?.quantity?.message}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || arrivalBeforeTransfer}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSubmitting ? 'Submitting…' : 'Submit Request'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

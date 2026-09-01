@@ -6,6 +6,8 @@ import { z } from 'zod'
 const BranchSchema = z.object({
   id: z.string(),
   name: z.string(),
+  code: z.string().nullable().optional(),
+  region: z.enum(['negros', 'panay']).nullable().optional(),
 })
 
 export type Branch = z.infer<typeof BranchSchema>

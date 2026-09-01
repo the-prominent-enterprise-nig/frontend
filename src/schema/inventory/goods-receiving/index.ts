@@ -11,7 +11,6 @@ const ReceiveStockLineSchema = z
     // followup, "freebies" gap).
     isFreebie: z.boolean().optional(),
     batchNumber: z.string().optional(),
-    expiryDate: z.string().optional(),
     qualityHold: z.boolean().optional(),
     serialNumbers: z.array(z.string().min(1)).optional(),
     notes: z.string().optional(),
@@ -176,10 +175,11 @@ const ReceivingReportPoLineSchema = z.object({
 
 const ReceivingReportLineItemSchema = StockBalanceItemSchema.extend({
   // Catalog-level classification, used to fill the printed Receiving
-  // Report's Brand / Model / Type columns.
+  // Report's Brand / Subgroup / Model columns.
   modelNumber: z.string().optional().nullable(),
   brand: z.object({ name: z.string() }).optional().nullable(),
   type: z.object({ name: z.string() }).optional().nullable(),
+  primaryCategory: z.object({ name: z.string() }).optional().nullable(),
 })
 
 const ReceivingReportLineSchema = z.object({

@@ -40,7 +40,15 @@ export default async function AppLayout({
         <SideBar session={session} />
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar session={session} />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          {/* Non-scrolling positioning frame for full-content modals (`absolute
+              inset-0`) — the actual page scrolls in the inner wrapper below.
+              If `main` itself scrolled, an absolutely-positioned modal would
+              be pinned to the top of the scrolled *content*, not the visible
+              viewport, leaving the real page visible underneath it once the
+              page had been scrolled. */}
+          <main className="relative flex-1 overflow-hidden">
+            <div className="h-full overflow-y-auto">{children}</div>
+          </main>
         </div>
       </div>
       <Toaster position="top-right" richColors />
