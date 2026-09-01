@@ -65,6 +65,9 @@ import {
   getPendingVoidRequests,
   approveVoidRequest,
   rejectVoidRequest,
+  getPendingCancellationRequests,
+  getPendingRefundRequests,
+  getPendingReleaseFormRequests,
   getFinancingTerms,
   getActiveFinancingTerms,
   createFinancingTerm,
@@ -784,12 +787,43 @@ export function useVoidRequests(transactionId: string) {
   })
 }
 
-export function usePendingVoidRequests(branchId?: string) {
+export function usePendingVoidRequests(branchId?: string, enabled = true) {
   return useQuery({
     queryKey: ['pos-void-requests-pending', branchId],
     queryFn: () => getPendingVoidRequests(branchId),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    enabled,
+  })
+}
+
+export function usePendingCancellationRequests(branchId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['pos-cancellation-requests-pending', branchId],
+    queryFn: () => getPendingCancellationRequests(branchId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
+  })
+}
+
+export function usePendingRefundRequests(branchId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['pos-refund-requests-pending', branchId],
+    queryFn: () => getPendingRefundRequests(branchId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
+  })
+}
+
+export function usePendingReleaseFormRequests(branchId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['pos-release-form-requests-pending', branchId],
+    queryFn: () => getPendingReleaseFormRequests(branchId),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
   })
 }
 

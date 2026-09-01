@@ -2942,179 +2942,181 @@ export default function CheckoutPage() {
                 </div>
                 <span className="text-xs font-bold text-gray-900">{fmt(subtotal)}</span>
               </div>
-              <table className="min-w-full text-sm">
-                <tbody className="divide-y divide-gray-50">
-                  {displayGroups.map((group) => {
-                    const line = group[0]
-                    const groupQty = group.length
-                    const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
-                    const isGrouped = groupQty > 1
+              <div className="scroll-fade-x overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <tbody className="divide-y divide-gray-50">
+                    {displayGroups.map((group) => {
+                      const line = group[0]
+                      const groupQty = group.length
+                      const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
+                      const isGrouped = groupQty > 1
 
-                    return (
-                      <Fragment key={line.lineId}>
-                        <tr className="group hover:bg-gray-50">
-                          <td className="px-4 py-2">
-                            <p className="text-xs font-medium text-gray-900">
-                              {line.itemName}
-                              {isGrouped && (
-                                <span className="ml-1 text-gray-400">× {groupQty}</span>
-                              )}
-                            </p>
-                            {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
-                            {line.isSerialTracked &&
-                              (isGrouped ? (
-                                group.some((l) => !l.serialNumberId) ? (
-                                  <button
-                                    onClick={() =>
-                                      setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
-                                    }
-                                    className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
-                                  >
-                                    ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
-                                    serial{groupQty !== 1 ? 's' : ''} needed
-                                  </button>
+                      return (
+                        <Fragment key={line.lineId}>
+                          <tr className="group hover:bg-gray-50">
+                            <td className="px-4 py-2">
+                              <p className="text-xs font-medium text-gray-900">
+                                {line.itemName}
+                                {isGrouped && (
+                                  <span className="ml-1 text-gray-400">× {groupQty}</span>
+                                )}
+                              </p>
+                              {line.sku && <p className="text-[10px] text-gray-400">{line.sku}</p>}
+                              {line.isSerialTracked &&
+                                (isGrouped ? (
+                                  group.some((l) => !l.serialNumberId) ? (
+                                    <button
+                                      onClick={() =>
+                                        setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
+                                      }
+                                      className="mt-0.5 text-[10px] font-medium text-amber-500 underline-offset-2 hover:underline"
+                                    >
+                                      ⚠ {group.filter((l) => !l.serialNumberId).length} of{' '}
+                                      {groupQty} serial{groupQty !== 1 ? 's' : ''} needed
+                                    </button>
+                                  ) : (
+                                    <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
+                                      <span className="text-gray-400">SN:</span>
+                                      {group.map((l, i) => (
+                                        <button
+                                          key={l.lineId}
+                                          onClick={() => setSerialPickerTarget(l)}
+                                          className="font-medium text-green-600 underline-offset-2 hover:underline"
+                                        >
+                                          {l.serialNumberLabel}
+                                          {i < group.length - 1 ? ',' : ''}
+                                        </button>
+                                      ))}
+                                    </p>
+                                  )
                                 ) : (
-                                  <p className="mt-0.5 flex flex-wrap gap-x-1 text-[10px]">
-                                    <span className="text-gray-400">SN:</span>
-                                    {group.map((l, i) => (
-                                      <button
-                                        key={l.lineId}
-                                        onClick={() => setSerialPickerTarget(l)}
-                                        className="font-medium text-green-600 underline-offset-2 hover:underline"
-                                      >
-                                        {l.serialNumberLabel}
-                                        {i < group.length - 1 ? ',' : ''}
-                                      </button>
-                                    ))}
-                                  </p>
-                                )
+                                  <button
+                                    onClick={() => setSerialPickerTarget(line)}
+                                    className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
+                                  >
+                                    {line.serialNumberId
+                                      ? `SN: ${line.serialNumberLabel}`
+                                      : '⚠ Select serial'}
+                                  </button>
+                                ))}
+                              {lineTaxRate != null ? (
+                                <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
+                                  {line.taxRate == null
+                                    ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                    : `VAT ${lineTaxRate}%`}
+                                </span>
                               ) : (
-                                <button
-                                  onClick={() => setSerialPickerTarget(line)}
-                                  className={`mt-0.5 text-[10px] font-medium underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-600' : 'text-amber-500'}`}
-                                >
-                                  {line.serialNumberId
-                                    ? `SN: ${line.serialNumberLabel}`
-                                    : '⚠ Select serial'}
-                                </button>
-                              ))}
-                            {lineTaxRate != null ? (
-                              <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">
-                                {line.taxRate == null
-                                  ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
-                                  : `VAT ${lineTaxRate}%`}
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
-                                No Tax
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() =>
-                                  line.isSerialTracked
-                                    ? removeLastUnitOfItem(line.itemId)
-                                    : line.allowDecimal
-                                      ? removeFromCart(line.itemId)
-                                      : setQty(line.itemId, line.quantity - 1)
-                                }
-                                disabled={!!cancellationReqId}
-                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                              >
-                                <Minus size={10} />
-                              </button>
-                              {line.allowDecimal ? (
-                                <div className="flex flex-col items-center gap-0.5">
-                                  <input
-                                    type="number"
-                                    min="0.001"
-                                    step="0.1"
-                                    value={line.quantity}
-                                    onChange={(e) => {
-                                      const v = parseFloat(e.target.value)
-                                      if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                    }}
-                                    className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                  />
-                                  {line.uomCode && (
-                                    <span className="text-[9px] text-gray-400 uppercase">
-                                      {line.uomCode}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="w-6 text-center text-xs font-semibold">
-                                  {line.isSerialTracked ? groupQty : line.quantity}
+                                <span className="text-[9px] font-semibold text-gray-400 bg-gray-100 px-1 py-0.5 rounded">
+                                  No Tax
                                 </span>
                               )}
-                              <button
-                                onClick={() =>
-                                  line.isSerialTracked
-                                    ? addUnitOfItem(line.itemId)
-                                    : line.allowDecimal
-                                      ? setMeasuredItem({
-                                          id: line.itemId,
-                                          name: line.itemName,
-                                          sku: line.sku,
-                                          price: line.unitPrice,
-                                          taxRate: line.taxRate,
-                                          uomCode: line.uomCode,
-                                          allowDecimal: true,
-                                        })
-                                      : setQty(line.itemId, line.quantity + 1)
-                                }
-                                className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
-                              >
-                                <Plus size={10} />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
-                            {line.priceResolved ? (
-                              <div className="flex flex-col items-end gap-0.5">
-                                {fmt(
-                                  displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
-                                    groupQty
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() =>
+                                    line.isSerialTracked
+                                      ? removeLastUnitOfItem(line.itemId)
+                                      : line.allowDecimal
+                                        ? removeFromCart(line.itemId)
+                                        : setQty(line.itemId, line.quantity - 1)
+                                  }
+                                  disabled={!!cancellationReqId}
+                                  className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
+                                >
+                                  <Minus size={10} />
+                                </button>
+                                {line.allowDecimal ? (
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      min="0.001"
+                                      step="0.1"
+                                      value={line.quantity}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value)
+                                        if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                      }}
+                                      className="w-14 rounded border border-gray-200 px-1 text-center text-xs font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    />
+                                    {line.uomCode && (
+                                      <span className="text-[9px] text-gray-400 uppercase">
+                                        {line.uomCode}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="w-6 text-center text-xs font-semibold">
+                                    {line.isSerialTracked ? groupQty : line.quantity}
+                                  </span>
                                 )}
-                                {line.priceOverrideBy && (
-                                  <button
-                                    onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                    className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
-                                    title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
-                                  >
-                                    Overridden
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() =>
+                                    line.isSerialTracked
+                                      ? addUnitOfItem(line.itemId)
+                                      : line.allowDecimal
+                                        ? setMeasuredItem({
+                                            id: line.itemId,
+                                            name: line.itemName,
+                                            sku: line.sku,
+                                            price: line.unitPrice,
+                                            taxRate: line.taxRate,
+                                            uomCode: line.uomCode,
+                                            allowDecimal: true,
+                                          })
+                                        : setQty(line.itemId, line.quantity + 1)
+                                  }
+                                  className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700"
+                                >
+                                  <Plus size={10} />
+                                </button>
                               </div>
-                            ) : !priceUseTypeId ? (
-                              <span className="text-[10px] font-medium text-gray-400">
-                                — Select Price Use
-                              </span>
-                            ) : (
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-semibold text-gray-900">
+                              {line.priceResolved ? (
+                                <div className="flex flex-col items-end gap-0.5">
+                                  {fmt(
+                                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) *
+                                      groupQty
+                                  )}
+                                  {line.priceOverrideBy && (
+                                    <button
+                                      onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                                      className="text-[9px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
+                                      title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
+                                    >
+                                      Overridden
+                                    </button>
+                                  )}
+                                </div>
+                              ) : !priceUseTypeId ? (
+                                <span className="text-[10px] font-medium text-gray-400">
+                                  — Select Price Use
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => setPriceOverrideTargetLineId(line.lineId)}
+                                  className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                                >
+                                  No price — Override
+                                </button>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
                               <button
-                                onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 hover:bg-amber-100"
+                                onClick={() => removeFromCart(line.itemId)}
+                                className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
                               >
-                                No price — Override
+                                <X size={12} />
                               </button>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              onClick={() => removeFromCart(line.itemId)}
-                              className="text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-red-500"
-                            >
-                              <X size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      </Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
+                            </td>
+                          </tr>
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

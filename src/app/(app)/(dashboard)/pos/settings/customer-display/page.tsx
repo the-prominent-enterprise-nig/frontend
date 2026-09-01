@@ -91,38 +91,40 @@ export default function CustomerDisplayPage() {
                 Current Order
               </p>
             </div>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50">
-                <tr>
-                  <th className="px-5 py-2 text-left text-xs font-semibold uppercase text-gray-500">
-                    Item
-                  </th>
-                  <th className="px-5 py-2 text-center text-xs font-semibold uppercase text-gray-500">
-                    Qty
-                  </th>
-                  <th className="px-5 py-2 text-right text-xs font-semibold uppercase text-gray-500">
-                    Price
-                  </th>
-                  <th className="px-5 py-2 text-right text-xs font-semibold uppercase text-gray-500">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {(display.lines ?? []).map((line, i) => (
-                  <tr key={i}>
-                    <td className="px-5 py-3 font-medium text-gray-800">{line.itemName}</td>
-                    <td className="px-5 py-3 text-center text-gray-600">{line.quantity}</td>
-                    <td className="px-5 py-3 text-right text-gray-600">
-                      {formatCurrency(line.unitPrice)}
-                    </td>
-                    <td className="px-5 py-3 text-right font-medium text-gray-900">
-                      {formatCurrency(line.lineTotal)}
-                    </td>
+            <div className="scroll-fade-x overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-gray-200 bg-gray-50">
+                  <tr>
+                    <th className="px-5 py-2 text-left text-xs font-semibold uppercase text-gray-500">
+                      Item
+                    </th>
+                    <th className="px-5 py-2 text-center text-xs font-semibold uppercase text-gray-500">
+                      Qty
+                    </th>
+                    <th className="px-5 py-2 text-right text-xs font-semibold uppercase text-gray-500">
+                      Price
+                    </th>
+                    <th className="px-5 py-2 text-right text-xs font-semibold uppercase text-gray-500">
+                      Total
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(display.lines ?? []).map((line, i) => (
+                    <tr key={i}>
+                      <td className="px-5 py-3 font-medium text-gray-800">{line.itemName}</td>
+                      <td className="px-5 py-3 text-center text-gray-600">{line.quantity}</td>
+                      <td className="px-5 py-3 text-right text-gray-600">
+                        {formatCurrency(line.unitPrice)}
+                      </td>
+                      <td className="px-5 py-3 text-right font-medium text-gray-900">
+                        {formatCurrency(line.lineTotal)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="border-t border-gray-200 bg-gray-50 px-5 py-4 space-y-1">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>

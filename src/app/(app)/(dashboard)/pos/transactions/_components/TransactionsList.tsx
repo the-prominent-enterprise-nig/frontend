@@ -318,7 +318,7 @@ export default function TransactionsList({ session }: Props) {
         )}
 
         <div
-          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
+          className={`scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
             isFetching && !isLoading ? 'opacity-60' : ''
           }`}
         >

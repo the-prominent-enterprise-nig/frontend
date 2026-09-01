@@ -39,7 +39,7 @@ export function PosSettingsTabs() {
   return (
     <nav
       aria-label="POS settings tabs"
-      className="w-56 shrink-0 border-r border-gray-200 bg-white px-3 py-5"
+      className="w-full border-b border-gray-200 bg-white px-3 py-5 md:w-56 md:shrink-0 md:border-r md:border-b-0"
     >
       {GROUPS.map((group, i) => (
         <div key={i} className={i > 0 ? 'mt-4 border-t border-gray-100 pt-4' : ''}>

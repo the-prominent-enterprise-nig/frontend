@@ -124,7 +124,7 @@ export default function TerminalsPage() {
         </div>
 
         <div
-          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm ${
+          className={`scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm ${
             isFetching && !isLoading ? 'opacity-60 transition-opacity' : ''
           }`}
         >
