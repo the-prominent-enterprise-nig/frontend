@@ -80,8 +80,6 @@ export function buildReceivingReportHtml(data: unknown): string {
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
-  const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
@@ -89,8 +87,6 @@ export function buildReceivingReportHtml(data: unknown): string {
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
 
   let totalQty = 0
-  let totalAmount = 0
-  let hasAnyCost = false
 
   const rows = lines
     .map((l) => {
@@ -99,25 +95,18 @@ export function buildReceivingReportHtml(data: unknown): string {
             name?: string
             modelNumber?: string
             brand?: { name?: string }
-            type?: { name?: string }
+            primaryCategory?: { name?: string }
           }
         | undefined
       const serials = (l.serialNumbers as string[] | undefined) ?? []
       const qty = Number(l.quantityReceived ?? 0)
-      const unitCost = l.unitCost != null ? Number(l.unitCost) : null
       totalQty += qty
-      if (unitCost != null) {
-        hasAnyCost = true
-        totalAmount += qty * unitCost
-      }
       return `<tr>
         <td class="mono">${serials.length > 0 ? esc(serials.join(', ')) : ''}</td>
         <td>${esc(item?.brand?.name) || ''}</td>
+        <td>${esc(item?.primaryCategory?.name) || ''}</td>
         <td>${esc(item?.modelNumber) || esc(item?.name) || ''}</td>
-        <td>${esc(item?.type?.name) || ''}</td>
         <td class="right">${qty}</td>
-        <td class="right">${unitCost != null ? fmt(unitCost) : ''}</td>
-        <td class="right">${unitCost != null ? fmt(qty * unitCost) : ''}</td>
       </tr>`
     })
     .join('')
@@ -183,14 +172,12 @@ export function buildReceivingReportHtml(data: unknown): string {
         <tr>
           <th rowspan="2" style="width:14%">Part No. / Serial No.</th>
           <th colspan="3">Description</th>
-          <th rowspan="2" style="width:8%">Qty</th>
-          <th rowspan="2" style="width:12%">Unit price</th>
-          <th rowspan="2" style="width:14%">Amount</th>
+          <th rowspan="2" style="width:10%">Qty</th>
         </tr>
         <tr>
           <th>Brand</th>
+          <th>Subgroup</th>
           <th>Model</th>
-          <th>Type</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -200,7 +187,7 @@ export function buildReceivingReportHtml(data: unknown): string {
       <table>
         <tr>
           <td class="label">Total</td>
-          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${hasAnyCost ? ` — ${fmt(totalAmount)}` : ''}</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}</td>
         </tr>
       </table>
     </div>
