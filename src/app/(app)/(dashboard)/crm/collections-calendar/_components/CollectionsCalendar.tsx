@@ -9,7 +9,6 @@ import {
   Banknote,
   BellRing,
   Search,
-  Loader2,
   X,
 } from 'lucide-react'
 import {
@@ -531,11 +530,8 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
             <ChevronLeft className="h-4 w-4 text-zinc-500" />
           </button>
           <div className="text-center">
-            <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-zinc-900">
+            <p className="text-sm font-semibold text-zinc-900">
               {monthName} {year}
-              {loading && !initialLoading && (
-                <Loader2 className="h-3 w-3 animate-spin text-zinc-300" aria-label="Refreshing" />
-              )}
             </p>
             {data && (
               <p className="text-[11px] text-zinc-400">

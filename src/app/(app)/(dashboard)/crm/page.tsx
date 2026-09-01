@@ -739,6 +739,168 @@ export default function CrmDashboardPage() {
           </div>
         </div>
 
+        {/* Alert panels: Overdue reminders + Upcoming reminders + Segments —
+        placed right after the KPI rows since these are the most
+        time-sensitive/actionable items on the dashboard, not something to
+        bury below the tables and charts. */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-500" />
+            <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  Overdue Reminders
+                </h3>
+                <Link href="/crm/reminders" className="text-xs text-red-600 hover:underline">
+                  {loading ? '…' : s.overdueReminders} total
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.overdueRemindersList.length === 0 ? (
+                <EmptyState message="No overdue reminders" />
+              ) : (
+                <div className="space-y-2">
+                  {s.overdueRemindersList.map((r: any, i: number) => {
+                    const target = reminderTarget(r)
+                    return (
+                      <div
+                        key={r.id ?? i}
+                        className="rounded-lg border border-red-100 bg-red-50 p-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
+                          >
+                            {fmtStatus(r.reminderType ?? r.status)}
+                          </span>
+                          <span className="text-[10px] text-red-600 font-medium">
+                            Due {fmtDateShort(r.dueAt)}
+                          </span>
+                        </div>
+                        {target && (
+                          <Link
+                            href={target.href}
+                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                          >
+                            {target.label}
+                          </Link>
+                        )}
+                        {r.note && (
+                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Upcoming Reminders
+                </h3>
+                <Link href="/crm/reminders" className="text-xs text-amber-600 hover:underline">
+                  {loading ? '…' : s.pendingReminders} pending
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.pendingRemindersList.length === 0 ? (
+                <EmptyState message="No upcoming reminders" />
+              ) : (
+                <div className="space-y-2">
+                  {s.pendingRemindersList.map((r: any, i: number) => {
+                    const target = reminderTarget(r)
+                    return (
+                      <div
+                        key={r.id ?? i}
+                        className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
+                            {r.reminderType ?? 'reminder'}
+                          </span>
+                          <span className="text-[10px] text-amber-700 font-medium">
+                            {fmtDateTime(r.dueAt)}
+                          </span>
+                        </div>
+                        {target && (
+                          <Link
+                            href={target.href}
+                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
+                          >
+                            {target.label}
+                          </Link>
+                        )}
+                        {r.note && (
+                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[11px] font-bold text-violet-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Layers className="h-3 w-3" />
+                  Customer Segments
+                </h3>
+                <Link href="/crm/segments" className="text-xs text-violet-600 hover:underline">
+                  {loading ? '…' : `${s.totalSegments} segments`}
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : s.segmentsList.length === 0 ? (
+                <EmptyState message="No segments created yet" />
+              ) : (
+                <div className="space-y-2">
+                  {s.segmentsList.map((seg: any, i: number) => (
+                    <div
+                      key={seg.id ?? i}
+                      className="rounded-lg border border-violet-100 bg-violet-50 p-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-gray-900 truncate">{seg.name}</p>
+                        <span className="shrink-0 text-xs font-bold text-violet-700 tabular-nums">
+                          {fmtNum(Number(seg.memberCount))} members
+                        </span>
+                      </div>
+                      {seg.description && (
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                          {seg.description}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Secondary strip */}
         <div>
           <div className="mb-3 flex items-center gap-2">
@@ -1038,165 +1200,6 @@ export default function CrmDashboardPage() {
                 })}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Alert panels: Overdue reminders + Upcoming reminders + Segments */}
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-red-500" />
-            <h2 className="text-base font-semibold text-gray-900">Alerts &amp; Risk Signals</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                  Overdue Reminders
-                </h3>
-                <Link href="/crm/reminders" className="text-xs text-red-600 hover:underline">
-                  {loading ? '…' : s.overdueReminders} total
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.overdueRemindersList.length === 0 ? (
-                <EmptyState message="No overdue reminders" />
-              ) : (
-                <div className="space-y-2">
-                  {s.overdueRemindersList.map((r: any, i: number) => {
-                    const target = reminderTarget(r)
-                    return (
-                      <div
-                        key={r.id ?? i}
-                        className="rounded-lg border border-red-100 bg-red-50 p-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${reminderStatusCls(r.status)}`}
-                          >
-                            {fmtStatus(r.reminderType ?? r.status)}
-                          </span>
-                          <span className="text-[10px] text-red-600 font-medium">
-                            Due {fmtDateShort(r.dueAt)}
-                          </span>
-                        </div>
-                        {target && (
-                          <Link
-                            href={target.href}
-                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
-                          >
-                            {target.label}
-                          </Link>
-                        )}
-                        {r.note && (
-                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-amber-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Upcoming Reminders
-                </h3>
-                <Link href="/crm/reminders" className="text-xs text-amber-600 hover:underline">
-                  {loading ? '…' : s.pendingReminders} pending
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.pendingRemindersList.length === 0 ? (
-                <EmptyState message="No upcoming reminders" />
-              ) : (
-                <div className="space-y-2">
-                  {s.pendingRemindersList.map((r: any, i: number) => {
-                    const target = reminderTarget(r)
-                    return (
-                      <div
-                        key={r.id ?? i}
-                        className="rounded-lg border border-amber-100 bg-amber-50 p-2.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full capitalize">
-                            {r.reminderType ?? 'reminder'}
-                          </span>
-                          <span className="text-[10px] text-amber-700 font-medium">
-                            {fmtDateTime(r.dueAt)}
-                          </span>
-                        </div>
-                        {target && (
-                          <Link
-                            href={target.href}
-                            className="mt-1 block truncate text-[11px] font-semibold text-gray-800 hover:underline"
-                          >
-                            {target.label}
-                          </Link>
-                        )}
-                        {r.note && (
-                          <p className="text-[10px] text-gray-600 mt-0.5 truncate">{r.note}</p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-violet-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Layers className="h-3 w-3" />
-                  Customer Segments
-                </h3>
-                <Link href="/crm/segments" className="text-xs text-violet-600 hover:underline">
-                  {loading ? '…' : `${s.totalSegments} segments`}
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.segmentsList.length === 0 ? (
-                <EmptyState message="No segments created yet" />
-              ) : (
-                <div className="space-y-2">
-                  {s.segmentsList.map((seg: any, i: number) => (
-                    <div
-                      key={seg.id ?? i}
-                      className="rounded-lg border border-violet-100 bg-violet-50 p-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold text-gray-900 truncate">{seg.name}</p>
-                        <span className="shrink-0 text-xs font-bold text-violet-700 tabular-nums">
-                          {fmtNum(Number(seg.memberCount))} members
-                        </span>
-                      </div>
-                      {seg.description && (
-                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          {seg.description}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       </div>
