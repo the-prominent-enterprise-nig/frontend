@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useForm, Controller, useFieldArray } from 'react-hook-form'
-import type { Control, FieldErrors } from 'react-hook-form'
+import { useForm, Controller, useFieldArray, useWatch } from 'react-hook-form'
+import type { Control, FieldErrors, UseFormSetValue } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, ShoppingCart, Plus } from 'lucide-react'
@@ -41,7 +41,6 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
     handleSubmit,
     reset,
     setValue,
-    getValues,
     formState: { errors },
   } = useForm<ConvertPrToPoFormValues>({
     resolver: zodResolver(ConvertPrToPoFormSchema),
@@ -104,22 +103,6 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
     }
   }, [open, pr, reset])
 
-  // Unit Price defaults to srp with every discount step applied
-  // sequentially — same logic as PurchaseOrderFormFields.tsx's
-  // recomputeUnitPrice, only fires off srp/discount changes so a manual
-  // override isn't immediately overwritten.
-  function recomputeUnitPrice(index: number) {
-    const line = getValues(`lines.${index}`)
-    const srp = Number(line?.srp)
-    if (!line?.srp || !line.discounts || line.discounts.length === 0) return
-    const computed = line.discounts.reduce((price, d) => {
-      const val = Number(d?.value)
-      if (!d?.type || d.value == null || isNaN(val)) return price
-      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
-    }, srp)
-    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
-  }
-
   async function handleFormSubmit(data: ConvertPrToPoFormValues) {
     if (!pr) return
     await onConvert(pr.id, data)
@@ -167,6 +150,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                     value={field.value}
                     onChange={field.onChange}
                     error={errors.supplierId?.message}
+                    initialLabel={pr?.supplier?.name}
                   />
                 )}
               />
@@ -175,11 +159,11 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Warehouse + Expected Delivery */}
+            {/* Location + Expected Delivery */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Warehouse <span className="text-red-500">*</span>
+                  Location <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="warehouseId"
@@ -190,10 +174,10 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                       value={field.value ?? ''}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     >
-                      <option value="">Select warehouse…</option>
+                      <option value="">Select location…</option>
                       {warehouses.map((wh) => (
                         <option key={wh.id} value={wh.id}>
-                          {wh.name}
+                          {wh.branch?.name ?? wh.name}
                         </option>
                       ))}
                     </select>
@@ -281,7 +265,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                     errors={errors}
                     index={index}
                     prLine={pr.lines[index]}
-                    recomputeUnitPrice={recomputeUnitPrice}
+                    setValue={setValue}
                   />
                 ))}
               </div>
@@ -318,19 +302,13 @@ type LineCardProps = {
   errors: FieldErrors<ConvertPrToPoFormValues>
   index: number
   prLine: PurchaseRequestSummary['lines'][number] | undefined
-  recomputeUnitPrice: (index: number) => void
+  setValue: UseFormSetValue<ConvertPrToPoFormValues>
 }
 
 // Its own component (not inlined in the parent's .map()) so the discount
 // chain's own useFieldArray can be called per line — same reason
 // PurchaseOrderFormFields.tsx splits PurchaseOrderLineCard out.
-function ConvertPrToPoLineCard({
-  control,
-  errors,
-  index,
-  prLine,
-  recomputeUnitPrice,
-}: LineCardProps) {
+function ConvertPrToPoLineCard({ control, errors, index, prLine, setValue }: LineCardProps) {
   const {
     fields: discountFields,
     append: appendDiscount,
@@ -339,6 +317,29 @@ function ConvertPrToPoLineCard({
     control,
     name: `lines.${index}.discounts` as `lines.${number}.discounts`,
   })
+
+  // Unit Price defaults to srp with every discount step applied
+  // sequentially (each step's output feeds the next) but stays a normal
+  // editable input — reacting to srp/discounts via useWatch (not a
+  // setValue() call chained off this field's own onChange) so typing in
+  // SRP/a discount value never fires a cross-field form update
+  // synchronously inside its own change event — that re-entrant update is
+  // what caused the input to drop focus after every keystroke (same fix as
+  // PurchaseOrderFormFields.tsx's PurchaseOrderLineCard).
+  const srp = useWatch({ control, name: `lines.${index}.srp` })
+  const discounts = useWatch({ control, name: `lines.${index}.discounts` })
+
+  useEffect(() => {
+    const srpNum = Number(srp)
+    if (!srp || !discounts || discounts.length === 0) return
+    const computed = discounts.reduce((price, d) => {
+      const val = Number(d?.value)
+      if (!d?.type || d.value == null || isNaN(val)) return price
+      return d.type === 'percentage' ? price * (1 - val / 100) : price - val
+    }, srpNum)
+    setValue(`lines.${index}.unitPrice`, Math.max(0, Number(computed.toFixed(2))))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srp, discounts, index])
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
@@ -407,10 +408,7 @@ function ConvertPrToPoLineCard({
             render={({ field: f }) => (
               <NumericInput
                 value={f.value}
-                onChange={(v) => {
-                  f.onChange(v ?? undefined)
-                  recomputeUnitPrice(index)
-                }}
+                onChange={(v) => f.onChange(v ?? undefined)}
                 onBlur={f.onBlur}
                 placeholder="0.00"
                 className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
@@ -425,17 +423,27 @@ function ConvertPrToPoLineCard({
         <label className="block text-xs font-medium text-zinc-600">Discounts (off SRP)</label>
         {discountFields.map((discountField, discountIndex) => (
           <div key={discountField.id} className="flex items-center gap-2">
-            <div className="grid flex-1 grid-cols-2 gap-2">
+            <div className="grid flex-1 grid-cols-3 gap-2">
+              <Controller
+                name={`lines.${index}.discounts.${discountIndex}.name`}
+                control={control}
+                render={({ field: f }) => (
+                  <input
+                    {...f}
+                    value={f.value ?? ''}
+                    type="text"
+                    placeholder="Discount name"
+                    maxLength={100}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  />
+                )}
+              />
               <Controller
                 name={`lines.${index}.discounts.${discountIndex}.type`}
                 control={control}
                 render={({ field: f }) => (
                   <select
                     {...f}
-                    onChange={(e) => {
-                      f.onChange(e)
-                      recomputeUnitPrice(index)
-                    }}
                     className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   >
                     <option value="percentage">Percentage</option>
@@ -449,10 +457,7 @@ function ConvertPrToPoLineCard({
                 render={({ field: f }) => (
                   <NumericInput
                     value={f.value}
-                    onChange={(v) => {
-                      f.onChange(v ?? 0)
-                      recomputeUnitPrice(index)
-                    }}
+                    onChange={(v) => f.onChange(v ?? 0)}
                     onBlur={f.onBlur}
                     placeholder="Percent or amount"
                     className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
@@ -462,10 +467,7 @@ function ConvertPrToPoLineCard({
             </div>
             <button
               type="button"
-              onClick={() => {
-                removeDiscount(discountIndex)
-                recomputeUnitPrice(index)
-              }}
+              onClick={() => removeDiscount(discountIndex)}
               className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
               aria-label="Remove discount"
             >
@@ -475,7 +477,7 @@ function ConvertPrToPoLineCard({
         ))}
         <button
           type="button"
-          onClick={() => appendDiscount({ type: 'percentage', value: 0 })}
+          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
           className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
         >
           <Plus className="h-3 w-3" />

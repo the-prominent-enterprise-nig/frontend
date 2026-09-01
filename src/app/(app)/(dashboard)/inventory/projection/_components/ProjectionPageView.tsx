@@ -150,7 +150,7 @@ export default function ProjectionPageView({ session: _session }: { session: Ses
                       SKU
                     </th>
                     <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
-                      Warehouse
+                      Location
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       On Hand

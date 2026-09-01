@@ -23,6 +23,10 @@ type Props = {
   setValue: UseFormSetValue<CreatePoFormValues>
   getValues: UseFormGetValues<CreatePoFormValues>
   open: boolean
+  // Edit mode only — the already-selected item's display name per line
+  // index, since the form itself only carries itemId. See CreatePoModal.tsx.
+  initialItemLabels?: (string | undefined)[]
+  initialSupplierLabel?: string
 }
 
 // The Supplier/Warehouse/Expected Delivery/Delivery Instructions/Notes/Line
@@ -38,6 +42,8 @@ export function PurchaseOrderFormFields({
   setValue,
   getValues,
   open,
+  initialItemLabels,
+  initialSupplierLabel,
 }: Props) {
   // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
   // decided once here at creation and carried through unedited to receiving
@@ -50,16 +56,20 @@ export function PurchaseOrderFormFields({
   })
   const warehouses = warehousesQuery.data?.data?.data ?? []
 
+  // Location is a native, uncontrolled <select> (register(), not Controller)
+  // — on edit, reset() sets warehouseId in RHF's internal state as soon as
+  // the modal opens, almost always before this async query resolves. Setting
+  // a <select>'s DOM value to an id with no matching <option> yet doesn't
+  // retroactively apply once the real option appears; RHF's own state is
+  // still correct throughout, only the visible selection is stale. Re-apply
+  // once the options actually exist to force the DOM back in sync.
+  useEffect(() => {
+    if (warehousesQuery.data) {
+      setValue('warehouseId', getValues('warehouseId'))
+    }
+  }, [warehousesQuery.data, setValue, getValues])
+
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
-
-  const lines = useWatch({ control, name: 'lines' })
-
-  const subtotal = lines.reduce((sum, line) => {
-    if (line.isFreebie) return sum
-    const qty = Number(line.quantity) || 0
-    const price = Number(line.unitPrice) || 0
-    return sum + qty * price
-  }, 0)
 
   const fmtAmount = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -79,6 +89,7 @@ export function PurchaseOrderFormFields({
               value={field.value}
               onChange={field.onChange}
               error={errors.supplierId?.message}
+              initialLabel={initialSupplierLabel}
             />
           )}
         />
@@ -87,19 +98,19 @@ export function PurchaseOrderFormFields({
         )}
       </div>
 
-      {/* Warehouse */}
+      {/* Location */}
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Warehouse <span className="text-red-500">*</span>
+          Location <span className="text-red-500">*</span>
         </label>
         <select
           {...register('warehouseId')}
           className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         >
-          <option value="">Select warehouse…</option>
+          <option value="">Select location…</option>
           {warehouses.map((wh) => (
             <option key={wh.id} value={wh.id}>
-              {wh.name}
+              {wh.branch?.name ?? wh.name}
             </option>
           ))}
         </select>
@@ -156,10 +167,10 @@ export function PurchaseOrderFormFields({
               setValue={setValue}
               errors={errors}
               index={index}
-              line={lines[index]}
               canRemove={fields.length > 1}
               onRemove={() => remove(index)}
               fmtAmount={fmtAmount}
+              initialItemLabel={initialItemLabels?.[index]}
             />
           ))}
         </div>
@@ -174,7 +185,7 @@ export function PurchaseOrderFormFields({
               description: undefined,
               notes: undefined,
               srp: undefined,
-              discounts: [{ type: 'percentage', value: 0 }],
+              discounts: [{ name: undefined, type: 'percentage', value: 0 }],
               isFreebie: false,
             })
           }
@@ -188,10 +199,34 @@ export function PurchaseOrderFormFields({
       {/* Subtotal */}
       <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
         <span className="text-sm font-medium text-zinc-700">Subtotal:&nbsp;</span>
-        <span className="text-base font-semibold text-zinc-900">{fmtAmount(subtotal)}</span>
+        <PoSubtotal control={control} fmtAmount={fmtAmount} />
       </div>
     </>
   )
+}
+
+// Isolated in its own component so its useWatch({name: 'lines'}) subscription
+// never shares a component instance with the useFieldArray({name: 'lines'})
+// call above — watching a whole array a field array is also managing, in
+// the same scope, was regenerating the field array's own item keys on the
+// production React build (never reproduced under `next dev`), forcing every
+// PurchaseOrderLineCard to unmount/remount on each keystroke and dropping
+// both input focus and the Item combobox's selection.
+function PoSubtotal({
+  control,
+  fmtAmount,
+}: {
+  control: Control<CreatePoFormValues>
+  fmtAmount: (n: number) => string
+}) {
+  const lines = useWatch({ control, name: 'lines' })
+  const subtotal = (lines ?? []).reduce((sum, line) => {
+    if (line?.isFreebie) return sum
+    const qty = Number(line?.quantity) || 0
+    const price = Number(line?.unitPrice) || 0
+    return sum + qty * price
+  }, 0)
+  return <span className="text-base font-semibold text-zinc-900">{fmtAmount(subtotal)}</span>
 }
 
 type LineCardProps = {
@@ -200,10 +235,10 @@ type LineCardProps = {
   setValue: UseFormSetValue<CreatePoFormValues>
   errors: FieldErrors<CreatePoFormValues>
   index: number
-  line: CreatePoFormValues['lines'][number] | undefined
   canRemove: boolean
   onRemove: () => void
   fmtAmount: (n: number) => string
+  initialItemLabel?: string
 }
 
 // One line's whole card — Item/Quantity/SRP/discount chain/Unit Price/
@@ -216,10 +251,10 @@ function PurchaseOrderLineCard({
   setValue,
   errors,
   index,
-  line,
   canRemove,
   onRemove,
   fmtAmount,
+  initialItemLabel,
 }: LineCardProps) {
   const {
     fields: discountFields,
@@ -240,6 +275,9 @@ function PurchaseOrderLineCard({
   // after every keystroke.
   const srp = useWatch({ control, name: `lines.${index}.srp` })
   const discounts = useWatch({ control, name: `lines.${index}.discounts` })
+  const isFreebie = useWatch({ control, name: `lines.${index}.isFreebie` })
+  const quantity = useWatch({ control, name: `lines.${index}.quantity` })
+  const unitPrice = useWatch({ control, name: `lines.${index}.unitPrice` })
 
   useEffect(() => {
     const srpNum = Number(srp)
@@ -260,7 +298,7 @@ function PurchaseOrderLineCard({
         <label className="flex items-center gap-2 text-xs text-zinc-600">
           <input
             type="checkbox"
-            checked={Boolean(line?.isFreebie)}
+            checked={Boolean(isFreebie)}
             onChange={(e) => {
               setValue(`lines.${index}.isFreebie`, e.target.checked)
               if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
@@ -291,6 +329,7 @@ function PurchaseOrderLineCard({
               value={f.value}
               onChange={f.onChange}
               error={errors.lines?.[index]?.itemId?.message}
+              initialLabel={initialItemLabel}
             />
           )}
         />
@@ -339,7 +378,14 @@ function PurchaseOrderLineCard({
         {discountFields.map((discountField, discountIndex) => {
           return (
             <div key={discountField.id} className="flex items-center gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2">
+              <div className="grid flex-1 grid-cols-3 gap-2">
+                <input
+                  type="text"
+                  placeholder="Discount name"
+                  maxLength={100}
+                  {...register(`lines.${index}.discounts.${discountIndex}.name`)}
+                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                />
                 <select
                   {...register(`lines.${index}.discounts.${discountIndex}.type`)}
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
@@ -351,9 +397,7 @@ function PurchaseOrderLineCard({
                   type="number"
                   min={0}
                   step={0.01}
-                  placeholder={
-                    line?.discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'
-                  }
+                  placeholder={discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'}
                   {...register(`lines.${index}.discounts.${discountIndex}.value`, {
                     valueAsNumber: true,
                   })}
@@ -373,7 +417,7 @@ function PurchaseOrderLineCard({
         })}
         <button
           type="button"
-          onClick={() => appendDiscount({ type: 'percentage', value: 0 })}
+          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
           className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
         >
           <Plus className="h-3 w-3" />
@@ -390,7 +434,7 @@ function PurchaseOrderLineCard({
           min={0}
           step={0.01}
           placeholder="0.00"
-          disabled={line?.isFreebie}
+          disabled={isFreebie}
           {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
           className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
         />
@@ -413,7 +457,7 @@ function PurchaseOrderLineCard({
       <div className="text-right text-xs text-zinc-500">
         Line total:{' '}
         <span className="font-medium text-zinc-800">
-          {fmtAmount((Number(line?.quantity) || 0) * (Number(line?.unitPrice) || 0))}
+          {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
         </span>
       </div>
     </div>

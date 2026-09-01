@@ -34,16 +34,10 @@ const BUSINESS_CATEGORY_LABELS: Record<string, string> = {
 export default function CustomerExtraFields({
   values,
   onChange,
-  showAddressHint = false,
   showGroupId = true,
 }: {
   values: CustomerExtraFieldsValues
   onChange: (patch: Partial<CustomerExtraFieldsValues>) => void
-  /** Edit-only: the picker always starts blank (it can't reverse-parse a
-   * saved free-text address back into region/province/city/barangay), so
-   * surface what's already on file above it — otherwise an editor has no
-   * way to see the current address before picking a new one. */
-  showAddressHint?: boolean
   /** CRM's full customer form drops Group ID (superseded by clearer
    * grouping elsewhere); POS's quick walk-in modal keeps it, so this
    * defaults to on and CRM opts out explicitly. */
@@ -172,14 +166,10 @@ export default function CustomerExtraFields({
       {/* Full width: address, with notes stacked underneath, smaller */}
       <div className="col-span-2">
         <label className="mb-1 block text-[13px] font-medium text-gray-700">Address</label>
-        {showAddressHint && values.address && (
-          <p className="mb-1.5 text-xs text-gray-500">
-            Current: <span className="text-gray-700">{values.address}</span> — pick below to replace
-            it.
-          </p>
-        )}
         <PhilippineAddressPicker
           onChange={(v) => onChange({ address: v.address, barangayCode: v.barangayCode })}
+          initialBarangayCode={values.barangayCode || undefined}
+          initialAddress={values.address || undefined}
         />
 
         <label className="mt-3 mb-1 block text-[13px] font-medium text-gray-700">Notes</label>

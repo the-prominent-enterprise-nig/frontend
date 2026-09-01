@@ -14,10 +14,10 @@ import {
   Send,
   Archive,
   PackagePlus,
-  Ban,
   Download,
   CheckCircle,
   Pencil,
+  Eye,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
 import { usePurchaseRequests } from '../../purchase-requests/_hooks/usePurchaseRequests'
@@ -552,26 +552,17 @@ export function PurchaseOrderList({
                                   <Pencil className="h-3.5 w-3.5" />
                                 </IconBtn>
                               )}
-                              {canApprove && (
-                                <button
-                                  type="button"
-                                  onClick={() => setApproveTarget(po)}
-                                  disabled={isActing}
-                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                                >
-                                  Approve
-                                </button>
-                              )}
-                              {canCancel && (
-                                <IconBtn
-                                  title="Cancel PO"
-                                  onClick={() => setCancelTarget(po)}
-                                  disabled={isActing}
-                                  variant="danger"
-                                >
-                                  <Ban className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
+                              {/* Approve/Cancel moved into PoDetailModal — click
+                                  through to review before deciding. */}
+                              <button
+                                type="button"
+                                onClick={() => setDetailsTarget(po)}
+                                disabled={isActing}
+                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                View
+                              </button>
                             </>
                           )}
 
@@ -604,16 +595,17 @@ export function PurchaseOrderList({
                                   <Send className="h-3.5 w-3.5" />
                                 </IconBtn>
                               )}
-                              {canCancel && (
-                                <IconBtn
-                                  title="Cancel PO"
-                                  onClick={() => setCancelTarget(po)}
-                                  disabled={isActing}
-                                  variant="danger"
-                                >
-                                  <Ban className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
+                              {/* Cancel moved into PoDetailModal, same as the
+                                  draft row above. */}
+                              <button
+                                type="button"
+                                onClick={() => setDetailsTarget(po)}
+                                disabled={isActing}
+                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                View
+                              </button>
                             </>
                           )}
 
@@ -837,7 +829,20 @@ export function PurchaseOrderList({
         isConfirming={isClosing}
       />
 
-      <PoDetailModal po={detailsTarget} onClose={() => setDetailsTarget(null)} />
+      <PoDetailModal
+        po={detailsTarget}
+        onClose={() => setDetailsTarget(null)}
+        canApprove={canApprove}
+        canCancel={canCancel}
+        onApprove={(po) => {
+          setDetailsTarget(null)
+          setApproveTarget(po)
+        }}
+        onCancel={(po) => {
+          setDetailsTarget(null)
+          setCancelTarget(po)
+        }}
+      />
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
 

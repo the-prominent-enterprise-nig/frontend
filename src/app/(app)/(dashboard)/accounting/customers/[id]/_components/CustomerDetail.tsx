@@ -2,9 +2,44 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, CircleCheck, FileText, ShieldCheck } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  CircleCheck,
+  FileText,
+  ShieldCheck,
+} from 'lucide-react'
 import { getCustomerById, Customer } from '@/src/libs/data/AccountingData'
 import { ARInvoices, fmtDate, fmtMoney, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
+import { customersApi } from '@/src/libs/api/crm'
+import type { InstallmentSchedule } from '@/src/schema/pos'
+
+const INSTALLMENT_PLAN_STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  closed: 'Closed',
+  early_closed: 'Paid Off Early',
+  written_off: 'Written Off',
+}
+
+const INSTALLMENT_PLAN_STATUS_STYLES: Record<string, string> = {
+  active: 'bg-blue-100 text-blue-700',
+  closed: 'bg-green-100 text-green-700',
+  early_closed: 'bg-green-100 text-green-700',
+  written_off: 'bg-red-100 text-red-700',
+}
+
+// A schedule can cover several items sharing one financing term — mirrors
+// the "primary item +N more" convention CRM's Customer360 already uses for
+// this exact shape (Scenario 23 Gap 2).
+function productLabel(
+  lines: { item: { name: string; brand: { name: string } | null } | null }[]
+): string {
+  const [first, ...rest] = lines
+  if (!first?.item) return '—'
+  const label = first.item.brand ? `${first.item.name} (${first.item.brand.name})` : first.item.name
+  return rest.length > 0 ? `${label} +${rest.length} more` : label
+}
 
 const INVOICE_STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -20,7 +55,7 @@ const LIFECYCLE_COLORS: Record<string, string> = {
   employed: 'bg-blue-50 text-blue-700 ring-blue-200',
 }
 
-export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdate: boolean }) {
+export default function CustomerDetail({ id }: { id: string }) {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -30,6 +65,13 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
   // self-sufficient instead of sending accountants elsewhere to see what a
   // customer owes.
   const [invoices, setInvoices] = useState<ARInvoice[]>([])
+  const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
+
+  useEffect(() => {
+    customersApi.getInstallmentSchedules(id).then((res) => {
+      if (res.success && res.data) setInstallmentSchedules(res.data)
+    })
+  }, [id])
 
   useEffect(() => {
     getCustomerById(id).then((res) => {
@@ -63,7 +105,7 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
 
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto">
+      <div>
         <Link
           href="/accounting/customers"
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
@@ -105,14 +147,6 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
                 >
                   <FileText className="h-4 w-4" /> View Statement
                 </Link>
-                {canUpdate && (
-                  <Link
-                    href={`/accounting/customers?edit=${customer.id}`}
-                    className="flex items-center gap-2 rounded-lg bg-purple-700 px-3 py-2 text-sm font-medium text-white hover:bg-purple-800"
-                  >
-                    Edit
-                  </Link>
-                )}
               </div>
             </div>
 
@@ -188,6 +222,60 @@ export default function CustomerDetail({ id, canUpdate }: { id: string; canUpdat
                 <Row label="Created" value={fmtDate(customer.createdAt)} />
                 <Row label="Updated" value={fmtDate(customer.updatedAt)} />
               </DetailCard>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
+              <h2 className="mb-3 text-sm font-semibold text-zinc-900">Installments</h2>
+              {installmentSchedules.length === 0 ? (
+                <p className="py-4 text-center text-sm text-zinc-400">
+                  No installment plans for this customer.
+                </p>
+              ) : (
+                <ul className="divide-y divide-zinc-100">
+                  {installmentSchedules.map((s) => {
+                    const row = (
+                      <div className="flex w-full items-center justify-between gap-2 py-2.5 text-sm">
+                        <div>
+                          <p className="text-zinc-800">{productLabel(s.posTransactionLines)}</p>
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            {s.termMonths} months · Total {fmtMoney(s.totalPayable)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {s.installmentAccount && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                INSTALLMENT_PLAN_STATUS_STYLES[s.installmentAccount.status] ??
+                                'bg-gray-100 text-gray-600'
+                              }`}
+                            >
+                              {INSTALLMENT_PLAN_STATUS_LABELS[s.installmentAccount.status] ??
+                                s.installmentAccount.status}
+                            </span>
+                          )}
+                          {s.installmentAccount && (
+                            <ChevronRight className="h-4 w-4 text-zinc-500" />
+                          )}
+                        </div>
+                      </div>
+                    )
+                    return (
+                      <li key={s.id}>
+                        {s.installmentAccount ? (
+                          <Link
+                            href={`/accounting/customers/${id}/installments/${s.installmentAccount.id}`}
+                            className="-mx-3 block rounded-lg bg-zinc-50 px-3 transition-colors hover:bg-zinc-100"
+                          >
+                            {row}
+                          </Link>
+                        ) : (
+                          row
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </div>
 
             <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">

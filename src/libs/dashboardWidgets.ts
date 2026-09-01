@@ -37,6 +37,10 @@ export type WidgetDef = {
   minW: number
   minH: number
   roles: DashboardRole[]
+  /** Skip the standard title bar + content padding in view mode — the
+   * widget's own content supplies all chrome. Still shown while editing
+   * so the widget stays draggable/removable/configurable. */
+  noChrome?: boolean
 }
 
 // Grid layout item — compatible with react-grid-layout's Layout type.
@@ -211,6 +215,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minW: 4,
     minH: 3,
     roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
+    noChrome: true,
   },
   // ── Sales & Orders widgets ──────────────────────────────────────────────────
   {
@@ -436,9 +441,17 @@ export const GRID_MARGIN_Y = 12
  * WIDGET_OVERHEAD covers header (~38px) + p-3 padding top+bottom (24px) + 2px buffer.
  */
 const WIDGET_OVERHEAD_PX = 64
+// `noChrome` widgets (see WidgetDef) skip the header + p-3 padding entirely
+// in view mode, so they only need a small buffer, not the full overhead —
+// otherwise the grid reserves ~64px of dead space below their real content.
+const NO_CHROME_OVERHEAD_PX = 2
 
-export function fitHeightToContent(contentPx: number, minH = 1): number {
-  const totalPx = contentPx + WIDGET_OVERHEAD_PX
+export function fitHeightToContent(
+  contentPx: number,
+  minH = 1,
+  overheadPx = WIDGET_OVERHEAD_PX
+): number {
+  const totalPx = contentPx + overheadPx
   const h = Math.ceil((totalPx + GRID_MARGIN_Y) / (GRID_ROW_HEIGHT + GRID_MARGIN_Y))
   return Math.max(h, minH)
 }
@@ -454,7 +467,8 @@ export function fitLayoutToContent(
   return layout.map((item) => {
     const contentPx = naturalHeights[item.i]
     if (contentPx == null) return item
-    const h = fitHeightToContent(contentPx, item.minH ?? 1)
+    const overheadPx = widgetById[item.i]?.noChrome ? NO_CHROME_OVERHEAD_PX : WIDGET_OVERHEAD_PX
+    const h = fitHeightToContent(contentPx, item.minH ?? 1, overheadPx)
     return { ...item, h }
   })
 }

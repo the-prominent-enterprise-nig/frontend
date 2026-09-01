@@ -80,10 +80,14 @@ export default function MobileCountInterface({ session: _ }: { session: SessionU
                 >
                   <div>
                     <p className="font-semibold text-white">
-                      {session.warehouse?.name ?? 'Unknown Warehouse'}
+                      {session.warehouse?.branch?.name ??
+                        session.warehouse?.name ??
+                        'Unknown Location'}
                     </p>
                     <p className="mt-0.5 text-sm text-zinc-400">
-                      {session.warehouse?.code ?? '—'} &bull;{' '}
+                      {session.warehouse?.code && !session.warehouse.branch && (
+                        <>{session.warehouse.code} &bull; </>
+                      )}
                       {session.scheduledDate
                         ? new Date(session.scheduledDate).toLocaleDateString()
                         : 'No date'}
@@ -115,7 +119,11 @@ export default function MobileCountInterface({ session: _ }: { session: SessionU
             <X className="h-5 w-5 text-zinc-400" />
           </button>
           <div>
-            <p className="font-semibold">{selectedSession.warehouse?.name ?? 'Count Session'}</p>
+            <p className="font-semibold">
+              {selectedSession.warehouse?.branch?.name ??
+                selectedSession.warehouse?.name ??
+                'Count Session'}
+            </p>
             <p className="text-xs text-zinc-500">#{selectedSession.id.slice(0, 8).toUpperCase()}</p>
           </div>
         </div>

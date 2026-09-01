@@ -67,7 +67,7 @@ export default function StockLedgerTab() {
           onChange={(e) => setWarehouseId(e.target.value || undefined)}
           className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
         >
-          <option value="">All Branches</option>
+          <option value="">All Locations</option>
           {warehouseOptions.map((wh) => (
             <option key={wh.id} value={wh.id}>
               {wh.branch?.name ?? wh.name}
@@ -145,7 +145,7 @@ export default function StockLedgerTab() {
                     Item
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
-                    Warehouse
+                    Location
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     Qty

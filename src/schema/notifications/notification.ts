@@ -21,8 +21,8 @@ export type NotificationType =
   | 'price_list_resolved'
   | 'batch_hold_placed'
   | 'batch_hold_resolved'
-  | 'purchase_request_approval_needed'
-  | 'purchase_request_resolved'
+  | 'purchase_request_needs_conversion'
+  | 'purchase_request_auto_converted'
   | 'purchase_order_approval_needed'
   | 'purchase_order_resolved'
 
@@ -38,6 +38,7 @@ export interface NotificationItem {
   createdAt: string
   isRead: boolean
   readAt: string | null
+  archivedAt: string | null
 }
 
 export interface NotificationListResponse {

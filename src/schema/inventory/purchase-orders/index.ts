@@ -8,6 +8,7 @@ export const POLineDiscountTypeSchema = z.enum(['percentage', 'amount'])
 // applied sequentially off srp: each step's output feeds the next (e.g.
 // 30% then 20% off, not 30+20=50% off in one step).
 export const LineDiscountSchema = z.object({
+  name: z.string().max(100).optional(),
   type: POLineDiscountTypeSchema,
   value: z.number().min(0),
 })

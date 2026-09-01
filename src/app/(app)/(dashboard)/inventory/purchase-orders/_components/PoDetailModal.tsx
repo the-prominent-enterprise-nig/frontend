@@ -1,13 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X, ShoppingCart, FileText } from 'lucide-react'
+import { X, ShoppingCart, FileText, CheckCircle, Ban } from 'lucide-react'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
+  /** Approve/Cancel live here rather than as row actions — the caller
+   * decides whether the current user may take each action; when omitted
+   * (or false) the corresponding button just doesn't render. */
+  canApprove?: boolean
+  canCancel?: boolean
+  onApprove?: (po: PurchaseOrderSummary) => void
+  onCancel?: (po: PurchaseOrderSummary) => void
 }
 
 const STATUS_CONFIG: Record<string, { bg: string; text: string; label: string }> = {
@@ -42,7 +49,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function PoDetailModal({ po, onClose }: Props) {
+export function PoDetailModal({ po, onClose, canApprove, canCancel, onApprove, onCancel }: Props) {
   // Serial numbers only need fetching once a PO is closed — that's the point
   // at which receiving is done and there's a final list to show, per line,
   // instead of a partial/in-progress one.
@@ -126,7 +133,7 @@ export function PoDetailModal({ po, onClose }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <InfoRow label="Requested By" value={po.branch?.name ?? 'Tenant-wide'} />
             <div>
-              <p className="text-xs font-medium text-zinc-400">Destination Warehouse</p>
+              <p className="text-xs font-medium text-zinc-400">Destination Location</p>
               <p className="mt-0.5 text-sm text-zinc-800">{po.warehouse?.name ?? '—'}</p>
               {po.warehouse?.address && (
                 <p className="mt-0.5 text-xs text-zinc-500">{po.warehouse.address}</p>
@@ -211,9 +218,11 @@ export function PoDetailModal({ po, onClose }: Props) {
                               <>
                                 {' · '}
                                 {line.discounts
-                                  .map((d) =>
-                                    d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
-                                  )
+                                  .map((d) => {
+                                    const amount =
+                                      d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
+                                    return d.name ? `${d.name} (${amount})` : amount
+                                  })
                                   .join(' → ')}{' '}
                                 off
                                 {line.discountedCost != null &&
@@ -283,7 +292,7 @@ export function PoDetailModal({ po, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end border-t border-zinc-200 px-6 py-4">
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
@@ -291,6 +300,26 @@ export function PoDetailModal({ po, onClose }: Props) {
           >
             Close
           </button>
+          {canCancel && (po.status === 'draft' || po.status === 'approved') && (
+            <button
+              type="button"
+              onClick={() => onCancel?.(po)}
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+            >
+              <Ban className="h-4 w-4" />
+              Cancel PO
+            </button>
+          )}
+          {canApprove && po.status === 'draft' && (
+            <button
+              type="button"
+              onClick={() => onApprove?.(po)}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              <CheckCircle className="h-4 w-4" />
+              Approve
+            </button>
+          )}
         </div>
       </div>
     </div>

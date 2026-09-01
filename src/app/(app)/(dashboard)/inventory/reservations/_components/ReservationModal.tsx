@@ -121,14 +121,14 @@ export default function ReservationModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Warehouse <span className="text-red-500">*</span>
+                Location <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="warehouseId"
                 control={control}
                 render={({ field }) => (
                   <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select warehouse…</option>
+                    <option value="">Select location…</option>
                     {warehouses.map((wh) => (
                       <option key={wh.id} value={wh.id}>
                         {wh.branch?.name ?? wh.name}

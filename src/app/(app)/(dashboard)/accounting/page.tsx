@@ -969,7 +969,7 @@ export default function AccountingPage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                   <CreditCard className="h-4 w-4 text-purple-500" />
-                  AP Bills
+                  AP Invoices
                 </h3>
                 <Link
                   href="/accounting/ap-bills"
@@ -1196,7 +1196,7 @@ export default function AccountingPage() {
             {(
               [
                 { label: 'AR Invoices', href: '/accounting/ar-invoices', icon: FileText },
-                { label: 'AP Bills', href: '/accounting/ap-bills', icon: CreditCard },
+                { label: 'AP Invoices', href: '/accounting/ap-bills', icon: CreditCard },
                 { label: 'Journal Entries', href: '/accounting/journal-entries', icon: BookOpen },
                 {
                   label: 'Chart of Accounts',

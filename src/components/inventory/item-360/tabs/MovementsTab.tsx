@@ -51,7 +51,6 @@ type Props = {
 export default function MovementsTab({ itemId }: Props) {
   const {
     currentBalances,
-    openingBalance,
     entries,
     meta,
     isLoading,
@@ -89,7 +88,7 @@ export default function MovementsTab({ itemId }: Props) {
                 className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs"
               >
                 <span className="font-medium text-zinc-700">
-                  {b.warehouse?.code ?? b.warehouse?.name ?? 'Unknown'}
+                  {b.warehouse?.branch?.name ?? b.warehouse?.name ?? b.warehouse?.code ?? 'Unknown'}
                 </span>
                 <span className="text-zinc-400">·</span>
                 <span className="font-semibold text-zinc-900">{b.availableQty}</span>
@@ -110,7 +109,7 @@ export default function MovementsTab({ itemId }: Props) {
           onChange={(e) => setWarehouseId(e.target.value || undefined)}
           className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
         >
-          <option value="">All Warehouses</option>
+          <option value="">All Locations</option>
           {warehouseOptions.map((w) => (
             <option key={w.value} value={w.value}>
               {w.label}
@@ -167,18 +166,6 @@ export default function MovementsTab({ itemId }: Props) {
           <RefreshCw className="h-3.5 w-3.5 animate-spin text-zinc-400" />
         )}
       </div>
-
-      {/* Opening balance */}
-      {!isLoading && (
-        <div className="flex items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-xs">
-          <span className="text-zinc-500">Opening Balance</span>
-          <span
-            className={`font-semibold tabular-nums ${openingBalance >= 0 ? 'text-zinc-700' : 'text-red-600'}`}
-          >
-            {openingBalance >= 0 ? `+${openingBalance}` : openingBalance}
-          </span>
-        </div>
-      )}
 
       {/* Ledger entries */}
       <div
@@ -266,9 +253,15 @@ export default function MovementsTab({ itemId }: Props) {
                         <>
                           {entry.warehouse && (
                             <span className="text-[11px] text-zinc-500">
-                              {entry.warehouse.code}
-                              {entry.warehouse.name && (
-                                <span className="text-zinc-400"> · {entry.warehouse.name}</span>
+                              {entry.warehouse.branch ? (
+                                entry.warehouse.branch.name
+                              ) : (
+                                <>
+                                  {entry.warehouse.code}
+                                  {entry.warehouse.name && (
+                                    <span className="text-zinc-400"> · {entry.warehouse.name}</span>
+                                  )}
+                                </>
                               )}
                             </span>
                           )}

@@ -17,7 +17,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const { id } = await params
   return (
     <div className="min-h-screen bg-zinc-50">
-      <CustomerDetail id={id} canUpdate={can(session, ACCOUNTING_PERMISSIONS.CUSTOMER_UPDATE)} />
+      <CustomerDetail id={id} />
     </div>
   )
 }

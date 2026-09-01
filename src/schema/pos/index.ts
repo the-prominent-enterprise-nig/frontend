@@ -248,6 +248,10 @@ export interface PosTransaction {
   tpfProviderId?: string | null
   tpfReferenceNumber?: string | null
   tpfApprovedAmount?: number | null
+  /** Present on create()/findOne() — one per distinct financing term used in
+   * the cart. Used to split the down payment's tendered rows across
+   * schedules via addPayment's installmentScheduleId. */
+  installmentSchedules?: { id: string; downPayment: number }[]
 }
 
 // Scenario 23 Gap 1 — every invoice a transaction produced (the charge
@@ -335,6 +339,10 @@ export interface CreateTransactionInput {
   taxAmount?: number
   subtotal: number
   totalAmount: number
+  /** Optional flat add-on collected now regardless of payment mode — never
+   * counts toward an installment line's financed amount or its 10% down
+   * payment floor. Defaults to 0. */
+  deliveryFee?: number
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,
@@ -469,6 +477,7 @@ export interface CollectionsCustomer {
 
 export interface CreateWalkInCustomerInput {
   firstName: string
+  middleName?: string
   lastName: string
   phoneNumber: string
   email?: string
@@ -517,6 +526,10 @@ export interface AddPaymentInput {
   currency?: string
   fxRate?: number
   notes?: string
+  /** Tags this payment as funding a specific installment schedule's down
+   * payment, instead of the transaction's cash/TPF total — restricts
+   * paymentMethod to cash/bank_transfer/qr/card server-side. */
+  installmentScheduleId?: string
 }
 
 // Parked Sale
@@ -971,10 +984,17 @@ export interface InstallmentSchedule {
     serialNumber: { id: string; serialNumber: string } | null
     secondarySerialNumber: { id: string; serialNumber: string } | null
   }[]
-  // The rebate — fixed 7.5% of the monthly installment. Null if this
-  // schedule has no linked InstallmentAccount (shouldn't normally happen,
-  // every POS installment line creates one, but the relation is optional).
-  installmentAccount: { ppd: number } | null
+  // ppd is the rebate — fixed 7.5% of the monthly installment. status is the
+  // plan's overall finished/ongoing state (closed/early_closed/written_off
+  // all mean "no longer active", just via different paths — see Customer360's
+  // InstallmentPlanStatusBadge). Null if this schedule has no linked
+  // InstallmentAccount (shouldn't normally happen, every POS installment
+  // line creates one, but the relation is optional).
+  installmentAccount: {
+    id: string
+    ppd: number
+    status: 'active' | 'closed' | 'early_closed' | 'written_off'
+  } | null
 }
 
 // Void Requests

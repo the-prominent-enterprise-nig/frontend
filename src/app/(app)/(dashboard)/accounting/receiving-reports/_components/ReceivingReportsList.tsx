@@ -67,7 +67,7 @@ export default function ReceivingReportsList() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Receiving Reports</h2>
           <p className="text-sm text-gray-500">
-            Every goods receipt, matched or not, with GL posting and AP bill matching status.
+            Every goods receipt, matched or not, with GL posting and AP invoice matching status.
           </p>
         </div>
         <button

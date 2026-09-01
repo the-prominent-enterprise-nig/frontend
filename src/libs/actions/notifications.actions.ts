@@ -10,6 +10,7 @@ type ListParams = {
   page?: number
   limit?: number
   unreadOnly?: boolean
+  archived?: boolean
 }
 
 export async function getNotifications(params: ListParams = {}) {
@@ -17,6 +18,7 @@ export async function getNotifications(params: ListParams = {}) {
     page: params.page,
     limit: params.limit,
     unreadOnly: params.unreadOnly,
+    archived: params.archived,
   }
   return api.get<NotificationListResponse>('/notifications', query)
 }

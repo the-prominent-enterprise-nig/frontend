@@ -12,16 +12,23 @@ type Props = {
 const STATUS_STYLES: Record<string, string> = {
   draft: 'bg-zinc-100 text-zinc-600',
   submitted: 'bg-blue-100 text-blue-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
   cancelled: 'bg-zinc-100 text-zinc-500',
   converted: 'bg-purple-100 text-purple-700',
 }
 
-const APPROVAL_TIER_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700 border border-yellow-200',
-  approved: 'bg-green-100 text-green-700 border border-green-200',
-  rejected: 'bg-red-100 text-red-700 border border-red-200',
+const fmtPHP = (n: number) => `₱${n.toLocaleString()}`
+
+// A PR line has no stored discountedCost (unlike a PO line, computed
+// server-side) — apply the same sequential chain client-side, same formula
+// PurchaseOrderFormFields.tsx uses for its own live preview.
+function discountedCostFor(
+  srp: number,
+  discounts: PurchaseRequestSummary['lines'][number]['discounts']
+): number {
+  return (discounts ?? []).reduce(
+    (price, d) => (d.type === 'percentage' ? price * (1 - d.value / 100) : price - d.value),
+    srp
+  )
 }
 
 export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
@@ -67,7 +74,7 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
               <p className="text-zinc-900">{pr.supplier?.name ?? '—'}</p>
             </div>
             <div>
-              <p className="text-xs text-zinc-500">Warehouse</p>
+              <p className="text-xs text-zinc-500">Location</p>
               <p className="text-zinc-900">{pr.warehouse?.name ?? '—'}</p>
             </div>
             <div>
@@ -82,12 +89,6 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
               <div>
                 <p className="text-xs text-zinc-500">Submitted</p>
                 <p className="text-zinc-900">{new Date(pr.submittedAt).toLocaleDateString()}</p>
-              </div>
-            )}
-            {pr.approvedAt && (
-              <div>
-                <p className="text-xs text-zinc-500">Approved</p>
-                <p className="text-zinc-900">{new Date(pr.approvedAt).toLocaleDateString()}</p>
               </div>
             )}
             {pr.convertedToPo && (
@@ -109,40 +110,6 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
             <div>
               <p className="mb-1 text-xs font-medium text-zinc-500">Notes</p>
               <p className="text-sm text-zinc-700">{pr.notes}</p>
-            </div>
-          )}
-
-          {/* Approval history */}
-          {pr.approvals.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-medium text-zinc-500">Approval tiers</p>
-              <div className="space-y-2">
-                {pr.approvals.map((approval) => (
-                  <div
-                    key={approval.id}
-                    className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-                  >
-                    <div>
-                      <span className="font-medium text-zinc-800">{approval.label}</span>
-                      {approval.remarks && (
-                        <p className="mt-0.5 text-xs text-zinc-500">{approval.remarks}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {approval.actedAt && (
-                        <span className="text-xs text-zinc-400">
-                          {new Date(approval.actedAt).toLocaleDateString()}
-                        </span>
-                      )}
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${APPROVAL_TIER_STYLES[approval.status] ?? 'bg-zinc-100 text-zinc-600'}`}
-                      >
-                        {approval.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
@@ -174,6 +141,25 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
                         <p className="font-medium text-zinc-900">{line.item.name}</p>
                         <p className="text-xs text-zinc-400">SKU: {line.item.sku}</p>
                         {line.notes && <p className="mt-0.5 text-xs text-zinc-500">{line.notes}</p>}
+                        {line.srp != null && (
+                          <p className="mt-0.5 text-xs text-zinc-500">
+                            SRP {fmtPHP(Number(line.srp))}
+                            {line.discounts && line.discounts.length > 0 && (
+                              <>
+                                {' · '}
+                                {line.discounts
+                                  .map((d) => {
+                                    const amount =
+                                      d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
+                                    return d.name ? `${d.name} (${amount})` : amount
+                                  })
+                                  .join(' → ')}{' '}
+                                off
+                                {` → ${fmtPHP(discountedCostFor(Number(line.srp), line.discounts))}`}
+                              </>
+                            )}
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-700">{line.quantity}</td>
                       <td className="px-3 py-2 text-right text-zinc-700">

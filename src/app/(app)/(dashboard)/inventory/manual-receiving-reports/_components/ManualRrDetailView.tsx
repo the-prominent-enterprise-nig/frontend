@@ -100,7 +100,10 @@ export default function ManualRrDetailView({
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-4">
             <InfoRow label="Item" value={`${report.item.name} (${report.item.sku})`} />
-            <InfoRow label="Warehouse" value={report.warehouse.name} />
+            <InfoRow
+              label="Location"
+              value={report.warehouse.branch?.name ?? report.warehouse.name}
+            />
             <InfoRow label="Serial Number" value={report.serialNumber} />
             <InfoRow label="Reason" value={ADJUSTMENT_REASON_LABELS[report.reasonCode]} />
             {report.unitCost != null && (

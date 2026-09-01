@@ -201,6 +201,45 @@ input[type='number'] {
   box-shadow: 0 4px 20px -2px rgba(139, 92, 246, 0.2) !important;
 }
 
+/* ── Notification panel motion ────────────────────────────────────────────── */
+@keyframes notif-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notif-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-notif-dropdown {
+  animation: notif-dropdown-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+
+.animate-notif-item {
+  animation: notif-item-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-notif-dropdown,
+  .animate-notif-item {
+    animation: none;
+  }
+}
+
 /* ── react-phone-number-input overrides (blend with form inputs) ─────────── */
 .ph-phone-input {
   display: flex;

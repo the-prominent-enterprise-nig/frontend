@@ -63,6 +63,13 @@ export const createCustomerSchema = z.object({
   tenantId: z.string().optional(),
   customerCode: z.string().max(20).optional(),
   name: z.string().min(1, 'Name is required').max(255),
+  // Real stored name parts (developer-requested 2026-08-27), sent
+  // alongside the still-required `name` above — see CreateCustomerDto's
+  // doc comment on the backend for why `name` stays the field every
+  // existing reader displays.
+  firstName: z.string().max(150).optional(),
+  middleName: z.string().max(150).optional(),
+  lastName: z.string().max(150).optional(),
   customerType: CustomerTypeEnum.optional(),
   companyName: z.string().max(255).optional().or(z.literal('')),
   businessCategory: z.enum(['private', 'government']).optional().or(z.literal('')),

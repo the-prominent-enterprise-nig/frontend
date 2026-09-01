@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   useTransactions,
@@ -15,6 +16,10 @@ import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { type SessionUser } from '@/src/libs/guards/permission'
+import { TransactionDetail } from './_components/TransactionDetail'
+import type { PosTransaction } from '@/src/schema/pos'
 import {
   ShoppingCart,
   Monitor,
@@ -49,6 +54,16 @@ function formatCurrency(n: number) {
 
 export default function PosOverviewPage() {
   const router = useRouter()
+
+  // Only needed to open the Recent Transactions detail modal in place —
+  // TransactionDetail requires a real SessionUser (Void Requests tab,
+  // Refund flow), so fetched the same way pos/checkout/page.tsx does for a
+  // 'use client' page.tsx with no server-side session prop available.
+  const [session, setSession] = useState<SessionUser | null>(null)
+  useEffect(() => {
+    getSessionOrNull().then((s) => setSession(s))
+  }, [])
+  const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
 
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
@@ -110,12 +125,9 @@ export default function PosOverviewPage() {
   ].filter((q): q is Exclude<typeof q, false | undefined> => !!q)
 
   const pendingApprovalsTotal = approvalQueues.reduce((sum, q) => sum + q.count, 0)
+  const transactions: PosTransaction[] = txData?.data ?? []
 
   type Row = Record<string, unknown>
-  const transactions = (() => {
-    const d = txData?.data
-    return (Array.isArray(d) ? d : ((d as unknown as { data?: Row[] })?.data ?? [])) as Row[]
-  })()
   const sessions = (() => {
     const d = sessData?.data
     return (Array.isArray(d) ? d : ((d as unknown as { data?: Row[] })?.data ?? [])) as Row[]
@@ -361,17 +373,15 @@ export default function PosOverviewPage() {
                 <tbody className="divide-y divide-gray-100">
                   {recentTransactions.map((tx) => (
                     <tr
-                      key={String(tx.id ?? '')}
+                      key={tx.id}
                       className="cursor-pointer transition-colors hover:bg-gray-50"
-                      onClick={() => router.push('/pos/transactions')}
+                      onClick={() => setSelectedTransaction(tx)}
                     >
                       <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                        {String(tx.transactionNumber ?? '')}
+                        {tx.transactionNumber}
                       </td>
                       <td className="px-5 py-3">
-                        <span className="capitalize text-gray-600">
-                          {String(tx.transactionType ?? '')}
-                        </span>
+                        <span className="capitalize text-gray-600">{tx.transactionType}</span>
                       </td>
                       <td className="px-5 py-3">
                         <span
@@ -381,11 +391,11 @@ export default function PosOverviewPage() {
                               : 'bg-red-100 text-red-700'
                           }`}
                         >
-                          {String(tx.status ?? '')}
+                          {tx.status}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-right font-semibold text-gray-900">
-                        {formatCurrency(parseFloat(String(tx.totalAmount ?? 0)))}
+                        {formatCurrency(tx.totalAmount)}
                       </td>
                     </tr>
                   ))}
@@ -395,6 +405,14 @@ export default function PosOverviewPage() {
           </div>
         </div>
       </div>
+
+      {selectedTransaction && session && (
+        <TransactionDetail
+          transaction={selectedTransaction}
+          session={session}
+          onClose={() => setSelectedTransaction(null)}
+        />
+      )}
     </div>
   )
 }

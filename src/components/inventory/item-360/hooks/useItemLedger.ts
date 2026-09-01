@@ -35,7 +35,7 @@ export function useItemLedger(itemId: string) {
 
   const warehouseOptions = useMemo(() => {
     const warehouses = warehousesQuery.data?.data?.data ?? []
-    return warehouses.map((w) => ({ label: w.name, value: w.id }))
+    return warehouses.map((w) => ({ label: w.branch?.name ?? w.name, value: w.id }))
   }, [warehousesQuery.data])
 
   const ledgerData = ledgerQuery.data?.data
