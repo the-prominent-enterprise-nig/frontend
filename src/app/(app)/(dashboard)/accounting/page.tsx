@@ -4,8 +4,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import {
   TrendingUp,
-  TrendingDown,
-  AlertTriangle,
   RefreshCw,
   ArrowUpRight,
   FileText,
@@ -22,6 +20,7 @@ import {
   ShieldAlert,
   CalendarDays,
   Repeat,
+  LayoutGrid,
   PieChart,
 } from 'lucide-react'
 import {
@@ -48,11 +47,6 @@ function fmtMoney(n: number) {
 function fmtNum(n: number) {
   if (!Number.isFinite(n)) return '0'
   return Math.round(n).toLocaleString('en-PH')
-}
-
-function fmtPct(n: number) {
-  if (!Number.isFinite(n)) return '0%'
-  return `${n.toFixed(1)}%`
 }
 
 function fmtDate(dateStr?: string | null) {
@@ -103,34 +97,32 @@ const COLORS = [
 
 // ── AgingBuckets helper ───────────────────────────────────────────────────────
 
+// GET /reports/aging/:type returns a flat array of invoice/bill rows, each
+// carrying its own `outstanding` amount and `bucket` label (backend's
+// agingBucket(): 'Current' | '1-30' | '31-60' | '61-90' | '90+') — this
+// used to expect a pre-aggregated `{buckets: [...]}` or bucket-keyed object
+// shape that the endpoint never actually returns, so it always resolved to
+// an empty array regardless of real overdue data. Sum by bucket here instead.
 function extractAging(raw: any) {
-  if (!raw) return []
-  const buckets: { label: string; value: number; color: string; badge: string }[] = []
-  const BUCKET_COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#dc2626']
-  const BUCKET_KEYS = [
-    { key: 'current', label: 'Current' },
-    { key: '1-30', label: '1–30 days' },
-    { key: '31-60', label: '31–60 days' },
-    { key: '61-90', label: '61–90 days' },
-    { key: '90+', label: '90+ days' },
+  if (!Array.isArray(raw)) return []
+  const BUCKET_ORDER: { key: string; label: string; color: string }[] = [
+    { key: 'Current', label: 'Current', color: '#10b981' },
+    { key: '1-30', label: '1–30 days', color: '#f59e0b' },
+    { key: '31-60', label: '31–60 days', color: '#f97316' },
+    { key: '61-90', label: '61–90 days', color: '#ef4444' },
+    { key: '90+', label: '90+ days', color: '#dc2626' },
   ]
-  if (Array.isArray(raw.buckets)) {
-    return raw.buckets.map((b: any, i: number) => ({
-      label: b.label ?? b.period ?? `Bucket ${i + 1}`,
-      value: Number(b.balance ?? b.amount ?? b.total ?? 0),
-      color: BUCKET_COLORS[i] ?? '#94a3b8',
-      badge: fmtMoney(Number(b.balance ?? b.amount ?? 0)),
-    }))
-  }
-  BUCKET_KEYS.forEach(({ key, label }, i) => {
-    const bucket = raw[key] ?? raw.summary?.[key]
-    if (bucket == null) return
-    const val = Number(
-      typeof bucket === 'object' ? (bucket.balance ?? bucket.amount ?? bucket.total ?? 0) : bucket
-    )
-    if (val > 0) buckets.push({ label, value: val, color: BUCKET_COLORS[i], badge: fmtMoney(val) })
+  const sums: Record<string, number> = {}
+  raw.forEach((row: any) => {
+    const key = row.bucket ?? 'Current'
+    sums[key] = (sums[key] ?? 0) + Number(row.outstanding ?? 0)
   })
-  return buckets
+  return BUCKET_ORDER.filter(({ key }) => (sums[key] ?? 0) > 0).map(({ key, label, color }) => ({
+    label,
+    value: sums[key],
+    color,
+    badge: fmtMoney(sums[key]),
+  }))
 }
 
 // ── DonutChart ────────────────────────────────────────────────────────────────
@@ -239,64 +231,6 @@ function HBarChart({
   )
 }
 
-// ── KpiCard ───────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  iconBg,
-  href,
-  loading,
-  urgent,
-}: {
-  label: string
-  value: string
-  sub?: string
-  icon: any
-  iconBg: string
-  href?: string
-  loading?: boolean
-  urgent?: boolean
-}) {
-  const inner = (
-    <div
-      className={`
-      rounded-xl border bg-white p-5 shadow-sm
-      ${urgent ? 'border-red-200 bg-red-50/30' : 'border-gray-200'}
-      ${href ? 'hover:border-violet-200 hover:shadow-md transition-all cursor-pointer' : ''}
-    `}
-    >
-      <div className="flex items-start justify-between">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
-          <Icon className="h-[18px] w-[18px] text-white" />
-        </div>
-        {href && <ArrowUpRight className="h-3.5 w-3.5 text-gray-300" />}
-      </div>
-      {loading ? (
-        <div className="mt-3 space-y-2">
-          <div className="h-2.5 w-14 rounded bg-gray-200 animate-pulse" />
-          <div className="h-7 w-20 rounded bg-gray-200 animate-pulse" />
-        </div>
-      ) : (
-        <div className="mt-3">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            {label}
-          </p>
-          <p
-            className={`mt-0.5 text-2xl font-bold tabular-nums ${urgent ? 'text-red-700' : 'text-gray-900'}`}
-          >
-            {value}
-          </p>
-          {sub && <p className="mt-0.5 text-[11px] text-gray-400 truncate">{sub}</p>}
-        </div>
-      )}
-    </div>
-  )
-  return href ? <Link href={href}>{inner}</Link> : inner
-}
-
 // ── Micro-components ──────────────────────────────────────────────────────────
 
 function Sk({ className }: { className?: string }) {
@@ -349,7 +283,6 @@ const INIT = {
   pnlBreakdown: [] as { label: string; value: number; color: string }[],
   arAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
   apAgingBuckets: [] as { label: string; value: number; color: string; badge?: string }[],
-  bankBreakdown: [] as { label: string; value: number; color: string; badge?: string }[],
   recentInvoices: [] as any[],
   recentBills: [] as any[],
   overdueInvoicesList: [] as any[],
@@ -406,8 +339,11 @@ export default function AccountingPage() {
     const totalRevenue = Number(pnl?.totalRevenue ?? pnl?.revenue ?? pnl?.data?.totalRevenue ?? 0)
     const totalCogs = Number(pnl?.totalCogs ?? pnl?.data?.totalCogs ?? 0)
     const totalOpEx = Number(pnl?.totalOpEx ?? pnl?.expenses ?? pnl?.data?.totalOpEx ?? 0)
-    const totalExpenses =
-      totalCogs + totalOpEx || Number(pnl?.totalExpenses ?? pnl?.data?.totalExpenses ?? 0)
+    // profitAndLoss() (reports.service.ts) never returns a `totalExpenses`
+    // field — the old `|| Number(pnl?.totalExpenses ...)` fallback here was
+    // dead: it only ran when totalCogs + totalOpEx was already falsy (0),
+    // and always resolved to 0 itself.
+    const totalExpenses = totalCogs + totalOpEx
     const netIncome = Number(
       pnl?.netIncome ?? pnl?.netProfit ?? pnl?.data?.netIncome ?? totalRevenue - totalExpenses
     )
@@ -473,15 +409,6 @@ export default function AccountingPage() {
     // ── Bank Accounts ─────────────────────────────────────────────────────────
     const bankList = arr(7)
     const totalCash = bankList.reduce((sum, b) => sum + (Number(b.currentBalance) || 0), 0)
-    const bankBreakdown = bankList
-      .filter((b) => b.isActive !== false)
-      .slice(0, 6)
-      .map((b, i) => ({
-        label: b.name ?? b.bankName,
-        value: Number(b.currentBalance) || 0,
-        color: COLORS[i % COLORS.length],
-        badge: b.currencyCode,
-      }))
 
     // ── Fixed Assets ──────────────────────────────────────────────────────────
     const assetList = arr(8)
@@ -528,7 +455,6 @@ export default function AccountingPage() {
       pnlBreakdown,
       arAgingBuckets,
       apAgingBuckets,
-      bankBreakdown,
       recentInvoices: invoiceList.slice(0, 8),
       recentBills: billList.slice(0, 8),
       overdueInvoicesList: overdueInvoicesList.slice(0, 6),
@@ -541,6 +467,22 @@ export default function AccountingPage() {
 
   useEffect(() => {
     load()
+    // Scenario 29 — this dashboard previously only ever fetched once on
+    // mount plus a manual Refresh click (cross-cutting finding #1). Mirror
+    // CRM's dashboard fix and POS's own overview page (refetchInterval:
+    // 30_000 + refetchOnWindowFocus: true), the working reference pattern
+    // already established in this codebase.
+    const interval = setInterval(load, 30_000)
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') load()
+    }
+    window.addEventListener('focus', load)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', load)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [load])
 
   const loading = !s.loaded
@@ -587,276 +529,214 @@ export default function AccountingPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
-        {/* Row 1: P&L KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Total Revenue"
-            value={loading ? '—' : fmtMoney(s.totalRevenue)}
-            sub="Year to date"
-            icon={TrendingUp}
-            iconBg="bg-emerald-500"
-            href="/accounting/reports?tab=pnl"
-            loading={loading}
-          />
-          <KpiCard
-            label="Total Expenses"
-            value={loading ? '—' : fmtMoney(s.totalExpenses)}
-            sub="COGS + operating expenses"
-            icon={Receipt}
-            iconBg="bg-orange-500"
-            href="/accounting/reports?tab=pnl"
-            loading={loading}
-          />
-          <KpiCard
-            label="Net Profit / Loss"
-            value={loading ? '—' : fmtMoney(s.netIncome)}
-            sub={loading ? '' : netPositive ? 'Profitable year to date' : 'Net loss year to date'}
-            icon={netPositive ? TrendingUp : TrendingDown}
-            iconBg={netPositive ? 'bg-violet-600' : 'bg-red-500'}
-            href="/accounting/reports?tab=pnl"
-            loading={loading}
-            urgent={!loading && !netPositive}
-          />
-          <KpiCard
-            label="Gross Margin"
-            value={loading ? '—' : fmtPct(s.grossMarginPct)}
-            sub="Revenue minus COGS"
-            icon={PieChart}
-            iconBg="bg-cyan-500"
-            href="/accounting/reports?tab=pnl"
-            loading={loading}
-          />
-        </div>
-
-        {/* Row 2: Balance Sheet KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Total Assets"
-            value={loading ? '—' : fmtMoney(s.totalAssets)}
-            sub="From balance sheet"
-            icon={Building2}
-            iconBg="bg-blue-500"
-            href="/accounting/reports?tab=balance-sheet"
-            loading={loading}
-          />
-          <KpiCard
-            label="Total Liabilities"
-            value={loading ? '—' : fmtMoney(s.totalLiabilities)}
-            sub="From balance sheet"
-            icon={Scale}
-            iconBg="bg-amber-500"
-            href="/accounting/reports?tab=balance-sheet"
-            loading={loading}
-          />
-          <KpiCard
-            label="Cash on Hand"
-            value={loading ? '—' : fmtMoney(s.totalCash)}
-            sub={
-              loading
-                ? ''
-                : `${s.bankAccountsList.length} bank account${s.bankAccountsList.length !== 1 ? 's' : ''}`
-            }
-            icon={Wallet}
-            iconBg="bg-teal-500"
-            href="/accounting/bank-accounts"
-            loading={loading}
-          />
-          <KpiCard
-            label="Fixed Assets"
-            value={loading ? '—' : fmtMoney(s.totalBookValue)}
-            sub={loading ? '' : `${s.activeAssetsCount} active assets`}
-            icon={Building2}
-            iconBg="bg-indigo-500"
-            href="/accounting/fixed-assets"
-            loading={loading}
-          />
-        </div>
-
-        {/* Row 3: AR / AP KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="AR Outstanding"
-            value={loading ? '—' : fmtMoney(s.arOutstanding)}
-            sub={loading ? '' : `${s.openInvoicesCount} open invoices`}
-            icon={FileText}
-            iconBg="bg-sky-500"
-            href="/accounting/ar-invoices"
-            loading={loading}
-          />
-          <KpiCard
-            label="Overdue Invoices"
-            value={loading ? '—' : fmtNum(s.overdueInvoicesCount)}
-            sub="Past due date"
-            icon={AlertTriangle}
-            iconBg="bg-red-500"
-            href="/accounting/ar-invoices"
-            loading={loading}
-            urgent={s.overdueInvoicesCount > 0}
-          />
-          <KpiCard
-            label="AP Outstanding"
-            value={loading ? '—' : fmtMoney(s.apOutstanding)}
-            sub={loading ? '' : `${s.openBillsCount} open bills`}
-            icon={CreditCard}
-            iconBg="bg-purple-500"
-            href="/accounting/ap-bills"
-            loading={loading}
-          />
-          <KpiCard
-            label="Overdue Bills"
-            value={loading ? '—' : fmtNum(s.overdueBillsCount)}
-            sub="Past due date"
-            icon={ShieldAlert}
-            iconBg="bg-rose-600"
-            href="/accounting/ap-bills"
-            loading={loading}
-            urgent={s.overdueBillsCount > 0}
-          />
+      <div className="mx-auto max-w-7xl px-6 pt-8 pb-6 space-y-6">
+        {/* Module Navigation */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+              {(
+                [
+                  { label: 'AR Invoices', href: '/accounting/ar-invoices', icon: FileText },
+                  { label: 'AP Invoices', href: '/accounting/ap-bills', icon: CreditCard },
+                  {
+                    label: 'Journal Entries',
+                    href: '/accounting/journal-entries',
+                    icon: BookOpen,
+                  },
+                  {
+                    label: 'Chart of Accounts',
+                    href: '/accounting/chart-of-accounts',
+                    icon: BarChart2,
+                  },
+                  { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
+                  { label: 'Fixed Assets', href: '/accounting/fixed-assets', icon: Building2 },
+                  { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
+                  {
+                    label: 'Fiscal Periods',
+                    href: '/accounting/fiscal-periods',
+                    icon: CalendarDays,
+                  },
+                  { label: 'Tax', href: '/accounting/tax', icon: Receipt },
+                  { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
+                  { label: 'Reports', href: '/accounting/reports', icon: Clock },
+                  {
+                    label: 'Cash Flow Forecast',
+                    href: '/accounting/cash-forecast',
+                    icon: Activity,
+                  },
+                ] as const
+              ).map(({ label, href, icon: Icon }, i) => (
+                <Link
+                  key={i}
+                  href={href}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-gray-100 bg-gray-50/50 px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
+                >
+                  <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Secondary strip */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {(
-            [
-              {
-                label: 'Open Invoices',
-                val: s.openInvoicesCount,
-                href: '/accounting/ar-invoices',
-                accent: 'text-sky-700',
-                bg: 'bg-sky-50 border-sky-100',
-              },
-              {
-                label: 'Open Bills',
-                val: s.openBillsCount,
-                href: '/accounting/ap-bills',
-                accent: 'text-purple-700',
-                bg: 'bg-purple-50 border-purple-100',
-              },
-              {
-                label: 'Budget Alerts',
-                val: s.budgetAlertCount,
-                href: '/accounting/budgets',
-                accent: s.budgetAlertCount > 0 ? 'text-red-700' : 'text-gray-700',
-                bg:
-                  s.budgetAlertCount > 0
-                    ? 'bg-red-50 border-red-100'
-                    : 'bg-gray-50 border-gray-100',
-              },
-              {
-                label: 'Active Period',
-                display: s.openPeriodName ?? '—',
-                href: '/accounting/fiscal-periods',
-                accent: s.openPeriodName ? 'text-emerald-700' : 'text-gray-400',
-                bg: 'bg-emerald-50 border-emerald-100',
-              },
-            ] as const
-          ).map((m, i) => (
-            <Link
-              key={i}
-              href={m.href}
-              className={`rounded-xl border px-4 py-3 flex items-center justify-between hover:shadow-sm transition-all ${m.bg}`}
-            >
-              <span className="text-xs text-gray-600 font-medium">{m.label}</span>
-              <span className={`text-sm font-bold tabular-nums ${m.accent}`}>
-                {loading ? '—' : 'display' in m ? m.display : fmtNum(m.val)}
-              </span>
-            </Link>
-          ))}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Quick Stats</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                {
+                  label: 'Open Invoices',
+                  val: s.openInvoicesCount,
+                  href: '/accounting/ar-invoices',
+                  accent: 'text-sky-700',
+                  bg: 'bg-sky-50 border-sky-100',
+                },
+                {
+                  label: 'Open Bills',
+                  val: s.openBillsCount,
+                  href: '/accounting/ap-bills',
+                  accent: 'text-purple-700',
+                  bg: 'bg-purple-50 border-purple-100',
+                },
+                {
+                  label: 'Budget Alerts',
+                  val: s.budgetAlertCount,
+                  href: '/accounting/budgets',
+                  accent: s.budgetAlertCount > 0 ? 'text-red-700' : 'text-gray-700',
+                  bg:
+                    s.budgetAlertCount > 0
+                      ? 'bg-red-50 border-red-100'
+                      : 'bg-gray-50 border-gray-100',
+                },
+                {
+                  label: 'Active Period',
+                  display: s.openPeriodName ?? '—',
+                  href: '/accounting/fiscal-periods',
+                  accent: s.openPeriodName ? 'text-emerald-700' : 'text-gray-400',
+                  bg: 'bg-emerald-50 border-emerald-100',
+                },
+              ] as const
+            ).map((m, i) => (
+              <Link
+                key={i}
+                href={m.href}
+                className={`rounded-xl border px-4 py-3 flex items-center justify-between hover:shadow-sm transition-all ${m.bg}`}
+              >
+                <span className="text-xs text-gray-600 font-medium">{m.label}</span>
+                <span className={`text-sm font-bold tabular-nums ${m.accent}`}>
+                  {loading ? '—' : 'display' in m ? m.display : fmtNum(m.val)}
+                </span>
+              </Link>
+            ))}
+          </div>
         </div>
 
         {/* Analysis: P&L breakdown + AR aging + AP aging */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">P&amp;L Breakdown</h2>
-              <p className="text-xs text-gray-400">Revenue allocation — year to date</p>
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Financial Health</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">P&amp;L Breakdown</h2>
+                <p className="text-xs text-gray-400">Revenue allocation — year to date</p>
+              </div>
+              {loading ? (
+                <div className="flex items-center gap-6">
+                  <Sk className="h-[148px] w-[148px] rounded-full" />
+                  <div className="space-y-2.5 flex-1">
+                    {[...Array(3)].map((_, i) => (
+                      <Sk key={i} className="h-4 w-full" />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <DonutChart segments={s.pnlBreakdown} />
+              )}
+              {!loading && (
+                <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Revenue</p>
+                    <p className="text-sm font-bold text-emerald-700">{fmtMoney(s.totalRevenue)}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Net Income</p>
+                    <p
+                      className={`text-sm font-bold ${netPositive ? 'text-violet-700' : 'text-red-600'}`}
+                    >
+                      {fmtMoney(s.netIncome)}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-            {loading ? (
-              <div className="flex items-center gap-6">
-                <Sk className="h-[148px] w-[148px] rounded-full" />
-                <div className="space-y-2.5 flex-1">
-                  {[...Array(3)].map((_, i) => (
-                    <Sk key={i} className="h-4 w-full" />
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">AR Aging</h2>
+                  <p className="text-xs text-gray-400">Receivables by days outstanding</p>
+                </div>
+                <Link
+                  href="/accounting/ar-invoices"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
                   ))}
                 </div>
-              </div>
-            ) : (
-              <DonutChart segments={s.pnlBreakdown} />
-            )}
-            {!loading && (
-              <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
-                <div className="text-center">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Revenue</p>
-                  <p className="text-sm font-bold text-emerald-700">{fmtMoney(s.totalRevenue)}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide">Net Income</p>
-                  <p
-                    className={`text-sm font-bold ${netPositive ? 'text-violet-700' : 'text-red-600'}`}
-                  >
-                    {fmtMoney(s.netIncome)}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">AR Aging</h2>
-                <p className="text-xs text-gray-400">Receivables by days outstanding</p>
-              </div>
-              <Link
-                href="/accounting/ar-invoices"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                All <ChevronRight className="h-3 w-3" />
-              </Link>
+              ) : s.arAgingBuckets.length === 0 ? (
+                <EmptyState message="No AR aging data available" />
+              ) : (
+                <HBarChart items={s.arAgingBuckets} />
+              )}
             </div>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-8 w-full" />
-                ))}
-              </div>
-            ) : s.arAgingBuckets.length === 0 ? (
-              <EmptyState message="No AR aging data available" />
-            ) : (
-              <HBarChart items={s.arAgingBuckets} />
-            )}
-          </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">AP Aging</h2>
-                <p className="text-xs text-gray-400">Payables by days outstanding</p>
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">AP Aging</h2>
+                  <p className="text-xs text-gray-400">Payables by days outstanding</p>
+                </div>
+                <Link
+                  href="/accounting/ap-bills"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
               </div>
-              <Link
-                href="/accounting/ap-bills"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                All <ChevronRight className="h-3 w-3" />
-              </Link>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : s.apAgingBuckets.length === 0 ? (
+                <EmptyState message="No AP aging data available" />
+              ) : (
+                <HBarChart items={s.apAgingBuckets} />
+              )}
             </div>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-8 w-full" />
-                ))}
-              </div>
-            ) : s.apAgingBuckets.length === 0 ? (
-              <EmptyState message="No AP aging data available" />
-            ) : (
-              <HBarChart items={s.apAgingBuckets} />
-            )}
           </div>
         </div>
 
         {/* Bank Accounts */}
-        {(loading || s.bankBreakdown.length > 0) && (
+        {(loading || s.bankAccountsList.length > 0) && (
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -1186,43 +1066,6 @@ export default function AccountingPage() {
             )}
           </div>
         )}
-
-        {/* Quick Navigation */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-            Module Navigation
-          </h3>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-            {(
-              [
-                { label: 'AR Invoices', href: '/accounting/ar-invoices', icon: FileText },
-                { label: 'AP Invoices', href: '/accounting/ap-bills', icon: CreditCard },
-                { label: 'Journal Entries', href: '/accounting/journal-entries', icon: BookOpen },
-                {
-                  label: 'Chart of Accounts',
-                  href: '/accounting/chart-of-accounts',
-                  icon: BarChart2,
-                },
-                { label: 'Bank Recon', href: '/accounting/bank-reconciliation', icon: Wallet },
-                { label: 'Fixed Assets', href: '/accounting/fixed-assets', icon: Building2 },
-                { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
-                { label: 'Fiscal Periods', href: '/accounting/fiscal-periods', icon: CalendarDays },
-                { label: 'Tax', href: '/accounting/tax', icon: Receipt },
-                { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
-                { label: 'Reports', href: '/accounting/reports', icon: Clock },
-              ] as const
-            ).map(({ label, href, icon: Icon }, i) => (
-              <Link
-                key={i}
-                href={href}
-                className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2.5 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
-              >
-                <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                {label}
-              </Link>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   )

@@ -195,7 +195,7 @@ If tackling one module at a time (per this project's usual bounded-work preferen
 - Every part's test coverage was verified against **live dev-DB data**, not assumptions — several widgets (Projected Stockouts, Trending Toward Reorder, Purchasing's open-PR count) currently show real empty/zero states because the underlying dev data genuinely has none right now (0 backorders/reservations feeding stockout projections, 0 items at reorder level, 0 open PRs). Tests assert correctly on whichever state is real rather than assuming population.
 - No commits made to `development` in either repo — all work sits on `feat/scenario-28-inventory-dashboard-integrity` in both repos, uncommitted until this point.
 
-## Implementation Log — 2026-08-27
+## Implementation Log — 2026-08-27 (CRM)
 
 **Scope of this run: CRM only** (per developer decision at kickoff — same one-module-at-a-time bounding as the Inventory run). Accounting's closing gaps above are **still fully open**, not touched in this run.
 
@@ -215,3 +215,23 @@ If tackling one module at a time (per this project's usual bounded-work preferen
 - A related, out-of-scope-for-this-doc finding on the **main `/dashboard`** (not CRM): `TopCustomersWidget` has the same capped-fetch-as-total bug (`customersApi.list({ limit: 200 })` used to resolve names for a POS-transaction revenue rollup — past 200 customers, some sales misattribute to "Walk-in Customer") plus a separate grouping-by-name-not-id issue. Flagged to the developer, not fixed — main dashboard is explicitly out of scope for this doc.
 - Every part's e2e coverage (4 new backend specs, 4 new/extended frontend specs) was run against real fixtures created and torn down per-test, not assumptions — including specific coverage that voided POS transactions and soft-deleted records never count toward the affected totals.
 - Commits: `ac7678c` (backend), `cc2d61b` (frontend), both on `feat/scenario-29-crm-dashboard-integrity` in their respective repos, pushed.
+
+## Implementation Log — 2026-08-27 (Accounting)
+
+**Scope of this run: Accounting only.** CRM closed the same day, in a separate run on its own branch (see that run's own Implementation Log entry above) — Inventory closed 2026-08-13. All three of this doc's module sections are now closed.
+
+**Re-verification before starting** (doc last checked 2026-08-12, a lot had landed since, including Scenario 38's bank-clearing/GL-posting work touching this exact area): all four closing-gap claims held up unchanged. Two other claims had drifted and were corrected before scoping: `businessBankAccount` is no longer an empty table (Scenario 38's seed work populated it, at ₱0 balances); "FX Revaluation" doesn't exist anywhere in either repo (dropped from missing-widgets, nothing to link) — Inventory's item-cost revaluation is a different, unrelated feature the doc's author had confused it with.
+
+**For this scenario, I have done** (all 4 confirmed closing-gap items, frontend-only — no backend changes needed):
+
+1. **Fixed AR/AP Aging charts.** `extractAging()` expected a pre-aggregated `{buckets: [...]}` or bucket-keyed object shape that `GET /reports/aging/:type` never actually returns (a flat array of invoice/bill rows, each with its own `outstanding` amount and `bucket` label) — always resolved to `[]` regardless of real overdue data. Rewritten to sum by the real `bucket` field. Verified against genuinely real overdue AR/AP data already in the dev DB (both e2e tests exercise live data, neither needed to skip for lack of fixtures).
+2. **Auto-refresh** — same 30s interval + window-focus/visibility-change pattern as CRM's dashboard, landed after item 1 per this doc's own ordering note.
+3. **Dead code cleanup** — removed the `totalExpenses` fallback guessing at a `pnl?.totalExpenses` field `profitAndLoss()` never returns (simplified to what its own sub-label already claimed: "COGS + operating expenses"); removed the unused `bankBreakdown` array (computed, never rendered — the real grid used `bankAccountsList`) and repointed the Bank Account Balances card's visibility gate to the data it actually renders instead of the dead parallel array.
+4. **Linked Cash Flow Forecast** from Module Navigation — a fully built page (backend module + frontend page both exist) that was simply never linked. Verified the link actually navigates to a real, working page, not a 404.
+
+**Worth flagging:**
+
+- **Tenant-scoping gap investigated in depth, deliberately deferred** (developer decision) — not part of this run, and explicitly **not** part of any future "dashboard" scenario either. A full discovery pass (7 models: `Account`, `JournalEntry`, `Transaction`, `BusinessBankAccount`, `FixedAsset`, `FiscalPeriod`, `Budget`; ~76 touch points across ~15 files) found this is a real platform-wide initiative, not a dashboard fix that happens to touch these tables — the highest-volume write path (`JournalPostingService.post()`) is called by 20 services across POS, Inventory, and CRM installment accounts, none of it dashboard-specific. Two traps found worth remembering if this is picked up later: (1) `JournalEntry` and `Budget` already _look_ tenant-scoped (thread `user.enterpriseOwnerId` on reads) but only via an indirect, nullable `branch.enterpriseOwnerId` path that `create()` never uses — replace, don't extend; (2) `assertNotInLockedPeriod()` (the period-lock check run on every JE post) is unscoped in two duplicated copies plus a third near-miss in `inventory/costing.service.ts` that already accepts a `tenantId` param and just never uses it in that query — a real, present-day bug independent of the larger migration. `Account`/Chart-of-Accounts scoping was further separated out as its own open product question (per-tenant duplicated COA vs. shared-with-override) — `POST /coa-seed/ph` is a single global seed endpoint today, and `AccountMapping` has no tenant concept at all.
+- Empty tables (`fixedAsset`, `budget`, `fiscalPeriod`) — left as-is per the doc's own recommendation, matching the same call made for Inventory's and CRM's empty-table items. Not a code gap.
+- 4 new e2e specs (`accounting-dashboard-aging`, `accounting-dashboard-auto-refresh`, `accounting-dashboard-dead-code-cleanup`, `accounting-dashboard-cash-forecast-link`), 8 tests, all passing against real dev-DB data.
+- Frontend-only change; backend repo has zero diff for this run.
