@@ -151,256 +151,258 @@ export default function CreateUdsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Issue Unit Document Sheet</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Track units leaving the branch for repair, pull-out, or maintenance.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">Issue Unit Document Sheet</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            Track units leaving the branch for repair, pull-out, or maintenance.
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-5 px-6 py-5">
-            {/* Reason + Branch */}
-            <div className="grid gap-4 sm:grid-cols-2">
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          {/* Reason + Branch */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Reason <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="reason"
+                control={control}
+                render={({ field }) => (
+                  <select {...field} className={fieldClass}>
+                    {UDS_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {UDS_REASON_LABELS[r]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              />
+              {errors.reason && (
+                <p className="mt-1 text-xs text-red-600">{errors.reason.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Location</label>
+              <Controller
+                name="warehouseId"
+                control={control}
+                render={({ field }) =>
+                  lockedToWarehouseId ? (
+                    <select
+                      {...field}
+                      disabled
+                      className={`${fieldClass} bg-zinc-50 text-zinc-500`}
+                    >
+                      <option value={lockedToWarehouseId}>
+                        {branchLabel(ownBranchWarehouses[0])}
+                      </option>
+                    </select>
+                  ) : (
+                    <select {...field} className={fieldClass}>
+                      <option value="">— None —</option>
+                      {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {branchLabel(w)}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                }
+              />
+              {lockedToWarehouseId && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  UDS are always issued from your own location.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Expected Return Date */}
+          <div className="sm:w-1/2">
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Expected Return Date
+              <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+            </label>
+            <Controller
+              name="expectedReturnDate"
+              control={control}
+              render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+            />
+          </div>
+
+          {/* Repair-specific fields */}
+          {reason === 'repair' && (
+            <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Reason <span className="text-red-500">*</span>
+                  Repair Provider
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
                 </label>
                 <Controller
-                  name="reason"
+                  name="repairProviderId"
                   control={control}
                   render={({ field }) => (
                     <select {...field} className={fieldClass}>
-                      {UDS_REASONS.map((r) => (
-                        <option key={r} value={r}>
-                          {UDS_REASON_LABELS[r]}
+                      <option value="">— None —</option>
+                      {supplierOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.code} — {s.name}
                         </option>
                       ))}
                     </select>
                   )}
                 />
-                {errors.reason && (
-                  <p className="mt-1 text-xs text-red-600">{errors.reason.message}</p>
-                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Location</label>
-                <Controller
-                  name="warehouseId"
-                  control={control}
-                  render={({ field }) =>
-                    lockedToWarehouseId ? (
-                      <select
-                        {...field}
-                        disabled
-                        className={`${fieldClass} bg-zinc-50 text-zinc-500`}
-                      >
-                        <option value={lockedToWarehouseId}>
-                          {branchLabel(ownBranchWarehouses[0])}
-                        </option>
-                      </select>
-                    ) : (
-                      <select {...field} className={fieldClass}>
-                        <option value="">— None —</option>
-                        {(currentUserBranchId ? ownBranchWarehouses : warehouseOptions).map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {branchLabel(w)}
-                          </option>
-                        ))}
-                      </select>
-                    )
-                  }
-                />
-                {lockedToWarehouseId && (
-                  <p className="mt-1 text-xs text-zinc-400">
-                    UDS are always issued from your own location.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Expected Return Date */}
-            <div className="sm:w-1/2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Expected Return Date
-                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-              </label>
-              <Controller
-                name="expectedReturnDate"
-                control={control}
-                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-              />
-            </div>
-
-            {/* Repair-specific fields */}
-            {reason === 'repair' && (
-              <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Repair Provider
-                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-                  </label>
-                  <Controller
-                    name="repairProviderId"
-                    control={control}
-                    render={({ field }) => (
-                      <select {...field} className={fieldClass}>
-                        <option value="">— None —</option>
-                        {supplierOptions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.code} — {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    RFS Form
-                    <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-                  </label>
-                  <label
-                    className={`${fieldClass} flex cursor-pointer items-center gap-2 text-zinc-500`}
-                  >
-                    <Paperclip className="h-4 w-4 shrink-0" />
-                    <span className="truncate">
-                      {isUploading ? 'Uploading…' : (rfsFormName ?? 'Attach supporting document')}
-                    </span>
-                    <input
-                      type="file"
-                      className="hidden"
-                      disabled={isUploading}
-                      onChange={handleRfsFileChange}
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* Units */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-800">Units</h3>
-                <button
-                  type="button"
-                  onClick={() => append({ serialNumberId: '', issueReason: '', notes: '' })}
-                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  RFS Form
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                </label>
+                <label
+                  className={`${fieldClass} flex cursor-pointer items-center gap-2 text-zinc-500`}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Unit
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {fields.map((field, idx) => (
-                  <div key={field.id} className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 space-y-2">
-                        <Controller
-                          name={`lines.${idx}.serialNumberId`}
-                          control={control}
-                          render={({ field: f }) => (
-                            <SearchableSelect
-                              value={f.value}
-                              onChange={f.onChange}
-                              placeholder="Search serial number…"
-                              options={serialOptions.map((s) => ({
-                                value: s.id,
-                                label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
-                              }))}
-                            />
-                          )}
-                        />
-                        {errors.lines?.[idx]?.serialNumberId && (
-                          <p className="text-xs text-red-600">
-                            {errors.lines[idx]?.serialNumberId?.message}
-                          </p>
-                        )}
-                        <Controller
-                          name={`lines.${idx}.issueReason`}
-                          control={control}
-                          render={({ field: f }) => (
-                            <input
-                              {...f}
-                              type="text"
-                              placeholder="Issue reason (optional)"
-                              className={fieldClass}
-                            />
-                          )}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => remove(idx)}
-                        disabled={fields.length === 1}
-                        className="mt-1 rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {errors.lines && !Array.isArray(errors.lines) && (
-                <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
-              )}
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Notes
-                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-              </label>
-              <Controller
-                name="notes"
-                control={control}
-                render={({ field }) => (
-                  <textarea
-                    {...field}
-                    rows={2}
-                    placeholder="Any additional instructions or context…"
-                    className={`${fieldClass} resize-none`}
+                  <Paperclip className="h-4 w-4 shrink-0" />
+                  <span className="truncate">
+                    {isUploading ? 'Uploading…' : (rfsFormName ?? 'Attach supporting document')}
+                  </span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    disabled={isUploading}
+                    onChange={handleRfsFileChange}
                   />
-                )}
-              />
+                </label>
+              </div>
             </div>
+          )}
+
+          {/* Units */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-800">Units</h3>
+              <button
+                type="button"
+                onClick={() => append({ serialNumberId: '', issueReason: '', notes: '' })}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Unit
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {fields.map((field, idx) => (
+                <div key={field.id} className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 space-y-2">
+                      <Controller
+                        name={`lines.${idx}.serialNumberId`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <SearchableSelect
+                            value={f.value}
+                            onChange={f.onChange}
+                            placeholder="Search serial number…"
+                            options={serialOptions.map((s) => ({
+                              value: s.id,
+                              label: `${s.serialNumber}${s.item ? ` — ${s.item.sku} ${s.item.name}` : ''}`,
+                            }))}
+                          />
+                        )}
+                      />
+                      {errors.lines?.[idx]?.serialNumberId && (
+                        <p className="text-xs text-red-600">
+                          {errors.lines[idx]?.serialNumberId?.message}
+                        </p>
+                      )}
+                      <Controller
+                        name={`lines.${idx}.issueReason`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <input
+                            {...f}
+                            type="text"
+                            placeholder="Issue reason (optional)"
+                            className={fieldClass}
+                          />
+                        )}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => remove(idx)}
+                      disabled={fields.length === 1}
+                      className="mt-1 rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {errors.lines && !Array.isArray(errors.lines) && (
+              <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
+            )}
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Issuing…' : 'Issue UDS'}
-            </button>
+          {/* Notes */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Notes
+              <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+            </label>
+            <Controller
+              name="notes"
+              control={control}
+              render={({ field }) => (
+                <textarea
+                  {...field}
+                  rows={2}
+                  placeholder="Any additional instructions or context…"
+                  className={`${fieldClass} resize-none`}
+                />
+              )}
+            />
           </div>
-        </form>
-      </div>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSubmitting ? 'Issuing…' : 'Issue UDS'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
