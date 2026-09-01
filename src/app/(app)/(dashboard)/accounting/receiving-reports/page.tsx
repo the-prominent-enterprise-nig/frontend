@@ -9,7 +9,7 @@ export default async function Page() {
   requirePermission(session, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <ReceivingReportsTab />
+      <ReceivingReportsTab showAmounts />
     </div>
   )
 }

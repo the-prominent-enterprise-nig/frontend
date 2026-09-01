@@ -72,7 +72,11 @@ export function printInventoryDocument(
  * preview (e.g. an iframe) can render the exact same markup without opening
  * a popup window.
  */
-export function buildReceivingReportHtml(data: unknown): string {
+export function buildReceivingReportHtml(
+  data: unknown,
+  opts: { showAmounts?: boolean } = {}
+): string {
+  const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
   const supplier = rr.supplier as { name?: string } | undefined
@@ -81,12 +85,15 @@ export function buildReceivingReportHtml(data: unknown): string {
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtMoney = (n: number) =>
+    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
 
   let totalQty = 0
+  let totalAmount = 0
 
   const rows = lines
     .map((l) => {
@@ -100,13 +107,21 @@ export function buildReceivingReportHtml(data: unknown): string {
         | undefined
       const serials = (l.serialNumbers as string[] | undefined) ?? []
       const qty = Number(l.quantityReceived ?? 0)
+      const unitCost = l.unitCost != null ? Number(l.unitCost) : null
       totalQty += qty
+      if (unitCost != null) totalAmount += qty * unitCost
       return `<tr>
         <td class="mono">${serials.length > 0 ? esc(serials.join(', ')) : ''}</td>
         <td>${esc(item?.brand?.name) || ''}</td>
         <td>${esc(item?.primaryCategory?.name) || ''}</td>
         <td>${esc(item?.modelNumber) || esc(item?.name) || ''}</td>
         <td class="right">${qty}</td>
+        ${
+          showAmounts
+            ? `<td class="right">${unitCost != null ? fmtMoney(unitCost) : '—'}</td>
+        <td class="right">${unitCost != null ? fmtMoney(qty * unitCost) : '—'}</td>`
+            : ''
+        }
       </tr>`
     })
     .join('')
@@ -173,6 +188,12 @@ export function buildReceivingReportHtml(data: unknown): string {
           <th rowspan="2" style="width:14%">Part No. / Serial No.</th>
           <th colspan="3">Description</th>
           <th rowspan="2" style="width:10%">Qty</th>
+          ${
+            showAmounts
+              ? `<th rowspan="2" style="width:12%">Unit Cost</th>
+          <th rowspan="2" style="width:14%">Amount</th>`
+              : ''
+          }
         </tr>
         <tr>
           <th>Brand</th>
@@ -187,7 +208,7 @@ export function buildReceivingReportHtml(data: unknown): string {
       <table>
         <tr>
           <td class="label">Total</td>
-          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${showAmounts ? ` — ${fmtMoney(totalAmount)}` : ''}</td>
         </tr>
       </table>
     </div>
@@ -204,10 +225,13 @@ export function buildReceivingReportHtml(data: unknown): string {
   </body></html>`
 }
 
-export function printReceivingReportDocument(data: unknown): void {
+export function printReceivingReportDocument(
+  data: unknown,
+  opts: { showAmounts?: boolean } = {}
+): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
-  win.document.write(buildReceivingReportHtml(data))
+  win.document.write(buildReceivingReportHtml(data, opts))
   win.document.close()
 }
 
