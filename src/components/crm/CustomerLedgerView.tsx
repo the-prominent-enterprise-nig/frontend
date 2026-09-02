@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { printUnifiedCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
-import type { CustomerLedger } from '@/src/schema/crm/types'
+import type { Customer, CustomerLedger } from '@/src/schema/crm/types'
 
 // Unified per-customer ledger — merges installment, charge, and cash sale
 // events into one chronological Date/Ref/Inst./Description/Debit/Credit/
@@ -19,14 +19,22 @@ export default function CustomerLedgerView({
   customerId,
   backHref,
   backLabel,
+  canEdit = false,
 }: {
   customerId: string
   backHref: string
   backLabel: string
+  canEdit?: boolean
 }) {
   const [ledger, setLedger] = useState<CustomerLedger | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [editingTax, setEditingTax] = useState(false)
+  const [taxForm, setTaxForm] = useState({ taxId: '', isTaxExempt: false, taxExemptionRef: '' })
+  const [savingTax, setSavingTax] = useState(false)
+  const [taxError, setTaxError] = useState<string | null>(null)
 
   useEffect(() => {
     customersApi.getLedger(customerId).then((res) => {
@@ -37,7 +45,46 @@ export default function CustomerLedgerView({
       }
       setLoading(false)
     })
+    customersApi.get(customerId).then((res) => {
+      if (res.success && res.data) {
+        setCustomer(res.data)
+        setTaxForm({
+          taxId: res.data.taxId ?? '',
+          isTaxExempt: res.data.isTaxExempt,
+          taxExemptionRef: res.data.taxExemptionRef ?? '',
+        })
+      }
+    })
   }, [customerId])
+
+  async function saveTaxInfo() {
+    setSavingTax(true)
+    setTaxError(null)
+    const res = await customersApi.update(customerId, {
+      taxId: taxForm.taxId,
+      isTaxExempt: taxForm.isTaxExempt,
+      taxExemptionRef: taxForm.taxExemptionRef,
+    })
+    setSavingTax(false)
+    if (res.success && res.data) {
+      setCustomer(res.data)
+      setEditingTax(false)
+    } else {
+      setTaxError(res.message || res.error || 'Failed to save')
+    }
+  }
+
+  function cancelTaxEdit() {
+    if (customer) {
+      setTaxForm({
+        taxId: customer.taxId ?? '',
+        isTaxExempt: customer.isTaxExempt,
+        taxExemptionRef: customer.taxExemptionRef ?? '',
+      })
+    }
+    setTaxError(null)
+    setEditingTax(false)
+  }
 
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
@@ -72,6 +119,109 @@ export default function CustomerLedgerView({
                 <Printer className="h-3.5 w-3.5" /> Print
               </button>
             </div>
+
+            {customer && (
+              <section className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <div className="flex items-center justify-between p-4 pb-2">
+                  <h2 className="text-[14px] font-semibold text-gray-900">Tax Info</h2>
+                  {canEdit && !editingTax && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingTax(true)}
+                      className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                  )}
+                </div>
+                <div className="border-t border-gray-100 p-4 pt-3">
+                  {editingTax ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-gray-600">
+                            Tax ID (TIN)
+                          </span>
+                          <input
+                            value={taxForm.taxId}
+                            onChange={(e) => setTaxForm((f) => ({ ...f, taxId: e.target.value }))}
+                            maxLength={50}
+                            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          />
+                        </label>
+                        <label className="flex items-center gap-2 sm:mt-6">
+                          <input
+                            type="checkbox"
+                            checked={taxForm.isTaxExempt}
+                            onChange={(e) =>
+                              setTaxForm((f) => ({ ...f, isTaxExempt: e.target.checked }))
+                            }
+                            className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
+                          />
+                          <span className="text-sm text-gray-700">Tax-exempt</span>
+                        </label>
+                        {taxForm.isTaxExempt && (
+                          <label className="block sm:col-span-2">
+                            <span className="mb-1 block text-xs font-medium text-gray-600">
+                              Exemption ref
+                            </span>
+                            <input
+                              value={taxForm.taxExemptionRef}
+                              onChange={(e) =>
+                                setTaxForm((f) => ({ ...f, taxExemptionRef: e.target.value }))
+                              }
+                              maxLength={100}
+                              className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          </label>
+                        )}
+                      </div>
+                      {taxError && <p className="text-xs text-red-600">{taxError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={saveTaxInfo}
+                          disabled={savingTax}
+                          className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                        >
+                          {savingTax && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelTaxEdit}
+                          disabled={savingTax}
+                          className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Tax ID (TIN)</p>
+                        <p className="mt-0.5 font-medium text-gray-800">{customer.taxId || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Tax-exempt</p>
+                        <p className="mt-0.5 font-medium text-gray-800">
+                          {customer.isTaxExempt ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                      {customer.isTaxExempt && (
+                        <div>
+                          <p className="text-xs text-gray-500">Exemption ref</p>
+                          <p className="mt-0.5 font-medium text-gray-800">
+                            {customer.taxExemptionRef || '—'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Totals</h2>

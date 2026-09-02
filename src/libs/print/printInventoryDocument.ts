@@ -1284,3 +1284,398 @@ export function printARInvoiceDocument(data: unknown): void {
   win.document.write(buildARInvoiceHtml(data))
   win.document.close()
 }
+
+/**
+ * Bespoke letterhead layout for the AP Bill print/download — same
+ * typographic family as buildARInvoiceHtml() (AP Bill and AR Invoice are
+ * structural mirrors: payable vs receivable) instead of
+ * printInventoryDocument()'s bare generic shell this used before. Titled
+ * "Purchase Invoice" to match the client's own paper document — distinct
+ * from "AP Invoices", which stays the module's name everywhere else in the
+ * app (nav, list header, page title).
+ *
+ * No per-line tax column: this schema only tracks tax at the bill level
+ * (APBill.taxAmount), not per goods-receipt-line/item, so — unlike the
+ * client's reference invoice — tax only appears in the totals block.
+ */
+export function buildAPBillHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const bill = doc.document as Record<string, unknown>
+  const supplier = bill.supplier as { name?: string; address?: string; taxId?: string } | undefined
+  const purchaseOrder = bill.purchaseOrder as { code?: string } | null
+  const goodsReceipts = (bill.goodsReceipts as Record<string, unknown>[] | undefined) ?? []
+  const payments = (bill.payments as Record<string, unknown>[] | undefined) ?? []
+  const enterprise = doc.enterprise
+  // Scenario 43 Part B — only a general/non-PO bill (no goods-receipt item
+  // lines) needs the Account breakdown table; a PO-linked bill's item table
+  // below is already more informative than a single account row.
+  const effectiveExpenseAccount = bill.effectiveExpenseAccount as { name?: string } | null
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const totalAmount = Number(bill.totalAmount ?? 0)
+  const amountPaid = Number(bill.amountPaid ?? 0)
+  const withholdingAmount = Number(bill.withholdingAmount ?? 0)
+  const outstanding = totalAmount - amountPaid
+
+  const rrCodes = Array.from(new Set(goodsReceipts.map((r) => r.code).filter(Boolean)))
+
+  const rows = goodsReceipts
+    .flatMap((r) => {
+      const lines = (r.lines as Record<string, unknown>[] | undefined) ?? []
+      return lines.map((l) => {
+        const item = l.item as { name?: string } | null
+        const qty = Number(l.quantityReceived ?? 0)
+        const unitCost = Number(l.unitCost ?? 0)
+        return `<tr>
+          <td>${esc(item?.name) || '—'}</td>
+          <td class="right">${qty}</td>
+          <td class="right">${fmt(unitCost)}</td>
+          <td class="right">${fmt(qty * unitCost)}</td>
+        </tr>`
+      })
+    })
+    .join('')
+
+  const paymentRows = payments
+    .map((p) => {
+      const ref = (p.chequeNumber as string) || (p.reference as string) || ''
+      const label = ref
+        ? `Payment — CK#${esc(ref)} — ${fmtDate(p.paymentDate)}`
+        : `Payment — ${fmtDate(p.paymentDate)}`
+      return `<tr><td class="label">${label}</td><td class="value">- ${fmt(Number(p.amount ?? 0))}</td></tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .rr-note { font-weight: 700; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; border: none; }
+    .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 140px; }
+    .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
+    .total-wrap tr.balance td { font-weight: 700; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Purchase Invoice</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(supplier?.name)}</p>
+        <p class="party-address">${esc(supplier?.address) || '—'}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Invoice date</p>
+        <p class="meta-value">${fmtDate(bill.billDate)}</p>
+        <p class="meta-label">Due date</p>
+        <p class="meta-value">${fmtDate(bill.dueDate)}</p>
+        <p class="meta-label">Invoice number</p>
+        <p class="meta-value">${bill.billNumber ? esc(bill.billNumber) : 'Pending SI #'}</p>
+        ${purchaseOrder ? `<p class="meta-label">Order number</p><p class="meta-value">${esc(purchaseOrder.code)}</p>` : ''}
+        <p class="meta-label">PAYEE'S TIN:</p>
+        <p class="meta-value">${esc(supplier?.taxId) || '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${rrCodes.length ? `<p class="rr-note">RR# ${rrCodes.map(esc).join(', ')}</p>` : ''}
+
+    ${
+      rows
+        ? `<table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="right">Qty</th>
+          <th class="right">Unit price</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`
+        : `<table>
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td class="right">${fmt(totalAmount)}</td>
+        </tr>
+      </tbody>
+    </table>`
+    }
+
+    <div class="total-wrap">
+      <table>
+        <tr><td class="label">Sub-total</td><td class="value">${fmt(Number(bill.subtotal ?? 0))}</td></tr>
+        ${withholdingAmount > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">- ${fmt(withholdingAmount)}</td></tr>` : ''}
+        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
+        <tr><td class="label">Includes VAT</td><td class="value">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
+        ${paymentRows}
+        <tr class="balance"><td class="label">Balance due</td><td class="value">${fmt(outstanding)}</td></tr>
+      </table>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAPBillDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildAPBillHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 43 Part C — bespoke letterhead layout for a single AP payment,
+ * replacing the old renderApChequeBody() (a bare label/value list with no
+ * letterhead, no Account table, no signatures) which was cheque-specific.
+ * This is a proper superset — still shows the method/reference/cheque
+ * number the old print did, plus the bill's own voucherNumber (raised
+ * before payment, as the authorization to pay), the Gap-B Account
+ * breakdown, and the Prepared/Certified/Approved-by + acknowledgment
+ * signature blocks the client's own paper "Payment" form has, matching the
+ * family style already established for the other bespoke prints.
+ */
+export function buildAPPaymentVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const p = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const effectiveExpenseAccount = p.effectiveExpenseAccount as { name?: string } | null
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  // The reference document's "Total" is what this one payment settled, not
+  // the whole bill (a bill can be paid across several payments) — matches
+  // how the Payment history list already sums amount + withholdingAmount.
+  const amount = Number(p.amount ?? 0) + Number(p.withholdingAmount ?? 0)
+  const reference = p.chequeNumber
+    ? `CK#${esc(p.chequeNumber)}`
+    : p.reference
+      ? esc(p.reference)
+      : '—'
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .ack { margin-top: 48px; text-align: center; }
+    .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
+    .ack-line.short { width: 120px; }
+    .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Payment</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(p.payee) || '—'}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(p.paymentDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${reference}</p>
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <p class="ack">Acknowledged receipt of payment from ${esc(enterprise?.companyLegalName)}:</p>
+    <p class="ack" style="margin-top:24px">
+      <span class="ack-line"></span>/<span class="ack-line short"></span>
+    </p>
+    <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAPPaymentVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildAPPaymentVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 44 Part 2 — the AR-side mirror of buildAPPaymentVoucherHtml()
+ * above: same letterhead/info-block/Account-Total-table family, titled
+ * "Collection Receipt" per the client's own paper form. No signature
+ * blocks or acknowledgment line — those are specific to AP's internal
+ * payment-voucher sign-off chain; a customer-facing collection receipt has
+ * neither in the client's own reference document.
+ */
+export function buildCollectionReceiptHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const r = doc.document as Record<string, unknown>
+  const customer = r.customer as { name?: string; address?: string; taxId?: string } | undefined
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const amount = Number(r.amount ?? 0)
+  const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(r.invoiceNumber) || '—'}`
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Collection Receipt</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(customer?.name) || '—'}</p>
+        ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
+        ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(r.paymentDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${r.reference ? esc(r.reference) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${r.description ? `<p class="description">${esc(r.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${accountLine}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+      </tbody>
+    </table>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCollectionReceiptDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildCollectionReceiptHtml(data))
+  win.document.close()
+}

@@ -240,6 +240,16 @@ export interface PosTransaction {
   createdAt: string
   journalEntryId?: string | null
   arInvoiceId?: string | null
+  /** Collection receipt reference for deliveryFee specifically — separate
+   * from a payment's own CR/referenceNumber since the delivery fee is a
+   * transaction-level charge, not tied to any one payment. */
+  deliveryFeeReferenceNumber?: string | null
+  /** Sales Invoice number — optional, free-text, once per whole transaction
+   * (not per payment/tender like the per-payment CR/referenceNumber). */
+  salesInvoiceNumber?: string | null
+  /** Delivery Receipt number — same once-per-transaction convention as
+   * salesInvoiceNumber above. */
+  deliveryReceiptNumber?: string | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -343,6 +353,16 @@ export interface CreateTransactionInput {
    * counts toward an installment line's financed amount or its 10% down
    * payment floor. Defaults to 0. */
   deliveryFee?: number
+  /** Collection receipt reference for deliveryFee specifically — separate
+   * from a payment's own CR/referenceNumber since the delivery fee is a
+   * transaction-level charge, not tied to any one payment. */
+  deliveryFeeReferenceNumber?: string
+  /** Sales Invoice number — optional, free-text, once per whole transaction
+   * (not per payment/tender like the per-payment CR/referenceNumber). */
+  salesInvoiceNumber?: string
+  /** Delivery Receipt number — same once-per-transaction convention as
+   * salesInvoiceNumber above. */
+  deliveryReceiptNumber?: string
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,

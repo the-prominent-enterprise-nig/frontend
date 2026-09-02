@@ -18,6 +18,7 @@ import {
   CheckCircle,
   Pencil,
   Eye,
+  Receipt,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
 import { usePurchaseRequests } from '../../purchase-requests/_hooks/usePurchaseRequests'
@@ -245,6 +246,7 @@ export function PurchaseOrderList({
   canEdit,
   canReceive,
   canViewCost,
+  canViewApBill,
   currentUserBranchId,
 }: {
   /** Gates the "+ New Purchase" button — creating always drafts a Purchase
@@ -259,6 +261,9 @@ export function PurchaseOrderList({
   canEdit: boolean
   canReceive: boolean
   canViewCost: boolean
+  /** Scenario 41 Part 3 — gates "View Invoice" so a role without AP
+   * Invoices access doesn't get a link into a page it'll then be denied on. */
+  canViewApBill: boolean
   /** Sent as branchId attribution on a created PR — the create modal has no
    * visible branch field (Scenario 27: destination is the Warehouse
    * field), this just flows through to the backend's own server-side
@@ -694,6 +699,17 @@ export function PurchaseOrderList({
                               variant="purple"
                             >
                               <FileText className="h-3.5 w-3.5" />
+                            </IconBtn>
+                          )}
+                          {canViewApBill && po.apBills.length > 0 && (
+                            <IconBtn
+                              title="View Invoice"
+                              onClick={() =>
+                                router.push(`/accounting/ap-bills/${po.apBills[0].id}`)
+                              }
+                              variant="purple"
+                            >
+                              <Receipt className="h-3.5 w-3.5" />
                             </IconBtn>
                           )}
                         </div>

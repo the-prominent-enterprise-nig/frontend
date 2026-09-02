@@ -74,7 +74,6 @@ import {
   syncTransactions,
   updateSessionDisplay,
   getPaymentMethods,
-  getDefaultAccountingTaxRate,
   getEnabledBranchPaymentMethods,
   getReceiptBranding,
   getAvailableSerialNumbers,
@@ -93,6 +92,7 @@ import {
   type SerialNumberRecord,
   type PosPriceUseType,
 } from '../_actions/pos-actions'
+import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
@@ -285,8 +285,8 @@ export default function CheckoutPage() {
   // Session
   const [sessionId, setSessionId] = useState('')
 
-  // Active accounting tax rate (set via Accounting → Tax toggle)
-  const [activeTaxRate, setActiveTaxRate] = useState<{ rate: number; name: string } | null>(null)
+  // Flat VAT rate applied to every checkout — no longer configurable.
+  const activeTaxRate = DEFAULT_VAT_RATE
 
   // Catalog
   const [catalogItems, setCatalogItems] = useState<LookupItem[]>([])
@@ -419,11 +419,22 @@ export default function CheckoutPage() {
   const [promoError, setPromoError] = useState('')
   const [validatingPromo, setValidatingPromo] = useState(false)
 
+  // One payment mode for the whole cart — never per item. Cash vs
+  // Installment decides invoiceType for every line at once (see the
+  // Payment Mode toggle and its onClick, which pushes this to every line
+  // via setLineInvoiceType); if any item needs a different mode, it has to
+  // be a separate transaction.
+  const [cartInvoiceMode, setCartInvoiceMode] = useState<'cash' | 'installment'>('cash')
+
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
-  // Scenario 37 — card details captured once via Item Payment Mode's
-  // Credit Card toggle (transaction-scoped, see hasCreditCardLine), then
-  // carried into whatever Card payment row gets added below.
+  // One payment method per invoice: Cash vs Debit/Credit Card is the actual
+  // tender for the cash bucket, chosen once for the whole transaction here —
+  // never per item.
+  const [cashBucketMethod, setCashBucketMethod] = useState<'cash' | 'credit_card'>('cash')
+  // Scenario 37 — card details captured once via the Payment Method toggle
+  // (transaction-scoped, see hasCreditCardLine), then carried into whatever
+  // Card payment row gets added below.
   const [cardTerminalOptionId, setCardTerminalOptionId] = useState<string | undefined>()
   const [cardTxnMode, setCardTxnMode] = useState<PosCardTxnMode>('straight')
   const [cardInstallmentTerm, setCardInstallmentTerm] = useState<number | undefined>()
@@ -461,6 +472,10 @@ export default function CheckoutPage() {
   // section regardless of payment mode, kept out of subtotal/totalAmount so
   // it never affects an installment line's financed amount or 10% floor.
   const [deliveryFeeInput, setDeliveryFeeInput] = useState('')
+  // Collection receipt reference for the delivery fee specifically — kept
+  // apart from the main payment's own CR Reference, since the fee is a
+  // transaction-level charge, not tied to any one payment.
+  const [deliveryFeeReferenceNumberInput, setDeliveryFeeReferenceNumberInput] = useState('')
 
   // Configured payment methods from API — falls back to hardcoded list if not loaded
   const [configuredMethods, setConfiguredMethods] = useState<
@@ -604,13 +619,14 @@ export default function CheckoutPage() {
   // Submit
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [taxConfigError, setTaxConfigError] = useState(false)
   const [success, setSuccess] = useState<{
     transactionId: string
     transactionNumber: string
     change: number
     journalEntryId?: string | null
     arInvoiceId?: string | null
+    salesInvoiceNumber?: string | null
+    deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     // Per-line outcome — a cart can mix cash/charge/installment lines, so
@@ -785,6 +801,14 @@ export default function CheckoutPage() {
     })
   }, [])
 
+  // Clear a stale submit-time validation error as soon as the cart changes —
+  // e.g. removing/swapping the line that triggered a cross-branch serial
+  // rejection — instead of leaving the old message on screen until the next
+  // submit attempt.
+  useEffect(() => {
+    setError('')
+  }, [cart])
+
   // Fetch serial numbers when picker target or stage (primary/secondary) changes
   useEffect(() => {
     if (!serialPickerTarget) return
@@ -826,11 +850,6 @@ export default function CheckoutPage() {
       }
     )
   }, [serialPickerTarget?.itemId, serialPickerStage, activeBranchId])
-
-  // Fetch the active default accounting tax rate — controls global POS tax
-  useEffect(() => {
-    getDefaultAccountingTaxRate().then(setActiveTaxRate)
-  }, [sessionId])
 
   // Resume a parked sale or QMS tab stored in localStorage
   useEffect(() => {
@@ -1041,14 +1060,14 @@ export default function CheckoutPage() {
     (l) => l.installmentProvider !== 'tpf'
   )
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
-  // Scenario 37 — whether any cash-mode line is marked "pay by Credit Card"
-  // (Item Payment Mode's per-line toggle). Transaction-scoped, not per-line:
-  // one card swipe covers whatever's being paid by card in this sale, so the
-  // POS Terminal/Straight-Installment/Term fields render once, not per line.
-  const hasCreditCardLine = cashCartLines.some((l) => l.payNowMethod === 'credit_card')
-  // Scenario 37 — same for Cash's own sub-choice (Cash on Hand/Bank
-  // Transfer/QR), same transaction-scoped reasoning.
-  const hasCashLine = cashCartLines.some((l) => (l.payNowMethod ?? 'cash') === 'cash')
+  // Scenario 37 — whether the cash bucket's one tender method (cashBucketMethod,
+  // set via the transaction-wide Payment Method toggle — there's no per-item
+  // choice anymore) is Credit Card. One card swipe covers whatever's being
+  // paid by card in this sale, so the POS Terminal/Straight-Installment/Term
+  // fields render once, not per line.
+  const hasCreditCardLine = cashCartLines.length > 0 && cashBucketMethod === 'credit_card'
+  // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR).
+  const hasCashLine = cashCartLines.length > 0 && cashBucketMethod === 'cash'
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -1188,7 +1207,10 @@ export default function CheckoutPage() {
 
   // Down payment: only auto-add a row once the cashier has explicitly chosen
   // Cash or Credit/Debit (dpPaymentMode) — never before, since forcing that
-  // choice first is the point.
+  // choice first is the point. Cash-mode and installment-mode lines can
+  // never coexist in one transaction now (see cartInvoiceMode), so there's
+  // never an existing cash-bucket method to lock this to — it's always an
+  // independent choice.
   useEffect(() => {
     if (saleMode !== 'sale' || !dpPaymentMode || dpPayments.length > 0) return
     addDpPaymentRow()
@@ -1436,6 +1458,9 @@ export default function CheckoutPage() {
             // actually resolved — that's exactly what the item price cell
             // and the Order Summary total must agree on).
             unitPrice: 0,
+            // One payment mode per cart, never per item — a newly added line
+            // joins whatever mode the cart is already in.
+            invoiceType: cartInvoiceMode,
             quantity: 1,
             taxRate: item.taxRate ?? null,
             uomCode: item.uomCode,
@@ -1464,6 +1489,9 @@ export default function CheckoutPage() {
         // into the Order Summary total, same thing the per-line "Select
         // Price Use" placeholder exists to prevent.
         unitPrice: isReserveMode ? item.price : 0,
+        // One payment mode per cart, never per item — a newly added line
+        // joins whatever mode the cart is already in.
+        invoiceType: isReserveMode ? undefined : cartInvoiceMode,
         quantity: isReserveMode ? qty : item.isSerialTracked ? 1 : qty,
         taxRate: item.taxRate ?? null,
         uomCode: item.uomCode,
@@ -1549,11 +1577,6 @@ export default function CheckoutPage() {
           : l
       )
     )
-  }
-
-  function setLinePayNowMethod(lineIds: string | string[], method: PayNowMethod) {
-    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, payNowMethod: method } : l)))
   }
 
   function setLineFinancingTermId(lineIds: string | string[], financingTermId: string) {
@@ -1971,17 +1994,28 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is required for every payment now, not
-      // just card/bank/QR — mirrors the down payment section, which has
-      // always required one regardless of method.
-      const missingRef = payments.find((p) => p.amount > 0 && !p.referenceNumber.trim())
+      // CR Number (collection receipt) on the cash-lines payment is required
+      // whenever this sale also has an inhouse installment/down-payment
+      // component — mirrors the down payment section, which always requires
+      // one regardless of method. A plain sale still needs a reference for
+      // card/bank/e-wallet/etc. (REF_METHODS), just not for plain cash.
+      const missingRef = payments.find(
+        (p) =>
+          p.amount > 0 &&
+          !p.referenceNumber.trim() &&
+          (inhouseInstallmentCartLines.length > 0 || REF_METHODS.includes(p.method))
+      )
       if (missingRef) {
         setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
         return
       }
+      if (deliveryFeeAmount > 0 && !deliveryFeeReferenceNumberInput.trim()) {
+        setError('Delivery Fee Reference is required.')
+        return
+      }
       const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
       if (cardPaymentPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
-        setError('Select a Term for the card installment payment (Item Payment Mode).')
+        setError('Select a Term for the card installment payment (Payment Method).')
         return
       }
     }
@@ -2040,6 +2074,7 @@ export default function CheckoutPage() {
         subtotal: vatExclSubtotalForBackend,
         totalAmount: grandTotalWithFee,
         deliveryFee: deliveryFeeAmount || undefined,
+        deliveryFeeReferenceNumber: deliveryFeeReferenceNumberInput.trim() || undefined,
         isTaxExempt,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
@@ -2102,6 +2137,7 @@ export default function CheckoutPage() {
           subtotal: vatExclSubtotalForBackend,
           totalAmount: grandTotalWithFee,
           deliveryFee: deliveryFeeAmount || undefined,
+          deliveryFeeReferenceNumber: deliveryFeeReferenceNumberInput.trim() || undefined,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           managerOverride: managerOverrideApproved || undefined,
@@ -2179,10 +2215,6 @@ export default function CheckoutPage() {
             }
           }
 
-          const isTaxErr =
-            errMsg.toLowerCase().includes('no tax rate configured') ||
-            errMsg.toLowerCase().includes('tax rate')
-          setTaxConfigError(isTaxErr)
           setError(errMsg)
           setSubmitting(false)
           return
@@ -2240,7 +2272,6 @@ export default function CheckoutPage() {
           return
         }
 
-        setTaxConfigError(false)
         txId = txRes.data.id
         txData = txRes.data
       }
@@ -2258,8 +2289,8 @@ export default function CheckoutPage() {
             referenceNumber: p.referenceNumber || undefined,
             paymentMethodConfigId: p.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
-            // bank/gateway, all come from Item Payment Mode's transaction-scoped
-            // state now, not this row.
+            // bank/gateway, all come from the Payment Method toggle's
+            // transaction-scoped state now, not this row.
             paymentMethodOptionId:
               p.method === 'card'
                 ? cardTerminalOptionId
@@ -2413,6 +2444,8 @@ export default function CheckoutPage() {
         change: change + dpChange,
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
+        salesInvoiceNumber: txData?.salesInvoiceNumber ?? null,
+        deliveryReceiptNumber: txData?.deliveryReceiptNumber ?? null,
         loyaltyEarned,
         invoices: txData?.invoices ?? [],
         lineOutcomes: cart.map((l) => ({
@@ -2447,12 +2480,12 @@ export default function CheckoutPage() {
     setPromoError('')
     setPayments([])
     setError('')
-    setTaxConfigError(false)
     setSuccess(null)
     setPendingApproval(null)
     setReservationSuccess(null)
     setIsTaxExempt(false)
     setTaxExemptionRef('')
+    setDeliveryFeeReferenceNumberInput('')
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
@@ -3521,8 +3554,34 @@ export default function CheckoutPage() {
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
                 <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
-                  Item Payment Mode
+                  Payment Mode
                 </p>
+                {/* One mode for the whole cart, never per item — if any item
+                    needs a different mode, it's a separate transaction. */}
+                <div className="relative">
+                  <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
+                    {(['cash', 'installment'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setCartInvoiceMode(mode)
+                          setLineInvoiceType(
+                            cart.map((l) => l.lineId),
+                            mode
+                          )
+                        }}
+                        className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                          cartInvoiceMode === mode
+                            ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        {mode === 'cash' ? 'Cash' : 'Installment'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {displayGroups.map((group) => {
                   const line = group[0]
                   const groupQty = group.length
@@ -3553,37 +3612,6 @@ export default function CheckoutPage() {
                               groupQty
                           )}
                         </span>
-                      </div>
-                      {/* Cash / Installment / Debit-Credit Card, Cash default. Cash and
-                          Credit Card both set invoiceType: 'cash', differing only in
-                          payNowMethod; Installment is the separate financing path. */}
-                      <div className="relative">
-                        <select
-                          aria-label="Item Payment Mode"
-                          value={
-                            groupMode === 'installment'
-                              ? 'installment'
-                              : (line.payNowMethod ?? 'cash')
-                          }
-                          onChange={(e) => {
-                            const topMode = e.target.value as 'cash' | 'credit_card' | 'installment'
-                            if (topMode === 'installment') {
-                              setLineInvoiceType(groupLineIds, 'installment')
-                            } else {
-                              setLineInvoiceType(groupLineIds, 'cash')
-                              setLinePayNowMethod(groupLineIds, topMode)
-                            }
-                          }}
-                          className="w-full appearance-none rounded-lg border border-purple-200 bg-white py-1.5 pl-2 pr-6 text-[13px] font-semibold text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                        >
-                          <option value="cash">Cash</option>
-                          <option value="installment">Installment</option>
-                          <option value="credit_card">Debit/Credit Card</option>
-                        </select>
-                        <ChevronDown
-                          size={11}
-                          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
-                        />
                       </div>
                       {groupMode === 'installment' && (
                         <div className="mt-2 space-y-3">
@@ -3727,6 +3755,30 @@ export default function CheckoutPage() {
                     </div>
                   )
                 })}
+                {cashCartLines.length > 0 && (
+                  <div
+                    data-testid="cash-bucket-method-toggle"
+                    className="rounded-lg border border-purple-100 p-2.5"
+                  >
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Payment Method</p>
+                    <div className="flex gap-1.5">
+                      {(['cash', 'credit_card'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setCashBucketMethod(mode)}
+                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                            cashBucketMethod === mode
+                              ? 'bg-purple-200 text-purple-700'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          {mode === 'cash' ? 'Cash' : 'Debit/Credit Card'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {hasCashLine && (
                   <div
                     data-testid="cash-sub-mode-toggle"
@@ -4201,6 +4253,11 @@ export default function CheckoutPage() {
               </button>
             ) : payments.length === 0 ? null : (
               <div className="space-y-2">
+                {saleMode === 'sale' && deliveryFeeAmount > 0 && (
+                  <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+                    Total + Delivery Fee
+                  </p>
+                )}
                 {payments.map((p, i) => {
                   if (saleMode === 'sale') {
                     // Method is fully decided by Item Payment Mode above (Cash's
@@ -4312,20 +4369,25 @@ export default function CheckoutPage() {
                   )
                 })}
 
-                {/* Reference number / CR Number — required for every sale-mode
-                    payment regardless of method (mirrors the down payment
-                    section below); reserve mode keeps the narrower
-                    card/bank/QR-only requirement it always had. */}
+                {/* Reference number / CR Number — a plain cash-mode sale
+                    needs neither, unless this sale also has an inhouse
+                    installment/down-payment component (mirrors the down
+                    payment section below), in which case its cash-lines
+                    payment gets a CR Number too. card/bank/e-wallet/etc.
+                    (REF_METHODS) still always need their own reference,
+                    installment or not — same as reserve mode. */}
                 {payments.some(
                   (p) =>
-                    p.amount > 0 &&
-                    (saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel)
+                    (saleMode === 'sale' && inhouseInstallmentCartLines.length > 0) ||
+                    REF_METHODS.includes(p.method) ||
+                    p.refFieldLabel
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        p.amount > 0 &&
-                        (saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel)
+                        (saleMode === 'sale' && inhouseInstallmentCartLines.length > 0) ||
+                        REF_METHODS.includes(p.method) ||
+                        p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
                         (saleMode === 'sale'
@@ -4333,8 +4395,15 @@ export default function CheckoutPage() {
                           : PAYMENT_LABELS[p.method]
                             ? `${PAYMENT_LABELS[p.method]} reference`
                             : 'Reference')
+                      // An installment/down-payment sale requires a CR
+                      // Number on the cash-lines payment regardless of
+                      // method; otherwise sale mode falls back to the same
+                      // REF_METHODS-only requirement as reserve mode
+                      // (matches the same-scoped check at submit time).
                       const isRequired =
-                        p.refRequired ?? (saleMode === 'sale' || REF_METHODS.includes(p.method))
+                        saleMode === 'sale'
+                          ? inhouseInstallmentCartLines.length > 0 || REF_METHODS.includes(p.method)
+                          : (p.refRequired ?? REF_METHODS.includes(p.method))
                       // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
                       // Gateway (qr) all live in Item Payment Mode now (transaction-
                       // scoped, see hasCreditCardLine/hasCashLine) — not repeated
@@ -4357,13 +4426,22 @@ export default function CheckoutPage() {
                           />
                           {optionPointer && (
                             <p className="text-[11px] text-gray-400">
-                              {optionPointer} set via Item Payment Mode above.
+                              {optionPointer} set via Payment Method above.
                             </p>
                           )}
                         </div>
                       ) : null
                     })}
                   </div>
+                )}
+
+                {saleMode === 'sale' && deliveryFeeAmount > 0 && (
+                  <input
+                    className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                    placeholder="Delivery Fee Reference *"
+                    value={deliveryFeeReferenceNumberInput}
+                    onChange={(e) => setDeliveryFeeReferenceNumberInput(e.target.value)}
+                  />
                 )}
 
                 {/* Loyalty points balance indicator */}
@@ -4447,16 +4525,12 @@ export default function CheckoutPage() {
                             updateDpPayment(i, { amount: isNaN(val) ? 0 : val })
                           }}
                         />
-                        {p.amount > 0 && (
-                          <input
-                            className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                            placeholder="Down Payment CR Number *"
-                            value={p.referenceNumber}
-                            onChange={(e) =>
-                              updateDpPayment(i, { referenceNumber: e.target.value })
-                            }
-                          />
-                        )}
+                        <input
+                          className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                          placeholder="Down Payment CR Number *"
+                          value={p.referenceNumber}
+                          onChange={(e) => updateDpPayment(i, { referenceNumber: e.target.value })}
+                        />
                       </div>
                     ))}
                   </div>
@@ -4493,14 +4567,6 @@ export default function CheckoutPage() {
             {error && (
               <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
                 <p>{error}</p>
-                {taxConfigError && (
-                  <a
-                    href="/accounting/tax"
-                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-red-700 underline hover:text-red-900"
-                  >
-                    Go to Tax Configuration →
-                  </a>
-                )}
               </div>
             )}
             {(() => {
@@ -5302,6 +5368,8 @@ function SuccessScreen({
     change: number
     journalEntryId?: string | null
     arInvoiceId?: string | null
+    salesInvoiceNumber?: string | null
+    deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
     lineOutcomes: {
@@ -5499,6 +5567,22 @@ function SuccessScreen({
                 {success.transactionNumber}
               </span>
             </div>
+            {success.salesInvoiceNumber && (
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">SI #</span>
+                <span className="break-all text-right font-mono text-[10px]">
+                  {success.salesInvoiceNumber}
+                </span>
+              </div>
+            )}
+            {success.deliveryReceiptNumber && (
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
+                <span className="shrink-0">DR #</span>
+                <span className="break-all text-right font-mono text-[10px]">
+                  {success.deliveryReceiptNumber}
+                </span>
+              </div>
+            )}
             {/* Installment terms bill one invoice per due date, all created
                 at sale time — only the first (the plan's reference number)
                 belongs on the receipt, not every future month's. */}

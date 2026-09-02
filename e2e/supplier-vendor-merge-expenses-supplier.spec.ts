@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, openCustomSelect } from './utils'
 
 // Scenario 33 (Supplier/Vendor merge) Part 3 — Business Expenses previously
 // had a "Vendor" selector (BusinessExpense.vendorId); repointed to Supplier.
@@ -18,9 +18,17 @@ import { gotoReady } from './utils'
 //
 // Scenario 40 Part 6 (2026-08-31) — Category is now a per-line field inside
 // an "Add line" table (aria-label="Category"), and Amount replaced the old
-// header-level "Subtotal *" (aria-label="Amount"). The Supplier select now
-// carries aria-label="Supplier" too, so both are targeted directly instead
-// of positionally.
+// header-level "Subtotal *" (aria-label="Amount").
+//
+// Category became a searchable CategorySelect combobox (not a native
+// <select>) once the dropdown grew to list every seeded expense account —
+// it's opened via its aria-label and its first real option clicked directly,
+// since there's nothing to assert about which category ends up chosen here.
+//
+// Supplier also became a custom Select (src/components/ui/Select.tsx —
+// combobox/listbox/option roles, not a native <select>), so it's opened via
+// openCustomSelect and its options counted/read through role="option"
+// instead of getByLabel(...).selectOption(...) / <option> elements.
 test.describe('Accounting — Expenses supplier link', () => {
   test('creates an expense with a linked supplier and shows it as the payee', async ({ page }) => {
     await gotoReady(page, '/accounting/expenses')
@@ -38,24 +46,18 @@ test.describe('Accounting — Expenses supplier link', () => {
 
     await page.getByRole('button', { name: 'Supplier', exact: true }).click()
 
-    const categorySelect = page.getByLabel('Category', { exact: true })
-    await categorySelect
-      .locator('option')
-      .nth(1)
-      .waitFor({ state: 'attached', timeout: 5_000 })
-      .catch(() => {})
-    await categorySelect.selectOption({ index: 1 })
+    await page.getByLabel('Category', { exact: true }).click()
+    const categoryDropdown = page.locator('div.absolute.z-50')
+    await expect(categoryDropdown).toBeVisible({ timeout: 5_000 })
+    // Index 0 is the "— Select —" clear button; index 1 is the first real category.
+    await categoryDropdown.locator('button').nth(1).click()
 
-    const supplierSelect = page.getByLabel('Supplier', { exact: true })
-    await supplierSelect
-      .locator('option')
-      .nth(1)
-      .waitFor({ state: 'attached', timeout: 5_000 })
-      .catch(() => {})
-    const supplierOptionCount = await supplierSelect.locator('option').count()
-    test.skip(supplierOptionCount <= 1, 'No suppliers seeded — nothing to link')
-    await supplierSelect.selectOption({ index: 1 })
-    const supplierLabel = (await supplierSelect.locator('option').nth(1).textContent())?.trim()
+    await openCustomSelect(page.getByRole('combobox', { name: '— None —' }))
+    const supplierOptions = page.getByRole('option')
+    const supplierOptionCount = await supplierOptions.count()
+    test.skip(supplierOptionCount === 0, 'No suppliers seeded — nothing to link')
+    const supplierLabel = (await supplierOptions.first().textContent())?.trim()
+    await supplierOptions.first().click()
 
     await page.getByLabel('Amount', { exact: true }).fill('250')
 

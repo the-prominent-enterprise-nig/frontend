@@ -241,6 +241,10 @@ export function TransactionDetail({
                 )}
                 {customerName && <Row label="Customer" value={customerName} />}
                 {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
+                {tx.salesInvoiceNumber && <Row label="SI Number" value={tx.salesInvoiceNumber} />}
+                {tx.deliveryReceiptNumber && (
+                  <Row label="DR Number" value={tx.deliveryReceiptNumber} />
+                )}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
                 </div>

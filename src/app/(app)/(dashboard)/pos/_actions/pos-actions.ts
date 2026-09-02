@@ -655,25 +655,6 @@ export async function itemLookup(
   }
 }
 
-// ─── Accounting Tax Rate ──────────────────────────────────────────────────────
-
-export async function getDefaultAccountingTaxRate(): Promise<{
-  rate: number
-  name: string
-} | null> {
-  try {
-    const res =
-      await api.get<
-        Array<{ id: string; name: string; rate: number; isDefault: boolean; isActive: boolean }>
-      >('/accounting/tax-rates')
-    const rates = res.data ?? []
-    const def = rates.find((r) => r.isDefault && r.isActive)
-    return def ? { rate: def.rate, name: def.name } : null
-  } catch {
-    return null
-  }
-}
-
 // ─── Promo Codes ──────────────────────────────────────────────────────────────
 
 export async function getPromoCodes(): Promise<ApiResponse<PromoCode[]>> {

@@ -23,7 +23,6 @@ import {
   FileBarChart,
   FileCheck2,
   FilePlus,
-  FileSpreadsheet,
   ClipboardCheck,
   HandCoins,
   House,
@@ -197,17 +196,47 @@ const navItemsBySegment: Record<string, NavConfig> = {
     bottom: [],
   },
   accounting: {
-    // Reordered per developer request (2026-08-20): day-to-day
-    // transactional/operational screens first, reporting next, setup/
-    // configuration screens (touched rarely, once things are set up) last.
-    // Same items, same permissions — order only.
+    // Reordered per developer request (2026-09-01): most-used screens first,
+    // down to screens touched rarely (setup/configuration) last. This is an
+    // inferred usage ranking (no telemetry backs it) — adjust if it doesn't
+    // match actual usage. Same items, same permissions — order only.
     main: [
-      // ── Core transactions ──
+      // ── Daily / most used ──
       {
         label: 'Journal Entries',
         href: '/accounting/journal-entries',
         icon: ReceiptText,
         requiredPermission: ACCOUNTING_PERMISSIONS.JOURNAL_ENTRY_READ,
+      },
+      {
+        label: 'AR Invoices',
+        href: '/accounting/ar-invoices',
+        icon: Receipt,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
+      },
+      {
+        label: 'Customers',
+        href: '/accounting/customers',
+        icon: Users,
+        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
+      },
+      {
+        label: 'Expenses',
+        href: '/accounting/expenses',
+        icon: Coins,
+        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+      },
+      {
+        label: 'Unapplied Collections',
+        href: '/accounting/unapplied-collections',
+        icon: Wallet,
+        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
+      },
+      {
+        label: 'AP Invoices',
+        href: '/accounting/ap-bills',
+        icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
         label: 'General Ledger',
@@ -216,11 +245,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       {
-        label: 'AR Invoices',
-        href: '/accounting/ar-invoices',
+        label: 'Receiving Reports',
+        href: '/accounting/receiving-reports',
         icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      // ── Regular / weekly ──
       {
         label: 'Credit Memos',
         href: '/accounting/credit-memos',
@@ -234,22 +264,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
       },
       {
-        label: 'AP Invoices',
-        href: '/accounting/ap-bills',
-        icon: ReceiptText,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
-      },
-      {
-        label: 'Receiving Reports',
-        href: '/accounting/receiving-reports',
-        icon: Receipt,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      {
-        label: 'Expenses',
-        href: '/accounting/expenses',
-        icon: Coins,
-        requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+        label: 'Withholding Tax (CWT)',
+        href: '/accounting/withholding-tax',
+        icon: FileCheck2,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
       },
       {
         label: 'Employee Appliance Loans',
@@ -258,24 +276,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.EMPLOYEE_APPLIANCE_LOAN_READ,
       },
       {
-        label: 'Customers',
-        href: '/accounting/customers',
-        icon: Users,
-        requiredPermission: ACCOUNTING_PERMISSIONS.CUSTOMER_READ,
+        label: 'Interest Release',
+        href: '/accounting/installment-interest-release',
+        icon: Percent,
+        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
       },
-      {
-        label: 'Unapplied Collections',
-        href: '/accounting/unapplied-collections',
-        icon: Wallet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.UNAPPLIED_COLLECTIONS_READ,
-      },
-      {
-        label: 'Withholding Tax (CWT)',
-        href: '/accounting/withholding-tax',
-        icon: FileCheck2,
-        requiredPermission: ACCOUNTING_PERMISSIONS.AR_INVOICES_READ,
-      },
-      // ── Operational / periodic ──
+      // ── Periodic / monthly ──
       {
         label: 'Bank Reconciliation',
         href: '/accounting/bank-reconciliation',
@@ -289,11 +295,18 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.RECURRING_ENTRIES_READ,
       },
       {
-        label: 'Interest Release',
-        href: '/accounting/installment-interest-release',
-        icon: Percent,
-        requiredPermission: ACCOUNTING_PERMISSIONS.INSTALLMENT_INTEREST_RELEASE,
+        label: 'Reports',
+        href: '/accounting/reports',
+        icon: FileBarChart,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
+      {
+        label: 'Fiscal Periods',
+        href: '/accounting/fiscal-periods',
+        icon: CalendarDays,
+        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
+      },
+      // ── Occasional / planning ──
       {
         label: 'Cash Forecast',
         href: '/accounting/cash-forecast',
@@ -312,14 +325,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: ShoppingBag,
         requiredPermission: ACCOUNTING_PERMISSIONS.FIXED_ASSET_READ,
       },
-      // ── Reports ──
-      {
-        label: 'Reports',
-        href: '/accounting/reports',
-        icon: FileBarChart,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-      },
-      // ── Setup / configuration ──
+      // ── Setup / configuration (touched rarely) ──
       {
         label: 'Chart of Accounts',
         href: '/accounting/chart-of-accounts',
@@ -343,18 +349,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/bank-accounts',
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
-      },
-      {
-        label: 'Fiscal Periods',
-        href: '/accounting/fiscal-periods',
-        icon: CalendarDays,
-        requiredPermission: ACCOUNTING_PERMISSIONS.FISCAL_READ,
-      },
-      {
-        label: 'Tax',
-        href: '/accounting/tax',
-        icon: FileSpreadsheet,
-        requiredPermission: ACCOUNTING_PERMISSIONS.TAX_READ,
       },
     ],
     bottom: [],

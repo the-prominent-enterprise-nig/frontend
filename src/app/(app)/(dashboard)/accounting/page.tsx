@@ -1207,7 +1207,6 @@ export default function AccountingPage() {
                 { label: 'Fixed Assets', href: '/accounting/fixed-assets', icon: Building2 },
                 { label: 'Budgets', href: '/accounting/budgets', icon: Scale },
                 { label: 'Fiscal Periods', href: '/accounting/fiscal-periods', icon: CalendarDays },
-                { label: 'Tax', href: '/accounting/tax', icon: Receipt },
                 { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                 { label: 'Reports', href: '/accounting/reports', icon: Clock },
               ] as const

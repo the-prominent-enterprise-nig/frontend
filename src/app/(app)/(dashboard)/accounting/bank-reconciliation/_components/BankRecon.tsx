@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Plus, RefreshCw, CheckCircle, X, FileEdit, ArrowRightLeft, Landmark } from 'lucide-react'
 import {
   BankAccounts,
@@ -8,6 +9,7 @@ import {
   ClearingSettlements,
   UnidentifiedBankCredits,
   type BankAccount,
+  type BankReconciliation,
   type ClearingSettlement,
   type ClearingSettlementType,
   type UnidentifiedBankCredit,
@@ -22,13 +24,28 @@ const CLEARING_TYPE_LABELS: Record<ClearingSettlementType, string> = {
   tpf: 'TPF Partner',
 }
 
+// Scenario 42 Part 3 — the real discrepancy, from whichever lines are
+// checked right now — not the naive statementBalance - systemBalance diff,
+// which only happens to be correct while nothing's checked yet.
+function reconDiscrepancy(r: BankReconciliation): number {
+  const lines = r.lines ?? []
+  const checkedDeposits = lines
+    .filter((l) => l.checked && l.direction === 'DEPOSIT')
+    .reduce((s, l) => s + l.amount, 0)
+  const checkedWithdrawals = lines
+    .filter((l) => l.checked && l.direction === 'WITHDRAWAL')
+    .reduce((s, l) => s + l.amount, 0)
+  const adjustedBalance = r.statementBalance + checkedDeposits - checkedWithdrawals
+  return adjustedBalance - r.systemBalance
+}
+
 export default function BankRecon() {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [recs, setRecs] = useState<any[]>([])
+  const [recs, setRecs] = useState<BankReconciliation[]>([])
   const [settlements, setSettlements] = useState<ClearingSettlement[]>([])
   const [credits, setCredits] = useState<UnidentifiedBankCredit[]>([])
   const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
   const [adjusting, setAdjusting] = useState(false)
   const [settling, setSettling] = useState(false)
   const [recordingCredit, setRecordingCredit] = useState(false)
@@ -52,7 +69,11 @@ export default function BankRecon() {
     load()
   }, [load])
   const complete = async (id: string) => {
-    await BankAccounts.completeReconciliation(id)
+    const res = await BankAccounts.completeReconciliation(id)
+    if (!res.success) {
+      alert(res.message || res.error || 'Failed to complete reconciliation')
+      return
+    }
     load()
   }
 
@@ -94,12 +115,12 @@ export default function BankRecon() {
           >
             <Landmark className="w-4 h-4" /> Fund Transfer
           </Link>
-          <button
-            onClick={() => setCreating(true)}
+          <Link
+            href="/accounting/bank-reconciliation/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
             <Plus className="w-4 h-4" /> New Reconciliation
-          </button>
+          </Link>
         </div>
       </div>
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
@@ -129,36 +150,53 @@ export default function BankRecon() {
                 </td>
               </tr>
             ) : (
-              recs.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-3 py-2">{r.bankAccount?.name}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(r.statementDate)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(r.statementBalance)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(r.systemBalance)}</td>
-                  <td
-                    className={`px-3 py-2 text-right ${Math.abs(r.statementBalance - r.systemBalance) > 0.01 ? 'text-amber-700' : 'text-emerald-700'}`}
+              recs.map((r) => {
+                const discrepancy = reconDiscrepancy(r)
+                const isZero = Math.abs(discrepancy) < 0.01
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => router.push(`/accounting/bank-reconciliation/${r.id}`)}
+                    className="cursor-pointer hover:bg-gray-50"
                   >
-                    {fmtMoney(r.statementBalance - r.systemBalance)}
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    {r.reconciled ? (
-                      <span className="text-emerald-700">Reconciled</span>
-                    ) : (
-                      <span className="text-amber-700">Pending</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {!r.reconciled && (
-                      <button
-                        onClick={() => complete(r.id)}
-                        className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
+                    <td className="px-3 py-2">{r.bankAccount?.name}</td>
+                    <td className="px-3 py-2 text-xs">{fmtDate(r.statementDate)}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(r.statementBalance)}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(r.systemBalance)}</td>
+                    <td
+                      className={`px-3 py-2 text-right ${isZero ? 'text-emerald-700' : 'text-amber-700'}`}
+                    >
+                      {fmtMoney(discrepancy)}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {r.reconciled ? (
+                        <span className="text-emerald-700">Reconciled</span>
+                      ) : (
+                        <span className="text-amber-700">Pending</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {!r.reconciled && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            complete(r.id)
+                          }}
+                          disabled={!isZero}
+                          title={
+                            isZero
+                              ? 'Mark reconciled'
+                              : `Cannot complete — discrepancy of ${fmtMoney(discrepancy)}. Open the worksheet to check off cleared items.`
+                          }
+                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
@@ -273,16 +311,6 @@ export default function BankRecon() {
         </table>
       </div>
 
-      {creating && (
-        <ReconForm
-          accounts={accounts}
-          onClose={() => setCreating(false)}
-          onSaved={() => {
-            setCreating(false)
-            load()
-          }}
-        />
-      )}
       {settling && (
         <SettlementForm
           accounts={accounts}
@@ -443,127 +471,6 @@ function AdjustingForm({
               className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
             >
               {saving ? 'Posting...' : 'Post to GL'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function ReconForm({
-  accounts,
-  onClose,
-  onSaved,
-}: {
-  accounts: BankAccount[]
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    bankAccountId: '',
-    statementDate: new Date().toISOString().slice(0, 10),
-    statementBalance: '',
-    systemBalance: '',
-    notes: '',
-  })
-  const [saving, setSaving] = useState(false)
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    await BankAccounts.createReconciliation({
-      ...form,
-      statementBalance: Number(form.statementBalance),
-      systemBalance: Number(form.systemBalance),
-    })
-    setSaving(false)
-    onSaved()
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">New Reconciliation</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
-          <label className="block">
-            <span className="block text-xs font-medium text-gray-600 mb-1">Bank Account *</span>
-            <select
-              required
-              value={form.bankAccountId}
-              onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="block text-xs font-medium text-gray-600 mb-1">Statement Date *</span>
-            <input
-              required
-              type="date"
-              value={form.statementDate}
-              onChange={(e) => setForm({ ...form, statementDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="block text-xs font-medium text-gray-600 mb-1">
-                Statement Balance *
-              </span>
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={form.statementBalance}
-                onChange={(e) => setForm({ ...form, statementBalance: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-xs font-medium text-gray-600 mb-1">System Balance *</span>
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={form.systemBalance}
-                onChange={(e) => setForm({ ...form, systemBalance: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </label>
-          </div>
-          <label className="block">
-            <span className="block text-xs font-medium text-gray-600 mb-1">Notes</span>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </label>
-          <div className="flex justify-end gap-2 pt-3 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </form>

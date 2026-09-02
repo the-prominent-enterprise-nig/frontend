@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
+import { printCollectionReceiptDocument } from '@/src/libs/print/printInventoryDocument'
 import {
   Plus,
   RefreshCw,
@@ -23,8 +24,8 @@ import {
   X,
   Search,
   User,
-  ChevronRight,
   Loader2,
+  Eye,
 } from 'lucide-react'
 import {
   ARInvoices,
@@ -34,13 +35,13 @@ import {
   type ARInvoice,
   type ARInvoiceCustomerResult,
   type ARPayment,
+  type ARReceiptListItem,
   type BankAccount,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getTaxRates, type TaxRate } from '@/src/libs/data/AccountingData'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import {
   buildCreateCreditMemoFormSchema,
@@ -77,6 +78,12 @@ export default function ARInvoicesList({
 } = {}) {
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
+  // Scenario 44 — the top-level (no customerFilter) landing view; a flat
+  // cross-customer Receipts register instead of the old customer-rollup
+  // table. Kept separate from `items` above, which still backs the
+  // customer-filtered flat invoice list (dedicated customer route or a
+  // generic list filtered by customerId) — unchanged, own actions.
+  const [receipts, setReceipts] = useState<ARReceiptListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
@@ -110,11 +117,20 @@ export default function ARInvoicesList({
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await ARInvoices.list({
-      ...(customerFilter ? { customerId: customerFilter } : {}),
-      ...(appliedSearch ? { search: appliedSearch } : {}),
-    })
-    setItems(res.data?.items ?? [])
+    if (customerFilter) {
+      const res = await ARInvoices.list({
+        customerId: customerFilter,
+        ...(appliedSearch ? { search: appliedSearch } : {}),
+      })
+      setItems(res.data?.items ?? [])
+    } else {
+      // Scenario 44 — the landing view has no customer picked yet, so it's
+      // the flat Receipts register, not an invoice list.
+      const res = await ARInvoices.listReceipts({
+        ...(appliedSearch ? { search: appliedSearch } : {}),
+      })
+      setReceipts(res.data?.items ?? [])
+    }
     setLoading(false)
   }, [customerFilter, appliedSearch])
   useEffect(() => {
@@ -155,54 +171,6 @@ export default function ARInvoicesList({
     }, 300)
     return () => clearTimeout(timer)
   }, [customerSearch])
-
-  // One entry per distinct customer in the currently loaded `items` — e.g.
-  // an installment plan's ~12 due-date invoices collapse into one row here,
-  // which is the whole point of this view (see ARInvoicesList group-by-
-  // customer discussion): a customer with several open dues shouldn't need
-  // 12 scans of the flat table to see what they owe in total.
-  const customerGroups = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        customerId: string
-        customerName: string
-        invoices: ARInvoice[]
-        total: number
-        paid: number
-        outstanding: number
-        dueNow: number
-        overdueCount: number
-      }
-    >()
-    for (const inv of items) {
-      let g = map.get(inv.customerId)
-      if (!g) {
-        g = {
-          customerId: inv.customerId,
-          customerName: inv.customer?.name ?? 'Unknown customer',
-          invoices: [],
-          total: 0,
-          paid: 0,
-          outstanding: 0,
-          dueNow: 0,
-          overdueCount: 0,
-        }
-        map.set(inv.customerId, g)
-      }
-      g.invoices.push(inv)
-      g.total += inv.totalAmount
-      g.paid += inv.amountPaid
-      g.outstanding += inv.totalAmount - inv.amountPaid
-      if (new Date(inv.dueDate) <= new Date()) {
-        g.dueNow += Math.max(inv.totalAmount - inv.amountPaid, 0)
-      }
-      if (inv.status === 'OVERDUE') g.overdueCount += 1
-    }
-    // Customers owing the most float to the top — that's who collections
-    // triage actually cares about first.
-    return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
-  }, [items])
 
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
@@ -259,21 +227,36 @@ export default function ARInvoicesList({
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          <button
-            onClick={sweepOverdue}
-            disabled={sweeping}
-            title="Notify Business Owner about any newly-overdue invoices"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-50"
-          >
-            <BellRing className={`w-4 h-4 ${sweeping ? 'animate-pulse' : ''}`} />
-            {sweeping ? 'Checking…' : 'Check Overdue'}
-          </button>
-          <button
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-          >
-            <Plus className="w-4 h-4" /> New Invoice
-          </button>
+          {/* Scenario 44 — invoice-level actions (Check Overdue, New Invoice)
+              only make sense once a customer's own invoices are in view;
+              the landing page (no customerFilter) is the Receipts register
+              now, so "New Receipt" replaces them there. */}
+          {customerFilter ? (
+            <>
+              <button
+                onClick={sweepOverdue}
+                disabled={sweeping}
+                title="Notify Business Owner about any newly-overdue invoices"
+                className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-50"
+              >
+                <BellRing className={`w-4 h-4 ${sweeping ? 'animate-pulse' : ''}`} />
+                {sweeping ? 'Checking…' : 'Check Overdue'}
+              </button>
+              <button
+                onClick={() => setCreating(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+              >
+                <Plus className="w-4 h-4" /> New Invoice
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+            >
+              <Plus className="w-4 h-4" /> New Receipt
+            </button>
+          )}
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -329,7 +312,7 @@ export default function ARInvoicesList({
         )}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
-            Invoice # or Transaction #
+            {customerFilter ? 'Invoice # or Transaction #' : 'Reference # or Customer'}
           </label>
           <div className="relative">
             <Search
@@ -338,7 +321,7 @@ export default function ARInvoicesList({
             />
             <input
               className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-purple-500 focus:outline-none"
-              placeholder="Search…"
+              placeholder={customerFilter ? 'Search…' : 'Search receipts by reference or customer…'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -372,90 +355,91 @@ export default function ARInvoicesList({
       )}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">Invoice #</th>
-              <th className="px-3 py-2 text-left">Customer</th>
-              <th className="px-3 py-2 text-left">Invoice Date</th>
-              <th className="px-3 py-2 text-left">Due Date</th>
-              <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2 text-right">Paid</th>
-              <th className="px-3 py-2 text-right">Outstanding</th>
-              <th className="px-3 py-2 text-right">Due</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
+          {customerFilter ? (
+            <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+              <tr>
+                <th className="px-3 py-2 text-left">Invoice #</th>
+                <th className="px-3 py-2 text-left">Customer</th>
+                <th className="px-3 py-2 text-left">Invoice Date</th>
+                <th className="px-3 py-2 text-left">Due Date</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2 text-right">Paid</th>
+                <th className="px-3 py-2 text-right">Outstanding</th>
+                <th className="px-3 py-2 text-right">Due</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+          ) : (
+            // Scenario 44 — the Receipts register (one row per ARPayment,
+            // any customer/invoice), matching the client's own paper
+            // "Receipts" ledger. Edit/View both open the parent invoice for
+            // now (Parts 2-3 add the real Collection Receipt document and
+            // in-place editing).
+            <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+              <tr>
+                <th className="px-3 py-2 text-left">Edit</th>
+                <th className="px-3 py-2 text-left">View</th>
+                <th className="px-3 py-2 text-left">Date</th>
+                <th className="px-3 py-2 text-left">Reference</th>
+                <th className="px-3 py-2 text-left">Received in</th>
+                <th className="px-3 py-2 text-left">Description</th>
+                <th className="px-3 py-2 text-left">Accounts</th>
+                <th className="px-3 py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+          )}
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                <td
+                  colSpan={customerFilter ? 10 : 8}
+                  className="px-3 py-8 text-center text-gray-400"
+                >
                   Loading...
                 </td>
               </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
-                  No invoices.
-                </td>
-              </tr>
             ) : customerFilter ? (
-              items.map((i) => (
-                <InvoiceRow
-                  key={i.id}
-                  i={i}
-                  onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
-                  onSend={() => send(i.id)}
-                  onPay={() => setPayingFor(i)}
-                  onHistory={() => setHistoryFor(i)}
-                  onCredit={() => setCreditingFor(i)}
-                  onDebit={() => setDebitingFor(i)}
-                  onEdit={() => setEditing(i)}
-                  onVoid={() => setVoidingFor(i)}
-                  onDelete={() => setDeletingFor(i)}
-                />
-              ))
-            ) : (
-              customerGroups.map((g) => (
-                <tr
-                  key={g.customerId}
-                  onClick={() => router.push(`/accounting/ar-invoices/customer/${g.customerId}`)}
-                  className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
-                >
-                  <td className="px-3 py-2" colSpan={2}>
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
-                      <span className="truncate">{g.customerName}</span>
-                      <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
-                        {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-xs" colSpan={2}>
-                    {g.overdueCount > 0 && (
-                      <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
-                  <td className="px-3 py-2 text-right">
-                    {g.dueNow > 0 ? (
-                      <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
-                      className="text-xs font-medium text-purple-700 hover:underline"
-                    >
-                      Statement
-                    </Link>
+              items.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                    No invoices.
                   </td>
                 </tr>
+              ) : (
+                items.map((i) => (
+                  <InvoiceRow
+                    key={i.id}
+                    i={i}
+                    onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
+                    onSend={() => send(i.id)}
+                    onPay={() => setPayingFor(i)}
+                    onHistory={() => setHistoryFor(i)}
+                    onCredit={() => setCreditingFor(i)}
+                    onDebit={() => setDebitingFor(i)}
+                    onEdit={() => setEditing(i)}
+                    onVoid={() => setVoidingFor(i)}
+                    onDelete={() => setDeletingFor(i)}
+                  />
+                ))
+              )
+            ) : receipts.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                  No receipts.
+                </td>
+              </tr>
+            ) : (
+              receipts.map((r) => (
+                <ReceiptRow
+                  key={r.id}
+                  r={r}
+                  onEdit={() => router.push(`/accounting/ar-invoices/${r.arInvoiceId}`)}
+                  onView={async () => {
+                    const res = await ARInvoices.getReceiptDocument(r.arInvoiceId, r.id)
+                    if (res.success && res.data) printCollectionReceiptDocument(res.data)
+                  }}
+                />
               ))
             )}
           </tbody>
@@ -712,6 +696,55 @@ function InvoiceRow({
           </div>
         </div>
       </td>
+    </tr>
+  )
+}
+
+/** Scenario 44 — one row in the Receipts register (top-level landing view,
+ * no customerFilter). "View" opens/prints this receipt's own Collection
+ * Receipt document (Part 2); "Edit" still opens the parent invoice for now
+ * — Part 3 adds real in-place editing (reference/notes) + void-and-reraise. */
+function ReceiptRow({
+  r,
+  onEdit,
+  onView,
+}: {
+  r: ARReceiptListItem
+  onEdit: () => void
+  onView: () => void
+}) {
+  return (
+    <tr onClick={onEdit} className="cursor-pointer hover:bg-gray-50">
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+        <Tooltip label="Edit">
+          <button
+            onClick={onEdit}
+            aria-label="Edit"
+            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        </Tooltip>
+      </td>
+      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+        <Tooltip label="View">
+          <button
+            onClick={onView}
+            aria-label="View"
+            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+        </Tooltip>
+      </td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
+      <td className="px-3 py-2 font-mono text-xs text-purple-700">{r.reference || '—'}</td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{r.receivedIn}</td>
+      <td className="px-3 py-2 text-xs">{r.description || '—'}</td>
+      <td className="px-3 py-2 text-xs">
+        {r.accountLine} — {fmtDate(r.dueDate)}
+      </td>
+      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
     </tr>
   )
 }
@@ -1600,14 +1633,8 @@ function InvoiceFormDialog({
     description: initial?.description ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
-    taxCode: (initial as any)?.taxCode ?? '',
   })
   const [saving, setSaving] = useState(false)
-  // ACC-21 bridge: load tax rates so users can pick one instead of typing taxAmount manually
-  const [taxRates, setTaxRates] = useState<TaxRate[]>([])
-  useEffect(() => {
-    getTaxRates().then((r) => setTaxRates(r.data ?? []))
-  }, [])
 
   // Customer picker — search rather than a full-list <select>, and scoped
   // to accounting:ar-invoices:read (see ARInvoices.searchCustomers), so an
@@ -1633,22 +1660,14 @@ function InvoiceFormDialog({
     return () => clearTimeout(timer)
   }, [customerSearch])
 
-  // When subtotal or tax code changes, recompute tax automatically
-  const onTaxCodeChange = (id: string) => {
-    const rate = taxRates.find((r) => r.id === id)
-    const subtotal = Number(form.subtotal) || 0
-    const tax = rate
-      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
-      : Number(form.taxAmount) || 0
-    setForm({ ...form, taxCode: id, taxAmount: rate ? String(tax) : form.taxAmount })
-  }
+  // Tax is a flat 12% VAT applied automatically as subtotal changes, but
+  // stays freely editable afterward (matches how POS checkout now applies
+  // the same flat rate).
+  const FLAT_VAT_RATE = 12 // matches backend FLAT_VAT_RATE_PERCENT
   const onSubtotalChange = (val: string) => {
-    const rate = taxRates.find((r) => r.id === form.taxCode)
     const subtotal = Number(val) || 0
-    const tax = rate
-      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
-      : Number(form.taxAmount) || 0
-    setForm({ ...form, subtotal: val, taxAmount: rate ? String(tax) : form.taxAmount })
+    const tax = +(subtotal * (FLAT_VAT_RATE / 100)).toFixed(2)
+    setForm({ ...form, subtotal: val, taxAmount: String(tax) })
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -1756,23 +1775,6 @@ function InvoiceFormDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Tax Rate">
-            <select
-              value={form.taxCode}
-              onChange={(e) => onTaxCodeChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— None / Manual entry —</option>
-              {taxRates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({Number(t.rate).toFixed(2)}%)
-                </option>
-              ))}
-            </select>
-            {form.taxCode && (
-              <p className="mt-1 text-xs text-gray-500">Tax auto-calculates as subtotal × rate.</p>
-            )}
-          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
@@ -1790,9 +1792,8 @@ function InvoiceFormDialog({
                 step="0.01"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                disabled={!!form.taxCode}
-                className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${form.taxCode ? 'bg-gray-50 text-gray-600' : ''}`}
-                title={form.taxCode ? 'Auto-calculated from tax rate' : 'Enter tax amount manually'}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                title="Auto-calculated as 12% of subtotal — editable"
               />
             </Field>
           </div>
@@ -1863,9 +1864,17 @@ function PaymentDialog({
   }, [])
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01
+  // Scenario 42 Part 4 — a system-generated Bank Reconciliation worksheet is
+  // only as trustworthy as this being filled in for every non-cash payment;
+  // Cash stays untracked (an actual cash drawer, not a bank account).
+  const requiresBankAccount = form.method !== 'CASH'
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (requiresBankAccount && !form.bankAccountId) {
+      setError(`Source of Fund is required for ${form.method.replace('_', ' ')} payments.`)
+      return
+    }
     setSaving(true)
     setError(null)
     const res = await ARInvoices.recordPayment(invoice.id, {
@@ -2018,19 +2027,26 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Source of Fund">
+          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
             <select
+              required={requiresBankAccount}
               value={form.bankAccountId}
               onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">— Not tracked —</option>
+              <option value="">{requiresBankAccount ? '— Select —' : '— Not tracked —'}</option>
               {bankAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} — {acc.bankName} ({acc.accountNumber})
                 </option>
               ))}
             </select>
+            {requiresBankAccount && !form.bankAccountId && (
+              <p className="mt-1 text-[12px] text-amber-700">
+                Required for {form.method.replace('_', ' ').toLowerCase()} payments, so this shows
+                up in Bank Reconciliation.
+              </p>
+            )}
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">

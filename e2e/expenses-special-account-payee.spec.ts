@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickFromCustomSelect } from './utils'
 
 // Scenario 40 Part 1 — the Expense form's Payee field is now typed
 // (Customer/Supplier/Other); Other unlocks a Special Account list
@@ -11,6 +11,11 @@ import { gotoReady } from './utils'
 // (an "Add line" table); these tests use a single line each, targeting the
 // line's own inputs (aria-label="Category"/"Amount") rather than the old
 // header-level "Category (expense account) *"/"Subtotal *" fields.
+//
+// "Special Account type *" became a custom Select (src/components/ui/
+// Select.tsx — combobox/listbox/option roles, not a native <select>), so
+// it's driven via pickFromCustomSelect by its placeholder/current label
+// rather than getByLabel(...).selectOption(...).
 test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1)', () => {
   test('records an Employee Cash Advance against a real employee, not the ordinary category list', async ({
     page,
@@ -32,9 +37,7 @@ test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1
     await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Other', exact: true }).click()
-    const specialTypeSelect = page.getByLabel('Special Account type *')
-    await expect(specialTypeSelect).toBeVisible({ timeout: 5_000 })
-    await specialTypeSelect.selectOption('EMPLOYEE_CASH_ADVANCE')
+    await pickFromCustomSelect(page, '— Select —', 'Employee Cash Advance')
 
     // Choosing Other never re-shows the ordinary Category column.
     await expect(page.getByLabel('Category', { exact: true })).toHaveCount(0)
@@ -98,7 +101,7 @@ test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1
     })
 
     await page.getByRole('button', { name: 'Other', exact: true }).click()
-    await page.getByLabel('Special Account type *').selectOption('CASH_LOAN_OTHERS')
+    await pickFromCustomSelect(page, '— Select —', 'Cash Loan – Others')
 
     // Free text, not an employee search — the picker never renders here.
     await expect(page.getByPlaceholder('Search employee by name or code…')).toHaveCount(0)

@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -16,6 +16,8 @@ import {
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
 import EmployeePicker from '@/src/components/accounting/EmployeePicker'
+import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import { Select } from '@/src/components/ui/Select'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
 
@@ -52,6 +54,35 @@ function emptyLine(): LineState {
     amount: '',
     taxCode: '',
   }
+}
+
+// Accounts come back flat (with a parentId) ordered by account number — turn
+// that into the depth-ordered list CategorySelect needs so headers like
+// "Less: COST OF SALES" stay directly above their child accounts instead of
+// being resorted alphabetically.
+function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] {
+  const idsInList = new Set(accounts.map((a) => a.id))
+  const childrenByParent = new Map<string, Account[]>()
+  const roots: Account[] = []
+  for (const a of accounts) {
+    if (a.parentId && idsInList.has(a.parentId)) {
+      const siblings = childrenByParent.get(a.parentId) ?? []
+      siblings.push(a)
+      childrenByParent.set(a.parentId, siblings)
+    } else {
+      roots.push(a)
+    }
+  }
+  const options: CategorySelectOption[] = []
+  const walk = (list: Account[], depth: number) => {
+    for (const a of list) {
+      options.push({ id: a.id, name: a.name, depth })
+      const children = childrenByParent.get(a.id)
+      if (children) walk(children, depth + 1)
+    }
+  }
+  walk(roots, 0)
+  return options
 }
 
 // Scenario 40 (developer feedback, 2026-08-31) — this used to be a modal;
@@ -175,6 +206,10 @@ function ExpenseFormFields({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const categoryOptions = useMemo(
+    () => accountsToCategoryOptions(expenseAccounts),
+    [expenseAccounts]
+  )
 
   const isLiquidation = form.specialAccountType === 'CA_LIQUIDATION'
   // Which type each line's "who" field is for — the direct Special Account
@@ -279,7 +314,7 @@ function ExpenseFormFields({
         Back to expenses
       </Link>
 
-      <h1 className="text-2xl font-semibold text-gray-900">
+      <h1 className="text-2xl font-semibold text-prominent-purple-900">
         {initial ? 'Edit Expense' : 'New Expense'}
       </h1>
       <p className="mt-1 text-sm text-gray-500">
@@ -288,7 +323,7 @@ function ExpenseFormFields({
 
       <form
         onSubmit={submit}
-        className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
+        className="mt-6 space-y-2.5 rounded-xl border border-gray-200 bg-white p-5"
       >
         <div className="grid grid-cols-2 gap-4">
           <div className="max-w-xs">
@@ -298,13 +333,13 @@ function ExpenseFormFields({
                 type="date"
                 value={form.expenseDate}
                 onChange={(e) => setForm({ ...form, expenseDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
               />
             </Field>
           </div>
 
           <Field label="Payee *">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="flex rounded-lg border border-zinc-200 p-1">
               {(['CUSTOMER', 'SUPPLIER', 'OTHER'] as const).map((pt) => (
                 <button
                   key={pt}
@@ -322,10 +357,10 @@ function ExpenseFormFields({
                     })
                     resetLinesForPayeeChange()
                   }}
-                  className={`px-3 py-2 text-sm rounded-lg border ${
+                  className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all ${
                     form.payeeType === pt
-                      ? 'border-purple-600 bg-purple-50 text-purple-700 font-medium'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      ? 'bg-prominent-purple-700 text-white shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
                   {pt === 'CUSTOMER' ? 'Customer' : pt === 'SUPPLIER' ? 'Supplier' : 'Other'}
@@ -339,6 +374,7 @@ function ExpenseFormFields({
           <div className="max-w-md">
             <Field label="Customer *">
               <CustomerPicker
+                compact
                 value={form.customerId}
                 selectedLabel={form.customerLabel}
                 onChange={(customerId, label) =>
@@ -352,76 +388,58 @@ function ExpenseFormFields({
         {form.payeeType === 'SUPPLIER' && (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Supplier">
-              <select
-                aria-label="Supplier"
+              <Select
+                compact
                 value={form.supplierId}
-                onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— None —</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(supplierId) => setForm({ ...form, supplierId })}
+                options={suppliers.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` }))}
+                placeholder="— None —"
+              />
             </Field>
             <Field label="Payee (when no supplier)">
               <input
                 value={form.payee}
                 onChange={(e) => setForm({ ...form, payee: e.target.value })}
                 placeholder="e.g. Meralco"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
               />
             </Field>
           </div>
         )}
 
         {form.payeeType === 'OTHER' && (
-          <div className="grid grid-cols-2 gap-3 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
-            <Field label="Special Account type *">
-              <select
-                value={form.specialAccountType}
-                onChange={(e) => {
-                  setForm({ ...form, specialAccountType: e.target.value, liquidatesType: '' })
-                  resetLinesForPayeeChange()
-                }}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— Select —</option>
-                {SPECIAL_ACCOUNT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            {isLiquidation && (
-              <Field label="Which type is this closing out? *">
-                <select
-                  value={form.liquidatesType}
-                  onChange={(e) => {
-                    setForm({ ...form, liquidatesType: e.target.value as LiquidatableType | '' })
+          <div className="flex flex-wrap gap-3 rounded-xl border border-prominent-purple-100 bg-prominent-purple-50/40 p-3">
+            <div className="w-full max-w-xs">
+              <Field label="Special Account type *">
+                <Select
+                  compact
+                  value={form.specialAccountType}
+                  onChange={(value) => {
+                    setForm({ ...form, specialAccountType: value, liquidatesType: '' })
                     resetLinesForPayeeChange()
                   }}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                >
-                  <option value="">— Select —</option>
-                  {LIQUIDATABLE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  options={SPECIAL_ACCOUNT_OPTIONS}
+                  placeholder="— Select —"
+                />
               </Field>
-            )}
+            </div>
 
-            <p className="col-span-2 text-[12px] text-purple-700">
-              {isLiquidation
-                ? "Each line below closes out part or all of that recipient's outstanding balance — doesn't post as a business expense."
-                : "This won't post as a business expense — it's tracked as money owed back, not money spent. Add a line per recipient to batch several in one entry."}
-            </p>
+            {isLiquidation && (
+              <div className="w-full max-w-xs">
+                <Field label="Which type is this closing out? *">
+                  <Select
+                    compact
+                    value={form.liquidatesType}
+                    onChange={(value) => {
+                      setForm({ ...form, liquidatesType: value as LiquidatableType | '' })
+                      resetLinesForPayeeChange()
+                    }}
+                    options={LIQUIDATABLE_OPTIONS}
+                    placeholder="— Select —"
+                  />
+                </Field>
+              </div>
+            )}
           </div>
         )}
 
@@ -430,115 +448,112 @@ function ExpenseFormFields({
           form.payeeType === 'SUPPLIER' ||
           (form.payeeType === 'OTHER' && (isEmployeeSpecialType || isCashLoanOthersType))) && (
           <div className="pt-2">
-            <div className="grid grid-cols-12 gap-2 px-1 pb-1 text-xs font-medium text-gray-500">
-              <div className="col-span-3">
-                {form.payeeType === 'OTHER'
-                  ? isLiquidation
-                    ? 'Recipient (closing out)'
-                    : 'Recipient'
-                  : 'Category'}
+            <div className="overflow-hidden rounded-lg border border-zinc-200">
+              <div className="grid grid-cols-12 gap-2 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-500">
+                <div className="col-span-3">
+                  {form.payeeType === 'OTHER'
+                    ? isLiquidation
+                      ? 'Recipient (closing out)'
+                      : 'Recipient'
+                    : 'Category'}
+                </div>
+                <div className="col-span-4">Description</div>
+                <div className="col-span-2">Amount</div>
+                {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
+                  <div className="col-span-2">Tax Code</div>
+                )}
+                <div className="col-span-1" />
               </div>
-              <div className="col-span-4">Description</div>
-              <div className="col-span-2">Amount</div>
-              {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                <div className="col-span-2">Tax Code</div>
-              )}
-              <div className="col-span-1" />
-            </div>
-            <div className="space-y-2">
-              {lines.map((line, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                  <div className="col-span-3">
-                    {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                      <select
-                        required
-                        aria-label="Category"
-                        value={line.categoryAccountId}
-                        onChange={(e) => setLine(i, { categoryAccountId: e.target.value })}
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                      >
-                        <option value="">— Select —</option>
-                        {expenseAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {form.payeeType === 'OTHER' && isEmployeeSpecialType && (
-                      <EmployeePicker
-                        value={line.employeeId}
-                        selectedLabel={line.employeeLabel}
-                        onChange={(employeeId, label) =>
-                          setLine(i, { employeeId, employeeLabel: label })
-                        }
-                      />
-                    )}
-                    {form.payeeType === 'OTHER' && isCashLoanOthersType && (
+              <div className="divide-y divide-zinc-100">
+                {lines.map((line, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center px-3 py-1.5">
+                    <div className="col-span-3">
+                      {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
+                        <CategorySelect
+                          compact
+                          aria-label="Category"
+                          value={line.categoryAccountId}
+                          onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                          options={categoryOptions}
+                          placeholder="— Select —"
+                        />
+                      )}
+                      {form.payeeType === 'OTHER' && isEmployeeSpecialType && (
+                        <EmployeePicker
+                          compact
+                          value={line.employeeId}
+                          selectedLabel={line.employeeLabel}
+                          onChange={(employeeId, label) =>
+                            setLine(i, { employeeId, employeeLabel: label })
+                          }
+                        />
+                      )}
+                      {form.payeeType === 'OTHER' && isCashLoanOthersType && (
+                        <input
+                          value={line.payee}
+                          onChange={(e) => setLine(i, { payee: e.target.value })}
+                          placeholder="Anyone — not restricted to staff"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                      )}
+                      {isLiquidation && (isEmployeeSpecialType ? line.employeeId : line.payee) && (
+                        <LiquidationBalanceHint
+                          liquidatesType={form.liquidatesType}
+                          employeeId={isEmployeeSpecialType ? line.employeeId : undefined}
+                          payee={isCashLoanOthersType ? line.payee : undefined}
+                        />
+                      )}
+                    </div>
+                    <div className="col-span-4">
                       <input
-                        value={line.payee}
-                        onChange={(e) => setLine(i, { payee: e.target.value })}
-                        placeholder="Anyone — not restricted to staff"
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                      />
-                    )}
-                    {isLiquidation && (isEmployeeSpecialType ? line.employeeId : line.payee) && (
-                      <LiquidationBalanceHint
-                        liquidatesType={form.liquidatesType}
-                        employeeId={isEmployeeSpecialType ? line.employeeId : undefined}
-                        payee={isCashLoanOthersType ? line.payee : undefined}
-                      />
-                    )}
-                  </div>
-                  <div className="col-span-4">
-                    <input
-                      aria-label="Line description"
-                      value={line.description}
-                      onChange={(e) => setLine(i, { description: e.target.value })}
-                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      aria-label="Amount"
-                      value={line.amount}
-                      onChange={(e) => setLine(i, { amount: e.target.value })}
-                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                    />
-                  </div>
-                  {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                    <div className="col-span-2">
-                      <input
-                        aria-label="Tax Code"
-                        value={line.taxCode}
-                        onChange={(e) => setLine(i, { taxCode: e.target.value })}
-                        placeholder="VAT"
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
+                        aria-label="Line description"
+                        value={line.description}
+                        onChange={(e) => setLine(i, { description: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     </div>
-                  )}
-                  <div className="col-span-1 flex justify-end pt-2">
-                    {lines.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <div className="col-span-2">
+                      <input
+                        required
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        aria-label="Amount"
+                        value={line.amount}
+                        onChange={(e) => setLine(i, { amount: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      />
+                    </div>
+                    {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
+                      <div className="col-span-2">
+                        <input
+                          aria-label="Tax Code"
+                          value={line.taxCode}
+                          onChange={(e) => setLine(i, { taxCode: e.target.value })}
+                          placeholder="VAT"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                      </div>
                     )}
+                    <div className="col-span-1 flex justify-end">
+                      {lines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
             <button
               type="button"
               onClick={addLine}
-              className="mt-2 flex items-center gap-1.5 text-sm text-purple-700 hover:bg-purple-50 rounded-lg px-2 py-1.5"
+              className="mt-1.5 flex items-center gap-1.5 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 rounded-lg px-2 py-1"
             >
               <Plus className="w-4 h-4" /> Add line
             </button>
@@ -549,28 +564,23 @@ function ExpenseFormFields({
           <input
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Payment Method">
-            <select
+            <Select
+              compact
               value={form.paymentMethod}
-              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
+              onChange={(paymentMethod) => setForm({ ...form, paymentMethod })}
+              options={PAYMENT_METHODS.map((m) => ({ value: m, label: m.replace('_', ' ') }))}
+            />
           </Field>
           <Field label="Reference (OR / receipt #)">
             <input
               value={form.reference}
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
           </Field>
         </div>
@@ -582,18 +592,19 @@ function ExpenseFormFields({
             {error}
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-3 border-t">
+        <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200">
           <Link
             href="/accounting/expenses"
-            className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
           >
             Cancel
           </Link>
           <button
             type="submit"
             disabled={saving}
-            className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
@@ -635,7 +646,11 @@ function LiquidationBalanceHint({
   }, [liquidatesType, employeeId, payee])
 
   if (outstanding === null) return null
-  return <p className="mt-1 text-[11px] text-purple-700">Outstanding: {fmtMoney(outstanding)}</p>
+  return (
+    <p className="mt-1 text-[11px] text-prominent-purple-700">
+      Outstanding: {fmtMoney(outstanding)}
+    </p>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

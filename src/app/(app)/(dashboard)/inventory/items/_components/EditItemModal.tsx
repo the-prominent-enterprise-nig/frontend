@@ -15,12 +15,7 @@ import {
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
-import {
-  getAccounts,
-  getTaxRates,
-  type Account,
-  type TaxRate,
-} from '@/src/libs/data/AccountingData'
+import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
@@ -74,17 +69,10 @@ export default function EditItemModal({
   brandOptions,
   typeOptions,
 }: Props) {
-  const [taxRates, setTaxRates] = useState<TaxRate[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [attrValues, setAttrValues] = useState<Record<string, string>>({})
   const [selectedTags, setSelectedTags] = useState<ItemTagLabel[]>([])
   const [confirmingClose, setConfirmingClose] = useState(false)
-
-  useEffect(() => {
-    getTaxRates().then((res) => {
-      if (res.success && res.data) setTaxRates(res.data as TaxRate[])
-    })
-  }, [])
 
   // ACC-21: lazy-load accounts for the revenue/COGS/inventory overrides
   // when the modal opens — same pattern as CreateItemModal.
@@ -120,7 +108,6 @@ export default function EditItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
-      taxRateId: undefined,
       revenueAccountId: undefined,
       cogsAccountId: undefined,
       inventoryAccountId: undefined,
@@ -151,7 +138,6 @@ export default function EditItemModal({
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         isService: item.isService ?? false,
-        taxRateId: item.taxRateId ?? undefined,
         revenueAccountId: item.revenueAccountId ?? undefined,
         cogsAccountId: item.cogsAccountId ?? undefined,
         inventoryAccountId: item.inventoryAccountId ?? undefined,
@@ -542,35 +528,6 @@ export default function EditItemModal({
                 <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
               )}
             </div>
-
-            {/* Tax Rate */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Tax Rate</label>
-              <Controller
-                name="taxRateId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    value={field.value != null ? String(field.value) : ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {taxRates
-                      .filter((t) => t.isActive)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({Number(t.rate).toFixed(2)}%)
-                        </option>
-                      ))}
-                  </select>
-                )}
-              />
-            </div>
-
-            {/* empty second column for Tax Rate row */}
-            <div className="hidden sm:block" />
           </FormSection>
 
           {/* Tracking */}

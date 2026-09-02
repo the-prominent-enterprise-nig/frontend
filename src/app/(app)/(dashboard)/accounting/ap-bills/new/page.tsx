@@ -1,15 +1,11 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import TaxPanel from './_components/TaxPanel'
+import BillForm from '../_components/BillForm'
 
-export const metadata = { title: 'Tax' }
+export const metadata = { title: 'New Bill' }
 export default async function Page() {
   const session = await getSessionOrNull()
-  const user = requirePermission(session, ACCOUNTING_PERMISSIONS.TAX_READ)
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <TaxPanel session={user} />
-    </div>
-  )
+  requirePermission(session, ACCOUNTING_PERMISSIONS.AP_BILLS_CREATE)
+  return <BillForm />
 }

@@ -51,12 +51,6 @@ export const ACCOUNTING_PERMISSIONS = {
   CUSTOMER_UPDATE: 'accounting:customer:update',
   CUSTOMER_DELETE: 'accounting:customer:delete',
 
-  TAX_READ: 'accounting:tax:read',
-  TAX_CREATE: 'accounting:tax:create',
-  TAX_UPDATE: 'accounting:tax:update',
-  TAX_DELETE: 'accounting:tax:delete',
-  TAX_APPROVE: 'accounting:tax:approve',
-
   BIR_EXPORT_READ: 'accounting:bir_export:read',
   BIR_EXPORT_GENERATE: 'accounting:bir_export:generate',
 
@@ -191,11 +185,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:customer:create': 'Create customers',
   'accounting:customer:update': 'Edit customers',
   'accounting:customer:delete': 'Delete customers',
-  'accounting:tax:read': 'View tax configurations and records',
-  'accounting:tax:create': 'Create tax configurations and records',
-  'accounting:tax:update': 'Update tax configurations and records',
-  'accounting:tax:delete': 'Delete tax configurations',
-  'accounting:tax:approve': 'Approve pending tax rate changes (Business Owner only)',
   'accounting:bir_export:read': 'View BIR forms and alphalist',
   'accounting:bir_export:generate': 'Generate BIR forms',
   'accounting:financial_report:read':

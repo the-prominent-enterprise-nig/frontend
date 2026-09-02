@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { accountingCustomersApi } from '@/src/libs/api/crm'
 import type { AccountingCustomerLite } from '@/src/schema/crm/types'
+import { useOpenUpward } from '@/src/hooks/useOpenUpward'
 
 function fullName(c: AccountingCustomerLite): string {
   return c.name
@@ -15,18 +16,24 @@ export default function CustomerPicker({
   selectedLabel,
   onChange,
   error,
+  compact = false,
 }: {
   id?: string
   value: string
   selectedLabel?: string
   onChange: (customerId: string, label: string) => void
   error?: string
+  /** Tighter padding/font for dense layouts (e.g. a table row) — everything
+   * else about the component stays the same. Off by default so existing
+   * usages are unaffected. */
+  compact?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<AccountingCustomerLite[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
@@ -37,6 +44,7 @@ export default function CustomerPicker({
   }, [])
 
   const searchActive = open && search.trim().length >= 2
+  const openUpward = useOpenUpward(searchActive, containerRef, popupRef)
 
   useEffect(() => {
     if (!searchActive) return
@@ -58,8 +66,12 @@ export default function CustomerPicker({
 
   if (value && selectedLabel && !open) {
     return (
-      <div className="mt-1 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-        <span className="truncate text-sm text-gray-900">{selectedLabel}</span>
+      <div
+        className={`mt-1 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+      >
+        <span className={`truncate text-gray-900 ${compact ? 'text-[13px]' : 'text-sm'}`}>
+          {selectedLabel}
+        </span>
         <button
           type="button"
           onClick={() => {
@@ -79,25 +91,42 @@ export default function CustomerPicker({
   return (
     <div ref={containerRef} className="relative mt-1">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Search
+          className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 ${compact ? 'left-2.5' : 'left-3'}`}
+        />
         <input
           id={id}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={() => setOpen(true)}
           placeholder="Search customer by name, email, or phone…"
-          className={`w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm focus:outline-none ${
-            error ? 'border-red-300' : 'border-gray-200 focus:border-prominent-orange-400'
-          }`}
+          className={`w-full rounded-lg border bg-white focus:outline-none ${
+            compact ? 'py-1.5 pl-8 pr-2.5 text-[13px]' : 'py-2 pl-9 pr-3 text-sm'
+          } ${error ? 'border-red-300' : 'border-gray-200 focus:border-prominent-orange-400'}`}
         />
       </div>
       {error && <p className="mt-1 text-[12px] text-red-600">{error}</p>}
 
       {searchActive && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-          {loading && <p className="px-3 py-2 text-[13px] text-gray-400">Searching…</p>}
+        <div
+          ref={popupRef}
+          className={`absolute left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
+        >
+          {loading && (
+            <p
+              className={`text-gray-400 ${compact ? 'px-2.5 py-1.5 text-[12px]' : 'px-3 py-2 text-[13px]'}`}
+            >
+              Searching…
+            </p>
+          )}
           {!loading && visibleResults.length === 0 && (
-            <p className="px-3 py-2 text-[13px] text-gray-400">No customers found.</p>
+            <p
+              className={`text-gray-400 ${compact ? 'px-2.5 py-1.5 text-[12px]' : 'px-3 py-2 text-[13px]'}`}
+            >
+              No customers found.
+            </p>
           )}
           {!loading &&
             visibleResults.map((c) => (
@@ -108,7 +137,9 @@ export default function CustomerPicker({
                   onChange(c.id, fullName(c))
                   setOpen(false)
                 }}
-                className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-gray-50"
+                className={`flex w-full flex-col items-start text-left hover:bg-gray-50 ${
+                  compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
+                }`}
               >
                 <span className="font-medium text-gray-900">{fullName(c)}</span>
                 <span className="text-[12px] text-gray-500">{c.email || c.phone || '—'}</span>
