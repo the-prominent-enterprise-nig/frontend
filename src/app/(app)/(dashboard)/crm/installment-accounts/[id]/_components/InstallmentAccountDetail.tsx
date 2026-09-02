@@ -552,6 +552,22 @@ export default function InstallmentAccountDetail({
           <Row label="Opening balance" value={peso(account.openingBalance)} />
           <Row label="Current balance" value={peso(account.currentBalance)} />
           <Row label="DP balance" value={peso(account.dpBalance)} />
+          <Row
+            label="Next due"
+            value={
+              account.nextDueDate
+                ? `${peso(account.monthlyInstallment)} due ${new Date(account.nextDueDate).toLocaleDateString()}`
+                : '—'
+            }
+          />
+          {Number(account.partialPaymentOnNextDue) > 0 && (
+            <Row
+              label="Already paid toward next due"
+              value={`${peso(account.partialPaymentOnNextDue)} — ${peso(
+                Number(account.monthlyInstallment) - Number(account.partialPaymentOnNextDue)
+              )} remaining`}
+            />
+          )}
           <Row label="Arrears" value={peso(account.arrears)} />
           <Row label="Penalty" value={peso(account.penalty)} />
           <Row label="Not yet due" value={peso(account.notYetDue)} />
@@ -814,6 +830,8 @@ export default function InstallmentAccountDetail({
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
         suggestedRebate={Number(account.ppd)}
+        monthlyInstallment={Number(account.monthlyInstallment)}
+        partialPaymentOnNextDue={Number(account.partialPaymentOnNextDue)}
       />
 
       {rejectingRequestId && (

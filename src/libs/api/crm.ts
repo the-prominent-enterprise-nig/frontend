@@ -309,7 +309,7 @@ export const installmentAccountsApi = {
       payoffAmount: number
     }>(`/crm/installment-accounts/${id}/early-payoff-quote`),
   recordPayment: (id: string, body: RecordPaymentInput) =>
-    api.post<InstallmentAccountDetail & { pointEarned: boolean }>(
+    api.post<InstallmentAccountDetail & { pointEarned: boolean; monthsCovered: number }>(
       `/crm/installment-accounts/${id}/payments`,
       body
     ),
