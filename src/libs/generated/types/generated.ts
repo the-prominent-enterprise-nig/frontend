@@ -1766,23 +1766,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/pos/config/tax-rate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get the business default tax rate for POS (cashier-accessible) */
-    get: operations['PosConfigController_getDefaultTaxRate']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/pos/config/tenant/{tenantId}': {
     parameters: {
       query?: never
@@ -1876,7 +1859,7 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3). Readable from either the POS Collections screen or a CRM customer record. */
+    /** Customer's installment plans — one entry per financed sale, each with its N due-date lines and their AR invoice status (POS Phase 3). Readable from POS Collections, a CRM customer record, or Accounting's customer view. */
     get: operations['PosCustomersController_getInstallmentSchedules']
     put?: never
     post?: never
@@ -2876,7 +2859,7 @@ export interface paths {
     }
     /**
      * List all items
-     * @description Paginated list of items. Supports filtering by lifecycle, primaryCategoryId, and a search term across name and SKU.
+     * @description Paginated list of items. Supports filtering by lifecycle, primaryCategoryId, and a search term across name, description, model number, serial number, and (unless matchSku=false) SKU.
      */
     get: operations['ItemsController_findAll']
     put?: never
@@ -4482,6 +4465,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/inventory/price-lists/for-item/{itemId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Buyer's price guide for one item — its price, down payment, and installment terms under every active Price Use scheme */
+    get: operations['PriceListsController_findPricesForItem']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/inventory/price-lists/{id}': {
     parameters: {
       query?: never
@@ -5719,33 +5719,52 @@ export interface paths {
     patch: operations['NotificationsController_markAllRead']
     trace?: never
   }
-  '/accounting/tax-rates': {
+  '/ap-bills': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** List tax rates for the current tenant */
-    get: operations['TaxRatesController_findAll']
+    /** List AP bills (filter by status/supplier/search) */
+    get: operations['APBillsController_findAll']
     put?: never
-    /** Submit a new tax rate for approval */
-    post: operations['TaxRatesController_create']
+    /** Create an AP bill */
+    post: operations['APBillsController_create']
     delete?: never
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/accounting/tax-rates/change-requests': {
+  '/ap-bills/{id}': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** List tax rate change requests (pending/approved/rejected) */
-    get: operations['TaxRatesController_listChangeRequests']
+    /** Get an AP bill by id */
+    get: operations['APBillsController_findOne']
+    put?: never
+    post?: never
+    /** Soft-delete a DRAFT AP bill */
+    delete: operations['APBillsController_remove']
+    options?: never
+    head?: never
+    /** Update a DRAFT AP bill */
+    patch: operations['APBillsController_update']
+    trace?: never
+  }
+  '/ap-bills/{id}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Print-ready envelope for the AP bill detail page */
+    get: operations['APBillsController_getDocument']
     put?: never
     post?: never
     delete?: never
@@ -5754,60 +5773,24 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/accounting/tax-rates/change-requests/{id}/approve': {
+  '/ap-bills/{id}/match-check': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    get?: never
-    put?: never
-    /** Approve a pending tax rate change (Business Owner only) */
-    post: operations['TaxRatesController_approveChangeRequest']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/accounting/tax-rates/change-requests/{id}/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Reject a pending tax rate change (Business Owner only) */
-    post: operations['TaxRatesController_rejectChangeRequest']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/accounting/tax-rates/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get a single tax rate */
-    get: operations['TaxRatesController_findOne']
+    /** Scenario 10 Part 2 — 3-way match: PO total vs. matched RRs' total vs. this bill's total */
+    get: operations['APBillsController_matchCheck']
     put?: never
     post?: never
-    /** Submit a tax rate deactivation for approval */
-    delete: operations['TaxRatesController_deactivate']
+    delete?: never
     options?: never
     head?: never
-    /** Submit a tax rate update for approval */
-    patch: operations['TaxRatesController_update']
+    patch?: never
     trace?: never
   }
-  '/accounting/tax-rates/{id}/set-default': {
+  '/ap-bills/{id}/receive': {
     parameters: {
       query?: never
       header?: never
@@ -5816,15 +5799,15 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Set this rate as the business default */
-    post: operations['TaxRatesController_setDefault']
+    /** Post a DRAFT bill to the GL */
+    post: operations['APBillsController_receive']
     delete?: never
     options?: never
     head?: never
     patch?: never
     trace?: never
   }
-  '/accounting/tax-rates/{id}/unset-default': {
+  '/ap-bills/{id}/voucher': {
     parameters: {
       query?: never
       header?: never
@@ -5833,12 +5816,134 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Remove this rate as the business default */
-    post: operations['TaxRatesController_unsetDefault']
+    /** Scenario 10 Part 4 — raise a voucher (manual number) against this bill, starting online approval */
+    post: operations['APBillsController_createVoucher']
     delete?: never
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/approve-online': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve the voucher online — moves it to pending onsite approval */
+    post: operations['APBillsController_approveVoucherOnline']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/approve-onsite': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Approve the voucher onsite — the final approval step */
+    post: operations['APBillsController_approveVoucherOnsite']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/voucher/reject': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Reject a pending voucher (online or onsite stage) */
+    post: operations['APBillsController_rejectVoucher']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/payments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Record a payment against a bill */
+    post: operations['APBillsController_recordPayment']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-bills/{id}/payments/{paymentId}/document': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Scenario 10 Part 5 — print-ready cheque document envelope for a payment */
+    get: operations['APBillsController_getPaymentDocument']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-payment-methods': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List AP payment methods and their GL account mappings */
+    get: operations['APPaymentMethodsController_findAll']
+    put?: never
+    /** Create an AP payment method (how suppliers get paid + GL account) */
+    post: operations['APPaymentMethodsController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/ap-payment-methods/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get an AP payment method config by id */
+    get: operations['APPaymentMethodsController_findOne']
+    put?: never
+    post?: never
+    /** Disable an AP payment method config */
+    delete: operations['APPaymentMethodsController_remove']
+    options?: never
+    head?: never
+    /** Update an AP payment method config */
+    patch: operations['APPaymentMethodsController_update']
     trace?: never
   }
   '/files/upload': {
@@ -6049,6 +6154,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/crm/installment-accounts/reports/aging': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** AR Aging Report — active installment accounts grouped Branch → Collector, replicating the legacy 'AGING OF ACCOUNTS RECEIVABLE' sheet */
+    get: operations['InstallmentAccountController_agingReport']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/crm/installment-accounts/{id}': {
     parameters: {
       query?: never
@@ -6066,6 +6188,23 @@ export interface paths {
     head?: never
     /** Update an installment account */
     patch: operations['InstallmentAccountController_update']
+    trace?: never
+  }
+  '/crm/installment-accounts/{id}/ledger': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Chronological Date/Ref/Description/Debit/Credit/Outstanding customer ledger for one account */
+    get: operations['InstallmentAccountController_getLedger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
     trace?: never
   }
   '/crm/installment-accounts/{id}/early-payoff-quote': {
@@ -6414,6 +6553,57 @@ export interface paths {
     options?: never
     head?: never
     patch?: never
+    trace?: never
+  }
+  '/crm/customers/{id}/ledger': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Unified customer ledger — chronological debit/credit rows merging installment, charge, and cash sales */
+    get: operations['CustomerController_getCustomerLedger']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/{id}/co-makers': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Add a co-maker to a customer's profile */
+    post: operations['CustomerController_addCoMaker']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/crm/customers/{id}/co-makers/{coMakerId}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    /** Update one co-maker on a customer's profile */
+    patch: operations['CustomerController_updateCoMaker']
     trace?: never
   }
   '/crm/customers/{id}/merge': {
@@ -7438,216 +7628,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/ap-bills': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List AP bills (filter by status/supplier/search) */
-    get: operations['APBillsController_findAll']
-    put?: never
-    /** Create an AP bill */
-    post: operations['APBillsController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get an AP bill by id */
-    get: operations['APBillsController_findOne']
-    put?: never
-    post?: never
-    /** Soft-delete a DRAFT AP bill */
-    delete: operations['APBillsController_remove']
-    options?: never
-    head?: never
-    /** Update a DRAFT AP bill */
-    patch: operations['APBillsController_update']
-    trace?: never
-  }
-  '/ap-bills/{id}/match-check': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Scenario 10 Part 2 — 3-way match: PO total vs. matched RRs' total vs. this bill's total */
-    get: operations['APBillsController_matchCheck']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/receive': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Post a DRAFT bill to the GL */
-    post: operations['APBillsController_receive']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/voucher': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Scenario 10 Part 4 — raise a voucher (manual number) against this bill, starting online approval */
-    post: operations['APBillsController_createVoucher']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/voucher/approve-online': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Approve the voucher online — moves it to pending onsite approval */
-    post: operations['APBillsController_approveVoucherOnline']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/voucher/approve-onsite': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Approve the voucher onsite — the final approval step */
-    post: operations['APBillsController_approveVoucherOnsite']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/voucher/reject': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Reject a pending voucher (online or onsite stage) */
-    post: operations['APBillsController_rejectVoucher']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/payments': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    /** Record a payment against a bill */
-    post: operations['APBillsController_recordPayment']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-bills/{id}/payments/{paymentId}/document': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Scenario 10 Part 5 — print-ready cheque document envelope for a payment */
-    get: operations['APBillsController_getPaymentDocument']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-payment-methods': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** List AP payment methods and their GL account mappings */
-    get: operations['APPaymentMethodsController_findAll']
-    put?: never
-    /** Create an AP payment method (how suppliers get paid + GL account) */
-    post: operations['APPaymentMethodsController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/ap-payment-methods/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    /** Get an AP payment method config by id */
-    get: operations['APPaymentMethodsController_findOne']
-    put?: never
-    post?: never
-    /** Disable an AP payment method config */
-    delete: operations['APPaymentMethodsController_remove']
-    options?: never
-    head?: never
-    /** Update an AP payment method config */
-    patch: operations['APPaymentMethodsController_update']
-    trace?: never
-  }
   '/supplier-debit-memos': {
     parameters: {
       query?: never
@@ -7718,6 +7698,23 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/expenses/special-account-balance': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Scenario 40 Part 2 — outstanding balance for a person/party on a Special Account type, before recording a CA-Liquidation */
+    get: operations['ExpensesController_getSpecialAccountBalance']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/expenses/{id}': {
     parameters: {
       query?: never
@@ -7765,6 +7762,75 @@ export interface paths {
     put?: never
     /** Void a recorded expense — reverses its journal entry */
     post: operations['ExpensesController_void']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/accounting/employees': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Search active employees (e.g. to pick an expense payee) */
+    get: operations['EmployeesController_search']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/employee-appliance-loans': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** List employee appliance loans */
+    get: operations['EmployeeApplianceLoansController_findAll']
+    put?: never
+    /** Create an employee appliance loan — computes financing terms and posts to the GL */
+    post: operations['EmployeeApplianceLoansController_create']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/employee-appliance-loans/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /** Get an employee appliance loan by id */
+    get: operations['EmployeeApplianceLoansController_findOne']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/employee-appliance-loans/{id}/payments': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Record a payment against an employee appliance loan */
+    post: operations['EmployeeApplianceLoansController_recordPayment']
     delete?: never
     options?: never
     head?: never
@@ -7895,6 +7961,23 @@ export interface paths {
     get?: never
     put?: never
     post: operations['BankAccountsController_adjusting']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/bank-accounts/transfer': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Transfer money between two bank/fund accounts — debits the destination, credits the source, moves both currentBalance fields, and posts a GL journal entry */
+    post: operations['BankAccountsController_transfer']
     delete?: never
     options?: never
     head?: never
@@ -8259,70 +8342,6 @@ export interface paths {
     put?: never
     /** [Deprecated] Use /reopen with a reason */
     post: operations['FiscalPeriodsController_unlock']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tax/configurations': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['TaxController_findAll']
-    put?: never
-    post: operations['TaxController_create']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tax/configurations/{id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['TaxController_findOne']
-    put?: never
-    post?: never
-    delete: operations['TaxController_remove']
-    options?: never
-    head?: never
-    patch: operations['TaxController_update']
-    trace?: never
-  }
-  '/tax/calculate': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['TaxController_calculate']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/tax/filing-summary': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['TaxController_filing']
-    put?: never
-    post?: never
     delete?: never
     options?: never
     head?: never
@@ -9962,6 +9981,21 @@ export interface components {
       subtotal: number
       /** @example 999.98 */
       totalAmount: number
+      /**
+       * @description Optional flat delivery fee, collected now regardless of payment mode. Kept out of subtotal/totalAmount's per-line basis — never counts toward an installment line's financed amount or its 10% down payment floor.
+       * @example 150
+       */
+      deliveryFee?: number
+      /**
+       * @description Sales Invoice number — optional, free-text, once per whole transaction.
+       * @example SI-2026-000123
+       */
+      salesInvoiceNumber?: string
+      /**
+       * @description Delivery Receipt number — optional, free-text, once per whole transaction.
+       * @example DR-2026-000045
+       */
+      deliveryReceiptNumber?: string
       /** @example false */
       isTaxExempt?: boolean
       /**
@@ -10116,6 +10150,8 @@ export interface components {
        * @default false
        */
       bankTransferVerifiedAtRegister: boolean
+      /** @description Tags this payment as funding a specific installment schedule's down payment, instead of the transaction's cash/TPF total. Must be one of the transaction's own installment schedules; when set, paymentMethod is restricted to cash/bank_transfer/qr/card. */
+      installmentScheduleId?: string
     }
     SendReceiptDto: {
       /**
@@ -10478,6 +10514,8 @@ export interface components {
       firstName: string
       /** @example dela Cruz */
       lastName: string
+      /** @example Reyes */
+      middleName?: string
       /** @example +639171234567 */
       phoneNumber: string
       /** @example juan@example.com */
@@ -10823,8 +10861,6 @@ export interface components {
        * @example 250.0000
        */
       sellingPrice?: number
-      /** @description Tax rate ID (FK → TaxRate) */
-      taxRateId?: string
       /** @description Revenue account override (FK → Account) */
       revenueAccountId?: string
       /** @description COGS account override (FK → Account) */
@@ -10936,8 +10972,6 @@ export interface components {
        * @example 250.0000
        */
       sellingPrice?: number
-      /** @description Tax rate ID (FK → TaxRate) */
-      taxRateId?: string
       /** @description Revenue account override (FK → Account) */
       revenueAccountId?: string
       /** @description COGS account override (FK → Account) */
@@ -11056,8 +11090,6 @@ export interface components {
       lifecycle: 'active' | 'discontinued' | 'archived'
     }
     ConfirmAccountingDto: {
-      /** @description Corrected tax rate ID, if Accounting needs to fix it before confirming */
-      taxRateId?: string
       /** @description Corrected revenue account ID, if Accounting needs to fix it before confirming */
       revenueAccountId?: string
       /** @description Corrected COGS account ID, if Accounting needs to fix it before confirming */
@@ -11418,7 +11450,7 @@ export interface components {
       purchaseOrderNumber?: string
       /** @description Supplier's own delivery receipt (DR) number, as written on the physical delivery paperwork */
       deliveryReceiptNumber?: string
-      /** @description Supplier's own sales invoice (SI) number for this delivery */
+      /** @description Supplier's own sales invoice (SI) number for this delivery — required for new_stock receipts; a revert has no supplier invoice to reference. */
       supplierInvoiceNumber?: string
       /**
        * @description Withholding tax flag for this receipt. Defaults to the supplier's configured default when omitted.
@@ -11557,6 +11589,12 @@ export interface components {
        * @example 8
        */
       quantityReceived: number
+      /** @description Typo-fix correction: the physical unit received IS the one dispatched, but its serial was mis-entered — corrects the same SerialNumber record's value in place. Mutually exclusive with replacementSerialNumberId; requires quantityReceived: 1 and correctionReason. Requires inventory:transfers:serial-override. */
+      correctedSerialNumber?: string
+      /** @description Unit-swap correction: a different physical unit arrived than the one dispatched. SerialNumber UUID of the unit that actually showed up — the originally dispatched serial is flagged lost_in_transit and this line is repointed at the replacement. Mutually exclusive with correctedSerialNumber; requires quantityReceived: 1 and correctionReason. Requires inventory:transfers:serial-override. */
+      replacementSerialNumberId?: string
+      /** @description Why this line's serial was corrected. Required when correctedSerialNumber or replacementSerialNumberId is set. */
+      correctionReason?: string
     }
     ReceiveTransferExtraLineDto: {
       /** @description Item UUID for stock physically received but not on the original dispatched lines (e.g. a miscounted dispatch, a bundled extra). Non-serial-tracked items only — a serial-tracked overage has to go through the serial-numbers module instead. */
@@ -12169,6 +12207,8 @@ export interface components {
       attributes: Record<string, never>
     }
     LineDiscountInputDto: {
+      /** @description Free-text label describing what the discount is for, e.g. "Loyalty discount" */
+      name?: string
       /** @enum {string} */
       type: 'percentage' | 'amount'
       /** @description Interpreted per type — a percent (0-100) or a flat amount off the running price */
@@ -12420,38 +12460,91 @@ export interface components {
       /** @description Why this is being refunded — the JE description/reference. */
       reason?: string
     }
-    CreateTaxRateDto: {
-      /** @example VAT 12% */
-      name: string
+    CreateAPBillDto: {
+      /** @description The supplier's own invoice number, as printed on their invoice. Never generated by this system — required for a manually-created bill. */
+      billNumber: string
+      /** @description The AP payee — every bill, general AP or PO/RR-matched alike (Scenario 33 collapsed the old separate vendorId/supplierId pair into this single required field). */
+      supplierId: string
+      /** @description Scenario 10 Part 2 — the PO this invoice bills against, for the 3-way match */
+      purchaseOrderId?: string
+      /** @description Scenario 10 Part 2 — Receiving Reports matched against this bill (a bill can match several partial-delivery RRs against the same PO) */
+      goodsReceiptIds?: string[]
+      billDate: string
+      dueDate: string
+      description?: string
+      /** @default 0 */
+      subtotal: number
       /**
-       * @description Rate as a percentage (e.g. 12 = 12%)
-       * @example 12
+       * @description Input tax (VAT) on this purchase
+       * @default 0
        */
-      rate: number
-      /** @enum {string} */
-      type: 'vat' | 'vat_exempt' | 'zero_rated' | 'withholding'
-      /** @description GL account to post tax to (required unless rate = 0 and type is exempt/zero_rated) */
-      glAccountId?: string
-      /** @default false */
-      isDefault: boolean
-      effectiveFrom?: string
-      effectiveTo?: string
+      taxAmount: number
+      /** @description Withholding tax withheld from the supplier — defaults to the supplier's configured withholding rate × subtotal; pass this to override the computed amount. */
+      withholdingAmount?: number
+      /** @description Defaults to subtotal + taxAmount if omitted */
+      totalAmount?: number
+      costCenter?: string
+      /** @description Override the default expense GL account */
+      expenseAccountId?: string
+      taxCode?: string
     }
-    ApproveTaxRateChangeDto: {
-      remarks?: string
+    UpdateAPBillDto: {
+      /** @description The supplier's own invoice number, as printed on their invoice. Never generated by this system — required before a DRAFT bill auto-generated off a receipt (no invoice number yet) can leave DRAFT. */
+      billNumber?: string
+      supplierId?: string
+      purchaseOrderId?: string
+      goodsReceiptIds?: string[]
+      billDate?: string
+      dueDate?: string
+      description?: string
+      subtotal?: number
+      /** @description Input tax (VAT) on this purchase */
+      taxAmount?: number
+      /** @description Withholding tax withheld from the supplier — defaults to the supplier's configured withholding rate × subtotal; pass this to override the computed amount. */
+      withholdingAmount?: number
+      costCenter?: string
+      expenseAccountId?: string
+      taxCode?: string
+      /** @description How this bill will be paid (cash/check/bank_transfer/etc) — relocated here from Record Payment, since the method is usually known before payment is actually recorded. */
+      sourceOfPayment?: string
+      /** @description Payment/transfer reference — relocated here from Record Payment. */
+      referenceNumber?: string
+      /** @description Cheque/payment-instrument serial number — relocated here from Record Payment (was chequeNumber). */
+      serialNumber?: string
     }
-    RejectTaxRateChangeDto: {
+    CreateVoucherDto: {
+      /** @description Manual voucher number */
+      voucherNumber: string
+    }
+    RejectVoucherDto: {
       reason: string
     }
-    UpdateTaxRateDto: {
-      name?: string
-      rate?: number
-      /** @enum {string} */
-      type?: 'vat' | 'vat_exempt' | 'zero_rated' | 'withholding'
+    RecordAPPaymentDto: {
+      amount: number
+      paymentDate: string
+      notes?: string
+      /** @description Which bank account the cash is drawn from — distinct from the bill's sourceOfPayment (how it was paid, e.g. cash/check/bank_transfer). */
+      bankAccountId?: string
+    }
+    CreateAPPaymentMethodConfigDto: {
+      /** @description Standard key (e.g. "cash", "check", "bank_transfer") — omit for a custom method */
+      key?: string
+      name: string
+      /** @description Short label shown in the payment form */
+      label: string
+      /** @description GL account credited on payment — falls back to the DEFAULT_CASH mapping if unset */
       glAccountId?: string
-      isActive?: boolean
-      effectiveFrom?: string
-      effectiveTo?: string
+      /** @default true */
+      isEnabled: boolean
+      /** @default 0 */
+      displayOrder: number
+    }
+    UpdateAPPaymentMethodConfigDto: {
+      name?: string
+      label?: string
+      glAccountId?: string
+      isEnabled?: boolean
+      displayOrder?: number
     }
     AttachFileDto: {
       /** @description UUID of the file to attach */
@@ -12732,6 +12825,7 @@ export interface components {
     CreateCustomerDto: {
       firstName: string
       lastName: string
+      middleName?: string
       phoneNumber?: string
       address?: string
       /** @description PSGC code of the customer's barangay, for area-based collector assignment */
@@ -12886,6 +12980,7 @@ export interface components {
     UpdateCustomerDto: {
       firstName?: string
       lastName?: string
+      middleName?: string
       phoneNumber?: string
       address?: string
       /** @description PSGC code of the customer's barangay, for area-based collector assignment */
@@ -12903,6 +12998,16 @@ export interface components {
       defaultWithholdingRate?: number
       /** @description This customer's usual Alphanumeric Tax Code */
       defaultWithholdingAtc?: string
+    }
+    UpdateCoMakerDto: {
+      /** @example Maria Santos */
+      name?: string
+      /** @example Spouse */
+      relationship?: string
+      /** @example +63 917 000 1111 */
+      contactNumber?: string
+      /** @example maria@example.com */
+      email?: string
     }
     MergeCustomersDto: {
       /** @description The losing record — merged into the :id in the URL, then soft-deleted */
@@ -13478,7 +13583,11 @@ export interface components {
       /** @description Date the payment was collected */
       paymentDate?: string
       /** @enum {string} */
-      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
+      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR'
+      /** @description Same per-branch configured payment method POS checkout uses (POS Collections) — purely descriptive, does not affect GL posting */
+      paymentMethodConfigId?: string
+      /** @description Named sub-choice under paymentMethodConfigId, e.g. which bank/gateway (POS Collections) */
+      paymentMethodOptionId?: string
       /** @description OR / reference number */
       reference?: string
       notes?: string
@@ -13503,8 +13612,12 @@ export interface components {
       /** @description Date the payment was collected */
       paymentDate?: string
       /** @enum {string} */
-      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER'
-      /** @description OR / reference number — required for a bulk/early-payment batch (unlike the single-payment endpoint, where it is optional) */
+      method?: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR'
+      /** @description Same per-branch configured payment method POS checkout uses (POS Collections) — purely descriptive, does not affect GL posting */
+      paymentMethodConfigId?: string
+      /** @description Named sub-choice under paymentMethodConfigId, e.g. which bank/gateway (POS Collections) */
+      paymentMethodOptionId?: string
+      /** @description OR / reference number — required once a collectorId is given, since that is the only time an OR is actually cut; optional for a walk-in payment with no collector */
       reference?: string
       notes?: string
       /** @description Branch this payment was collected at (POS Collections) */
@@ -13592,81 +13705,6 @@ export interface components {
       /** @description Why this is being refunded — the JE description/reference. */
       reason?: string
     }
-    CreateAPBillDto: {
-      /** @description Manual bill number — auto-generated (AP-<timestamp>) if omitted */
-      billNumber?: string
-      /** @description The AP payee — every bill, general AP or PO/RR-matched alike (Scenario 33 collapsed the old separate vendorId/supplierId pair into this single required field). */
-      supplierId: string
-      /** @description Scenario 10 Part 2 — the PO this invoice bills against, for the 3-way match */
-      purchaseOrderId?: string
-      /** @description Scenario 10 Part 2 — Receiving Reports matched against this bill (a bill can match several partial-delivery RRs against the same PO) */
-      goodsReceiptIds?: string[]
-      billDate: string
-      dueDate: string
-      description?: string
-      /** @default 0 */
-      subtotal: number
-      /** @default 0 */
-      taxAmount: number
-      /** @description Defaults to subtotal + taxAmount if omitted */
-      totalAmount?: number
-      costCenter?: string
-      /** @description Override the default expense GL account */
-      expenseAccountId?: string
-      taxCode?: string
-    }
-    UpdateAPBillDto: {
-      supplierId?: string
-      purchaseOrderId?: string
-      goodsReceiptIds?: string[]
-      billDate?: string
-      dueDate?: string
-      description?: string
-      subtotal?: number
-      taxAmount?: number
-      costCenter?: string
-      expenseAccountId?: string
-      taxCode?: string
-    }
-    CreateVoucherDto: {
-      /** @description Manual voucher number */
-      voucherNumber: string
-    }
-    RejectVoucherDto: {
-      reason: string
-    }
-    RecordAPPaymentDto: {
-      amount: number
-      paymentDate: string
-      method?: string
-      reference?: string
-      notes?: string
-      /** @default 0 */
-      withholdingAmount: number
-      bankAccountId?: string
-      /** @description Scenario 10 Part 5 — cheque number when this payment was made by check */
-      chequeNumber?: string
-    }
-    CreateAPPaymentMethodConfigDto: {
-      /** @description Standard key (e.g. "cash", "check", "bank_transfer") — omit for a custom method */
-      key?: string
-      name: string
-      /** @description Short label shown in the payment form */
-      label: string
-      /** @description GL account credited on payment — falls back to the DEFAULT_CASH mapping if unset */
-      glAccountId?: string
-      /** @default true */
-      isEnabled: boolean
-      /** @default 0 */
-      displayOrder: number
-    }
-    UpdateAPPaymentMethodConfigDto: {
-      name?: string
-      label?: string
-      glAccountId?: string
-      isEnabled?: boolean
-      displayOrder?: number
-    }
     CreateSupplierDebitMemoDto: {
       /** @description AP bill the supplier return is applied to */
       apBillId: string
@@ -13691,51 +13729,102 @@ export interface components {
       /** @description Auto-generated when omitted */
       memoNumber?: string
     }
+    CreateExpenseLineDto: {
+      /** @description Required for a CUSTOMER/SUPPLIER header (this line's category). Ignored for an OTHER header — resolved server-side from the header's specialAccountType/liquidatesType instead. */
+      categoryAccountId?: string
+      /** @description This line's recipient — OTHER header, Employee Cash Advance/Loan (or a CA_LIQUIDATION line closing one out). */
+      employeeId?: string
+      /** @description This line's free-text recipient — OTHER header, Cash Loan – Others (or a CA_LIQUIDATION line closing one out). */
+      payee?: string
+      description?: string
+      /** @example 1000 */
+      amount: number
+      /** @description VAT, NON_VAT, EXEMPT */
+      taxCode?: string
+      /** @example 120 */
+      taxAmount?: number
+    }
     CreateExpenseDto: {
       /** @description Auto-generated when omitted */
       expenseNumber?: string
       /** @example 2026-07-15 */
       expenseDate: string
+      /** @description Scenario 40 Gap 1 — CUSTOMER | SUPPLIER | OTHER. OTHER requires specialAccountType. */
+      payeeType?: string
+      /** @description Fixed for the whole entry — payeeType=SUPPLIER */
       supplierId?: string
-      /** @description Free-text payee when no supplier */
+      /** @description Fixed for the whole entry — payeeType=CUSTOMER */
+      customerId?: string
+      /** @description EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS | CA_LIQUIDATION — required when payeeType=OTHER. Fixed for every line in the entry; determines each line's categoryAccountId server-side via the matching Special Account mapping key (CA_LIQUIDATION resolves to whichever account liquidatesType points at, not its own account — see Scenario 40 Part 2). */
+      specialAccountType?: string
+      /** @description Scenario 40 Part 2 — required when specialAccountType=CA_LIQUIDATION: which Special Account every line in this entry is closing out (EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS). */
+      liquidatesType?: string
+      /** @description Free-text payee — SUPPLIER header's fallback when no Supplier is linked. Not used for OTHER's per-line recipients (see CreateExpenseLineDto.payee). */
       payee?: string
       description?: string
-      /** @description Expense account id from chart of accounts */
-      categoryAccountId: string
-      /** @example 1000 */
-      subtotal: number
-      /** @example 120 */
-      taxAmount?: number
+      /** @description At least one line required */
+      lines: components['schemas']['CreateExpenseLineDto'][]
       /** @description CASH, BANK_TRANSFER, CHECK, CARD, E_WALLET */
       paymentMethod?: string
       bankAccountId?: string
       reference?: string
       costCenter?: string
-      /** @description VAT, NON_VAT, EXEMPT */
-      taxCode?: string
     }
     UpdateExpenseDto: {
       /** @description Auto-generated when omitted */
       expenseNumber?: string
       /** @example 2026-07-15 */
       expenseDate?: string
+      /** @description Scenario 40 Gap 1 — CUSTOMER | SUPPLIER | OTHER. OTHER requires specialAccountType. */
+      payeeType?: string
+      /** @description Fixed for the whole entry — payeeType=SUPPLIER */
       supplierId?: string
-      /** @description Free-text payee when no supplier */
+      /** @description Fixed for the whole entry — payeeType=CUSTOMER */
+      customerId?: string
+      /** @description EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS | CA_LIQUIDATION — required when payeeType=OTHER. Fixed for every line in the entry; determines each line's categoryAccountId server-side via the matching Special Account mapping key (CA_LIQUIDATION resolves to whichever account liquidatesType points at, not its own account — see Scenario 40 Part 2). */
+      specialAccountType?: string
+      /** @description Scenario 40 Part 2 — required when specialAccountType=CA_LIQUIDATION: which Special Account every line in this entry is closing out (EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS). */
+      liquidatesType?: string
+      /** @description Free-text payee — SUPPLIER header's fallback when no Supplier is linked. Not used for OTHER's per-line recipients (see CreateExpenseLineDto.payee). */
       payee?: string
       description?: string
-      /** @description Expense account id from chart of accounts */
-      categoryAccountId?: string
-      /** @example 1000 */
-      subtotal?: number
-      /** @example 120 */
-      taxAmount?: number
+      /** @description At least one line required */
+      lines?: components['schemas']['CreateExpenseLineDto'][]
       /** @description CASH, BANK_TRANSFER, CHECK, CARD, E_WALLET */
       paymentMethod?: string
       bankAccountId?: string
       reference?: string
       costCenter?: string
-      /** @description VAT, NON_VAT, EXEMPT */
-      taxCode?: string
+    }
+    CreateEmployeeApplianceLoanDto: {
+      /** @description Auto-generated when omitted */
+      loanNumber?: string
+      employeeId: string
+      /** @example Samsung 55" Smart TV */
+      itemDescription: string
+      /**
+       * @description Listed Cash Price
+       * @example 25000
+       */
+      listedCashPrice: number
+      /** @example 5000 */
+      downPayment: number
+      /** @example 12 */
+      termMonths: number
+      /**
+       * @description Monthly installment factor
+       * @example 0.0954
+       */
+      miFactor: number
+      /** @example 2026-08-31 */
+      startDate?: string
+    }
+    RecordEmployeeApplianceLoanPaymentDto: {
+      /** @example 1500 */
+      amount: number
+      /** @example 2026-08-31 */
+      paymentDate: string
+      note?: string
     }
     CreateBankAccountDto: {
       name: string
@@ -13760,6 +13849,18 @@ export interface components {
       /** @description GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping */
       glAccountId?: string
       isActive?: boolean
+    }
+    CreateFundTransferDto: {
+      /** @description Bank/fund account the money is coming from */
+      sourceBankAccountId: string
+      /** @description Bank/fund account the money is going to */
+      destinationBankAccountId: string
+      /** @example 5000 */
+      amount: number
+      /** @example 2026-08-31 */
+      date: string
+      reference?: string
+      description?: string
     }
     ClearCashInTransitDto: {
       /** @description Bank account the deposit was made to */
@@ -17265,24 +17366,6 @@ export interface operations {
       }
     }
   }
-  PosConfigController_getDefaultTaxRate: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Default tax rate and its ID */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   PosConfigController_findByTenant: {
     parameters: {
       query?: never
@@ -18930,8 +19013,10 @@ export interface operations {
   ItemsController_findAll: {
     parameters: {
       query?: {
-        /** @description Full-text search across name and SKU */
+        /** @description Full-text search across name, description, model number, serial number, and (by default) SKU */
         search?: string
+        /** @description Whether `search` is also matched against SKU. Defaults to true for callers like PO/PR/transfer/service-job item pickers that rely on SKU search. The Item Master catalog list explicitly passes false — SKU is intentionally not a searchable/displayed field there. */
+        matchSku?: boolean
         /** @description Filter by item lifecycle status */
         lifecycle?: 'active' | 'discontinued' | 'archived'
         /** @description Filter by governance approval status (Scenario 16). Only honored for callers who hold an item-governance permission (create/update/confirm_tax_mapping/approve) — everyone else is always restricted to approved items regardless of this filter. */
@@ -21269,6 +21354,7 @@ export interface operations {
     parameters: {
       query?: {
         itemId?: string
+        categoryId?: string
         warehouseId?: string
         /** @description Resolves to the branch's warehouse and scopes results to it. Ignored if warehouseId is also given. */
         branchId?: string
@@ -21810,6 +21896,27 @@ export interface operations {
       }
       header?: never
       path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  PriceListsController_findPricesForItem: {
+    parameters: {
+      query?: {
+        branchId?: string
+      }
+      header?: never
+      path: {
+        itemId: string
+      }
       cookie?: never
     }
     requestBody?: never
@@ -23938,11 +24045,13 @@ export interface operations {
       }
     }
   }
-  TaxRatesController_findAll: {
+  APBillsController_findAll: {
     parameters: {
       query?: {
-        activeOnly?: boolean
-        type?: 'vat' | 'vat_exempt' | 'zero_rated' | 'withholding'
+        search?: string
+        status?: string
+        /** @description Filter to bills against this supplier */
+        supplierId?: string
       }
       header?: never
       path?: never
@@ -23958,7 +24067,7 @@ export interface operations {
       }
     }
   }
-  TaxRatesController_create: {
+  APBillsController_create: {
     parameters: {
       query?: never
       header?: never
@@ -23967,7 +24076,7 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['CreateTaxRateDto']
+        'application/json': components['schemas']['CreateAPBillDto']
       }
     }
     responses: {
@@ -23979,11 +24088,254 @@ export interface operations {
       }
     }
   }
-  TaxRatesController_listChangeRequests: {
+  APBillsController_findOne: {
     parameters: {
-      query?: {
-        status?: 'pending' | 'approved' | 'rejected'
+      query?: never
+      header?: never
+      path: {
+        id: string
       }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_update: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateAPBillDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_getDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_matchCheck: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_receive: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_createVoucher: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateVoucherDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_approveVoucherOnline: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_approveVoucherOnsite: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_rejectVoucher: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RejectVoucherDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordAPPaymentDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APBillsController_getPaymentDocument: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        paymentId: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_findAll: {
+    parameters: {
+      query?: never
       header?: never
       path?: never
       cookie?: never
@@ -23998,7 +24350,66 @@ export interface operations {
       }
     }
   }
-  TaxRatesController_approveChangeRequest: {
+  APPaymentMethodsController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateAPPaymentMethodConfigDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_remove: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  APPaymentMethodsController_update: {
     parameters: {
       query?: never
       header?: never
@@ -24009,131 +24420,9 @@ export interface operations {
     }
     requestBody: {
       content: {
-        'application/json': components['schemas']['ApproveTaxRateChangeDto']
+        'application/json': components['schemas']['UpdateAPPaymentMethodConfigDto']
       }
     }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_rejectChangeRequest: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectTaxRateChangeDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_deactivate: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateTaxRateDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_setDefault: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxRatesController_unsetDefault: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
     responses: {
       200: {
         headers: {
@@ -24480,6 +24769,28 @@ export interface operations {
       }
     }
   }
+  InstallmentAccountController_agingReport: {
+    parameters: {
+      query?: {
+        /** @description Snapshot date the report is computed as of — defaults to today */
+        asOf?: string
+        branchId?: string
+        collectorId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   InstallmentAccountController_findOne: {
     parameters: {
       query?: never
@@ -24532,6 +24843,25 @@ export interface operations {
         'application/json': components['schemas']['UpdateInstallmentAccountDto']
       }
     }
+    responses: {
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  InstallmentAccountController_getLedger: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
     responses: {
       404: {
         headers: {
@@ -25242,6 +25572,95 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_getCustomerLedger: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Customer with merged ledger rows + totals */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_addCoMaker: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CoMakerInputDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CoMakerDto']
+        }
+      }
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  CustomerController_updateCoMaker: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        coMakerId: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateCoMakerDto']
+      }
+    }
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CoMakerDto']
+        }
       }
       404: {
         headers: {
@@ -27042,374 +27461,6 @@ export interface operations {
       }
     }
   }
-  APBillsController_findAll: {
-    parameters: {
-      query?: {
-        search?: string
-        status?: string
-        /** @description Filter to bills against this supplier */
-        supplierId?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateAPBillDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateAPBillDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_matchCheck: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_receive: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_createVoucher: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateVoucherDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_approveVoucherOnline: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_approveVoucherOnsite: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_rejectVoucher: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RejectVoucherDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_recordPayment: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RecordAPPaymentDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APBillsController_getPaymentDocument: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-        paymentId: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APPaymentMethodsController_findAll: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APPaymentMethodsController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateAPPaymentMethodConfigDto']
-      }
-    }
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APPaymentMethodsController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APPaymentMethodsController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  APPaymentMethodsController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['UpdateAPPaymentMethodConfigDto']
-      }
-    }
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
   SupplierDebitMemosController_findAll: {
     parameters: {
       query?: {
@@ -27496,6 +27547,7 @@ export interface operations {
       query?: {
         search?: string
         status?: 'DRAFT' | 'RECORDED' | 'VOID'
+        /** @description Filter to entries with at least one line against this account */
         categoryAccountId?: string
         supplierId?: string
         startDate?: string
@@ -27529,6 +27581,30 @@ export interface operations {
     }
     responses: {
       201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  ExpensesController_getSpecialAccountBalance: {
+    parameters: {
+      query?: {
+        /** @description EMPLOYEE_CASH_ADVANCE | EMPLOYEE_CASH_LOAN | CASH_LOAN_OTHERS */
+        specialAccountType?: string
+        /** @description Required for EMPLOYEE_CASH_ADVANCE / EMPLOYEE_CASH_LOAN */
+        employeeId?: string
+        /** @description Required for CASH_LOAN_OTHERS — matched against the free-text payee */
+        payee?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -27626,6 +27702,113 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeesController_search: {
+    parameters: {
+      query?: {
+        /** @description Search by name or employee code */
+        search?: string
+        /** @description Max records to return (defaults to a safe cap) */
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List of matching employees */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeApplianceLoansController_findAll: {
+    parameters: {
+      query?: {
+        search?: string
+        status?: 'ACTIVE' | 'PAID_OFF' | 'CANCELLED'
+        employeeId?: string
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeApplianceLoansController_create: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateEmployeeApplianceLoanDto']
+      }
+    }
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeApplianceLoansController_findOne: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  EmployeeApplianceLoansController_recordPayment: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecordEmployeeApplianceLoanPaymentDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -27895,6 +28078,27 @@ export interface operations {
       cookie?: never
     }
     requestBody?: never
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  BankAccountsController_transfer: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateFundTransferDto']
+      }
+    }
     responses: {
       201: {
         headers: {
@@ -28458,134 +28662,6 @@ export interface operations {
     requestBody?: never
     responses: {
       201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_findAll: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_create: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_findOne: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_remove: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_update: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_calculate: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      201: {
-        headers: {
-          [name: string]: unknown
-        }
-        content?: never
-      }
-    }
-  }
-  TaxController_filing: {
-    parameters: {
-      query: {
-        startDate: string
-        endDate: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      200: {
         headers: {
           [name: string]: unknown
         }

@@ -1,4 +1,4 @@
-import type { InstallmentLedger } from '@/src/schema/crm/types'
+import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -72,7 +72,11 @@ export function printInventoryDocument(
  * preview (e.g. an iframe) can render the exact same markup without opening
  * a popup window.
  */
-export function buildReceivingReportHtml(data: unknown): string {
+export function buildReceivingReportHtml(
+  data: unknown,
+  opts: { showAmounts?: boolean } = {}
+): string {
+  const { showAmounts = false } = opts
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
   const supplier = rr.supplier as { name?: string } | undefined
@@ -80,9 +84,9 @@ export function buildReceivingReportHtml(data: unknown): string {
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
 
-  const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtMoney = (n: number) =>
+    n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -90,7 +94,6 @@ export function buildReceivingReportHtml(data: unknown): string {
 
   let totalQty = 0
   let totalAmount = 0
-  let hasAnyCost = false
 
   const rows = lines
     .map((l) => {
@@ -99,25 +102,26 @@ export function buildReceivingReportHtml(data: unknown): string {
             name?: string
             modelNumber?: string
             brand?: { name?: string }
-            type?: { name?: string }
+            primaryCategory?: { name?: string }
           }
         | undefined
       const serials = (l.serialNumbers as string[] | undefined) ?? []
       const qty = Number(l.quantityReceived ?? 0)
       const unitCost = l.unitCost != null ? Number(l.unitCost) : null
       totalQty += qty
-      if (unitCost != null) {
-        hasAnyCost = true
-        totalAmount += qty * unitCost
-      }
+      if (unitCost != null) totalAmount += qty * unitCost
       return `<tr>
         <td class="mono">${serials.length > 0 ? esc(serials.join(', ')) : ''}</td>
         <td>${esc(item?.brand?.name) || ''}</td>
+        <td>${esc(item?.primaryCategory?.name) || ''}</td>
         <td>${esc(item?.modelNumber) || esc(item?.name) || ''}</td>
-        <td>${esc(item?.type?.name) || ''}</td>
         <td class="right">${qty}</td>
-        <td class="right">${unitCost != null ? fmt(unitCost) : ''}</td>
-        <td class="right">${unitCost != null ? fmt(qty * unitCost) : ''}</td>
+        ${
+          showAmounts
+            ? `<td class="right">${unitCost != null ? fmtMoney(unitCost) : '—'}</td>
+        <td class="right">${unitCost != null ? fmtMoney(qty * unitCost) : '—'}</td>`
+            : ''
+        }
       </tr>`
     })
     .join('')
@@ -183,14 +187,18 @@ export function buildReceivingReportHtml(data: unknown): string {
         <tr>
           <th rowspan="2" style="width:14%">Part No. / Serial No.</th>
           <th colspan="3">Description</th>
-          <th rowspan="2" style="width:8%">Qty</th>
-          <th rowspan="2" style="width:12%">Unit price</th>
-          <th rowspan="2" style="width:14%">Amount</th>
+          <th rowspan="2" style="width:10%">Qty</th>
+          ${
+            showAmounts
+              ? `<th rowspan="2" style="width:12%">Unit Cost</th>
+          <th rowspan="2" style="width:14%">Amount</th>`
+              : ''
+          }
         </tr>
         <tr>
           <th>Brand</th>
+          <th>Subgroup</th>
           <th>Model</th>
-          <th>Type</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -200,7 +208,7 @@ export function buildReceivingReportHtml(data: unknown): string {
       <table>
         <tr>
           <td class="label">Total</td>
-          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${hasAnyCost ? ` — ${fmt(totalAmount)}` : ''}</td>
+          <td class="value">${totalQty} unit${totalQty === 1 ? '' : 's'}${showAmounts ? ` — ${fmtMoney(totalAmount)}` : ''}</td>
         </tr>
       </table>
     </div>
@@ -217,10 +225,13 @@ export function buildReceivingReportHtml(data: unknown): string {
   </body></html>`
 }
 
-export function printReceivingReportDocument(data: unknown): void {
+export function printReceivingReportDocument(
+  data: unknown,
+  opts: { showAmounts?: boolean } = {}
+): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
-  win.document.write(buildReceivingReportHtml(data))
+  win.document.write(buildReceivingReportHtml(data, opts))
   win.document.close()
 }
 
@@ -668,6 +679,16 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
     )
     .join('')
+  const ledgerTotalRow =
+    rows.length > 0
+      ? `<tr class="total-row">
+        <td colspan="4"><strong>Total</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td></td>
+        <td></td>
+      </tr>`
+      : ''
 
   return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
@@ -689,6 +710,7 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
     table.ledger { width: 100%; border-collapse: collapse; margin-top: 2px; }
     table.ledger th, table.ledger td { border: 1px solid #ccc; padding: 3px 6px; font-size: 10.5px; line-height: 1.2; }
     table.ledger th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    tr.total-row td { border-top: 2px solid #333; background: #f5f5f5; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
     @media print { body { padding: 0; } button { display: none; } }
@@ -783,6 +805,7 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
         </tr>
       </thead>
       <tbody>${ledgerRows || '<tr><td colspan="8" style="text-align:center;color:#999">No ledger activity yet.</td></tr>'}</tbody>
+      <tfoot>${ledgerTotalRow}</tfoot>
     </table>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
@@ -797,23 +820,346 @@ export function printCustomerLedgerDocument(ledger: InstallmentLedger): void {
 }
 
 /**
- * Bespoke letterhead layout for the AR Invoice print/download — same
- * typographic family as buildReceivingReportHtml()/buildStockTransferHtml()/
- * printPurchaseOrderDocument() (title left / logo right, three-column info
- * row, light #ccc-bordered table) instead of printInventoryDocument()'s bare
- * generic shell (no logo, plain label/value grid) that AR Invoice used to
- * share with AP Bill.
+ * Unified per-customer ledger print (CustomerLedgerView.tsx) — same
+ * Date/Ref/Inst./Description/Debit/Credit/Due/Outstanding row table and
+ * total-row footer as buildCustomerLedgerHtml() above, but a simpler header:
+ * this ledger merges installment, charge, and cash sales for one customer,
+ * so there's no single sale/item/agent/financing-scheme to show in the
+ * paper-form-style grid — those fields don't apply across sources. See
+ * CustomerService.getCustomerLedger()'s doc comment for what's merged.
+ */
+export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
+  const { customer, items, rows, totals } = ledger
+
+  const fmt = (n: number | string) =>
+    Number(n).toLocaleString('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+    })
+  const fmtDate = (v: string) => new Date(v).toLocaleDateString('en-PH')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const ledgerRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${fmtDate(r.date)}</td>
+        <td class="mono">${esc(r.ref)}</td>
+        <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
+        <td>${esc(r.description)}</td>
+        <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
+        <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
+        <td class="right">${fmt(r.due)}</td>
+        <td class="right"><strong>${fmt(r.outstanding)}</strong></td>
+      </tr>`
+    )
+    .join('')
+  const ledgerTotalRow =
+    rows.length > 0
+      ? `<tr class="total-row">
+        <td colspan="4"><strong>Total</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
+        <td class="right"><strong>${fmt(rows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
+        <td></td>
+        <td></td>
+      </tr>`
+      : ''
+  const itemRows = items
+    .map(
+      (item) => `<tr>
+        <td>${fmtDate(item.date)}</td>
+        <td class="mono">${esc(item.ref)}</td>
+        <td>${esc(item.itemLabel)}</td>
+      </tr>`
+    )
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(customer.customerCode)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+    .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 12px; font-weight: 700; }
+    .customer-info { margin-bottom: 8px; }
+    .customer-info p { margin: 1px 0; }
+    .totals { display: flex; width: 100%; margin: 4px 0 8px; }
+    .totals-col { flex: 1; }
+    .totals-line { margin: 1px 0; font-style: italic; font-size: 10.5px; }
+    .totals-label { display: inline-block; min-width: 92px; }
+    .totals-value { font-style: normal; font-weight: 700; }
+    h2 { font-size: 11px; font-weight: 700; margin: 8px 0 3px; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+    table.items, table.ledger { width: 100%; border-collapse: collapse; margin-top: 2px; }
+    table.items th, table.items td, table.ledger th, table.ledger td { border: 1px solid #ccc; padding: 3px 6px; font-size: 10.5px; line-height: 1.2; }
+    table.items th, table.ledger th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    tr.total-row td { border-top: 2px solid #333; background: #f5f5f5; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">Customer Ledger</span>
+    </div>
+
+    <div class="customer-info">
+      <p><strong>${esc(customer.name)}</strong> (${esc(customer.customerCode)})</p>
+      <p>${esc(customer.email ?? '—')} · ${esc(customer.phone ?? '—')}</p>
+    </div>
+
+    <div class="totals">
+      <div class="totals-col">${totalLineHtml('Total Billed', fmt(totals.totalBilled))}</div>
+      <div class="totals-col">${totalLineHtml('Total Paid', fmt(totals.totalPaid))}</div>
+      <div class="totals-col">${totalLineHtml('Total Rebates', fmt(totals.totalRebates))}</div>
+      <div class="totals-col">${totalLineHtml('Outstanding', fmt(totals.outstanding))}</div>
+    </div>
+
+    ${
+      items.length > 0
+        ? `<h2>Items Purchased</h2>
+    <table class="items">
+      <thead><tr><th>Date</th><th>Ref</th><th>Item</th></tr></thead>
+      <tbody>${itemRows}</tbody>
+    </table>`
+        : ''
+    }
+
+    <h2>Ledger</h2>
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>${ledgerRows || '<tr><td colspan="8" style="text-align:center;color:#999">No ledger activity yet.</td></tr>'}</tbody>
+      <tfoot>${ledgerTotalRow}</tfoot>
+    </table>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+function totalLineHtml(label: string, value: string): string {
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  return `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
+}
+
+export function printUnifiedCustomerLedgerDocument(ledger: CustomerLedger): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildUnifiedCustomerLedgerHtml(ledger))
+  win.document.close()
+}
+
+/**
+ * AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE"
+ * spreadsheet the client maintained by hand (prisma/data/Aging_Accounts
+ * Receivable - Final_Aging.csv), sourced from this system's own
+ * InstallmentAccount data via installmentAccountsApi.agingReport(). Grouped
+ * Branch -> Collector (the legacy sheet's Area/Area Supervisor/Operation
+ * grouping has no equivalent in this schema). The legend below is
+ * transcribed verbatim from the source file's own header rows, including
+ * the Hiligaynon glosses — that's the client's own wording, not ours.
+ *
+ * OVER (OVER-30 amount) always renders "—" — no penalty/days-overdue rule
+ * exists yet to compute it from; deferred rather than guessed. NO ARS
+ * renders "—" (not 0) for a pre-backfill account whose nextDueDate hasn't
+ * been set yet — flagged as needing review, not silently reported as current.
+ */
+export function buildAgingReportHtml(report: AgingReportResponse): string {
+  const fmt = (n: number | string | null) =>
+    n === null
+      ? '—'
+      : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmtInt = (n: number | null) => (n === null ? '—' : n.toLocaleString('en-PH'))
+  const fmtDate = (v: string | null | undefined) =>
+    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const columns = [
+    '#',
+    'br',
+    'SI No.',
+    'SI Date',
+    'Customer Name',
+    'Address',
+    'Type',
+    'Term',
+    'MI',
+    'FMI Date',
+    'DP',
+    'DP Bal',
+    'OB',
+    'MI DUE',
+    'pnlty',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'NOT MVG',
+    'Last CR Date',
+    'Last CR Number',
+    'Last CR Amount',
+    'OVER',
+  ]
+  // Every numeric column right-aligns its header to match its cells; text/
+  // date columns stay left-aligned.
+  const rightAlignedColumns = new Set([
+    '#',
+    'Term',
+    'MI',
+    'DP',
+    'DP Bal',
+    'OB',
+    'MI DUE',
+    'pnlty',
+    'NO ARS',
+    'MOS RUN',
+    "TOTAL PAY'T",
+    'TOTAL PRICE',
+    'Tot Price %',
+    'LCP',
+    'NOT MVG',
+    'Last CR Amount',
+    'OVER',
+  ])
+
+  const row = (
+    r: (typeof report.branches)[number]['collectors'][number]['rows'][number],
+    n: number
+  ) => `<tr>
+    <td class="right">${n}</td>
+    <td>${esc(r.branchName)}</td>
+    <td class="mono">${esc(r.siNo)}</td>
+    <td>${fmtDate(r.siDate)}</td>
+    <td>${esc(r.customerName)}</td>
+    <td>${esc(r.address ?? '—')}</td>
+    <td>${esc(r.type ?? '—')}</td>
+    <td class="right">${r.term ?? '—'}</td>
+    <td class="right">${fmt(r.mi)}</td>
+    <td>${fmtDate(r.fmiDate)}</td>
+    <td class="right">${fmt(r.dp)}</td>
+    <td class="right">${fmt(r.dpBal)}</td>
+    <td class="right">${fmt(r.ob)}</td>
+    <td class="right">${fmt(r.miDue)}</td>
+    <td class="right">${fmt(r.pnlty)}</td>
+    <td class="right">${fmtInt(r.noArs)}</td>
+    <td class="right">${r.mosRun}</td>
+    <td class="right">${fmt(r.totalPayt)}</td>
+    <td class="right">${fmt(r.totalPrice)}</td>
+    <td class="right">${r.totPricePercent}%</td>
+    <td class="right">${fmt(r.lcp)}</td>
+    <td class="right">${r.notMvg}</td>
+    <td>${fmtDate(r.lastOrDate)}</td>
+    <td class="mono">${esc(r.lastOrLastnum ?? '—')}</td>
+    <td class="right">${fmt(r.lastOrAmt)}</td>
+    <td class="right">${fmt(r.over)}</td>
+  </tr>`
+
+  const subtotalRow = (
+    label: string,
+    s: (typeof report.branches)[number]['subtotal']
+  ) => `<tr class="subtotal">
+    <td colspan="10">${esc(label)} (${s.count})</td>
+    <td class="right">${fmt(s.dp)}</td>
+    <td></td>
+    <td class="right">${fmt(s.ob)}</td>
+    <td class="right">${fmt(s.miDue)}</td>
+    <td class="right">${fmt(s.pnlty)}</td>
+    <td></td>
+    <td class="right">${fmt(s.totalPayt)}</td>
+    <td class="right">${fmt(s.totalPrice)}</td>
+    <td colspan="6"></td>
+    <td class="right">${fmt(s.lcp)}</td>
+  </tr>`
+
+  const branchSections = report.branches
+    .map((branch) => {
+      const collectorSections = branch.collectors
+        .map((collector) => {
+          let n = 0
+          const rows = collector.rows.map((r) => row(r, ++n)).join('')
+          return `<tr class="group-header"><td colspan="${columns.length}">Collector: ${esc(collector.collectorLabel)}</td></tr>${rows}${subtotalRow('Collector subtotal', collector.subtotal)}`
+        })
+        .join('')
+      return `<tr class="group-header branch"><td colspan="${columns.length}">AREA: ${esc(branch.branchName)}</td></tr>${collectorSections}${subtotalRow('Branch subtotal', branch.subtotal)}`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>AR Aging Report</title><style>
+    body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .letterhead h1 { font-size: 15px; margin: 0; text-decoration: underline; }
+    .letterhead .doc-label { font-size: 11px; font-weight: 700; }
+    .legend { border: 1px solid #ccc; padding: 4px 8px; margin-bottom: 8px; font-size: 8.5px; color: #333; }
+    .legend p { margin: 1px 0; }
+    h2 { font-size: 12px; margin: 4px 0; }
+    table.aging { width: 100%; border-collapse: collapse; }
+    table.aging th, table.aging td { border: 1px solid #ccc; padding: 2px 4px; line-height: 1.2; white-space: nowrap; }
+    table.aging th { background: #f5f5f5; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 8px; }
+    td.right, th.right { text-align: right; }
+    td.mono { font-family: "Courier New", monospace; }
+    tr.group-header td { background: #ececec; font-weight: 700; }
+    tr.group-header.branch td { background: #ddd; font-weight: 700; text-transform: uppercase; }
+    tr.subtotal td { background: #fafafa; font-weight: 700; font-style: italic; }
+    .grand-total { margin-top: 8px; font-weight: 700; }
+    @media print { body { padding: 0; } button { display: none; } @page { size: landscape; } }
+  </style></head><body>
+    <div class="letterhead">
+      <h1>NIG Marketing Corporation</h1>
+      <span class="doc-label">AGING OF ACCOUNTS RECEIVABLE — As of ${fmtDate(report.asOf)}</span>
+    </div>
+
+    <div class="legend">
+      <p><strong>LCP</strong> - List Cash Price · <strong>AF</strong> - Amount Financed (LCP - Down payment) · <strong>ID</strong> - Installment Differential (Total Price - LCP)</p>
+      <p><strong>PNV</strong> - Promissory Note Value (MI * Terms) · <strong>Total Price</strong> - PNV + Downpayment · Early closure formula: =ID/Terms x Mos Run + LCP - Total Pay't</p>
+      <p><strong>NO ARS</strong> - Number of months the customer's account is past due (pila ka bulan ang due ni customer)</p>
+      <p><strong>MOS RUN</strong> - Number of months that have elapsed since the invoice date (pila ka bulan ang nagdalagan halin pagkwa ni customer)</p>
+      <p><strong>NOT MVG</strong> - Number of months since the customer's last payment (pila ka bulan halin sang last nga bayad ni customer)</p>
+      <p><strong>OVER</strong> - not yet computed — pending a documented penalty/days-overdue rule, deferred from this pass.</p>
+    </div>
+
+    <table class="aging">
+      <thead><tr>${columns.map((c) => `<th${rightAlignedColumns.has(c) ? ' class="right"' : ''}>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${branchSections || `<tr><td colspan="${columns.length}" style="text-align:center;color:#999">No active accounts.</td></tr>`}</tbody>
+    </table>
+
+    <p class="grand-total">Grand Total (${report.grandTotal.count} accounts): TOTAL PAY'T ${fmt(report.grandTotal.totalPayt)} · TOTAL PRICE ${fmt(report.grandTotal.totalPrice)} · OB ${fmt(report.grandTotal.ob)}</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAgingReportDocument(report: AgingReportResponse): void {
+  const win = window.open('', '_blank', 'width=1400,height=850')
+  if (!win) return
+  win.document.write(buildAgingReportHtml(report))
+  win.document.close()
+}
+
+/**
+ * The AR document, in the client's own Collection Receipt shape (their
+ * existing system's AR document, which is what they asked this to look
+ * like): customer + address left, Date/Reference centre, enterprise right,
+ * an uppercase description line, then a numbered Account/Total table.
+ *
+ * Deliberately the same layout as buildCollectionReceiptHtml() below, which
+ * prints one *payment*; this one prints the invoice itself, so its single
+ * account row is the receivable being billed — customer, invoice number and
+ * due date — not a settled application.
+ *
+ * No VAT line: the client's AR document doesn't carry one (removed on their
+ * instruction). ARInvoice.taxAmount is still stored and still posts an
+ * Output VAT leg — it just isn't shown here.
  */
 export function buildARInvoiceHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const inv = doc.document as Record<string, unknown>
   const customer = inv.customer as { name?: string; address?: string; taxId?: string } | undefined
-  const posTransaction = inv.posTransaction as { transactionNumber?: string } | null
-  const installmentDetail = inv.installmentDetail as {
-    termMonths: number | null
-    rebate: number | string | null
-    items: Record<string, unknown>[]
-  } | null
   const enterprise = doc.enterprise
 
   const fmt = (n: number) =>
@@ -823,122 +1169,64 @@ export function buildARInvoiceHtml(data: unknown): string {
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const totalAmount = Number(inv.totalAmount ?? 0)
-  const amountPaid = Number(inv.amountPaid ?? 0)
-  const outstanding = totalAmount - amountPaid
-
-  const itemsRows = (installmentDetail?.items ?? [])
-    .map((l) => {
-      const item = l.item as { name?: string; brand?: { name?: string } | null } | null
-      const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
-      const brand = item?.brand ? ` — ${esc(item.brand.name)}` : ''
-      const serialNumber = l.serialNumber as {
-        serialNumber?: string
-        goodsReceiptLine?: {
-          goodsReceipt?: {
-            code?: string
-            supplier?: { name?: string } | null
-            purchaseOrderNumber?: string | null
-          } | null
-        } | null
-      } | null
-      const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
-      const serials = serialNumber
-        ? `<div class="mono" style="color:#7c3aed;font-size:11px;margin-top:2px">SN: ${esc(serialNumber.serialNumber)}${secondarySerialNumber ? ` / ${esc(secondarySerialNumber.serialNumber)}` : ''}</div>`
-        : ''
-      const goodsReceipt = serialNumber?.goodsReceiptLine?.goodsReceipt
-      const receiving = goodsReceipt
-        ? `<div style="color:#999;font-size:10px;margin-top:1px">RR: ${esc(goodsReceipt.code)}${goodsReceipt.supplier ? ` — ${esc(goodsReceipt.supplier.name)}` : ''}${goodsReceipt.purchaseOrderNumber ? ` · PO: ${esc(goodsReceipt.purchaseOrderNumber)}` : ''}</div>`
-        : ''
-      return `<tr>
-        <td>${esc(item?.name) || '—'}${brand}${serials}${receiving}</td>
-        <td class="right">${qty}</td>
-        <td class="right">${fmt(unitPrice)}</td>
-        <td class="right">${fmt(lineTotal)}</td>
-      </tr>`
-    })
-    .join('')
+  const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(inv.invoiceNumber)} — ${fmtDate(inv.dueDate)}`
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
-    h2 { font-size: 14px; margin: 0 0 4px; }
+    h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
-    .disclaimer { font-size: 12px; color: #666; margin: -6px 0 10px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    .mono { font-family: "Courier New", monospace; }
-    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
-    .total-wrap table { width: auto; }
-    .total-wrap td { padding: 5px 10px; }
-    .total-wrap td.label { text-align: right; }
-    .total-wrap td.value { text-align: right; min-width: 130px; }
-    .total-wrap tr.strong td { font-weight: 700; }
+    td.num, th.num { width: 34px; text-align: center; }
+    tr.total-row td { font-weight: 700; text-align: right; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>AR Invoice</h1>
+      <h1>Collection Receipt</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
     <div class="info">
       <div class="party">
-        <p class="meta-label">Bill To</p>
         <p class="party-name">${esc(customer?.name) || '—'}</p>
         ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
         ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
       </div>
       <div class="meta">
-        <p class="meta-label">Invoice No.</p>
-        <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Invoice Date</p>
+        <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(inv.invoiceDate)}</p>
-        <p class="meta-label">Due Date</p>
-        <p class="meta-value">${fmtDate(inv.dueDate)}</p>
-        <p class="meta-label">Status</p>
-        <p class="meta-value">${esc(inv.status) || '—'}</p>
-        ${posTransaction ? `<p class="meta-label">Source Sale</p><p class="meta-value">${esc(posTransaction.transactionNumber)}</p>` : ''}
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${esc(inv.invoiceNumber)}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
-        ${enterprise?.companyTradingName ? `<p class="party-address">${esc(enterprise.companyTradingName)}</p>` : ''}
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        ${enterprise?.taxId ? `<p class="party-address">TIN: ${esc(enterprise.taxId)}</p>` : ''}
       </div>
     </div>
 
-    ${
-      installmentDetail
-        ? `<h2>Financed items — full plan</h2>
-    <p class="disclaimer">Full price of everything on this ${installmentDetail.termMonths ?? '—'}-month plan — this invoice only covers 1 of ${installmentDetail.termMonths ?? '—'} monthly payments, not the full amount shown below.</p>
-    <table>
-      <thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Line total</th></tr></thead>
-      <tbody>${itemsRows}</tbody>
-    </table>
-    <p style="font-size:12px;color:#666;text-align:right;margin-top:6px">Rebate on this due date: ${fmt(Number(installmentDetail.rebate ?? 0))}</p>`
-        : ''
-    }
+    ${inv.description ? `<p class="description">${esc(inv.description)}</p>` : ''}
 
-    <div class="total-wrap">
-      <table>
-        <tr><td class="label">Subtotal</td><td class="value">${fmt(Number(inv.subtotal ?? 0))}</td></tr>
-        <tr><td class="label">Tax</td><td class="value">${fmt(Number(inv.taxAmount ?? 0))}</td></tr>
-        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
-        <tr><td class="label">Paid</td><td class="value">${fmt(amountPaid)}</td></tr>
-        <tr class="strong"><td class="label">Outstanding</td><td class="value">${fmt(outstanding)}</td></tr>
-      </table>
-    </div>
+    <table>
+      <thead>
+        <tr><th class="num">#</th><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="num">1</td><td>${accountLine}</td><td class="right">${fmt(totalAmount)}</td></tr>
+        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(totalAmount)}</td></tr>
+      </tbody>
+    </table>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`
@@ -948,5 +1236,421 @@ export function printARInvoiceDocument(data: unknown): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
   win.document.write(buildARInvoiceHtml(data))
+  win.document.close()
+}
+
+/**
+ * Bespoke letterhead layout for the AP Bill print/download — same
+ * typographic family as buildARInvoiceHtml() (AP Bill and AR Invoice are
+ * structural mirrors: payable vs receivable) instead of
+ * printInventoryDocument()'s bare generic shell this used before. Titled
+ * "Purchase Invoice" to match the client's own paper document — distinct
+ * from "AP Invoices", which stays the module's name everywhere else in the
+ * app (nav, list header, page title).
+ *
+ * No per-line tax column: this schema only tracks tax at the bill level
+ * (APBill.taxAmount), not per goods-receipt-line/item, so — unlike the
+ * client's reference invoice — tax only appears in the totals block.
+ *
+ * That block is ordered so it reconciles top to bottom: APBill.totalAmount
+ * is VAT-exclusive (subtotal + taxAmount), so Input VAT is an addend above
+ * Total, not an "includes VAT" note below it; and withholding sits under
+ * Total with the payments, since it never reduced totalAmount — receive()
+ * counts it into amountPaid instead (it goes to the BIR, not the supplier),
+ * which is exactly how it reaches Balance due.
+ */
+export function buildAPBillHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const bill = doc.document as Record<string, unknown>
+  const supplier = bill.supplier as { name?: string; address?: string; taxId?: string } | undefined
+  const purchaseOrder = bill.purchaseOrder as { code?: string } | null
+  const goodsReceipts = (bill.goodsReceipts as Record<string, unknown>[] | undefined) ?? []
+  const payments = (bill.payments as Record<string, unknown>[] | undefined) ?? []
+  const enterprise = doc.enterprise
+  // Scenario 43 Part B — only a general/non-PO bill (no goods-receipt item
+  // lines) needs the Account breakdown table; a PO-linked bill's item table
+  // below is already more informative than a single account row.
+  const effectiveExpenseAccount = bill.effectiveExpenseAccount as { name?: string } | null
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const totalAmount = Number(bill.totalAmount ?? 0)
+  const amountPaid = Number(bill.amountPaid ?? 0)
+  const withholdingAmount = Number(bill.withholdingAmount ?? 0)
+  const outstanding = totalAmount - amountPaid
+
+  const rrCodes = Array.from(new Set(goodsReceipts.map((r) => r.code).filter(Boolean)))
+
+  const rows = goodsReceipts
+    .flatMap((r) => {
+      const lines = (r.lines as Record<string, unknown>[] | undefined) ?? []
+      return lines.map((l) => {
+        const item = l.item as { name?: string } | null
+        const qty = Number(l.quantityReceived ?? 0)
+        const unitCost = Number(l.unitCost ?? 0)
+        return `<tr>
+          <td>${esc(item?.name) || '—'}</td>
+          <td class="right">${qty}</td>
+          <td class="right">${fmt(unitCost)}</td>
+          <td class="right">${fmt(qty * unitCost)}</td>
+        </tr>`
+      })
+    })
+    .join('')
+
+  const paymentRows = payments
+    .map((p) => {
+      const ref = (p.chequeNumber as string) || (p.reference as string) || ''
+      const label = ref
+        ? `Payment — CK#${esc(ref)} — ${fmtDate(p.paymentDate)}`
+        : `Payment — ${fmtDate(p.paymentDate)}`
+      return `<tr><td class="label">${label}</td><td class="value">- ${fmt(Number(p.amount ?? 0))}</td></tr>`
+    })
+    .join('')
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .info .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .rr-note { font-weight: 700; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; border: none; }
+    .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 140px; }
+    .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
+    .total-wrap tr.balance td { font-weight: 700; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Purchase Invoice</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(supplier?.name)}</p>
+        <p class="party-address">${esc(supplier?.address) || '—'}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Invoice date</p>
+        <p class="meta-value">${fmtDate(bill.billDate)}</p>
+        <p class="meta-label">Due date</p>
+        <p class="meta-value">${fmtDate(bill.dueDate)}</p>
+        <p class="meta-label">SI number</p>
+        <p class="meta-value">${bill.billNumber ? esc(bill.billNumber) : 'Pending SI #'}</p>
+        ${purchaseOrder ? `<p class="meta-label">Order number</p><p class="meta-value">${esc(purchaseOrder.code)}</p>` : ''}
+        <p class="meta-label">PAYEE'S TIN:</p>
+        <p class="meta-value">${esc(supplier?.taxId) || '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${rrCodes.length ? `<p class="rr-note">RR# ${rrCodes.map(esc).join(', ')}</p>` : ''}
+
+    ${
+      rows
+        ? `<table>
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th class="right">Qty</th>
+          <th class="right">Unit price</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`
+        : `<table>
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td class="right">${fmt(totalAmount)}</td>
+        </tr>
+      </tbody>
+    </table>`
+    }
+
+    <div class="total-wrap">
+      <table>
+        <tr><td class="label">Sub-total</td><td class="value">${fmt(Number(bill.subtotal ?? 0))}</td></tr>
+        <tr><td class="label">Input VAT</td><td class="value">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
+        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
+        ${withholdingAmount > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">- ${fmt(withholdingAmount)}</td></tr>` : ''}
+        ${paymentRows}
+        <tr class="balance"><td class="label">Balance due</td><td class="value">${fmt(outstanding)}</td></tr>
+      </table>
+    </div>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAPBillDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildAPBillHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 43 Part C — bespoke letterhead layout for a single AP payment,
+ * replacing the old renderApChequeBody() (a bare label/value list with no
+ * letterhead, no Account table, no signatures) which was cheque-specific.
+ * This is a proper superset — still shows the method/reference/cheque
+ * number the old print did, plus the bill's own voucherNumber (raised
+ * before payment, as the authorization to pay), the Gap-B Account
+ * breakdown, and the Prepared/Certified/Approved-by + acknowledgment
+ * signature blocks the client's own paper "Payment" form has, matching the
+ * family style already established for the other bespoke prints.
+ */
+export function buildAPPaymentVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const p = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+  const effectiveExpenseAccount = p.effectiveExpenseAccount as { name?: string } | null
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  // The reference document's "Total" is what this one payment settled, not
+  // the whole bill (a bill can be paid across several payments) — matches
+  // how the Payment history list already sums amount + withholdingAmount.
+  const amount = Number(p.amount ?? 0) + Number(p.withholdingAmount ?? 0)
+  const reference = p.chequeNumber
+    ? `CK#${esc(p.chequeNumber)}`
+    : p.reference
+      ? esc(p.reference)
+      : '—'
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .ack { margin-top: 48px; text-align: center; }
+    .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
+    .ack-line.short { width: 120px; }
+    .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Payment</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(p.payee) || '—'}</p>
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(p.paymentDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${reference}</p>
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
+        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <p class="ack">Acknowledged receipt of payment from ${esc(enterprise?.companyLegalName)}:</p>
+    <p class="ack" style="margin-top:24px">
+      <span class="ack-line"></span>/<span class="ack-line short"></span>
+    </p>
+    <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printAPPaymentVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildAPPaymentVoucherHtml(data))
+  win.document.close()
+}
+
+/**
+ * Scenario 44 Part 2 — the AR-side mirror of buildAPPaymentVoucherHtml()
+ * above: same letterhead/info-block/Account-Total-table family, titled
+ * "Collection Receipt" per the client's own paper form. No signature
+ * blocks or acknowledgment line — those are specific to AP's internal
+ * payment-voucher sign-off chain; a customer-facing collection receipt has
+ * neither in the client's own reference document.
+ */
+export function buildCollectionReceiptHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const r = doc.document as Record<string, unknown>
+  const customer = r.customer as { name?: string; address?: string; taxId?: string } | undefined
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const amount = Number(r.amount ?? 0)
+  // A grouped receipt (one payment action that touched several installment
+  // dues at once — see ARInvoicesList's viewReceipt) carries a `lines`
+  // array instead of a single invoiceNumber; render one row per due plus a
+  // total row rather than collapsing back into one misleadingly-labeled
+  // account line.
+  const lines = r.lines as { accountLine: string; amount: number }[] | undefined
+  const rows =
+    lines && lines.length > 0
+      ? lines
+          .map(
+            (l, i) =>
+              `<tr><td class="num">${i + 1}</td><td>${esc(l.accountLine)}</td><td class="right">${fmt(l.amount)}</td></tr>`
+          )
+          .join('')
+      : `<tr><td class="num">1</td><td>Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(r.invoiceNumber) || '—'}</td><td class="right">${fmt(amount)}</td></tr>`
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    td.num, th.num { width: 34px; text-align: center; }
+    tr.total-row td { font-weight: 700; text-align: right; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Collection Receipt</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(customer?.name) || '—'}</p>
+        ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
+        ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(r.paymentDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${r.reference ? esc(r.reference) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${r.description ? `<p class="description">${esc(r.description)}</p>` : ''}
+
+    <table>
+      <thead>
+        <tr><th class="num">#</th><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
+      </tbody>
+    </table>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printCollectionReceiptDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildCollectionReceiptHtml(data))
   win.document.close()
 }

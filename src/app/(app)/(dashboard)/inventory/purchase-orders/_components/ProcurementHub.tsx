@@ -18,6 +18,7 @@ export function ProcurementHub({
   canEdit,
   canReceive,
   canViewCost,
+  canViewApBill,
   currentUserBranchId,
 }: {
   session: SessionUser
@@ -31,6 +32,7 @@ export function ProcurementHub({
   canEdit: boolean
   canReceive: boolean
   canViewCost: boolean
+  canViewApBill: boolean
   currentUserBranchId?: string | null
 }) {
   const searchParams = useSearchParams()
@@ -66,6 +68,7 @@ export function ProcurementHub({
           canEdit={canEdit}
           canReceive={canReceive}
           canViewCost={canViewCost}
+          canViewApBill={canViewApBill}
           currentUserBranchId={currentUserBranchId}
         />
       )}

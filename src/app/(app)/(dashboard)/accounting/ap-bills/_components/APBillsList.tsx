@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Plus,
   RefreshCw,
@@ -16,45 +17,25 @@ import {
 } from 'lucide-react'
 import {
   APBills,
-  APBillMatching,
   BankAccounts,
   type APBill,
   type APBillPayment,
-  type APBillPurchaseOrderOption,
-  type APBillGoodsReceiptOption,
-  type APBillMatchCheck,
   type BankAccount,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import Tooltip from '@/src/components/ui/Tooltip'
 import VoucherPanel from './VoucherPanel'
 import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
 import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
-import {
-  printInventoryDocument,
-  type PrintDocumentEnvelope,
-} from '@/src/libs/print/printInventoryDocument'
+import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
-function renderApChequeBody(doc: PrintDocumentEnvelope): string {
-  const d = doc.document as Record<string, unknown>
-  return `<h2>Cheque Payment</h2><div class="meta">
-    <div><p class="label">Payee</p><p>${d.payee ?? '—'}</p></div>
-    <div><p class="label">Bill No.</p><p>${d.billNumber ?? '—'}</p></div>
-    <div><p class="label">Cheque No.</p><p>${d.chequeNumber ?? '—'}</p></div>
-    <div><p class="label">Amount</p><p>${fmtMoney(Number(d.amount ?? 0))}</p></div>
-    <div><p class="label">Withholding</p><p>${fmtMoney(Number(d.withholdingAmount ?? 0))}</p></div>
-    <div><p class="label">Payment Date</p><p>${d.paymentDate ? new Date(d.paymentDate as string).toLocaleDateString('en-PH') : '—'}</p></div>
-    <div><p class="label">Method</p><p>${d.method ?? '—'}</p></div>
-    <div><p class="label">Reference</p><p>${d.reference ?? '—'}</p></div>
-  </div>${d.notes ? `<h2>Notes</h2><p style="font-size:13px">${d.notes}</p>` : ''}`
-}
-
-function latestChequePayment(bill: APBill): APBillPayment | undefined {
-  return (bill.payments ?? [])
-    .filter((p) => p.chequeNumber)
-    .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())[0]
+// Scenario 43 Part C — any payment can be printed as a Payment voucher now
+// (was cheque-only), so this is no longer filtered to a chequeNumber.
+function latestPayment(bill: APBill): APBillPayment | undefined {
+  return (bill.payments ?? []).sort(
+    (a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  )[0]
 }
 
 const VOUCHER_STATUS_LABEL: Record<string, string> = {
@@ -62,6 +43,7 @@ const VOUCHER_STATUS_LABEL: Record<string, string> = {
   pending_onsite_approval: 'Pending Onsite Approval',
   approved: 'Approved',
   rejected: 'Rejected',
+  voided: 'Voided',
 }
 
 // Matches APBillDetail.tsx's own STATUS_BADGE map, ported here for the list view.
@@ -78,11 +60,9 @@ export default function APBillsList() {
   const router = useRouter()
   const [items, setItems] = useState<APBill[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<APBill | null>(null)
-  const [creating, setCreating] = useState(false)
   const [payingFor, setPayingFor] = useState<APBill | null>(null)
   const [voucherFor, setVoucherFor] = useState<APBill | null>(null)
-  const [printingChequeFor, setPrintingChequeFor] = useState<string | null>(null)
+  const [printingVoucherFor, setPrintingVoucherFor] = useState<string | null>(null)
   const [debitMemoFor, setDebitMemoFor] = useState<APBill | null>(null)
 
   const load = useCallback(async () => {
@@ -101,16 +81,15 @@ export default function APBillsList() {
     if (!res.success) alert(res.message || res.error || 'Delete failed')
     load()
   }
-  const printCheque = async (bill: APBill) => {
-    const payment = latestChequePayment(bill)
+  const printPaymentVoucher = async (bill: APBill) => {
+    const payment = latestPayment(bill)
     if (!payment) return
-    setPrintingChequeFor(bill.id)
+    setPrintingVoucherFor(bill.id)
     try {
       const res = await getApPaymentDocument(bill.id, payment.id)
-      if (res.success && res.data)
-        printInventoryDocument(res.data, 'AP Cheque Payment', renderApChequeBody)
+      if (res.success && res.data) printAPPaymentVoucherDocument(res.data)
     } finally {
-      setPrintingChequeFor(null)
+      setPrintingVoucherFor(null)
     }
   }
   const receive = async (id: string) => {
@@ -124,7 +103,7 @@ export default function APBillsList() {
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold">AP Bills</h2>
+          <h2 className="text-2xl font-bold">AP Invoices</h2>
           <p className="text-sm text-gray-500">Supplier bills and payables.</p>
         </div>
         <div className="flex gap-2">
@@ -134,12 +113,18 @@ export default function APBillsList() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          <button
-            onClick={() => setCreating(true)}
+          <Link
+            href="/accounting/ap-bills/payments"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
+          >
+            <PhilippinePeso className="w-4 h-4" /> Payments
+          </Link>
+          <Link
+            href="/accounting/ap-bills/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
           >
             <Plus className="w-4 h-4" /> New Bill
-          </button>
+          </Link>
         </div>
       </div>
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
@@ -178,46 +163,7 @@ export default function APBillsList() {
                   className="cursor-pointer hover:bg-gray-50"
                 >
                   <td className="px-3 py-2 font-mono text-xs">
-                    {b.billNumber}
-                    {b.purchaseOrder && (
-                      <span className="block text-[10px] text-gray-400">
-                        PO: {b.purchaseOrder.code}
-                        {b.purchaseOrder.status === 'partially_received' && (
-                          <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[9px] font-medium text-amber-700">
-                            Partial
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {(b.goodsReceipts?.length ?? 0) > 0 && (
-                      <span className="block text-[10px] text-gray-400">
-                        RR: {b.goodsReceipts!.map((r) => r.code).join(', ')}
-                      </span>
-                    )}
-                    {(() => {
-                      const siNumbers = Array.from(
-                        new Set(
-                          (b.goodsReceipts ?? [])
-                            .map((r) => r.supplierInvoiceNumber)
-                            .filter(Boolean)
-                        )
-                      )
-                      const drNumbers = Array.from(
-                        new Set(
-                          (b.goodsReceipts ?? [])
-                            .map((r) => r.deliveryReceiptNumber)
-                            .filter(Boolean)
-                        )
-                      )
-                      if (siNumbers.length === 0 && drNumbers.length === 0) return null
-                      return (
-                        <span className="block text-[10px] text-gray-400">
-                          {siNumbers.length > 0 && <>SI: {siNumbers.join(', ')}</>}
-                          {siNumbers.length > 0 && drNumbers.length > 0 && ' · '}
-                          {drNumbers.length > 0 && <>DR: {drNumbers.join(', ')}</>}
-                        </span>
-                      )
-                    })()}
+                    {b.billNumber ?? <span className="italic text-gray-400">Pending SI #</span>}
                   </td>
                   <td className="px-3 py-2">
                     <div>{b.supplier?.name}</div>
@@ -268,12 +214,12 @@ export default function APBillsList() {
                           </button>
                         </Tooltip>
                       )}
-                      {latestChequePayment(b) && (
-                        <Tooltip label="Print cheque">
+                      {latestPayment(b) && (
+                        <Tooltip label="Print payment voucher">
                           <button
-                            onClick={() => printCheque(b)}
-                            aria-label="Print cheque"
-                            disabled={printingChequeFor === b.id}
+                            onClick={() => printPaymentVoucher(b)}
+                            aria-label="Print payment voucher"
+                            disabled={printingVoucherFor === b.id}
                             className="p-1.5 text-sky-600 hover:bg-sky-50 rounded disabled:opacity-50"
                           >
                             <Printer className="w-4 h-4" />
@@ -301,13 +247,13 @@ export default function APBillsList() {
                         </button>
                       </Tooltip>
                       <Tooltip label="Edit">
-                        <button
-                          onClick={() => setEditing(b)}
+                        <Link
+                          href={`/accounting/ap-bills/${b.id}/edit`}
                           aria-label="Edit"
                           className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
                         >
                           <Pencil className="w-4 h-4" />
-                        </button>
+                        </Link>
                       </Tooltip>
                       <Tooltip label="Delete">
                         <button
@@ -327,20 +273,6 @@ export default function APBillsList() {
         </table>
       </div>
 
-      {(creating || editing) && (
-        <BillForm
-          initial={editing}
-          onClose={() => {
-            setCreating(false)
-            setEditing(null)
-          }}
-          onSaved={() => {
-            setCreating(false)
-            setEditing(null)
-            load()
-          }}
-        />
-      )}
       {payingFor && (
         <PayBill
           bill={payingFor}
@@ -376,241 +308,6 @@ export default function APBillsList() {
   )
 }
 
-function BillForm({
-  initial,
-  onClose,
-  onSaved,
-}: {
-  initial: APBill | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    supplierId: initial?.supplierId ?? '',
-    purchaseOrderId: initial?.purchaseOrderId ?? '',
-    goodsReceiptIds: initial?.goodsReceipts?.map((r) => r.id) ?? ([] as string[]),
-    billDate: initial?.billDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    dueDate:
-      initial?.dueDate?.slice(0, 10) ??
-      new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-    description: initial?.description ?? '',
-    subtotal: String(initial?.subtotal ?? ''),
-    taxAmount: String(initial?.taxAmount ?? ''),
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [purchaseOrders, setPurchaseOrders] = useState<APBillPurchaseOrderOption[]>([])
-  const [receipts, setReceipts] = useState<APBillGoodsReceiptOption[]>([])
-  const [matchCheck, setMatchCheck] = useState<APBillMatchCheck | null>(null)
-  const supplierIdOnMount = useRef(form.supplierId)
-
-  useEffect(() => {
-    if (!form.supplierId) {
-      setPurchaseOrders([])
-      return
-    }
-    // Only reset the previously-picked PO when the supplier actually
-    // changes after mount — not on the initial load of an existing bill.
-    if (form.supplierId !== supplierIdOnMount.current) {
-      setForm((f) => ({ ...f, purchaseOrderId: '', goodsReceiptIds: [] }))
-    }
-    APBillMatching.purchaseOrders(form.supplierId).then((r) =>
-      setPurchaseOrders(r.data?.data ?? [])
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.supplierId])
-
-  useEffect(() => {
-    if (!form.purchaseOrderId) {
-      setReceipts([])
-      return
-    }
-    APBillMatching.receipts(form.purchaseOrderId).then((r) => setReceipts(r.data?.data ?? []))
-  }, [form.purchaseOrderId])
-
-  useEffect(() => {
-    if (!initial?.id || !initial?.purchaseOrderId) return
-    APBillMatching.matchCheck(initial.id).then((r) => setMatchCheck(r.data ?? null))
-  }, [initial?.id, initial?.purchaseOrderId])
-
-  const toggleReceipt = (id: string) => {
-    setForm((f) => ({
-      ...f,
-      goodsReceiptIds: f.goodsReceiptIds.includes(id)
-        ? f.goodsReceiptIds.filter((r) => r !== id)
-        : [...f.goodsReceiptIds, id],
-    }))
-  }
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.supplierId) {
-      setError('Supplier is required')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    const payload = {
-      ...form,
-      purchaseOrderId: form.purchaseOrderId || undefined,
-      goodsReceiptIds: form.purchaseOrderId ? form.goodsReceiptIds : undefined,
-      subtotal: Number(form.subtotal),
-      taxAmount: Number(form.taxAmount || 0),
-    }
-    const res = initial ? await APBills.update(initial.id, payload) : await APBills.create(payload)
-    setSaving(false)
-    if (!res.success) {
-      setError(res.message || res.error || 'Save failed')
-      return
-    }
-    onSaved()
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">{initial ? 'Edit Bill' : 'New Bill'}</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
-          <Field label="Supplier *">
-            <SupplierSearchCombobox
-              value={form.supplierId}
-              onChange={(id) => setForm({ ...form, supplierId: id })}
-              initialLabel={
-                initial?.supplier
-                  ? `${initial.supplier.code} — ${initial.supplier.name}`
-                  : undefined
-              }
-            />
-          </Field>
-          {form.supplierId && (
-            <Field label="Purchase Order (for the 3-way match)">
-              <select
-                value={form.purchaseOrderId}
-                onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— None —</option>
-                {purchaseOrders.map((po) => (
-                  <option key={po.id} value={po.id}>
-                    {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          {form.purchaseOrderId && (
-            <Field label="Receiving Reports matched to this bill">
-              {receipts.length === 0 ? (
-                <p className="text-xs text-gray-400">
-                  No receiving reports posted against this PO yet.
-                </p>
-              ) : (
-                <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
-                  {receipts.map((r) => (
-                    <label key={r.id} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={form.goodsReceiptIds.includes(r.id)}
-                        onChange={() => toggleReceipt(r.id)}
-                      />
-                      {r.code} — {fmtDate(r.receivedAt)}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </Field>
-          )}
-          {matchCheck?.applicable && (
-            <div
-              className={`text-xs px-3 py-2 rounded-lg ${
-                matchCheck.matched ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-              }`}
-            >
-              3-way match:{' '}
-              <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
-              {' — '}PO {fmtMoney(matchCheck.poTotal ?? 0)} · RRs{' '}
-              {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Bill Date *">
-              <input
-                required
-                type="date"
-                value={form.billDate}
-                onChange={(e) => setForm({ ...form, billDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Due Date *">
-              <input
-                required
-                type="date"
-                value={form.dueDate}
-                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
-          <Field label="Description">
-            <input
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Subtotal *">
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={form.subtotal}
-                onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            <Field label="Tax">
-              <input
-                type="number"
-                step="0.01"
-                value={form.taxAmount}
-                onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
-          {error && (
-            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-              {error}
-            </div>
-          )}
-          <div className="flex justify-end gap-2 pt-3 border-t">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 function PayBill({
   bill,
   onClose,
@@ -629,15 +326,11 @@ function PayBill({
   )
   const [form, setForm] = useState({
     amount: String(out),
-    withholdingAmount: '0',
     paymentDate: new Date().toISOString().slice(0, 10),
-    method: '',
-    reference: '',
-    chequeNumber: '',
     notes: '',
     // Which bank/cash fund the money actually paid out of — distinct from
-    // Method (how it was paid). Optional: not every payment goes through a
-    // tracked fund account.
+    // sourceOfPayment (how it was paid). Optional: not every payment goes
+    // through a tracked fund account.
     bankAccountId: '',
   })
   const [saving, setSaving] = useState(false)
@@ -646,16 +339,23 @@ function PayBill({
   useEffect(() => {
     BankAccounts.list().then((res) => setBankAccounts(res.data ?? []))
   }, [])
-  const totalSettled = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
+  // Scenario 42 Part 4 — same rule as AR's Record Payment, just reading the
+  // method from the bill itself rather than a selector in this dialog: this
+  // dialog has none of its own, sourceOfPayment is set when the bill is
+  // edited (see BillForm.tsx). Untracked when unset entirely — that's the
+  // same as "cash" for a bill nobody's specified a method for yet.
+  const requiresBankAccount = Boolean(bill.sourceOfPayment && bill.sourceOfPayment !== 'cash')
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (requiresBankAccount && !form.bankAccountId) {
+      setError(`Source of Fund is required for ${bill.sourceOfPayment} payments.`)
+      return
+    }
     setSaving(true)
     setError(null)
     const res = await APBills.recordPayment(bill.id, {
       ...form,
       amount: Number(form.amount),
-      withholdingAmount: Number(form.withholdingAmount || 0),
-      chequeNumber: form.method === 'check' ? form.chequeNumber || undefined : undefined,
       bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
@@ -684,6 +384,14 @@ function PayBill({
           <div className="text-sm text-gray-600">
             Outstanding: <span className="font-semibold">{fmtMoney(out)}</span>
           </div>
+          {(bill.withholdingAmount ?? 0) > 0 && (
+            <div className="text-xs text-gray-500">
+              Withholding tax of{' '}
+              <span className="font-semibold">{fmtMoney(bill.withholdingAmount ?? 0)}</span> was
+              already withheld and posted when this bill was received — the outstanding balance
+              above already reflects it.
+            </div>
+          )}
           <Field label="Cash Paid *">
             <input
               required
@@ -694,18 +402,6 @@ function PayBill({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Withholding Tax (if you withheld from supplier)">
-            <input
-              type="number"
-              step="0.01"
-              value={form.withholdingAmount}
-              onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <div className="text-xs text-gray-500">
-            Total settled on AP: <span className="font-semibold">{fmtMoney(totalSettled)}</span>
-          </div>
           <Field label="Payment Date *">
             <input
               required
@@ -715,52 +411,36 @@ function PayBill({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Method">
-            <select
-              value={form.method}
-              onChange={(e) => setForm({ ...form, method: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— Select —</option>
-              <option value="cash">Cash</option>
-              <option value="check">Check</option>
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="gcash">GCash</option>
-              <option value="card">Card</option>
-              <option value="other">Other</option>
-            </select>
-          </Field>
-          {form.method === 'check' && (
-            <Field label="Cheque Number *">
-              <input
-                required
-                value={form.chequeNumber}
-                onChange={(e) => setForm({ ...form, chequeNumber: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                placeholder="e.g. 0001234"
-              />
-            </Field>
+          {(bill.sourceOfPayment || bill.referenceNumber || bill.serialNumber) && (
+            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 space-y-0.5">
+              <p className="font-semibold text-gray-600">
+                Set on the bill (edit the bill to change these):
+              </p>
+              {bill.sourceOfPayment && <p>Source of Payment: {bill.sourceOfPayment}</p>}
+              {bill.referenceNumber && <p>Reference Number: {bill.referenceNumber}</p>}
+              {bill.serialNumber && <p>Serial Number: {bill.serialNumber}</p>}
+            </div>
           )}
-          <Field label="Reference">
-            <input
-              value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <Field label="Source of Fund">
+          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
             <select
+              required={requiresBankAccount}
               value={form.bankAccountId}
               onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">— Not tracked —</option>
+              <option value="">{requiresBankAccount ? '— Select —' : '— Not tracked —'}</option>
               {bankAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} — {acc.bankName} ({acc.accountNumber})
                 </option>
               ))}
             </select>
+            {requiresBankAccount && !form.bankAccountId && (
+              <p className="mt-1 text-[12px] text-amber-700">
+                Required for {bill.sourceOfPayment} payments, so this shows up in Bank
+                Reconciliation.
+              </p>
+            )}
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">

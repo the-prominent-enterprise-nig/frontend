@@ -16,10 +16,13 @@ import {
   X,
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
-import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { type SessionUser } from '@/src/libs/guards/permission'
 import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
-import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
+import type { InstallmentSchedule, PosTransaction, CustomerHistoryItem } from '@/src/schema/pos'
 
 // Same mapping TransactionsList.tsx uses for its own transaction rows —
 // kept local rather than imported since that file doesn't export it.
@@ -31,6 +34,13 @@ const txTypeColor: Record<string, string> = {
 const txStatusColor: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   voided: 'bg-red-100 text-red-700',
+}
+
+function summarizeTransactionItems(tx: PosTransaction): string {
+  const names = (tx.lines ?? []).map((l) => l.itemName)
+  if (names.length === 0) return 'No items'
+  if (names.length <= 2) return names.join(', ')
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`
 }
 
 type CustomerView = Customer & {
@@ -75,11 +85,20 @@ export default function Customer360({
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState<string | null>(null)
 
-  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId)
-  // — covers cash/full-payment sales too, unlike Installment Plans above.
-  const [transactionHistory, setTransactionHistory] = useState<PosTransaction[]>([])
+  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId/history-with-payments)
+  // — covers cash/full-payment sales too, unlike Installment Plans above,
+  // merged with installment-due payments collected later via Collections.
+  const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  // TransactionDetail (the same receipt modal POS's own pages use) requires
+  // a real SessionUser — this page.tsx doesn't pass one down, so fetch it
+  // client-side the same way pos/page.tsx does for its Recent Transactions.
+  const [posSession, setPosSession] = useState<SessionUser | null>(null)
+  const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
+  useEffect(() => {
+    getSessionOrNull().then((s) => setPosSession(s))
+  }, [])
 
   const upcomingPayables = useMemo(
     () => flattenUpcomingPayables(installmentSchedules),
@@ -132,7 +151,7 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    getCustomerTransactions(id).then((res) => {
+    getCustomerHistoryWithPayments(id).then((res) => {
       if (res.success && res.data) setTransactionHistory(res.data)
       else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
@@ -203,13 +222,17 @@ export default function Customer360({
               this customer's AR invoices was buried inside an Installment
               Plan row's detail modal — which didn't exist at all for a
               charge-only customer with no installment plans. This is a
-              direct, always-visible link regardless of purchase history. */}
+              direct, always-visible link regardless of purchase history.
+              Repointed to the unified customer ledger (installment + charge
+              + cash sales merged into one debit/credit table) instead of
+              the raw AR invoice list — the AR invoices list itself stays
+              reachable from Accounting → AR Invoices. */}
           <Link
-            href={`/accounting/ar-invoices?customerId=${id}`}
+            href={`/crm/customers/${id}/ledger`}
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
           >
             <Receipt className="h-4 w-4" />
-            View AR Ledger
+            View Customer Ledger
           </Link>
           {canScheduleReminder && (
             <button
@@ -263,11 +286,11 @@ export default function Customer360({
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Full width (lg:col-span-3) — the Address row wraps to several
-            lines for a real PH address, and cramming that into a 1/3-width
-            column read badly (developer-flagged, 2026-08-09). */}
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
+      <div className="mt-6">
+        {/* Full width — the Address row wraps to several lines for a real
+            PH address, and cramming that into a 1/3-width column read badly
+            (developer-flagged, 2026-08-09). */}
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Contact</h2>
           <dl className="space-y-2 text-[13px]">
             <Row label="Email" value={data.email ?? '—'} />
@@ -276,66 +299,43 @@ export default function Customer360({
             <Row label="Tax exempt" value={data.isTaxExempt ? 'Yes' : 'No'} />
           </dl>
         </section>
+      </div>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-3">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
-          {historyLoading ? (
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
+          {installmentLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
+          ) : installmentError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
+          ) : installmentSchedules.length === 0 ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
-              Loading transaction history…
-            </p>
-          ) : historyError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : transactionHistory.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No transactions for this customer.
+              No installment plans for this customer.
             </p>
           ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) => (
-                  <li
-                    key={tx.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium text-gray-800">
-                        {tx.transactionNumber}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.transactionType}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.status}
-                      </span>
-                    </div>
-                    <span className="flex items-center gap-3 text-gray-600">
-                      <span>
-                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                      <span>
-                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
-                      </span>
-                      <span className="font-medium text-gray-800">
-                        {formatPeso(tx.totalAmount)}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
-              )}
-            </>
+            <div className="space-y-2">
+              {installmentSchedules.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setScheduleDetailTarget(s)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
+                    <p className="mt-0.5 text-[12px] text-gray-500">
+                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {s.installmentAccount && (
+                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
+                    )}
+                    <ChevronRight size={16} className="text-gray-300" />
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </section>
       </div>
@@ -426,10 +426,10 @@ export default function Customer360({
               </ul>
               {upcomingPayables.length > 10 && (
                 <Link
-                  href={`/accounting/ar-invoices?customerId=${id}`}
+                  href={`/crm/customers/${id}/ledger`}
                   className="mt-3 inline-block text-[12px] text-prominent-orange-700 hover:underline"
                 >
-                  +{upcomingPayables.length - 10} more — View full AR ledger →
+                  +{upcomingPayables.length - 10} more — View full customer ledger →
                 </Link>
               )}
             </>
@@ -445,49 +445,11 @@ export default function Customer360({
         </section>
       </div>
 
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
-          {installmentLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
-          ) : installmentError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
-          ) : installmentSchedules.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No installment plans for this customer.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {installmentSchedules.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setScheduleDetailTarget(s)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
-                >
-                  <div>
-                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
-                    <p className="mt-0.5 text-[12px] text-gray-500">
-                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {s.installmentAccount && (
-                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
-                    )}
-                    <ChevronRight size={16} className="text-gray-300" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
       {scheduleDetailTarget && (
         <InstallmentScheduleDetailModal
           schedule={scheduleDetailTarget}
           customerId={id}
+          customerName={data.name}
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
@@ -629,6 +591,106 @@ export default function Customer360({
         </section>
       </div>
 
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) =>
+                  tx.kind === 'PAYMENT' ? (
+                    <li
+                      key={tx.id}
+                      className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          Payment received
+                          {tx.reference ? ` — ${tx.reference}` : ''}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.paymentDate).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.invoiceNumbers.length > 0 && (
+                            <span className="truncate">{tx.invoiceNumbers.join(', ')}</span>
+                          )}
+                          {tx.cancelledAt && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                              cancelled
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-green-700">
+                        {formatPeso(tx.amount)}
+                      </span>
+                    </li>
+                  ) : (
+                    <li
+                      key={tx.id}
+                      onClick={() => setSelectedTransaction(tx)}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          {summarizeTransactionItems(tx)}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.transactionType !== 'sale' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.transactionType}
+                            </span>
+                          )}
+                          {tx.status !== 'completed' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </li>
+                  )
+                )}
+              </ul>
+              {transactionHistory.length >= 20 && (
+                <p className="mt-2 text-center text-[11px] text-gray-400">
+                  Showing the most recent 20 transactions.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+
       {canDelete && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
           <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
@@ -661,6 +723,14 @@ export default function Customer360({
         assignedTo={currentUserId}
         target={{ customerId: id }}
       />
+
+      {selectedTransaction && posSession && (
+        <TransactionDetail
+          transaction={selectedTransaction}
+          session={posSession}
+          onClose={() => setSelectedTransaction(null)}
+        />
+      )}
     </div>
   )
 }
@@ -824,29 +894,60 @@ function InstallmentStatusBadge({ status }: { status: string }) {
 function InstallmentScheduleDetailModal({
   schedule,
   customerId,
+  customerName,
   onClose,
 }: {
   schedule: InstallmentSchedule
   customerId: string
+  customerName: string
   onClose: () => void
 }) {
+  const router = useRouter()
+  const totalPayments = schedule.lines.reduce(
+    (sum, line) => sum + Number(line.arInvoice.amountPaid),
+    0
+  )
+  const remainingBalance = Math.max(0, Number(schedule.totalPayable) - totalPayments)
+  const hasUnpaidLine = schedule.lines.some(
+    (line) => !['PAID', 'CANCELLED'].includes(line.arInvoice.status)
+  )
+
+  function goToCollections() {
+    const params = new URLSearchParams({
+      customerId,
+      customerName,
+      scheduleId: schedule.id,
+    })
+    router.push(`/pos/collections?${params.toString()}`)
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
           <button
             onClick={onClose}
             className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
           >
             <X size={18} />
           </button>
-          <h2 className="mb-1 text-lg font-bold text-gray-900">
+          <h2 className="mb-1 pr-8 text-lg font-bold text-gray-900">
             {productLabel(schedule.posTransactionLines)}
           </h2>
-          <p className="mb-4 text-sm text-gray-500">
-            {schedule.posTransaction?.transactionNumber ?? schedule.id}
-          </p>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-500">
+              {schedule.posTransaction?.transactionNumber ?? schedule.id}
+            </p>
+            {schedule.installmentAccount && (
+              <Link
+                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+              >
+                View customer ledger →
+              </Link>
+            )}
+          </div>
 
           {/* Developer-requested (2026-08-09): the header's "+1 more" hides
               what the other item(s) actually are, and the combined
@@ -886,28 +987,32 @@ function InstallmentScheduleDetailModal({
 
           <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
             <Row label="Term" value={`${schedule.termMonths} months`} />
-            <Row label="Factor rate" value={`${Number(schedule.factorRate).toFixed(2)}x`} />
             <Row label="Down payment" value={formatPeso(schedule.downPayment)} />
             {schedule.installmentAccount && (
               <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
             )}
             <div className="border-t border-gray-200 pt-2">
-              <Row label="Total" value={formatPeso(schedule.totalPayable)} bold />
+              <Row label="Total price" value={formatPeso(schedule.totalPayable)} bold />
+              <Row label="Total payments made" value={formatPeso(totalPayments)} />
+              <Row label="Remaining balance" value={formatPeso(remainingBalance)} bold />
             </div>
           </div>
 
           <div className="mt-4">
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Due Dates</p>
+            {hasUnpaidLine && (
+              <p className="mb-2 text-[12px] text-gray-400">
+                Click any due date to collect a payment — it always settles the earliest unpaid due
+                first.
+              </p>
+            )}
             <ul className="divide-y divide-gray-100">
-              {schedule.lines.map((line) => (
-                <li key={line.lineNumber} className="py-1.5 text-[13px]">
-                  {/* Scenario 25 — each due date is its own real ARInvoice;
-                   * link straight into its per-invoice detail/print page
-                   * instead of only reaching it via the unfiltered ledger. */}
-                  <Link
-                    href={`/accounting/ar-invoices/${line.arInvoice.id}`}
-                    className="flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg -mx-1 px-1"
-                  >
+              {schedule.lines.map((line) => {
+                const paid = Number(line.arInvoice.amountPaid)
+                const total = Number(line.arInvoice.totalAmount)
+                const isPartial = line.arInvoice.status === 'PARTIAL' && paid > 0 && paid < total
+                const rowContent = (
+                  <>
                     <span className="text-gray-700">
                       <span className="font-mono text-[11px] text-gray-400">
                         {line.arInvoice.invoiceNumber}
@@ -915,34 +1020,37 @@ function InstallmentScheduleDetailModal({
                       {' · '}
                       Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
                       {new Date(line.arInvoice.dueDate).toLocaleDateString()}
+                      {isPartial && (
+                        <span className="block text-[11px] text-amber-600">
+                          {formatPeso(paid)} paid · {formatPeso(total - paid)} remaining
+                        </span>
+                      )}
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">
-                        {formatPeso(line.arInvoice.totalAmount)}
-                      </span>
+                      <span className="font-medium text-gray-800">{formatPeso(total)}</span>
                       <InstallmentStatusBadge status={line.arInvoice.status} />
                     </span>
-                  </Link>
-                </li>
-              ))}
+                  </>
+                )
+                return (
+                  <li key={line.lineNumber} className="py-1.5 text-[13px]">
+                    {hasUnpaidLine ? (
+                      <button
+                        type="button"
+                        onClick={goToCollections}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
+                      >
+                        {rowContent}
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 -mx-1 px-1">
+                        {rowContent}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
-            {schedule.installmentAccount && (
-              <Link
-                href={`/crm/customers/${customerId}/installments/${schedule.installmentAccount.id}`}
-                className="inline-block text-[12px] font-medium text-prominent-orange-700 hover:underline"
-              >
-                View customer ledger →
-              </Link>
-            )}
-            <Link
-              href={`/accounting/ar-invoices?customerId=${customerId}`}
-              className="inline-block text-[12px] text-prominent-orange-700 hover:underline"
-            >
-              View full AR ledger →
-            </Link>
           </div>
         </div>
       </div>

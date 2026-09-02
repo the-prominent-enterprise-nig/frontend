@@ -22,6 +22,13 @@ test.afterEach(async ({ page }) => {
 // UI surface: does the new search input on the AR Invoices screen actually
 // exist and work (there was no search input on this screen at all before
 // this part).
+//
+// Scenario 44 Part 1 — the top-level /accounting/ar-invoices landing page
+// no longer lists invoices at all (it's the new cross-customer Receipts
+// register instead); the invoice-number/transaction-number search and the
+// "New Invoice" action both moved one level deeper, onto the customer-
+// dedicated /accounting/ar-invoices/customer/[id] route, which is otherwise
+// unchanged — so the tests below now navigate there first.
 
 async function ensureOpenSession(page: import('@playwright/test').Page, branchId: string) {
   const terminalsRes = await page.request.get('/api/pos/terminals', { params: { branchId } })
@@ -92,7 +99,7 @@ test('searching AR Invoices by the POS transaction number finds its charge invoi
   const transactionNumber = created.transactionNumber as string
   const invoiceNumber = created.invoices[0].invoiceNumber as string
 
-  await gotoReady(page, '/accounting/ar-invoices')
+  await gotoReady(page, `/accounting/ar-invoices/customer/${customer.id}`)
   const searchInput = page.getByPlaceholder('Search…')
   // Never typed the invoice number anywhere in this test — searching by the
   // TRANSACTION number alone still finds the invoice row. Auto-searches
@@ -154,7 +161,9 @@ test("the New Invoice form's customer picker is a search box, not a full-list <s
   const customer = await customerRes.json()
   createdCustomerId = customer.id
 
-  await gotoReady(page, '/accounting/ar-invoices')
+  // Scenario 44 Part 1 — "New Invoice" no longer lives on the landing page;
+  // reached one level deeper, from a customer's own dedicated page.
+  await gotoReady(page, `/accounting/ar-invoices/customer/${customer.id}`)
   await page.getByRole('button', { name: 'New Invoice' }).click()
 
   const dialog = page.locator('.max-w-xl')

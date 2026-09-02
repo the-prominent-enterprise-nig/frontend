@@ -106,7 +106,7 @@ export function FinancingTermList({
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="divide-y divide-gray-100 p-5">
               {[...Array(3)].map((_, i) => (

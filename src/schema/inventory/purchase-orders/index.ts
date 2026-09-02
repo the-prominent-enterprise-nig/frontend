@@ -183,6 +183,18 @@ export const PurchaseOrderSummarySchema = z.object({
     .nullable(),
   lines: z.array(PoLineSchema),
   createdAt: z.string(),
+  // Scenario 41 Part 3 — bills matched against this PO, for the "View
+  // Invoice" link. billNumber is null on a DRAFT auto-generated off a
+  // receipt before anyone's filled in the supplier's real invoice number.
+  apBills: z
+    .array(
+      z.object({
+        id: z.string(),
+        billNumber: z.string().nullable(),
+        status: z.string(),
+      })
+    )
+    .default([]),
 })
 
 export const PurchaseOrderListResponseSchema = z.object({

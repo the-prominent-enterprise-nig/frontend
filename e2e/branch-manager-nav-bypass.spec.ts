@@ -7,7 +7,7 @@ import { gotoReady, loginAs } from './utils'
 // module regardless of what was actually granted. Now that Branch
 // Manager's real grant was rebuilt (Part 11) to exclude enterprise-wide
 // accounting infrastructure (fiscal periods, chart of accounts, currency,
-// tax, general ledger, BIR export), the nav should correctly hide those
+// general ledger, BIR export), the nav should correctly hide those
 // links instead of showing them and 403ing on click.
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -30,5 +30,4 @@ test('Branch Manager nav shows branch-operational accounting links but hides exc
   await expect(page.getByRole('link', { name: 'Fiscal Periods' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Chart of Accounts' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Currencies' })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Tax', exact: true })).toHaveCount(0)
 })

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Check, Search } from 'lucide-react'
+import { useOpenUpward } from '@/src/hooks/useOpenUpward'
 
 export type CategorySelectOption = { id: string; name: string; depth: number }
 
@@ -12,6 +13,11 @@ type Props = {
   placeholder?: string
   className?: string
   disabled?: boolean
+  'aria-label'?: string
+  /** Tighter padding/font for dense layouts (e.g. a table row) — everything
+   * else about the component stays the same. Off by default so existing
+   * usages are unaffected. */
+  compact?: boolean
 }
 
 export default function CategorySelect({
@@ -21,11 +27,15 @@ export default function CategorySelect({
   placeholder = 'Select category…',
   className = '',
   disabled = false,
+  'aria-label': ariaLabel,
+  compact = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
+  const openUpward = useOpenUpward(open, containerRef, popupRef)
 
   const selected = options.find((o) => o.id === value)
   const normalizedQuery = query.trim().toLowerCase()
@@ -55,11 +65,12 @@ export default function CategorySelect({
     <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 ${
-          open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''
-        }`}
+        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white outline-none transition-colors focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+          compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
+        } ${open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''}`}
       >
         <span className={selected ? 'text-zinc-900' : 'text-zinc-400'}>
           {selected ? selected.name : placeholder}
@@ -70,8 +81,15 @@ export default function CategorySelect({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg">
-          <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2">
+        <div
+          ref={popupRef}
+          className={`absolute left-0 right-0 z-50 max-h-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
+        >
+          <div
+            className={`flex items-center gap-2 border-b border-zinc-100 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+          >
             <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
             <input
               ref={searchRef}
@@ -79,7 +97,7 @@ export default function CategorySelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search categories…"
-              className="w-full text-sm outline-none placeholder:text-zinc-400"
+              className={`w-full outline-none placeholder:text-zinc-400 ${compact ? 'text-[13px]' : 'text-sm'}`}
               onClick={(e) => e.stopPropagation()}
             />
           </div>
@@ -91,13 +109,17 @@ export default function CategorySelect({
                   onChange(undefined)
                   setOpen(false)
                 }}
-                className="flex w-full items-center px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-50"
+                className={`flex w-full items-center text-zinc-400 hover:bg-zinc-50 ${
+                  compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
+                }`}
               >
                 {placeholder}
               </button>
             )}
             {filteredOptions.length === 0 && (
-              <p className="px-3 py-2 text-sm text-zinc-400">
+              <p
+                className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
+              >
                 No categories match &ldquo;{query}&rdquo;
               </p>
             )}
@@ -109,12 +131,16 @@ export default function CategorySelect({
                   onChange(opt.id)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center gap-2 py-2 pr-3 text-sm transition-colors hover:bg-zinc-50 ${
+                className={`flex w-full items-center gap-2 transition-colors hover:bg-zinc-50 ${
+                  compact ? 'py-1.5 pr-2.5 text-[13px]' : 'py-2 pr-3 text-sm'
+                } ${
                   opt.id === value
                     ? 'bg-prominent-purple-50 text-prominent-purple-700'
                     : 'text-zinc-800'
                 }`}
-                style={{ paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * 16 + 12}px` }}
+                style={{
+                  paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * (compact ? 14 : 16) + (compact ? 10 : 12)}px`,
+                }}
               >
                 {!normalizedQuery && opt.depth > 0 && (
                   <span className="shrink-0 text-zinc-300">{'—'.repeat(opt.depth)}</span>

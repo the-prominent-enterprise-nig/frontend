@@ -158,7 +158,15 @@ export function PurchaseOrderFormFields({
           <p className="mb-2 text-xs text-red-500">{errors.lines.message}</p>
         )}
 
-        <div className="space-y-3">
+        <div className="hidden grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
+          <span />
+          <span>Item</span>
+          <span>Qty</span>
+          <span>SRP</span>
+          <span />
+        </div>
+
+        <div className="space-y-2">
           {fields.map((field, index) => (
             <PurchaseOrderLineCard
               key={field.id}
@@ -189,7 +197,7 @@ export function PurchaseOrderFormFields({
               isFreebie: false,
             })
           }
-          className="mt-3 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+          className="mt-2 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
         >
           <Plus className="h-3.5 w-3.5" />
           Add Line
@@ -197,7 +205,7 @@ export function PurchaseOrderFormFields({
       </div>
 
       {/* Subtotal */}
-      <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+      <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5">
         <span className="text-sm font-medium text-zinc-700">Subtotal:&nbsp;</span>
         <PoSubtotal control={control} fmtAmount={fmtAmount} />
       </div>
@@ -291,11 +299,21 @@ function PurchaseOrderLineCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srp, discounts, index])
 
+  const hasRowError =
+    errors.lines?.[index]?.itemId ||
+    errors.lines?.[index]?.quantity ||
+    errors.lines?.[index]?.unitPrice
+
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        {/* Freebie (Scenario 10 Part 8) */}
-        <label className="flex items-center gap-2 text-xs text-zinc-600">
+    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+      {/* Primary row — Freebie / Item / Qty / SRP / Remove. Unit Price and
+          Line Total sit below the discount chain that derives them, matching
+          the PO line format used by ConvertPrToPoModal. */}
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] items-center gap-2">
+        <label
+          className="flex h-9 items-center justify-center"
+          title="Freebie (supplier-given free unit — no cost)"
+        >
           <input
             type="checkbox"
             checked={Boolean(isFreebie)}
@@ -304,23 +322,8 @@ function PurchaseOrderLineCard({
               if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
             }}
           />
-          Freebie (supplier-given free unit — no cost)
         </label>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
-      </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-600">
-          Item <span className="text-red-500">*</span>
-        </label>
         <Controller
           name={`lines.${index}.itemId`}
           control={control}
@@ -333,132 +336,142 @@ function PurchaseOrderLineCard({
             />
           )}
         />
-        {errors.lines?.[index]?.itemId && (
-          <p className="mt-1 text-xs text-red-500">{errors.lines[index]?.itemId?.message}</p>
-        )}
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">
-            Quantity <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="number"
-            min={1}
-            step={1}
-            placeholder="0"
-            {...register(`lines.${index}.quantity`, { valueAsNumber: true })}
-            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-          />
-          {errors.lines?.[index]?.quantity && (
-            <p className="mt-1 text-xs text-red-500">{errors.lines[index]?.quantity?.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-zinc-600">Supplier SRP</label>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            placeholder="0.00"
-            {...register(`lines.${index}.srp`, {
-              setValueAs: (v) => (v === '' ? undefined : Number(v)),
-            })}
-            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-          />
-        </div>
-      </div>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          aria-label="Quantity"
+          placeholder="Qty"
+          {...register(`lines.${index}.quantity`, { valueAsNumber: true })}
+          className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+        />
 
-      {/* Supplier discount chain (Scenario 10 Part 6, revised) — Unit
-          Price comes last since it's computed from these, applied in
-          order (each step's output feeds the next). */}
-      <div className="space-y-2">
-        <label className="block text-xs font-medium text-zinc-600">Discounts (off SRP)</label>
-        {discountFields.map((discountField, discountIndex) => {
-          return (
-            <div key={discountField.id} className="flex items-center gap-2">
-              <div className="grid flex-1 grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  placeholder="Discount name"
-                  maxLength={100}
-                  {...register(`lines.${index}.discounts.${discountIndex}.name`)}
-                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                />
-                <select
-                  {...register(`lines.${index}.discounts.${discountIndex}.type`)}
-                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                >
-                  <option value="percentage">Percentage</option>
-                  <option value="amount">Flat amount</option>
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  placeholder={discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'}
-                  {...register(`lines.${index}.discounts.${discountIndex}.value`, {
-                    valueAsNumber: true,
-                  })}
-                  className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => removeDiscount(discountIndex)}
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
-                aria-label="Remove discount"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
-          className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
-        >
-          <Plus className="h-3 w-3" />
-          Add another discount
-        </button>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-600">
-          Unit Price <span className="text-red-500">*</span>
-        </label>
         <input
           type="number"
           min={0}
           step={0.01}
-          placeholder="0.00"
-          disabled={isFreebie}
-          {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
-          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
+          aria-label="Supplier SRP"
+          placeholder="SRP"
+          {...register(`lines.${index}.srp`, {
+            setValueAs: (v) => (v === '' ? undefined : Number(v)),
+          })}
+          className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         />
-        {errors.lines?.[index]?.unitPrice && (
-          <p className="mt-1 text-xs text-red-500">{errors.lines[index]?.unitPrice?.message}</p>
+
+        {canRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label="Remove line"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : (
+          <span />
         )}
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-zinc-600">Description</label>
+      {hasRowError && (
+        <div className="mt-1 space-y-0.5 text-xs text-red-500">
+          {errors.lines?.[index]?.itemId && <p>{errors.lines[index]?.itemId?.message}</p>}
+          {errors.lines?.[index]?.quantity && <p>{errors.lines[index]?.quantity?.message}</p>}
+          {errors.lines?.[index]?.unitPrice && <p>{errors.lines[index]?.unitPrice?.message}</p>}
+        </div>
+      )}
+
+      {/* Secondary block — supplier discount chain (Scenario 10 Part 6,
+          revised; applied in order off srp), then the Unit Price it feeds,
+          the Line Total, and Description */}
+      <div className="mt-1.5 flex flex-col items-start gap-1 border-t border-zinc-200 pt-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Discounts <span className="normal-case tracking-normal">(off SRP)</span>
+        </span>
+        {discountFields.map((discountField, discountIndex) => (
+          <div key={discountField.id} className="flex items-center gap-1">
+            <input
+              type="text"
+              placeholder="Discount name"
+              maxLength={100}
+              aria-label="Discount name"
+              {...register(`lines.${index}.discounts.${discountIndex}.name`)}
+              className="w-44 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+            />
+            <select
+              aria-label="Discount type"
+              {...register(`lines.${index}.discounts.${discountIndex}.type`)}
+              className="w-16 rounded-lg border border-zinc-200 px-1 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+            >
+              <option value="percentage">%</option>
+              <option value="amount">₱</option>
+            </select>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              aria-label="Discount value"
+              placeholder={discounts?.[discountIndex]?.type === 'amount' ? 'Amount' : 'Percent'}
+              {...register(`lines.${index}.discounts.${discountIndex}.value`, {
+                valueAsNumber: true,
+              })}
+              className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+            />
+            <button
+              type="button"
+              onClick={() => removeDiscount(discountIndex)}
+              className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
+              aria-label="Remove discount"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
+          className="flex items-center gap-1 text-sm font-medium text-prominent-purple-700 hover:underline"
+        >
+          <Plus className="h-3 w-3" />
+          Add
+        </button>
+
+        {/* Unit Price — srp with the chain above applied, still editable —
+            and the resulting Line Total */}
+        <div className="mt-1 flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+            Unit Price
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            aria-label="Unit price"
+            placeholder="Unit price"
+            disabled={isFreebie}
+            {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
+            className="w-32 min-w-0 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
+          />
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+              Line Total
+            </span>
+            <span
+              className="truncate text-sm font-semibold text-zinc-800"
+              title={fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+            >
+              {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+            </span>
+          </div>
+        </div>
+
         <input
           type="text"
-          placeholder="Optional line description"
+          placeholder="Description (optional)"
+          aria-label="Line description"
           {...register(`lines.${index}.description`)}
-          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+          className="mt-1 w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         />
-      </div>
-
-      {/* Running line total */}
-      <div className="text-right text-xs text-zinc-500">
-        Line total:{' '}
-        <span className="font-medium text-zinc-800">
-          {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
-        </span>
       </div>
     </div>
   )

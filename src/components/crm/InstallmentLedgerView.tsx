@@ -113,7 +113,7 @@ export default function InstallmentLedgerView({
             </div>
 
             <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-5 pb-3 text-[14px] font-semibold text-gray-900">Sale</h2>
+              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Sale</h2>
               <InfoTable
                 fields={[
                   {
@@ -129,8 +129,8 @@ export default function InstallmentLedgerView({
             </section>
 
             {ledger.account.unitItems.length > 0 && (
-              <section className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-                <h2 className="p-5 pb-3 text-[14px] font-semibold text-gray-900">Item</h2>
+              <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Item</h2>
                 <InfoTable
                   fields={[
                     { label: 'Brand', value: ledger.account.unitItems[0].brand ?? '—' },
@@ -149,8 +149,8 @@ export default function InstallmentLedgerView({
               </section>
             )}
 
-            <section className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-5 pb-3 text-[14px] font-semibold text-gray-900">Assignment</h2>
+            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Assignment</h2>
               <InfoTable
                 fields={[
                   { label: 'Agent', value: ledger.account.sellingAgent?.name ?? '—' },
@@ -171,8 +171,8 @@ export default function InstallmentLedgerView({
               />
             </section>
 
-            <section className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-5 pb-3 text-[14px] font-semibold text-gray-900">Financing</h2>
+            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Financing</h2>
               <InfoTable
                 fields={[
                   { label: 'LCP', value: fmtMoney(ledger.account.listedCashPrice) },
@@ -190,8 +190,8 @@ export default function InstallmentLedgerView({
               />
             </section>
 
-            <section className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="p-5 pb-3 text-[14px] font-semibold text-gray-900">Totals</h2>
+            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Totals</h2>
               <InfoTable
                 fields={[
                   { label: 'Total Payments', value: fmtMoney(ledger.account.totalPayments) },
@@ -209,8 +209,8 @@ export default function InstallmentLedgerView({
               />
             </section>
 
-            <section className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white">
-              <h2 className="border-b border-gray-100 p-5 pb-3 text-[14px] font-semibold text-gray-900">
+            <section className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+              <h2 className="border-b border-gray-100 p-4 pb-2 text-[14px] font-semibold text-gray-900">
                 Ledger
               </h2>
               {ledger.rows.length === 0 ? (
@@ -220,48 +220,63 @@ export default function InstallmentLedgerView({
                   <table className="w-full border-collapse text-[13px]">
                     <thead>
                       <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        <th className="border-r border-gray-100 px-5 py-2">Date</th>
-                        <th className="border-r border-gray-100 px-5 py-2">Ref</th>
-                        <th className="border-r border-gray-100 px-5 py-2 text-right">Inst.</th>
-                        <th className="border-r border-gray-100 px-5 py-2">Description</th>
-                        <th className="border-r border-gray-100 px-5 py-2 text-right">Debit</th>
-                        <th className="border-r border-gray-100 px-5 py-2 text-right">Credit</th>
-                        <th className="border-r border-gray-100 px-5 py-2 text-right">Due</th>
-                        <th className="px-5 py-2 text-right">Outstanding</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5">Date</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5">Ref</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Inst.</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5">Description</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Debit</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Credit</th>
+                        <th className="border-r border-gray-100 px-4 py-1.5 text-right">Due</th>
+                        <th className="px-4 py-1.5 text-right">Outstanding</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {ledger.rows.map((row, i) => (
                         <tr key={i}>
-                          <td className="whitespace-nowrap border-r border-gray-100 px-5 py-2 text-gray-600">
+                          <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 text-gray-600">
                             {fmtDate(row.date)}
                           </td>
-                          <td className="whitespace-nowrap border-r border-gray-100 px-5 py-2 font-mono text-xs text-gray-500">
+                          <td className="whitespace-nowrap border-r border-gray-100 px-4 py-1.5 font-mono text-xs text-gray-500">
                             {row.ref}
                           </td>
-                          <td className="border-r border-gray-100 px-5 py-2 text-right text-gray-500">
+                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-500">
                             {row.inst > 0 ? row.inst : '—'}
                           </td>
-                          <td className="border-r border-gray-100 px-5 py-2 text-gray-800">
+                          <td className="border-r border-gray-100 px-4 py-1.5 text-gray-800">
                             {row.description}
                           </td>
-                          <td className="border-r border-gray-100 px-5 py-2 text-right text-gray-800">
+                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
                             {row.debit > 0 ? fmtMoney(row.debit) : '—'}
                           </td>
-                          <td className="border-r border-gray-100 px-5 py-2 text-right text-gray-800">
+                          <td className="border-r border-gray-100 px-4 py-1.5 text-right text-gray-800">
                             {row.credit > 0 ? fmtMoney(row.credit) : '—'}
                           </td>
                           <td
-                            className={`border-r border-gray-100 px-5 py-2 text-right ${row.due < 0 ? 'text-red-600' : 'text-gray-800'}`}
+                            className={`border-r border-gray-100 px-4 py-1.5 text-right ${row.due < 0 ? 'text-red-600' : 'text-gray-800'}`}
                           >
                             {fmtMoney(row.due)}
                           </td>
-                          <td className="px-5 py-2 text-right font-semibold text-gray-900">
+                          <td className="px-4 py-1.5 text-right font-semibold text-gray-900">
                             {fmtMoney(row.outstanding)}
                           </td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50 text-[13px] font-semibold text-gray-900">
+                        <td className="border-r border-gray-100 px-4 py-1.5" colSpan={4}>
+                          Total
+                        </td>
+                        <td className="border-r border-gray-100 px-4 py-1.5 text-right">
+                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.debit, 0))}
+                        </td>
+                        <td className="border-r border-gray-100 px-4 py-1.5 text-right">
+                          {fmtMoney(ledger.rows.reduce((sum, r) => sum + r.credit, 0))}
+                        </td>
+                        <td className="border-r border-gray-100 px-4 py-1.5" />
+                        <td className="px-4 py-1.5" />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
@@ -294,7 +309,7 @@ function InfoTable({ fields }: { fields: { label: string; value: React.ReactNode
             {Array.from({ length: columns }).map((_, ci) => {
               const field = row[ci]
               return (
-                <td key={ci} className="w-1/3 border-r border-gray-100 px-5 py-3 last:border-r-0">
+                <td key={ci} className="w-1/3 border-r border-gray-100 px-4 py-2 last:border-r-0">
                   {field && (
                     <>
                       <p className="text-gray-500">{field.label}</p>

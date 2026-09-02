@@ -27,7 +27,7 @@ const PAIRED_MAPPINGS: { title: string; debitKey: string; creditKey: string; not
     note: 'Billing Adjustment / Goodwill credit memos debit Default Sales Revenue instead — see AR Invoice Posted above.',
   },
   {
-    title: 'AP Bill Received',
+    title: 'AP Invoice Received',
     debitKey: 'DEFAULT_EXPENSE',
     creditKey: 'AP_PAYABLE',
     note: 'Input VAT is also debited on the same entry — configured separately below.',

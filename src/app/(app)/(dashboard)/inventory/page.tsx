@@ -6,24 +6,20 @@ import Link from 'next/link'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import {
   Package,
-  TrendingDown,
   TrendingUp,
   RefreshCw,
   Clock,
   ArrowUpRight,
-  Ban,
-  Calendar,
   BarChart2,
   Activity,
   Layers,
   Truck,
-  DollarSign,
   ShieldAlert,
   ChevronRight,
-  Warehouse,
   Tag,
   ClipboardCheck,
-  RotateCcw,
+  PieChart,
+  LayoutGrid,
 } from 'lucide-react'
 
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
@@ -190,64 +186,6 @@ function HBarChart({
       ))}
     </div>
   )
-}
-
-// ── KpiCard ───────────────────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  iconBg,
-  href,
-  loading,
-  urgent,
-}: {
-  label: string
-  value: string
-  sub?: string
-  icon: any
-  iconBg: string
-  href?: string
-  loading?: boolean
-  urgent?: boolean
-}) {
-  const inner = (
-    <div
-      className={`
-      rounded-xl border bg-white p-5 shadow-sm
-      ${urgent ? 'border-red-200 bg-red-50/30' : 'border-gray-200'}
-      ${href ? 'hover:border-violet-200 hover:shadow-md transition-all cursor-pointer' : ''}
-    `}
-    >
-      <div className="flex items-start justify-between">
-        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
-          <Icon className="h-[18px] w-[18px] text-white" />
-        </div>
-        {href && <ArrowUpRight className="h-3.5 w-3.5 text-gray-300" />}
-      </div>
-      {loading ? (
-        <div className="mt-3 space-y-2">
-          <div className="h-2.5 w-14 rounded bg-gray-200 animate-pulse" />
-          <div className="h-7 w-20 rounded bg-gray-200 animate-pulse" />
-        </div>
-      ) : (
-        <div className="mt-3">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
-            {label}
-          </p>
-          <p
-            className={`mt-0.5 text-2xl font-bold tabular-nums ${urgent ? 'text-red-700' : 'text-gray-900'}`}
-          >
-            {value}
-          </p>
-          {sub && <p className="mt-0.5 text-[11px] text-gray-400 truncate">{sub}</p>}
-        </div>
-      )}
-    </div>
-  )
-  return href ? <Link href={href}>{inner}</Link> : inner
 }
 
 // ── Micro-components ──────────────────────────────────────────────────────────
@@ -606,275 +544,221 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-6 space-y-6">
-        {/* Row 1: Primary KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiCard
-            label="Total Inventory Value"
-            value={loading ? '—' : fmtMoney(s.totalValue)}
-            sub={loading ? '' : `${fmtNum(s.totalOnHand)} units on hand`}
-            icon={DollarSign}
-            iconBg="bg-violet-600"
-            href="/inventory/reports"
-            loading={loading}
-          />
-          <KpiCard
-            label="Total SKUs"
-            value={loading ? '—' : fmtNum(s.totalSkus)}
-            sub="Active catalog"
-            icon={Package}
-            iconBg="bg-blue-500"
-            href="/inventory/items"
-            loading={loading}
-          />
-          <KpiCard
-            label="Active Warehouses"
-            value={loading ? '—' : String(s.activeWarehouses)}
-            sub={loading ? '' : `${fmtNum(s.totalAvailableQty)} available units`}
-            icon={Warehouse}
-            iconBg="bg-emerald-500"
-            href="/inventory/warehouses"
-            loading={loading}
-          />
-          <KpiCard
-            label="Reserved Stock"
-            value={loading ? '—' : fmtNum(s.reservedQty)}
-            sub="Units held for orders"
-            icon={Layers}
-            iconBg="bg-cyan-500"
-            href="/inventory/reservations"
-            loading={loading}
-          />
-        </div>
-
-        {/* Row 2: Risk KPIs */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-          <KpiCard
-            label="Expiring Soon"
-            value={loading ? '—' : fmtNum(s.expiringSoonCount)}
-            sub="Batches within 30 days"
-            icon={Calendar}
-            iconBg="bg-orange-500"
-            href="/inventory/batches"
-            loading={loading}
-            urgent={s.expiringSoonCount > 0}
-          />
-          <KpiCard
-            label="Projected Stockouts"
-            value={loading ? '—' : fmtNum(s.projectedStockouts)}
-            sub="In next 30 days"
-            icon={TrendingDown}
-            iconBg="bg-rose-600"
-            href="/inventory/projection"
-            loading={loading}
-            urgent={s.projectedStockouts > 0}
-          />
-          <KpiCard
-            label="Negative Violations"
-            value={loading ? '—' : fmtNum(s.negativeViolations)}
-            sub="Stock below zero"
-            icon={Ban}
-            iconBg="bg-red-600"
-            href="/inventory/negative-stock"
-            loading={loading}
-            urgent={s.negativeViolations > 0}
-          />
-        </div>
-
-        {/* Row 3: Movement KPIs — Slow Moving/Dead Stock dropped here (2026-08-20):
-        same slowMovingCount/deadStockCount feed the Stock Classification donut
-        below as proportions of the full catalog, which is the more useful view
-        of that data than a bare count card. Returns Recorded folded in from
-        the old "Secondary metrics strip" (2026-08-20), which was a
-        grid-cols-4 layout holding just this one orphaned metric. */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-          <KpiCard
-            label="In Transit"
-            value={loading ? '—' : fmtNum(s.inTransitCount)}
-            sub="Active transfers"
-            icon={Truck}
-            iconBg="bg-indigo-500"
-            href="/inventory/transfers"
-            loading={loading}
-          />
-          <KpiCard
-            label="Active Backorders"
-            value={loading ? '—' : fmtNum(s.activeBackorders)}
-            sub="Pending fulfillment"
-            icon={Clock}
-            iconBg="bg-purple-500"
-            href="/inventory/backorders"
-            loading={loading}
-          />
-          <KpiCard
-            label="Returns Recorded"
-            value={loading ? '—' : fmtNum(s.returnsCount)}
-            sub="All recorded returns"
-            icon={RotateCcw}
-            iconBg="bg-blue-500"
-            href="/inventory/returns"
-            loading={loading}
-          />
+      <div className="mx-auto max-w-7xl px-6 pt-8 pb-6 space-y-6">
+        {/* Module Navigation */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              {(
+                [
+                  { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
+                  {
+                    label: 'Goods Receiving',
+                    href: '/inventory/operations?tab=receiving',
+                    icon: Package,
+                  },
+                  { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
+                  {
+                    label: 'Stock Adjustments',
+                    href: '/inventory/counting?tab=adjustments',
+                    icon: ClipboardCheck,
+                  },
+                  { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
+                  { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
+                  { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
+                ] as const
+              ).map(({ label, href, icon: Icon }, i) => (
+                <Link
+                  key={i}
+                  href={href}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-gray-100 bg-gray-50/50 px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
+                >
+                  <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Inventory Health */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">Inventory Value by Category</h2>
-                <p className="text-xs text-gray-400">
-                  Distribution of total stock value across product categories
-                </p>
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-violet-500" />
+            <h2 className="text-base font-semibold text-gray-900">Inventory Health</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    Inventory Value by Category
+                  </h2>
+                  <p className="text-xs text-gray-400">
+                    Distribution of total stock value across product categories
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
+                  {loading ? '…' : fmtMoney(s.totalValue)}
+                </span>
               </div>
-              <span className="shrink-0 text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
-                {loading ? '…' : fmtMoney(s.totalValue)}
-              </span>
+              {loading ? (
+                <div className="flex items-center gap-6">
+                  <Sk className="h-[148px] w-[148px] rounded-full" />
+                  <div className="space-y-2.5 flex-1">
+                    {[...Array(5)].map((_, i) => (
+                      <Sk key={i} className="h-4 w-full" />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <DonutChart segments={s.valuationByCategory} />
+              )}
             </div>
-            {loading ? (
-              <div className="flex items-center gap-6">
-                <Sk className="h-[148px] w-[148px] rounded-full" />
-                <div className="space-y-2.5 flex-1">
-                  {[...Array(5)].map((_, i) => (
-                    <Sk key={i} className="h-4 w-full" />
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">Stock Classification</h2>
+                <p className="text-xs text-gray-400">Item health by movement velocity</p>
+              </div>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <Sk key={i} className="h-9 w-full" />
                   ))}
                 </div>
-              </div>
-            ) : (
-              <DonutChart segments={s.valuationByCategory} />
-            )}
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">Stock Classification</h2>
-              <p className="text-xs text-gray-400">Item health by movement velocity</p>
-            </div>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(3)].map((_, i) => (
-                  <Sk key={i} className="h-9 w-full" />
-                ))}
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  {s.abcSegments.map((seg, i) => {
-                    const tot = s.abcSegments.reduce((a, b) => a + b.value, 0) || 1
-                    return (
-                      <div key={i}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium" style={{ color: seg.color }}>
-                            {seg.label}
-                          </span>
-                          <span className="text-xs text-gray-700 font-semibold tabular-nums">
-                            {fmtNum(seg.value)}{' '}
-                            <span className="text-gray-400 font-normal">
-                              ({Math.round((seg.value / tot) * 100)}%)
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {s.abcSegments.map((seg, i) => {
+                      const tot = s.abcSegments.reduce((a, b) => a + b.value, 0) || 1
+                      return (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium" style={{ color: seg.color }}>
+                              {seg.label}
                             </span>
-                          </span>
+                            <span className="text-xs text-gray-700 font-semibold tabular-nums">
+                              {fmtNum(seg.value)}{' '}
+                              <span className="text-gray-400 font-normal">
+                                ({Math.round((seg.value / tot) * 100)}%)
+                              </span>
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-700"
+                              style={{
+                                width: `${(seg.value / tot) * 100}%`,
+                                backgroundColor: seg.color,
+                              }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-700"
-                            style={{
-                              width: `${(seg.value / tot) * 100}%`,
-                              backgroundColor: seg.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                {s.totalOnHand > 0 && (
-                  <div className="mt-5 pt-4 border-t border-gray-100">
-                    <p className="text-xs font-semibold text-gray-600 mb-2">Stock Availability</p>
-                    <div className="flex h-3 rounded-full overflow-hidden gap-px">
-                      {[
-                        { v: s.totalAvailableQty, c: '#10b981', t: 'Available' },
-                        { v: s.reservedQty, c: '#7c3aed', t: 'Reserved' },
-                        {
-                          v: Math.max(0, s.totalOnHand - s.totalAvailableQty - s.reservedQty),
-                          c: '#94a3b8',
-                          t: 'Other',
-                        },
-                      ]
-                        .filter((seg) => seg.v > 0)
-                        .map((seg, i) => (
-                          <div
-                            key={i}
-                            title={`${seg.t}: ${fmtNum(seg.v)}`}
-                            className="h-full transition-all duration-700"
-                            style={{ flex: seg.v, backgroundColor: seg.c }}
-                          />
-                        ))}
-                    </div>
-                    <div className="flex justify-between mt-1.5">
-                      <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-                        {fmtNum(s.totalAvailableQty)} avail
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                        <span className="h-2 w-2 rounded-full bg-violet-600 inline-block" />
-                        {fmtNum(s.reservedQty)} reserved
-                      </span>
-                    </div>
+                      )
+                    })}
                   </div>
-                )}
-              </>
-            )}
+                  {s.totalOnHand > 0 && (
+                    <div className="mt-5 pt-4 border-t border-gray-100">
+                      <p className="text-xs font-semibold text-gray-600 mb-2">Stock Availability</p>
+                      <div className="flex h-3 rounded-full overflow-hidden gap-px">
+                        {[
+                          { v: s.totalAvailableQty, c: '#10b981', t: 'Available' },
+                          { v: s.reservedQty, c: '#7c3aed', t: 'Reserved' },
+                          {
+                            v: Math.max(0, s.totalOnHand - s.totalAvailableQty - s.reservedQty),
+                            c: '#94a3b8',
+                            t: 'Other',
+                          },
+                        ]
+                          .filter((seg) => seg.v > 0)
+                          .map((seg, i) => (
+                            <div
+                              key={i}
+                              title={`${seg.t}: ${fmtNum(seg.v)}`}
+                              className="h-full transition-all duration-700"
+                              style={{ flex: seg.v, backgroundColor: seg.c }}
+                            />
+                          ))}
+                      </div>
+                      <div className="flex justify-between mt-1.5">
+                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                          <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                          {fmtNum(s.totalAvailableQty)} avail
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                          <span className="h-2 w-2 rounded-full bg-violet-600 inline-block" />
+                          {fmtNum(s.reservedQty)} reserved
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Aging & Warehouse */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">Inventory Aging Analysis</h2>
-              <p className="text-xs text-gray-400">Items by days since last movement</p>
-            </div>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-8 w-full" />
-                ))}
-              </div>
-            ) : s.agingBreakdown.every((a) => a.value === 0) ? (
-              <div className="flex h-20 items-center justify-center text-xs text-gray-400">
-                No aging data available
-              </div>
-            ) : (
-              <HBarChart items={s.agingBreakdown} />
-            )}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" />
+            <h2 className="text-base font-semibold text-gray-900">
+              Stock Aging &amp; Distribution
+            </h2>
           </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900">Stock Value by Warehouse</h2>
-                <p className="text-xs text-gray-400">Valuation distribution across locations</p>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">Inventory Aging Analysis</h2>
+                <p className="text-xs text-gray-400">Items by days since last movement</p>
               </div>
-              <Link
-                href="/inventory/warehouses"
-                className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-              >
-                All <ChevronRight className="h-3 w-3" />
-              </Link>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : s.agingBreakdown.every((a) => a.value === 0) ? (
+                <div className="flex h-20 items-center justify-center text-xs text-gray-400">
+                  No aging data available
+                </div>
+              ) : (
+                <HBarChart items={s.agingBreakdown} />
+              )}
             </div>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <Sk key={i} className="h-8 w-full" />
-                ))}
+
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">Stock Value by Warehouse</h2>
+                  <p className="text-xs text-gray-400">Valuation distribution across locations</p>
+                </div>
+                <Link
+                  href="/inventory/warehouses"
+                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                >
+                  All <ChevronRight className="h-3 w-3" />
+                </Link>
               </div>
-            ) : s.valuationByWarehouse.length === 0 ? (
-              <div className="flex h-20 items-center justify-center text-xs text-gray-400">
-                No warehouse data
-              </div>
-            ) : (
-              <HBarChart items={s.valuationByWarehouse} />
-            )}
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <Sk key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : s.valuationByWarehouse.length === 0 ? (
+                <div className="flex h-20 items-center justify-center text-xs text-gray-400">
+                  No warehouse data
+                </div>
+              ) : (
+                <HBarChart items={s.valuationByWarehouse} />
+              )}
+            </div>
           </div>
         </div>
 
@@ -1144,7 +1028,7 @@ export default function InventoryPage() {
                   ))}
                 </div>
               ) : s.recentTransfersList.length === 0 ? (
-                <div className="py-5 text-center text-xs text-gray-400">No recent transfers</div>
+                <EmptyState message="No recent transfers" />
               ) : (
                 <div className="space-y-1">
                   {s.recentTransfersList.map((t, i) => (
@@ -1219,9 +1103,7 @@ export default function InventoryPage() {
                   ))}
                 </div>
               ) : s.purchasingActivityList.length === 0 ? (
-                <div className="py-5 text-center text-xs text-gray-400">
-                  No open purchase requests or orders
-                </div>
+                <EmptyState message="No open purchase requests or orders" />
               ) : (
                 <div className="space-y-1">
                   {s.purchasingActivityList.map((p, i) => (
@@ -1380,43 +1262,6 @@ export default function InventoryPage() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Quick Navigation */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-            Module Navigation
-          </h3>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-            {(
-              [
-                { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
-                {
-                  label: 'Goods Receiving',
-                  href: '/inventory/operations?tab=receiving',
-                  icon: Package,
-                },
-                { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
-                {
-                  label: 'Stock Adjustments',
-                  href: '/inventory/counting?tab=adjustments',
-                  icon: ClipboardCheck,
-                },
-                { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
-                { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
-                { label: 'Price Lists', href: '/inventory/price-lists', icon: Tag },
-              ] as const
-            ).map(({ label, href, icon: Icon }, i) => (
-              <Link
-                key={i}
-                href={href}
-                className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2.5 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
-              >
-                <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                {label}
-              </Link>
-            ))}
           </div>
         </div>
       </div>

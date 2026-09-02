@@ -174,70 +174,68 @@ export function CreatePoModal({
         : 'Create Purchase Request'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5 text-prominent-purple-600" />
-            <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
-          </div>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-3">
+        <div className="flex items-center gap-2">
+          <ShoppingCart className="h-5 w-5 text-prominent-purple-600" />
+          <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isBusy}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      {isPoEditMode && (po?.status === 'approved' || po?.status === 'sent') && (
+        <div className="mx-6 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+          This PO is already {po?.status}. Saving changes reverts it to Draft and voids the existing
+          approval — it will need to be approved again.
+        </div>
+      )}
+
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
+          <PurchaseOrderFormFields
+            control={control}
+            register={register}
+            errors={errors}
+            setValue={setValue}
+            getValues={getValues}
+            open={open}
+            initialItemLabels={initialItemLabels}
+            initialSupplierLabel={initialSupplierLabel}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={isBusy}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
           >
-            <X className="h-5 w-5" />
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isBusy || (isEditMode && !isDirty)}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-700 disabled:opacity-60"
+          >
+            {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {submitLabel}
           </button>
         </div>
-
-        {isPoEditMode && (po?.status === 'approved' || po?.status === 'sent') && (
-          <div className="mx-6 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            This PO is already {po?.status}. Saving changes reverts it to Draft and voids the
-            existing approval — it will need to be approved again.
-          </div>
-        )}
-
-        <form
-          onSubmit={handleSubmit(handleFormSubmit)}
-          noValidate
-          className="flex flex-1 flex-col overflow-hidden"
-        >
-          <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
-            <PurchaseOrderFormFields
-              control={control}
-              register={register}
-              errors={errors}
-              setValue={setValue}
-              getValues={getValues}
-              open={open}
-              initialItemLabels={initialItemLabels}
-              initialSupplierLabel={initialSupplierLabel}
-            />
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isBusy}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isBusy || (isEditMode && !isDirty)}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-700 disabled:opacity-60"
-            >
-              {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitLabel}
-            </button>
-          </div>
-        </form>
-      </div>
+      </form>
     </div>
   )
 }

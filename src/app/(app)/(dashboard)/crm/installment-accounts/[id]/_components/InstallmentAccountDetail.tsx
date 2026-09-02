@@ -552,6 +552,22 @@ export default function InstallmentAccountDetail({
           <Row label="Opening balance" value={peso(account.openingBalance)} />
           <Row label="Current balance" value={peso(account.currentBalance)} />
           <Row label="DP balance" value={peso(account.dpBalance)} />
+          <Row
+            label="Next due"
+            value={
+              account.nextDueDate
+                ? `${peso(account.monthlyInstallment)} due ${new Date(account.nextDueDate).toLocaleDateString()}`
+                : '—'
+            }
+          />
+          {Number(account.partialPaymentOnNextDue) > 0 && (
+            <Row
+              label="Already paid toward next due"
+              value={`${peso(account.partialPaymentOnNextDue)} — ${peso(
+                Number(account.monthlyInstallment) - Number(account.partialPaymentOnNextDue)
+              )} remaining`}
+            />
+          )}
           <Row label="Arrears" value={peso(account.arrears)} />
           <Row label="Penalty" value={peso(account.penalty)} />
           <Row label="Not yet due" value={peso(account.notYetDue)} />
@@ -571,15 +587,15 @@ export default function InstallmentAccountDetail({
       </section>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last OR</h2>
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last CR</h2>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="OR number" value={account.lastOrNumber ?? '—'} />
+          <Row label="CR number" value={account.lastOrNumber ?? '—'} />
           <Row
-            label="OR date"
+            label="CR date"
             value={account.lastOrDate ? new Date(account.lastOrDate).toLocaleDateString() : '—'}
           />
           <Row
-            label="OR amount"
+            label="CR amount"
             value={account.lastOrAmount != null ? peso(account.lastOrAmount) : '—'}
           />
         </div>
@@ -814,6 +830,8 @@ export default function InstallmentAccountDetail({
         accountId={id}
         suggestedAmount={Number(account.monthlyInstallment)}
         suggestedRebate={Number(account.ppd)}
+        monthlyInstallment={Number(account.monthlyInstallment)}
+        partialPaymentOnNextDue={Number(account.partialPaymentOnNextDue)}
       />
 
       {rejectingRequestId && (

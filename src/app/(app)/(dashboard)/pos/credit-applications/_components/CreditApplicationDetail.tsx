@@ -247,6 +247,20 @@ export default function CreditApplicationDetail({
               >
                 {CREDIT_APPLICATION_STATUS_LABELS[application.status]}
               </span>
+              {application.posTransactionId && (
+                <span
+                  title={
+                    application.posTransaction
+                      ? `Used for sale ${application.posTransaction.transactionNumber}`
+                      : undefined
+                  }
+                  className="inline-flex rounded-full bg-zinc-800 px-2.5 py-0.5 text-xs font-medium text-white"
+                >
+                  Used
+                  {application.posTransaction &&
+                    ` · Sale #${application.posTransaction.transactionNumber}`}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-zinc-500">{application.branch.name}</p>
           </div>
@@ -374,7 +388,10 @@ export default function CreditApplicationDetail({
                       <span className="font-medium text-zinc-900">{i.item?.name ?? '—'}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-zinc-500">
-                          ₱{i.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                          ₱
+                          {Number(i.requestedAmount).toLocaleString('en-PH', {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                         {application.status === 'pending_approval' && canApprove ? (
                           <div className="flex overflow-hidden rounded-lg border border-zinc-200 text-xs">
@@ -411,7 +428,10 @@ export default function CreditApplicationDetail({
             <div>
               <dt className="text-zinc-500">Requested Amount</dt>
               <dd className="mt-0.5 text-lg font-semibold text-zinc-900">
-                ₱{application.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                ₱
+                {Number(application.requestedAmount).toLocaleString('en-PH', {
+                  minimumFractionDigits: 2,
+                })}
               </dd>
             </div>
             {application.itemDescription && (
@@ -606,7 +626,9 @@ export default function CreditApplicationDetail({
           <div className="rounded-xl border border-green-200 bg-green-50 p-4">
             <p className="text-sm font-medium text-green-800">Approved</p>
             <p className="mt-1 text-sm text-green-700">
-              This application has been approved and is ready to proceed.
+              {application.posTransactionId
+                ? `This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                : 'This application has been approved and is ready to proceed.'}
             </p>
           </div>
         )}
@@ -615,8 +637,9 @@ export default function CreditApplicationDetail({
           <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
             <p className="text-sm font-medium text-orange-800">Partially Approved</p>
             <p className="mt-1 text-sm text-orange-700">
-              Some items were approved and some were declined — see each item&apos;s status above.
-              Checkout will only accept the approved items.
+              {application.posTransactionId
+                ? `Some items were approved and some were declined. This application has already been used for POS sale #${application.posTransaction?.transactionNumber ?? application.posTransactionId}.`
+                : "Some items were approved and some were declined — see each item's status above. Checkout will only accept the approved items."}
             </p>
           </div>
         )}

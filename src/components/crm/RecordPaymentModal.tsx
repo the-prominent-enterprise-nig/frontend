@@ -12,6 +12,8 @@ export default function RecordPaymentModal({
   accountId,
   suggestedAmount,
   suggestedRebate,
+  monthlyInstallment,
+  partialPaymentOnNextDue,
 }: {
   open: boolean
   onClose: () => void
@@ -20,6 +22,12 @@ export default function RecordPaymentModal({
   suggestedAmount: number
   /** This account's ppd (Prompt Payment Discount) — the cap for the rebate field below. */
   suggestedRebate?: number
+  /** Drives the "this covers N month(s)" preview below — no term picker, a
+   * lump sum just settles as many months as it covers, in order. */
+  monthlyInstallment: number
+  /** Already paid toward the next not-yet-fully-covered due, carried over
+   * from a prior under-one-month payment. */
+  partialPaymentOnNextDue: number
 }) {
   const [form, setForm] = useState<RecordPaymentInput>({
     // Nets out the suggested rebate so accepting both defaults as-is
@@ -34,7 +42,7 @@ export default function RecordPaymentModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
-  const [result, setResult] = useState<boolean | null>(null)
+  const [result, setResult] = useState<{ onTime: boolean; monthsCovered: number } | null>(null)
 
   if (!open) return null
 
@@ -42,6 +50,18 @@ export default function RecordPaymentModal({
     setForm((f) => ({ ...f, [key]: value }))
 
   const rebateExceedsCap = (form.rebateAmount ?? 0) > (suggestedRebate ?? 0) + 0.01
+
+  // Live preview — no term picker, this amount (plus whatever's already
+  // carried forward toward the next due) just settles as many whole months
+  // as it covers, mirroring recordPayment()'s own floor-division.
+  const availableForCoverage =
+    partialPaymentOnNextDue + (form.amount || 0) + (form.rebateAmount ?? 0)
+  const monthsCoveredPreview =
+    monthlyInstallment > 0 ? Math.floor(availableForCoverage / monthlyInstallment) : 0
+  const previewRemainder = Math.max(
+    Math.round((availableForCoverage - monthsCoveredPreview * monthlyInstallment) * 100) / 100,
+    0
+  )
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -64,7 +84,7 @@ export default function RecordPaymentModal({
     })
     setSubmitting(false)
     if (res.success && res.data) {
-      setResult(res.data.pointEarned)
+      setResult({ onTime: res.data.pointEarned, monthsCovered: res.data.monthsCovered })
       onRecorded?.()
     } else {
       setServerError(res.error ?? 'Failed to record payment')
@@ -92,20 +112,27 @@ export default function RecordPaymentModal({
 
         {result !== null ? (
           <div className="flex flex-col items-center gap-3 py-4 text-center">
-            {result ? (
+            {result.onTime ? (
               <>
                 <CheckCircle2 className="h-10 w-10 text-emerald-500" />
                 <p className="text-sm font-medium text-gray-900">
-                  Payment recorded — on time, +1 point earned.
+                  Payment recorded — on time, +{result.monthsCovered} point
+                  {result.monthsCovered !== 1 ? 's' : ''} earned.
                 </p>
               </>
             ) : (
               <>
                 <XCircle className="h-10 w-10 text-amber-500" />
                 <p className="text-sm font-medium text-gray-900">
-                  Payment recorded — paid after the due date, no point earned.
+                  Payment recorded — paid after the due date, no points earned.
                 </p>
               </>
+            )}
+            {result.monthsCovered > 0 && (
+              <p className="text-[12px] text-gray-500">
+                Covered {result.monthsCovered} month{result.monthsCovered !== 1 ? 's' : ''} on this
+                account.
+              </p>
             )}
             <button
               onClick={handleClose}
@@ -133,6 +160,16 @@ export default function RecordPaymentModal({
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
               {errors.amount && <p className="mt-1 text-[12px] text-red-600">{errors.amount}</p>}
+              {form.amount > 0 && (
+                <p className="mt-1 text-[12px] text-gray-500">
+                  {monthsCoveredPreview > 0
+                    ? `Covers ${monthsCoveredPreview} month${monthsCoveredPreview !== 1 ? 's' : ''}` +
+                      (previewRemainder > 0
+                        ? ` — ₱${previewRemainder.toLocaleString()} left toward the following due.`
+                        : '.')
+                    : `Partial — ₱${availableForCoverage.toLocaleString()} of ₱${monthlyInstallment.toLocaleString()} toward this due.`}
+                </p>
+              )}
             </div>
 
             <div>
@@ -177,13 +214,13 @@ export default function RecordPaymentModal({
                 htmlFor="payment-orNumber"
                 className="block text-[13px] font-medium text-gray-700"
               >
-                OR number
+                CR number
               </label>
               <input
                 id="payment-orNumber"
                 value={form.orNumber ?? ''}
                 onChange={(e) => setField('orNumber', e.target.value)}
-                placeholder="e.g. OR-1234"
+                placeholder="e.g. CR#092398"
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
             </div>

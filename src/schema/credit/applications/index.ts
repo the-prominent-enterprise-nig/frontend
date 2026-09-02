@@ -281,6 +281,10 @@ export interface CreditApplication {
   cancelledAt?: string | null
   cancelledById?: string | null
   cancelReason?: string | null
+  // Scenario 17 Part 6 — set once an approved application is consumed by a
+  // POS installment checkout; null while it's still available for one.
+  posTransactionId?: string | null
+  posTransaction?: { id: string; transactionNumber: string } | null
   createdAt: string
   updatedAt: string
 }

@@ -25,6 +25,13 @@ function formatMoney(v: number | undefined | null) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v)
 }
 
+// "CashReceiptJournal" -> "Cash Receipt" — every row on this page is already
+// a journal entry, so the repeated "Journal" suffix is pure noise.
+function formatJournalType(t: string | undefined | null) {
+  if (!t) return '—'
+  return t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s*Journal$/, '')
+}
+
 export default function JournalEntriesList({ session }: { session: SessionUser | null }) {
   const router = useRouter()
   const [items, setItems] = useState<JournalEntry[]>([])
@@ -144,28 +151,27 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
                 <tr>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Reference</th>
-                  <th className="px-4 py-3 text-left">Source</th>
-                  <th className="px-4 py-3 text-left">Branch</th>
-                  <th className="px-4 py-3 text-left">Description</th>
-                  <th className="px-4 py-3 text-left">Type</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Debit</th>
-                  <th className="px-4 py-3 text-right">Credit</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-3 py-2.5 text-left">Date</th>
+                  <th className="px-3 py-2.5 text-left">Reference</th>
+                  <th className="px-3 py-2.5 text-left">Source</th>
+                  <th className="px-3 py-2.5 text-left">Branch</th>
+                  <th className="px-3 py-2.5 text-left">Description</th>
+                  <th className="px-3 py-2.5 text-left">Type</th>
+                  <th className="px-3 py-2.5 text-left">Status</th>
+                  <th className="px-3 py-2.5 text-right">Amount</th>
+                  <th className="px-3 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                       Loading...
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                       No journal entries found.
                     </td>
                   </tr>
@@ -179,55 +185,54 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                         onClick={() => router.push(`/accounting/journal-entries/${entry.id}`)}
                         className="cursor-pointer hover:bg-gray-50"
                       >
-                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
                           {new Date(entry.date).toLocaleDateString('en-PH', {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric',
                           })}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-600">
+                        <td className="px-3 py-2.5 font-mono text-xs text-gray-600">
                           {(entry as any).reference || entry.id.slice(0, 8)}
                         </td>
-                        <td className="px-4 py-3 text-xs">
+                        <td className="px-3 py-2.5 text-xs">
                           {entry.sourceModule ? (
                             <div>
                               <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-medium">
                                 {entry.sourceModule}
                               </span>
-                              {entry.sourceDocumentNo && (
-                                <div className="text-gray-500 font-mono mt-0.5">
-                                  {entry.sourceDocumentNo}
-                                </div>
-                              )}
+                              {entry.sourceDocumentNo &&
+                                entry.sourceDocumentNo !==
+                                  ((entry as any).reference || entry.id.slice(0, 8)) && (
+                                  <div className="text-gray-500 font-mono mt-0.5">
+                                    {entry.sourceDocumentNo}
+                                  </div>
+                                )}
                             </div>
                           ) : (
                             <span className="text-gray-400">MANUAL</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-600">
+                        <td className="px-3 py-2.5 text-xs text-gray-600">
                           {entry.branchName ?? <span className="text-gray-400">Tenant-wide</span>}
                         </td>
-                        <td className="px-4 py-3 text-gray-800 max-w-xs truncate">
+                        <td className="px-3 py-2.5 text-gray-800 max-w-55 truncate">
                           {entry.description || '—'}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          {entry.journalType || '—'}
+                        <td className="px-3 py-2.5 text-gray-600 text-xs whitespace-nowrap">
+                          {formatJournalType(entry.journalType)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5">
                           <span
                             className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(entry.status)}`}
                           >
                             {entry.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900">
-                          {formatMoney(entry.totalDebit)}
+                        <td className="px-3 py-2.5 text-right font-medium tabular-nums text-gray-900">
+                          {formatMoney(entry.totalDebit || entry.totalCredit)}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900">
-                          {formatMoney(entry.totalCredit)}
-                        </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             {canPost && isDraft && (
                               <button

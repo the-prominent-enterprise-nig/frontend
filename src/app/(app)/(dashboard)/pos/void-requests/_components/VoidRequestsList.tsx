@@ -282,7 +282,7 @@ export default function VoidRequestsList({ isManager }: Props) {
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="scroll-fade-x overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
@@ -369,7 +369,7 @@ export default function VoidRequestsList({ isManager }: Props) {
 
       {!showHistory &&
         (loading ? (
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="scroll-fade-x overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
@@ -408,7 +408,7 @@ export default function VoidRequestsList({ isManager }: Props) {
             <p className="mt-1 text-sm text-gray-400">{emptySubLabel}</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="scroll-fade-x overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">

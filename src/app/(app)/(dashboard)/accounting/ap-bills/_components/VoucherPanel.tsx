@@ -18,12 +18,14 @@ const STATUS_LABEL: Record<string, string> = {
   pending_onsite_approval: 'Pending Onsite Approval',
   approved: 'Approved',
   rejected: 'Rejected',
+  voided: 'Voided',
 }
 const STATUS_COLOR: Record<string, string> = {
   pending_online_approval: 'bg-amber-50 text-amber-700',
   pending_onsite_approval: 'bg-amber-50 text-amber-700',
   approved: 'bg-emerald-50 text-emerald-700',
   rejected: 'bg-red-50 text-red-700',
+  voided: 'bg-gray-100 text-gray-500',
 }
 
 export default function VoucherPanel({
@@ -35,7 +37,6 @@ export default function VoucherPanel({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [voucherNumber, setVoucherNumber] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [showReject, setShowReject] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -63,9 +64,11 @@ export default function VoucherPanel({
     onSaved()
   }
 
-  const raiseVoucher = (e: React.FormEvent) => {
-    e.preventDefault()
-    run(() => APBills.createVoucher(bill.id, voucherNumber))
+  const raiseVoucher = () => run(() => APBills.createVoucher(bill.id))
+  const voidVoucher = () => {
+    if (!confirm('Void this voucher? It goes back to unraised — you can raise a fresh one after.'))
+      return
+    run(() => APBills.voidVoucher(bill.id))
   }
   const approveOnline = () => run(() => APBills.approveVoucherOnline(bill.id))
   const approveOnsite = () => run(() => APBills.approveVoucherOnsite(bill.id))
@@ -114,28 +117,27 @@ export default function VoucherPanel({
           </button>
         </div>
         <div className="p-5 space-y-4">
-          {!bill.voucherNumber ? (
-            <form onSubmit={raiseVoucher} className="space-y-3">
-              <label className="block">
-                <span className="block text-xs font-medium text-gray-600 mb-1">
-                  Voucher Number *
-                </span>
-                <input
-                  required
-                  value={voucherNumber}
-                  onChange={(e) => setVoucherNumber(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                  placeholder="e.g. V-2026-0001"
-                />
-              </label>
+          {!status || status === 'voided' ? (
+            <div className="space-y-2">
+              {status === 'voided' && bill.voucherNumber && (
+                <p className="text-xs text-gray-400">
+                  Previous voucher{' '}
+                  <span className="font-mono text-gray-500">{bill.voucherNumber}</span> was voided —
+                  that number is retired and won&apos;t be reissued.
+                </p>
+              )}
+              <p className="text-xs text-gray-500">
+                Raising assigns a voucher number automatically and starts online approval.
+              </p>
               <button
-                type="submit"
+                type="button"
+                onClick={raiseVoucher}
                 disabled={saving}
                 className="w-full px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
               >
                 {saving ? 'Raising...' : 'Raise Voucher'}
               </button>
-            </form>
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -152,38 +154,56 @@ export default function VoucherPanel({
                 </p>
               )}
               {status === 'pending_online_approval' && !showReject && (
-                <div className="flex gap-2">
+                <>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={approveOnline}
+                      disabled={saving}
+                      className="flex-1 px-4 py-2 text-sm font-semibold bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                    >
+                      Approve Online
+                    </button>
+                    <button
+                      onClick={() => setShowReject(true)}
+                      className="px-4 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg"
+                    >
+                      Reject
+                    </button>
+                  </div>
                   <button
-                    onClick={approveOnline}
+                    onClick={voidVoucher}
                     disabled={saving}
-                    className="flex-1 px-4 py-2 text-sm font-semibold bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                    className="w-full px-4 py-2 text-xs text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
                   >
-                    Approve Online
+                    Void — raise a fresh voucher instead
                   </button>
-                  <button
-                    onClick={() => setShowReject(true)}
-                    className="px-4 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg"
-                  >
-                    Reject
-                  </button>
-                </div>
+                </>
               )}
               {status === 'pending_onsite_approval' && !showReject && (
-                <div className="flex gap-2">
+                <>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={approveOnsite}
+                      disabled={saving}
+                      className="flex-1 px-4 py-2 text-sm font-semibold bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                    >
+                      Approve Onsite (Final)
+                    </button>
+                    <button
+                      onClick={() => setShowReject(true)}
+                      className="px-4 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg"
+                    >
+                      Reject
+                    </button>
+                  </div>
                   <button
-                    onClick={approveOnsite}
+                    onClick={voidVoucher}
                     disabled={saving}
-                    className="flex-1 px-4 py-2 text-sm font-semibold bg-emerald-700 text-white rounded-lg disabled:opacity-50"
+                    className="w-full px-4 py-2 text-xs text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50"
                   >
-                    Approve Onsite (Final)
+                    Void — raise a fresh voucher instead
                   </button>
-                  <button
-                    onClick={() => setShowReject(true)}
-                    className="px-4 py-2 text-sm text-red-700 hover:bg-red-50 rounded-lg"
-                  >
-                    Reject
-                  </button>
-                </div>
+                </>
               )}
               {showReject && (
                 <form onSubmit={reject} className="space-y-2">

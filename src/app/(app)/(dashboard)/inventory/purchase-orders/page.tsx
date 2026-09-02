@@ -4,6 +4,7 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { ProcurementHub } from './_components/ProcurementHub'
 
 export const metadata = {
@@ -57,6 +58,12 @@ export default async function PurchaseOrdersPage() {
   // Owner/Accountant (Scenario 05 followup), same gate as the standalone
   // Goods Receiving flow.
   const canViewCost = can(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  // Scenario 41 Part 3 — gates the "View Invoice" link on a PO row so a
+  // role without AP Invoices access doesn't get a link into a page it'll
+  // then be denied on.
+  const canViewApBill =
+    can(session, ACCOUNTING_PERMISSIONS.AP_BILLS_READ) ||
+    can(session, ACCOUNTING_PERMISSIONS.WILDCARD)
 
   return (
     <Suspense fallback={<div className="min-h-screen bg-zinc-50" />}>
@@ -72,6 +79,7 @@ export default async function PurchaseOrdersPage() {
         canEdit={canEdit}
         canReceive={canReceive}
         canViewCost={canViewCost}
+        canViewApBill={canViewApBill}
         currentUserBranchId={session.branchId}
       />
     </Suspense>
