@@ -240,6 +240,16 @@ export interface PosTransaction {
   createdAt: string
   journalEntryId?: string | null
   arInvoiceId?: string | null
+  /** Collection receipt reference for deliveryFee specifically — separate
+   * from a payment's own CR/referenceNumber since the delivery fee is a
+   * transaction-level charge, not tied to any one payment. */
+  deliveryFeeReferenceNumber?: string | null
+  /** Sales Invoice number — optional, free-text, once per whole transaction
+   * (not per payment/tender like the per-payment CR/referenceNumber). */
+  salesInvoiceNumber?: string | null
+  /** Delivery Receipt number — same once-per-transaction convention as
+   * salesInvoiceNumber above. */
+  deliveryReceiptNumber?: string | null
   sellingAgent?: { id: string; name: string; email: string } | null
   lines?: PosTransactionLine[]
   payments?: PosPayment[]
@@ -253,6 +263,24 @@ export interface PosTransaction {
    * schedules via addPayment's installmentScheduleId. */
   installmentSchedules?: { id: string; downPayment: number }[]
 }
+
+/** An installment-due payment collected later via POS Collections
+ * ("Pay Selected Dues") — a CollectionReceipt, not a PosTransaction, so it
+ * has no line items/transactionNumber of its own. Merged with sale
+ * transactions by getCustomerHistoryWithPayments() so it shows up in the
+ * customer's Transaction History. */
+export interface CustomerHistoryPayment {
+  kind: 'PAYMENT'
+  id: string
+  paymentDate: string
+  amount: number
+  reference: string | null
+  method: string | null
+  invoiceNumbers: string[]
+  cancelledAt: string | null
+}
+
+export type CustomerHistoryItem = ({ kind: 'SALE' } & PosTransaction) | CustomerHistoryPayment
 
 // Scenario 23 Gap 1 — every invoice a transaction produced (the charge
 // invoice, and/or each installment schedule's per-due-date invoices),
@@ -285,7 +313,11 @@ export interface CreateTransactionLineInput {
   notes?: string
   serialNumberId?: string
   secondarySerialNumberId?: string
-  /** PriceListItem this line resolved to under the sale's selected Price
+  /** This line's own Price Use (WIP/CR-BR/SSC/PROMO/etc.) — lets one cart
+   * mix items priced under different Price Use types. Falls back to the
+   * transaction-level priceUseTypeId when omitted. */
+  priceUseTypeId?: string
+  /** PriceListItem this line resolved to under this line's own Price
    * Use — omit if unitPrice was set via a manual price override instead. */
   priceListItemId?: string
   /** True when unitPrice was manually set by a PIN-approved manager
@@ -310,9 +342,9 @@ export interface CreateTransactionLineInput {
 
 export interface CreateTransactionInput {
   sessionId: string
-  /** Price Use category selected once for this whole sale (WIP/CR-BR/SSC/
-   * PROMO/etc.) — every line resolves its price against this unless
-   * individually overridden. */
+  /** Default Price Use (WIP/CR-BR/SSC/PROMO/etc.) for lines that omit their
+   * own priceUseTypeId — each line normally sets its own now, so checkout
+   * doesn't send this; kept as a fallback for older callers. */
   priceUseTypeId?: string
   transactionType?: PosTransactionType
   invoiceType?: PosInvoiceType
@@ -332,6 +364,9 @@ export interface CreateTransactionInput {
   tpfReferenceNumber?: string
   /** The amount this financier approved, for audit/reconciliation only. */
   tpfApprovedAmount?: number
+  /** Register account the TPF lines' down payment debits — the financed
+   * balance debits the financier's receivable instead. Defaults to cash. */
+  tpfDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -343,6 +378,16 @@ export interface CreateTransactionInput {
    * counts toward an installment line's financed amount or its 10% down
    * payment floor. Defaults to 0. */
   deliveryFee?: number
+  /** Collection receipt reference for deliveryFee specifically — separate
+   * from a payment's own CR/referenceNumber since the delivery fee is a
+   * transaction-level charge, not tied to any one payment. */
+  deliveryFeeReferenceNumber?: string
+  /** Sales Invoice number — optional, free-text, once per whole transaction
+   * (not per payment/tender like the per-payment CR/referenceNumber). */
+  salesInvoiceNumber?: string
+  /** Delivery Receipt number — same once-per-transaction convention as
+   * salesInvoiceNumber above. */
+  deliveryReceiptNumber?: string
   isTaxExempt?: boolean
   taxExemptionRef?: string
   /** Set when a manager has PIN-approved an override (receiptless return,

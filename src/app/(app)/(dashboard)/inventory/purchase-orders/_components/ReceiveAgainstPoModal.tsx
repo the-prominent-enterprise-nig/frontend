@@ -79,7 +79,11 @@ const ReceivePoFormSchema = z.object({
   supplierInvoiceNumber: z
     .string()
     .min(1, 'Supplier invoice number is required for new stock receipts'),
-  withholding: z.enum(['none', 'pct_1']).optional(),
+  // Tax as printed on the supplier's invoice, typed off the SI rather than
+  // picked from a rule — the BIR cares about the supplier's numbers, not
+  // ours. Blank = let the server derive it at the flat rate.
+  vatAmount: z.number().min(0).optional(),
+  withheldAmount: z.number().min(0).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
 
@@ -89,6 +93,10 @@ type ReceivePoFormValues = z.infer<typeof ReceivePoFormSchema>
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+const round2 = (n: number) => Math.round(n * 100) / 100
+const fmtPeso = (n: number) =>
+  n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+
 const cellInputClass =
   'w-full rounded border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 
@@ -156,13 +164,29 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
-      withholding: 'none',
+      vatAmount: undefined,
+      withheldAmount: undefined,
       lines: defaultLines(),
     },
   })
 
   const { fields } = useFieldArray({ control, name: 'lines' })
   const watchedLines = watch('lines')
+
+  // Live preview of what the supplier's invoice should total. VAT is never
+  // assumed — it's whatever was typed off the SI, zero until then — and it
+  // comes out of the entered unit costs rather than on top of them, so the
+  // invoice total is what was typed either way.
+  const vatAmountValue = watch('vatAmount')
+  const withheldAmountValue = watch('withheldAmount')
+  const grossSelected = (watchedLines ?? []).reduce(
+    (sum, l, idx) =>
+      selectedLines[idx] === false ? sum : sum + (l?.quantityReceived ?? 0) * (l?.unitCost ?? 0),
+    0
+  )
+  const effectiveVat = vatAmountValue ?? 0
+  const netTotal = round2(grossSelected - effectiveVat)
+  const invoiceTotal = grossSelected
 
   useEffect(() => {
     if (!po) return
@@ -174,7 +198,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
-      withholding: 'none',
+      vatAmount: undefined,
+      withheldAmount: undefined,
       lines: defaultLines(),
     })
     setExpandedSerialRows(new Set(po.lines.flatMap((l, i) => (l.item?.isSerialTracked ? [i] : []))))
@@ -216,7 +241,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       deliveryReceiptNumber: data.deliveryReceiptNumber || undefined,
       supplierInvoiceNumber: data.supplierInvoiceNumber || undefined,
       supplierId: po.supplier.id,
-      withholding: data.withholding,
+      // Unit costs are what the supplier charges per unit, i.e. VAT-inclusive,
+      // so the amount below is carved out of them rather than added on top.
+      // Always explicit — including 0 — so the server never falls back to
+      // deriving VAT nobody entered.
+      vatTreatment: 'inclusive' as const,
+      vatAmount: data.vatAmount ?? 0,
+      withheldAmount: data.withheldAmount,
       lines: data.lines
         .filter((_, idx) => selectedLines[idx])
         .map((l) => ({
@@ -403,24 +434,108 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
             </div>
           </div>
 
-          {/* Withholding */}
-          <div className="sm:w-1/2">
-            <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
-            <Controller
-              name="withholding"
-              control={control}
-              render={({ field }) => (
-                <select
-                  {...field}
-                  value={field.value ?? 'none'}
-                  className={`${fieldClass} bg-white`}
-                >
-                  <option value="none">None</option>
-                  <option value="pct_1">1% Withholding</option>
-                </select>
-              )}
-            />
+          {/* Tax off the supplier's invoice. Two different taxes moving in
+              opposite directions: VAT is charged BY the supplier and grows
+              what the invoice totals; withholding is held back FROM them
+              and remitted to the BIR, shrinking only what's paid out. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Input VAT amount
+                <span className="ml-1 text-xs font-normal text-zinc-400">(₱, from the SI)</span>
+              </label>
+              <Controller
+                name="vatAmount"
+                control={control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+                      ₱
+                    </span>
+                    <input
+                      value={field.value == null || isNaN(field.value) ? '' : field.value}
+                      onChange={(e) =>
+                        field.onChange(
+                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
+                        )
+                      }
+                      onBlur={field.onBlur}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-7 text-right`}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Withholding tax amount
+                <span className="ml-1 text-xs font-normal text-zinc-400">(₱, BIR 2307)</span>
+              </label>
+              <Controller
+                name="withheldAmount"
+                control={control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+                      ₱
+                    </span>
+                    <input
+                      value={field.value == null || isNaN(field.value) ? '' : field.value}
+                      onChange={(e) =>
+                        field.onChange(
+                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
+                        )
+                      }
+                      onBlur={field.onBlur}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-7 text-right`}
+                    />
+                  </div>
+                )}
+              />
+            </div>
           </div>
+
+          {/* What the two numbers above actually add up to, so it can be
+              ticked against the supplier's invoice before confirming. */}
+          {canViewCost && grossSelected > 0 && (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-zinc-500">Stock value</dt>
+                  <dd className="font-medium tabular-nums text-zinc-800">{fmtPeso(netTotal)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-zinc-500">Input VAT</dt>
+                  <dd className="font-medium tabular-nums text-zinc-800">
+                    {fmtPeso(effectiveVat)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
+                  <dt className="font-medium text-zinc-700">Invoice total</dt>
+                  <dd className="font-semibold tabular-nums text-zinc-900">
+                    {fmtPeso(invoiceTotal)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
+                  <dt className="font-medium text-zinc-700">
+                    Payable to supplier
+                    {withheldAmountValue ? ' (net of withholding)' : ''}
+                  </dt>
+                  <dd className="font-semibold tabular-nums text-zinc-900">
+                    {fmtPeso(invoiceTotal - (withheldAmountValue ?? 0))}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          )}
 
           {/* Lines table */}
           <div>

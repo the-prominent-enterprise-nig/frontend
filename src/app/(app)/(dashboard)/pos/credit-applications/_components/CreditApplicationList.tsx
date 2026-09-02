@@ -161,14 +161,31 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                         {app.coMaker?.name ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-zinc-900">
-                        ₱{app.requestedAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                        ₱
+                        {Number(app.requestedAmount).toLocaleString('en-PH', {
+                          minimumFractionDigits: 2,
+                        })}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${CREDIT_APPLICATION_STATUS_COLORS[app.status]}`}
-                        >
-                          {CREDIT_APPLICATION_STATUS_LABELS[app.status]}
-                        </span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${CREDIT_APPLICATION_STATUS_COLORS[app.status]}`}
+                          >
+                            {CREDIT_APPLICATION_STATUS_LABELS[app.status]}
+                          </span>
+                          {app.posTransactionId && (
+                            <span
+                              title={
+                                app.posTransaction
+                                  ? `Used for sale ${app.posTransaction.transactionNumber}`
+                                  : 'Already used for a sale'
+                              }
+                              className="inline-flex rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-white"
+                            >
+                              Used
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
                         {app.branch.name}

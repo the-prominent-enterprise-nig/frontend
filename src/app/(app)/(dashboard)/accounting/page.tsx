@@ -7,7 +7,6 @@ import {
   RefreshCw,
   ArrowUpRight,
   FileText,
-  Receipt,
   BarChart2,
   Activity,
   ChevronRight,
@@ -560,7 +559,6 @@ export default function AccountingPage() {
                     href: '/accounting/fiscal-periods',
                     icon: CalendarDays,
                   },
-                  { label: 'Tax', href: '/accounting/tax', icon: Receipt },
                   { label: 'Recurring', href: '/accounting/recurring-entries', icon: Repeat },
                   { label: 'Reports', href: '/accounting/reports', icon: Clock },
                   {

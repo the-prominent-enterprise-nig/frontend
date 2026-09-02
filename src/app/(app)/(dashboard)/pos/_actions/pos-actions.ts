@@ -20,6 +20,7 @@ import type {
   SessionReconciliation,
   SalesSummary,
   PosTransaction,
+  CustomerHistoryItem,
   CreateTransactionInput,
   AddPaymentInput,
   PromoCode,
@@ -652,25 +653,6 @@ export async function itemLookup(
     return { success: true, data: items }
   } catch {
     return { success: false, error: 'Failed to look up items' }
-  }
-}
-
-// ─── Accounting Tax Rate ──────────────────────────────────────────────────────
-
-export async function getDefaultAccountingTaxRate(): Promise<{
-  rate: number
-  name: string
-} | null> {
-  try {
-    const res =
-      await api.get<
-        Array<{ id: string; name: string; rate: number; isDefault: boolean; isActive: boolean }>
-      >('/accounting/tax-rates')
-    const rates = res.data ?? []
-    const def = rates.find((r) => r.isDefault && r.isActive)
-    return def ? { rate: def.rate, name: def.name } : null
-  } catch {
-    return null
   }
 }
 
@@ -1363,6 +1345,22 @@ export async function getCustomerTransactions(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch customer transactions' }
+  }
+}
+
+export async function getCustomerHistoryWithPayments(
+  customerId: string
+): Promise<ApiResponse<CustomerHistoryItem[]>> {
+  try {
+    const result = await api.get<CustomerHistoryItem[]>(
+      `/pos/transactions/customer/${customerId}/history-with-payments`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch customer history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch customer history' }
   }
 }
 

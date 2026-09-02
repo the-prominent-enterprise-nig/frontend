@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickFromCustomSelect } from './utils'
 
 // Scenario 33 (Supplier/Vendor merge) Part 3 — Business Expenses previously
 // had a "Vendor" selector (BusinessExpense.vendorId); repointed to Supplier.
@@ -18,9 +18,20 @@ import { gotoReady } from './utils'
 //
 // Scenario 40 Part 6 (2026-08-31) — Category is now a per-line field inside
 // an "Add line" table (aria-label="Category"), and Amount replaced the old
-// header-level "Subtotal *" (aria-label="Amount"). The Supplier select now
-// carries aria-label="Supplier" too, so both are targeted directly instead
-// of positionally.
+// header-level "Subtotal *" (aria-label="Amount").
+//
+// Category became a searchable CategorySelect combobox (not a native
+// <select>) once the dropdown grew to list every seeded expense account —
+// it's opened via its aria-label and its first real option clicked directly,
+// since there's nothing to assert about which category ends up chosen here.
+//
+// Supplier became a custom Select (src/components/ui/Select.tsx) and then,
+// in Scenario 45, a searchable CategorySelect — a plain button with a
+// filterable popup rather than a combobox — so it's opened by its
+// aria-label and its options read out of that popup's scroll list.
+//
+// Scenario 45 (2026-09-02) — Payee is a dropdown rather than a row of
+// tiles, so picking "Supplier" goes through pickFromCustomSelect.
 test.describe('Accounting — Expenses supplier link', () => {
   test('creates an expense with a linked supplier and shows it as the payee', async ({ page }) => {
     await gotoReady(page, '/accounting/expenses')
@@ -36,26 +47,23 @@ test.describe('Accounting — Expenses supplier link', () => {
       timeout: 10_000,
     })
 
-    await page.getByRole('button', { name: 'Supplier', exact: true }).click()
+    await pickFromCustomSelect(page, '— Select —', 'Supplier')
 
-    const categorySelect = page.getByLabel('Category', { exact: true })
-    await categorySelect
-      .locator('option')
-      .nth(1)
-      .waitFor({ state: 'attached', timeout: 5_000 })
-      .catch(() => {})
-    await categorySelect.selectOption({ index: 1 })
+    await page.getByLabel('Category', { exact: true }).click()
+    const categoryDropdown = page.locator('div.absolute.z-50')
+    await expect(categoryDropdown).toBeVisible({ timeout: 5_000 })
+    // Index 0 is the "— Select —" clear button; index 1 is the first real category.
+    await categoryDropdown.locator('button').nth(1).click()
 
-    const supplierSelect = page.getByLabel('Supplier', { exact: true })
-    await supplierSelect
-      .locator('option')
-      .nth(1)
-      .waitFor({ state: 'attached', timeout: 5_000 })
-      .catch(() => {})
-    const supplierOptionCount = await supplierSelect.locator('option').count()
+    // Scenario 45 — Supplier is a searchable CategorySelect now, not a plain
+    // combobox, so its options are rows in that popup's own scroll list.
+    // Index 0 is the "— None —" clear row; index 1 is the first real supplier.
+    await page.getByLabel('Select supplier', { exact: true }).click()
+    const supplierOptions = page.locator('.max-h-60 button')
+    const supplierOptionCount = await supplierOptions.count()
     test.skip(supplierOptionCount <= 1, 'No suppliers seeded — nothing to link')
-    await supplierSelect.selectOption({ index: 1 })
-    const supplierLabel = (await supplierSelect.locator('option').nth(1).textContent())?.trim()
+    const supplierLabel = (await supplierOptions.nth(1).textContent())?.trim()
+    await supplierOptions.nth(1).click()
 
     await page.getByLabel('Amount', { exact: true }).fill('250')
 

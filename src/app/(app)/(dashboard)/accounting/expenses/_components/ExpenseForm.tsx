@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -15,7 +15,8 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
-import EmployeePicker from '@/src/components/accounting/EmployeePicker'
+import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import { Select } from '@/src/components/ui/Select'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
 
@@ -33,25 +34,93 @@ const LIQUIDATABLE_OPTIONS: { value: LiquidatableType; label: string }[] = [
   { value: 'CASH_LOAN_OTHERS', label: 'Cash Loan – Others' },
 ]
 
+// Scenario 45 — Utilities and Salaries & Wages are Payee choices of their
+// own rather than two rows among 160 in the Category search. Both are still
+// payeeType SUPPLIER underneath (same shape the backend and submit()
+// already expect); picking one only pre-fills the line's category, which
+// stays editable like any other. Purely a frontend affordance, no API change.
+type QuickCategory = '' | 'UTILITIES' | 'SALARIES_WAGES'
+const UTILITIES_ACCOUNT_NUMBER = '6-02-020'
+const SALARIES_WAGES_ACCOUNT_NUMBER = '6-01-010'
+const PAYEE_OPTIONS: {
+  value: string
+  label: string
+  payeeType: PayeeType
+  quick: QuickCategory
+}[] = [
+  { value: 'CUSTOMER', label: 'Customer', payeeType: 'CUSTOMER', quick: '' },
+  { value: 'SUPPLIER', label: 'Supplier', payeeType: 'SUPPLIER', quick: '' },
+  { value: 'UTILITIES', label: 'Utilities', payeeType: 'SUPPLIER', quick: 'UTILITIES' },
+  {
+    value: 'SALARIES_WAGES',
+    label: 'Salaries & Wages',
+    payeeType: 'SUPPLIER',
+    quick: 'SALARIES_WAGES',
+  },
+  { value: 'OTHER', label: 'Special Account', payeeType: 'OTHER', quick: '' },
+]
+
 interface LineState {
   categoryAccountId: string
-  employeeId: string
-  employeeLabel: string
   payee: string
   description: string
   amount: string
-  taxCode: string
+  vatAmount: string
+  /** Set once someone types their own VAT figure, which pins it: after that
+   * changing the line amount no longer re-derives VAT at the flat rate. */
+  vatEdited: boolean
 }
 function emptyLine(): LineState {
   return {
     categoryAccountId: '',
-    employeeId: '',
-    employeeLabel: '',
     payee: '',
     description: '',
     amount: '',
-    taxCode: '',
+    vatAmount: '',
+    vatEdited: false,
   }
+}
+
+/** Mirrors the backend's FLAT_VAT_RATE_PERCENT — the single rate left after
+ * the configurable TaxRate table was removed. */
+const VAT_RATE_PERCENT = 12
+
+/** VAT a line amount attracts at the flat rate. The backend adds a line's
+ * taxAmount on top of its amount (totalAmount = subtotal + tax) and debits it
+ * to Input VAT, so what's typed in Amount is the VAT-exclusive figure. */
+function autoVat(amount: string): string {
+  const n = Number(amount)
+  if (!n || !Number.isFinite(n)) return ''
+  return ((n * VAT_RATE_PERCENT) / 100).toFixed(2)
+}
+
+// Accounts come back flat (with a parentId) ordered by account number — turn
+// that into the depth-ordered list CategorySelect needs so headers like
+// "Less: COST OF SALES" stay directly above their child accounts instead of
+// being resorted alphabetically.
+function accountsToCategoryOptions(accounts: Account[]): CategorySelectOption[] {
+  const idsInList = new Set(accounts.map((a) => a.id))
+  const childrenByParent = new Map<string, Account[]>()
+  const roots: Account[] = []
+  for (const a of accounts) {
+    if (a.parentId && idsInList.has(a.parentId)) {
+      const siblings = childrenByParent.get(a.parentId) ?? []
+      siblings.push(a)
+      childrenByParent.set(a.parentId, siblings)
+    } else {
+      roots.push(a)
+    }
+  }
+  const options: CategorySelectOption[] = []
+  const walk = (list: Account[], depth: number) => {
+    for (const a of list) {
+      options.push({ id: a.id, name: a.name, depth })
+      const children = childrenByParent.get(a.id)
+      if (children) walk(children, depth + 1)
+    }
+  }
+  walk(roots, 0)
+  return options
 }
 
 // Scenario 40 (developer feedback, 2026-08-31) — this used to be a modal;
@@ -162,34 +231,101 @@ function ExpenseFormFields({
     initial?.lines && initial.lines.length > 0
       ? initial.lines.map((l) => ({
           categoryAccountId: l.categoryAccountId ?? '',
-          employeeId: (l as any).employee?.id ?? '',
-          employeeLabel: (l as any).employee
-            ? `${(l as any).employee.firstName} ${(l as any).employee.lastName}`
-            : '',
-          payee: (l as any).payee ?? '',
+          // Recipient is free text now (Scenario 45) — a line saved back when
+          // it was an employee link still opens with that person's name, so
+          // editing an older draft doesn't silently blank the recipient.
+          payee:
+            (l as any).payee ||
+            ((l as any).employee
+              ? `${(l as any).employee.firstName} ${(l as any).employee.lastName}`
+              : ''),
           description: (l as any).description ?? '',
           amount: String((l as any).amount ?? ''),
-          taxCode: (l as any).taxCode ?? '',
+          vatAmount: (l as any).taxAmount ? String((l as any).taxAmount) : '',
+          // A saved VAT that isn't the flat rate on that amount was typed by
+          // hand — reopen it pinned so editing the amount can't silently
+          // round it back to 12%.
+          vatEdited:
+            Number((l as any).taxAmount) > 0 &&
+            Number((l as any).taxAmount) !== Number(autoVat(String((l as any).amount ?? ''))),
         }))
       : [emptyLine()]
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const categoryOptions = useMemo(
+    () => accountsToCategoryOptions(expenseAccounts),
+    [expenseAccounts]
+  )
+  // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
+  // suppliers grew past a comfortable scroll-and-eyeball list, same reason
+  // Category itself is a search box instead of a native <select>.
+  const supplierOptions = useMemo(
+    () => suppliers.map((s) => ({ id: s.id, name: `${s.code} — ${s.name}`, depth: 0 })),
+    [suppliers]
+  )
+
+  // Scenario 45 — not reverse-detected from `initial` on edit: expenseAccounts
+  // loads asynchronously after this state initializes, so editing a Utilities
+  // or Salaries & Wages expense reopens as plain Supplier with its existing
+  // category already selected — still correct, just not relabeled as the
+  // shortcut it was entered through.
+  const [quickCategory, setQuickCategory] = useState<QuickCategory>('')
+  const utilitiesAccount = useMemo(
+    () => expenseAccounts.find((a) => a.number === UTILITIES_ACCOUNT_NUMBER),
+    [expenseAccounts]
+  )
+  const salariesAccount = useMemo(
+    () => expenseAccounts.find((a) => a.number === SALARIES_WAGES_ACCOUNT_NUMBER),
+    [expenseAccounts]
+  )
+  const accountIdForQuickCategory = (quick: QuickCategory) =>
+    quick === 'UTILITIES'
+      ? utilitiesAccount?.id
+      : quick === 'SALARIES_WAGES'
+        ? salariesAccount?.id
+        : undefined
+  const presetAccountId = accountIdForQuickCategory(quickCategory)
+  const selectedPayeeOption =
+    PAYEE_OPTIONS.find((o) => o.payeeType === form.payeeType && o.quick === quickCategory)?.value ??
+    ''
+  // Picking Utilities/Salaries & Wages before `expenseAccounts` has loaded
+  // captures an empty id at that moment — fill it in once the real id
+  // resolves. Only ever fills a blank: the category is editable, so a
+  // deliberate pick must never be overwritten from under the user.
+  useEffect(() => {
+    if (!presetAccountId) return
+    setLines((prev) =>
+      prev.map((l) => (l.categoryAccountId ? l : { ...l, categoryAccountId: presetAccountId }))
+    )
+  }, [presetAccountId])
 
   const isLiquidation = form.specialAccountType === 'CA_LIQUIDATION'
   // Which type each line's "who" field is for — the direct Special Account
   // type, or (for a liquidation) whichever type is being closed out.
+  // Scenario 45: every type takes a free-text recipient now, so this only
+  // decides whether the line table renders at all, not which control it uses.
   const effectiveType = isLiquidation ? form.liquidatesType : form.specialAccountType
-  const isEmployeeSpecialType =
-    effectiveType === 'EMPLOYEE_CASH_ADVANCE' || effectiveType === 'EMPLOYEE_CASH_LOAN'
-  const isCashLoanOthersType = effectiveType === 'CASH_LOAN_OTHERS'
+  const hasRecipientLines = SPECIAL_ACCOUNT_OPTIONS.some((o) => o.value === effectiveType)
 
-  const total = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+  const subtotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+  const vatTotal = lines.reduce((sum, l) => sum + (Number(l.vatAmount) || 0), 0)
+  const total = subtotal + vatTotal
+
+  // VAT only applies to the payee types whose lines carry their own category;
+  // Special Account lines post straight to their mapped account.
+  const showVatColumn = form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER'
 
   const setLine = (index: number, patch: Partial<LineState>) => {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
   }
-  const addLine = () => setLines((prev) => [...prev, emptyLine()])
+  /** VAT trails the amount at the flat rate until the VAT box is typed in. */
+  const setAmount = (index: number, amount: string) => {
+    const pinned = !showVatColumn || lines[index]?.vatEdited
+    setLine(index, pinned ? { amount } : { amount, vatAmount: autoVat(amount) })
+  }
+  const addLine = () =>
+    setLines((prev) => [...prev, { ...emptyLine(), categoryAccountId: presetAccountId ?? '' }])
   const removeLine = (index: number) => setLines((prev) => prev.filter((_, i) => i !== index))
 
   const validate = (): string | null => {
@@ -206,17 +342,17 @@ function ExpenseFormFields({
       if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
         if (!l.categoryAccountId) return 'Every line needs a category.'
       } else if (form.payeeType === 'OTHER') {
-        if (isEmployeeSpecialType && !l.employeeId) return 'Every line needs an employee.'
-        if (isCashLoanOthersType && !l.payee.trim())
+        if (hasRecipientLines && !l.payee.trim())
           return isLiquidation
             ? 'Every line needs who the liquidation is for.'
-            : 'Every line needs who the cash loan is for.'
+            : 'Every line needs a recipient.'
       }
     }
     return null
   }
 
-  const resetLinesForPayeeChange = () => setLines([emptyLine()])
+  const resetLinesForPayeeChange = (presetCategoryId?: string) =>
+    setLines([{ ...emptyLine(), categoryAccountId: presetCategoryId ?? '' }])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -250,10 +386,11 @@ function ExpenseFormFields({
       }
       if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
         line.categoryAccountId = l.categoryAccountId
-        if (l.taxCode) line.taxCode = l.taxCode
+        // Drives the Input VAT debit and the header total server-side.
+        const vat = Number(l.vatAmount)
+        if (vat > 0) line.taxAmount = vat
       } else if (form.payeeType === 'OTHER') {
-        if (isEmployeeSpecialType) line.employeeId = l.employeeId
-        else line.payee = l.payee
+        line.payee = l.payee
       }
       return line
     })
@@ -279,7 +416,7 @@ function ExpenseFormFields({
         Back to expenses
       </Link>
 
-      <h1 className="text-2xl font-semibold text-gray-900">
+      <h1 className="text-2xl font-semibold text-prominent-purple-900">
         {initial ? 'Edit Expense' : 'New Expense'}
       </h1>
       <p className="mt-1 text-sm text-gray-500">
@@ -288,50 +425,44 @@ function ExpenseFormFields({
 
       <form
         onSubmit={submit}
-        className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-6"
+        className="mt-6 space-y-2.5 rounded-xl border border-gray-200 bg-white p-5"
       >
-        <div className="grid grid-cols-2 gap-4">
-          <div className="max-w-xs">
-            <Field label="Date *">
-              <input
-                required
-                type="date"
-                value={form.expenseDate}
-                onChange={(e) => setForm({ ...form, expenseDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-          </div>
+        <div className="max-w-xs">
+          <Field label="Date *">
+            <input
+              required
+              type="date"
+              value={form.expenseDate}
+              onChange={(e) => setForm({ ...form, expenseDate: e.target.value })}
+              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          </Field>
+        </div>
 
+        <div className="max-w-xs">
           <Field label="Payee *">
-            <div className="grid grid-cols-3 gap-2">
-              {(['CUSTOMER', 'SUPPLIER', 'OTHER'] as const).map((pt) => (
-                <button
-                  key={pt}
-                  type="button"
-                  onClick={() => {
-                    setForm({
-                      ...form,
-                      payeeType: pt,
-                      customerId: '',
-                      customerLabel: '',
-                      supplierId: '',
-                      specialAccountType: '',
-                      liquidatesType: '',
-                      payee: '',
-                    })
-                    resetLinesForPayeeChange()
-                  }}
-                  className={`px-3 py-2 text-sm rounded-lg border ${
-                    form.payeeType === pt
-                      ? 'border-purple-600 bg-purple-50 text-purple-700 font-medium'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {pt === 'CUSTOMER' ? 'Customer' : pt === 'SUPPLIER' ? 'Supplier' : 'Other'}
-                </button>
-              ))}
-            </div>
+            <Select
+              compact
+              value={selectedPayeeOption}
+              onChange={(value) => {
+                const option = PAYEE_OPTIONS.find((o) => o.value === value)
+                if (!option) return
+                setForm({
+                  ...form,
+                  payeeType: option.payeeType,
+                  customerId: '',
+                  customerLabel: '',
+                  supplierId: '',
+                  specialAccountType: '',
+                  liquidatesType: '',
+                  payee: '',
+                })
+                setQuickCategory(option.quick)
+                resetLinesForPayeeChange(accountIdForQuickCategory(option.quick))
+              }}
+              options={PAYEE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              placeholder="— Select —"
+            />
           </Field>
         </div>
 
@@ -339,6 +470,7 @@ function ExpenseFormFields({
           <div className="max-w-md">
             <Field label="Customer *">
               <CustomerPicker
+                compact
                 value={form.customerId}
                 selectedLabel={form.customerLabel}
                 onChange={(customerId, label) =>
@@ -349,196 +481,181 @@ function ExpenseFormFields({
           </div>
         )}
 
-        {form.payeeType === 'SUPPLIER' && (
+        {/* Scenario 45 routes Salaries & Wages through payeeType SUPPLIER for
+            the backend's benefit, but wages are paid to people, not vendors —
+            so it gets no party fields at all: the Payee dropdown already says
+            who this is for, and both supplierId and payee are optional in the
+            payload. Utilities keeps them: Meralco really is a supplier. */}
+        {form.payeeType === 'SUPPLIER' && quickCategory !== 'SALARIES_WAGES' && (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Supplier">
-              <select
-                aria-label="Supplier"
+              <CategorySelect
+                compact
+                aria-label="Select supplier"
                 value={form.supplierId}
-                onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— None —</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => setForm({ ...form, supplierId: id ?? '' })}
+                options={supplierOptions}
+                placeholder="— None —"
+              />
             </Field>
             <Field label="Payee (when no supplier)">
               <input
                 value={form.payee}
                 onChange={(e) => setForm({ ...form, payee: e.target.value })}
                 placeholder="e.g. Meralco"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
               />
             </Field>
           </div>
         )}
 
         {form.payeeType === 'OTHER' && (
-          <div className="grid grid-cols-2 gap-3 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
-            <Field label="Special Account type *">
-              <select
-                value={form.specialAccountType}
-                onChange={(e) => {
-                  setForm({ ...form, specialAccountType: e.target.value, liquidatesType: '' })
-                  resetLinesForPayeeChange()
-                }}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— Select —</option>
-                {SPECIAL_ACCOUNT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            {isLiquidation && (
-              <Field label="Which type is this closing out? *">
-                <select
-                  value={form.liquidatesType}
-                  onChange={(e) => {
-                    setForm({ ...form, liquidatesType: e.target.value as LiquidatableType | '' })
+          <div className="flex flex-wrap gap-3 rounded-xl border border-prominent-purple-100 bg-prominent-purple-50/40 p-3">
+            <div className="w-full max-w-xs">
+              <Field label="Special Account type *">
+                <Select
+                  compact
+                  value={form.specialAccountType}
+                  onChange={(value) => {
+                    setForm({ ...form, specialAccountType: value, liquidatesType: '' })
                     resetLinesForPayeeChange()
                   }}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                >
-                  <option value="">— Select —</option>
-                  {LIQUIDATABLE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  options={SPECIAL_ACCOUNT_OPTIONS}
+                  placeholder="— Select —"
+                />
               </Field>
-            )}
+            </div>
 
-            <p className="col-span-2 text-[12px] text-purple-700">
-              {isLiquidation
-                ? "Each line below closes out part or all of that recipient's outstanding balance — doesn't post as a business expense."
-                : "This won't post as a business expense — it's tracked as money owed back, not money spent. Add a line per recipient to batch several in one entry."}
-            </p>
+            {isLiquidation && (
+              <div className="w-full max-w-xs">
+                <Field label="Which type is this closing out? *">
+                  <Select
+                    compact
+                    value={form.liquidatesType}
+                    onChange={(value) => {
+                      setForm({ ...form, liquidatesType: value as LiquidatableType | '' })
+                      resetLinesForPayeeChange()
+                    }}
+                    options={LIQUIDATABLE_OPTIONS}
+                    placeholder="— Select —"
+                  />
+                </Field>
+              </div>
+            )}
           </div>
         )}
 
         {/* Line items — Scenario 40 Part 6 */}
         {(form.payeeType === 'CUSTOMER' ||
           form.payeeType === 'SUPPLIER' ||
-          (form.payeeType === 'OTHER' && (isEmployeeSpecialType || isCashLoanOthersType))) && (
+          (form.payeeType === 'OTHER' && hasRecipientLines)) && (
           <div className="pt-2">
-            <div className="grid grid-cols-12 gap-2 px-1 pb-1 text-xs font-medium text-gray-500">
-              <div className="col-span-3">
-                {form.payeeType === 'OTHER'
-                  ? isLiquidation
-                    ? 'Recipient (closing out)'
-                    : 'Recipient'
-                  : 'Category'}
+            <div className="rounded-lg border border-zinc-200">
+              {/* overflow-hidden used to live on the table container above, for
+                  the header's rounded top corners — but that also clipped the
+                  line items' CategorySelect popup whenever it opened upward
+                  (position:absolute escapes the border, not overflow clipping),
+                  silently eating clicks on options that render outside the
+                  clipped box. Rounding the header itself gets the same corners
+                  without clipping anything inside a row. */}
+              <div className="grid grid-cols-12 gap-2 rounded-t-lg bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-500">
+                <div className="col-span-3">
+                  {form.payeeType === 'OTHER'
+                    ? isLiquidation
+                      ? 'Recipient (closing out)'
+                      : 'Recipient'
+                    : 'Category'}
+                </div>
+                <div className="col-span-4">Description</div>
+                <div className="col-span-2">Amount</div>
+                {showVatColumn && <div className="col-span-2">VAT ({VAT_RATE_PERCENT}%)</div>}
+                <div className="col-span-1" />
               </div>
-              <div className="col-span-4">Description</div>
-              <div className="col-span-2">Amount</div>
-              {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                <div className="col-span-2">Tax Code</div>
-              )}
-              <div className="col-span-1" />
-            </div>
-            <div className="space-y-2">
-              {lines.map((line, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                  <div className="col-span-3">
-                    {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                      <select
-                        required
-                        aria-label="Category"
-                        value={line.categoryAccountId}
-                        onChange={(e) => setLine(i, { categoryAccountId: e.target.value })}
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                      >
-                        <option value="">— Select —</option>
-                        {expenseAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {form.payeeType === 'OTHER' && isEmployeeSpecialType && (
-                      <EmployeePicker
-                        value={line.employeeId}
-                        selectedLabel={line.employeeLabel}
-                        onChange={(employeeId, label) =>
-                          setLine(i, { employeeId, employeeLabel: label })
-                        }
-                      />
-                    )}
-                    {form.payeeType === 'OTHER' && isCashLoanOthersType && (
+              <div className="divide-y divide-zinc-100">
+                {lines.map((line, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2 items-center px-3 py-1.5">
+                    <div className="col-span-3">
+                      {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
+                        <CategorySelect
+                          compact
+                          aria-label="Category"
+                          value={line.categoryAccountId}
+                          onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                          options={categoryOptions}
+                          placeholder="— Select —"
+                        />
+                      )}
+                      {form.payeeType === 'OTHER' && hasRecipientLines && (
+                        <input
+                          aria-label="Recipient"
+                          value={line.payee}
+                          onChange={(e) => setLine(i, { payee: e.target.value })}
+                          placeholder="Name of recipient"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                      )}
+                      {isLiquidation && line.payee && (
+                        <LiquidationBalanceHint
+                          liquidatesType={form.liquidatesType}
+                          payee={line.payee}
+                        />
+                      )}
+                    </div>
+                    <div className="col-span-4">
                       <input
-                        value={line.payee}
-                        onChange={(e) => setLine(i, { payee: e.target.value })}
-                        placeholder="Anyone — not restricted to staff"
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                      />
-                    )}
-                    {isLiquidation && (isEmployeeSpecialType ? line.employeeId : line.payee) && (
-                      <LiquidationBalanceHint
-                        liquidatesType={form.liquidatesType}
-                        employeeId={isEmployeeSpecialType ? line.employeeId : undefined}
-                        payee={isCashLoanOthersType ? line.payee : undefined}
-                      />
-                    )}
-                  </div>
-                  <div className="col-span-4">
-                    <input
-                      aria-label="Line description"
-                      value={line.description}
-                      onChange={(e) => setLine(i, { description: e.target.value })}
-                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      aria-label="Amount"
-                      value={line.amount}
-                      onChange={(e) => setLine(i, { amount: e.target.value })}
-                      className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
-                    />
-                  </div>
-                  {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                    <div className="col-span-2">
-                      <input
-                        aria-label="Tax Code"
-                        value={line.taxCode}
-                        onChange={(e) => setLine(i, { taxCode: e.target.value })}
-                        placeholder="VAT"
-                        className="w-full px-2 py-2 text-sm border border-gray-200 rounded-lg"
+                        aria-label="Line description"
+                        value={line.description}
+                        onChange={(e) => setLine(i, { description: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     </div>
-                  )}
-                  <div className="col-span-1 flex justify-end pt-2">
-                    {lines.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="p-1 text-red-500 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <div className="col-span-2">
+                      <input
+                        required
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        aria-label="Amount"
+                        value={line.amount}
+                        onChange={(e) => setAmount(i, e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      />
+                    </div>
+                    {showVatColumn && (
+                      <div className="col-span-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          aria-label="VAT"
+                          value={line.vatAmount}
+                          onChange={(e) =>
+                            setLine(i, { vatAmount: e.target.value, vatEdited: true })
+                          }
+                          placeholder="0.00"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                      </div>
                     )}
+                    <div className="col-span-1 flex justify-end">
+                      {lines.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
             <button
               type="button"
               onClick={addLine}
-              className="mt-2 flex items-center gap-1.5 text-sm text-purple-700 hover:bg-purple-50 rounded-lg px-2 py-1.5"
+              className="mt-1.5 flex items-center gap-1.5 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 rounded-lg px-2 py-1"
             >
               <Plus className="w-4 h-4" /> Add line
             </button>
@@ -549,51 +666,59 @@ function ExpenseFormFields({
           <input
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Payment Method">
-            <select
+            <Select
+              compact
               value={form.paymentMethod}
-              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
+              onChange={(paymentMethod) => setForm({ ...form, paymentMethod })}
+              options={PAYMENT_METHODS.map((m) => ({ value: m, label: m.replace('_', ' ') }))}
+            />
           </Field>
           <Field label="Reference (OR / receipt #)">
             <input
               value={form.reference}
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
           </Field>
         </div>
-        <div className="text-sm text-gray-600 text-right">
-          Total: <span className="font-semibold">{fmtMoney(total)}</span>
+        <div className="space-y-0.5 text-right text-sm text-gray-600">
+          {vatTotal > 0 && (
+            <>
+              <div>
+                Subtotal: <span className="font-medium">{fmtMoney(subtotal)}</span>
+              </div>
+              <div>
+                VAT ({VAT_RATE_PERCENT}%): <span className="font-medium">{fmtMoney(vatTotal)}</span>
+              </div>
+            </>
+          )}
+          <div>
+            Total: <span className="font-semibold">{fmtMoney(total)}</span>
+          </div>
         </div>
         {error && (
           <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
             {error}
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-3 border-t">
+        <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200">
           <Link
             href="/accounting/expenses"
-            className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
           >
             Cancel
           </Link>
           <button
             type="submit"
             disabled={saving}
-            className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
@@ -603,39 +728,41 @@ function ExpenseFormFields({
 }
 
 /** Small self-contained fetcher — shows a recipient's outstanding balance
- * right under their picker/input once both liquidatesType and the
- * recipient are known, without the parent form having to track a
- * per-line lookup table. */
+ * right under their input once both liquidatesType and the recipient name
+ * are known, without the parent form having to track a per-line lookup
+ * table. Scenario 45: matched on the typed name alone, so it only finds a
+ * balance when the name matches an earlier entry exactly. */
 function LiquidationBalanceHint({
   liquidatesType,
-  employeeId,
   payee,
 }: {
   liquidatesType: '' | LiquidatableType
-  employeeId?: string
   payee?: string
 }) {
   const [outstanding, setOutstanding] = useState<number | null>(null)
   useEffect(() => {
-    if (!liquidatesType || (!employeeId && !payee?.trim())) {
+    if (!liquidatesType || !payee?.trim()) {
       setOutstanding(null)
       return
     }
     let cancelled = false
     Expenses.getSpecialAccountBalance({
       specialAccountType: liquidatesType,
-      employeeId: employeeId || undefined,
-      payee: payee?.trim() || undefined,
+      payee: payee.trim(),
     }).then((res) => {
       if (!cancelled && res.success && res.data) setOutstanding(res.data.outstanding)
     })
     return () => {
       cancelled = true
     }
-  }, [liquidatesType, employeeId, payee])
+  }, [liquidatesType, payee])
 
   if (outstanding === null) return null
-  return <p className="mt-1 text-[11px] text-purple-700">Outstanding: {fmtMoney(outstanding)}</p>
+  return (
+    <p className="mt-1 text-[11px] text-prominent-purple-700">
+      Outstanding: {fmtMoney(outstanding)}
+    </p>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

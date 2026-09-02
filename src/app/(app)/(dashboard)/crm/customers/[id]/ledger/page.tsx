@@ -22,6 +22,7 @@ export default async function CrmCustomerLedgerPage({
         customerId={id}
         backHref={`/crm/customers/${id}`}
         backLabel="Back to customer"
+        canEdit={can(session, CRM_PERMISSIONS.CUSTOMERS_UPDATE)}
       />
     </div>
   )

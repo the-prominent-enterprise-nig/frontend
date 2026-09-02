@@ -32,7 +32,16 @@ export const ReceiveStockFormSchema = z
     purchaseOrderNumber: z.string().optional(),
     purchaseOrderDate: z.string().optional(),
     supplierId: z.string().optional(),
+    // Tax as printed on the supplier's invoice. `withholding` is the rate
+    // rule (the supplier's default when omitted); `withheldAmount` is the
+    // amount actually withheld and overrides it. `vatTreatment` says how the
+    // entered unit costs relate to VAT — `inclusive` (what PH invoices
+    // normally quote) has the server back the VAT out of the cost rather
+    // than add it on top — and `vatAmount` overrides the derived figure.
     withholding: z.enum(['none', 'pct_1']).optional(),
+    withheldAmount: z.number().min(0).optional(),
+    vatTreatment: z.enum(['inclusive', 'exclusive', 'exempt']).optional(),
+    vatAmount: z.number().min(0).optional(),
     warehouseId: z.string().min(1, 'Destination warehouse is required'),
     applicationType: z.enum(['new_stock', 'revert']),
     modeOfTransfer: z.string().optional(),

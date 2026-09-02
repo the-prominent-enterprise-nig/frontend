@@ -86,7 +86,6 @@ export default function ItemApprovalActionModal({
             <div className="rounded-lg bg-zinc-50 border border-zinc-200 px-4 py-3 space-y-1">
               <p className="text-sm font-medium text-zinc-900">{item.name}</p>
               <p className="font-mono text-xs text-zinc-500">{item.sku}</p>
-              {item.taxRateId && <p className="text-xs text-zinc-500">Tax rate mapped</p>}
             </div>
 
             {/* Remarks */}

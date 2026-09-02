@@ -170,7 +170,7 @@ export default function AgingReportView() {
                           <th className="px-2 py-1.5 text-right">NOT MVG</th>
                           <th className="px-2 py-1.5 text-right">TOTAL PAY&apos;T</th>
                           <th className="px-2 py-1.5 text-right">TOTAL PRICE</th>
-                          <th className="px-2 py-1.5">Last OR Date</th>
+                          <th className="px-2 py-1.5">Last CR Date</th>
                         </tr>
                       </thead>
                       <tbody>

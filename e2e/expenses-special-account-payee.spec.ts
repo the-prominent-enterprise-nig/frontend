@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickFromCustomSelect } from './utils'
 
 // Scenario 40 Part 1 — the Expense form's Payee field is now typed
 // (Customer/Supplier/Other); Other unlocks a Special Account list
@@ -11,8 +11,18 @@ import { gotoReady } from './utils'
 // (an "Add line" table); these tests use a single line each, targeting the
 // line's own inputs (aria-label="Category"/"Amount") rather than the old
 // header-level "Category (expense account) *"/"Subtotal *" fields.
+//
+// "Special Account type *" became a custom Select (src/components/ui/
+// Select.tsx — combobox/listbox/option roles, not a native <select>), so
+// it's driven via pickFromCustomSelect by its placeholder/current label
+// rather than getByLabel(...).selectOption(...).
+//
+// Scenario 45 (2026-09-02) — the Payee tile is labeled "Special Account"
+// now, and Recipient is a plain text field for every Special Account type:
+// Employee Cash Advance/Loan no longer pick a real employee record, so
+// there's no employeeId link and no employee search box anywhere here.
 test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1)', () => {
-  test('records an Employee Cash Advance against a real employee, not the ordinary category list', async ({
+  test('records an Employee Cash Advance against a typed recipient, not the ordinary category list', async ({
     page,
   }) => {
     await gotoReady(page, '/accounting/expenses')
@@ -31,26 +41,18 @@ test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1
     await expect(page.getByLabel('Category', { exact: true })).toHaveCount(0)
     await expect(page.getByLabel('Amount', { exact: true })).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Other', exact: true }).click()
-    const specialTypeSelect = page.getByLabel('Special Account type *')
-    await expect(specialTypeSelect).toBeVisible({ timeout: 5_000 })
-    await specialTypeSelect.selectOption('EMPLOYEE_CASH_ADVANCE')
+    await pickFromCustomSelect(page, '— Select —', 'Special Account')
+    await pickFromCustomSelect(page, '— Select —', 'Employee Cash Advance')
 
     // Choosing Other never re-shows the ordinary Category column.
     await expect(page.getByLabel('Category', { exact: true })).toHaveCount(0)
 
-    const employeeInput = page.getByPlaceholder('Search employee by name or code…')
-    await expect(employeeInput).toBeVisible({ timeout: 5_000 })
-    await employeeInput.click()
-    // TEC- prefixes every seeded technova employeeCode — guaranteed match
-    // regardless of which specific employees exist in this run.
-    await employeeInput.fill('TEC')
-    const employeeDropdown = page.locator('div.absolute.z-50')
-    await expect(employeeDropdown).toBeVisible({ timeout: 10_000 })
-    await expect(employeeDropdown.getByText('No employees found.')).toHaveCount(0)
-    const firstResult = employeeDropdown.locator('button').first()
-    const employeeLabel = (await firstResult.locator('span').first().textContent())?.trim()
-    await firstResult.click()
+    // Free text, not an employee search — the picker is gone entirely.
+    await expect(page.getByPlaceholder('Search employee by name or code…')).toHaveCount(0)
+    const recipientLabel = 'E2E Cash Advance Recipient'
+    const recipientInput = page.getByLabel('Recipient', { exact: true })
+    await expect(recipientInput).toBeVisible({ timeout: 5_000 })
+    await recipientInput.fill(recipientLabel)
 
     await page.getByLabel('Amount', { exact: true }).fill('5000')
 
@@ -71,7 +73,7 @@ test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1
     const expenseNumber = expenseNumbersAfter.find((n) => !expenseNumbersBefore.has(n))
     expect(expenseNumber).toBeTruthy()
     const row = page.locator('tbody tr', { hasText: expenseNumber as string })
-    if (employeeLabel) await expect(row).toContainText(employeeLabel)
+    await expect(row).toContainText(recipientLabel)
     await expect(row).toContainText('Employee Cash Advance')
 
     // Cleanup
@@ -97,12 +99,12 @@ test.describe('Accounting — Expenses Special Account payee (Scenario 40 Part 1
       timeout: 10_000,
     })
 
-    await page.getByRole('button', { name: 'Other', exact: true }).click()
-    await page.getByLabel('Special Account type *').selectOption('CASH_LOAN_OTHERS')
+    await pickFromCustomSelect(page, '— Select —', 'Special Account')
+    await pickFromCustomSelect(page, '— Select —', 'Cash Loan – Others')
 
     // Free text, not an employee search — the picker never renders here.
     await expect(page.getByPlaceholder('Search employee by name or code…')).toHaveCount(0)
-    const payeeInput = page.getByPlaceholder('Anyone — not restricted to staff')
+    const payeeInput = page.getByLabel('Recipient', { exact: true })
     await expect(payeeInput).toBeVisible({ timeout: 5_000 })
     await payeeInput.fill('E2E Non-Employee Cash Loan Party')
 

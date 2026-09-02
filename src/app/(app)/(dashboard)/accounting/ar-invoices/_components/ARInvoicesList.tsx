@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
+import { collectionReceiptHref } from '../receipts/view/_components/CollectionReceiptDetail'
 import {
   Plus,
   RefreshCw,
@@ -23,8 +24,9 @@ import {
   X,
   Search,
   User,
-  ChevronRight,
   Loader2,
+  Eye,
+  ChevronRight,
 } from 'lucide-react'
 import {
   ARInvoices,
@@ -34,13 +36,13 @@ import {
   type ARInvoice,
   type ARInvoiceCustomerResult,
   type ARPayment,
+  type ARReceiptListItem,
   type BankAccount,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
-import { getTaxRates, type TaxRate } from '@/src/libs/data/AccountingData'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import {
   buildCreateCreditMemoFormSchema,
@@ -77,6 +79,9 @@ export default function ARInvoicesList({
 } = {}) {
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
+  // A customer's own payment receipts, merged into their due-invoice table
+  // below (there is no separate Receipts view any more — one table).
+  const [receipts, setReceipts] = useState<ARReceiptListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
@@ -110,11 +115,31 @@ export default function ARInvoicesList({
   const [searchingCustomers, setSearchingCustomers] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await ARInvoices.list({
-      ...(customerFilter ? { customerId: customerFilter } : {}),
-      ...(appliedSearch ? { search: appliedSearch } : {}),
-    })
-    setItems(res.data?.items ?? [])
+    if (customerFilter) {
+      // A customer's due-invoice list also merges in their payment receipts
+      // (sorted together by date below) — paying across several dues in one
+      // shot should visibly show the one amount actually paid, not just the
+      // per-due fragments it settled.
+      const [invRes, rcptRes] = await Promise.all([
+        ARInvoices.list({
+          customerId: customerFilter,
+          ...(appliedSearch ? { search: appliedSearch } : {}),
+        }),
+        ARInvoices.listReceipts({
+          customerId: customerFilter,
+          ...(appliedSearch ? { search: appliedSearch } : {}),
+        }),
+      ])
+      setItems(invRes.data?.items ?? [])
+      setReceipts(rcptRes.data?.items ?? [])
+    } else {
+      // Customer-rollup landing view — every invoice tenant-wide (optionally
+      // narrowed by search), grouped client-side by customer below.
+      const res = await ARInvoices.list({
+        ...(appliedSearch ? { search: appliedSearch } : {}),
+      })
+      setItems(res.data?.items ?? [])
+    }
     setLoading(false)
   }, [customerFilter, appliedSearch])
   useEffect(() => {
@@ -158,9 +183,11 @@ export default function ARInvoicesList({
 
   // One entry per distinct customer in the currently loaded `items` — e.g.
   // an installment plan's ~12 due-date invoices collapse into one row here,
-  // which is the whole point of this view (see ARInvoicesList group-by-
-  // customer discussion): a customer with several open dues shouldn't need
-  // 12 scans of the flat table to see what they owe in total.
+  // which is the whole point of this view: a customer with several open
+  // dues shouldn't need 12 scans of the flat table to see what they owe in
+  // total. Only meaningful for the customer-rollup landing view — `items`
+  // holds a single customer's own invoices whenever customerFilter is set,
+  // making this a no-op group of one in that case.
   const customerGroups = useMemo(() => {
     const map = new Map<
       string,
@@ -204,11 +231,72 @@ export default function ARInvoicesList({
     return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
   }, [items])
 
+  // A customer's due-invoice table, merged with their payment receipts —
+  // paying across several dues in one shot must show that one payment as
+  // its own line here (not just as fragments split across the dues it
+  // settled). Only built for the customer-filtered view; `receipts` is
+  // otherwise driven by the separate landingView==='receipts' tab.
+  type CustomerRow =
+    | { kind: 'invoice'; date: string; invoice: ARInvoice }
+    | { kind: 'payment'; date: string; receipt: ARReceiptListItem }
+  const customerRows = useMemo((): CustomerRow[] => {
+    if (!customerFilter) return []
+    return [
+      ...items.map((i): CustomerRow => ({ kind: 'invoice', date: i.invoiceDate, invoice: i })),
+      ...receipts
+        // Down payments never become an ARPayment — they're netted out of
+        // the financed principal before this schedule's due-date invoices
+        // even exist, so they were never applied to any row in this table.
+        // Listing them here would show money that settled none of these
+        // dues. (`source` is undefined on rows that predate the field —
+        // those are all real ARPayment-backed receipts, so keep them.)
+        .filter((r) => r.source !== 'down_payment')
+        .map((r): CustomerRow => ({ kind: 'payment', date: r.paymentDate, receipt: r })),
+    ].sort((a, b) => {
+      // Payments first, ranked by kind BEFORE date — deliberately not a
+      // chronological sort. CollectionReceipt.paymentDate is date-only
+      // (persisted at 00:00 from a YYYY-MM-DD string) while
+      // ARInvoice.invoiceDate carries the sale's wall-clock time, so a
+      // straight date sort drops every receipt below every invoice raised
+      // that same day. On real data that buried a payment made minutes ago
+      // 23 rows down, reading as "my payment never showed up".
+      if (a.kind !== b.kind) return a.kind === 'payment' ? -1 : 1
+      // Newest first within each block.
+      const byDate = new Date(b.date).getTime() - new Date(a.date).getTime()
+      if (byDate !== 0) return byDate
+      // Deterministic tiebreak — all 12 dues of one installment schedule
+      // share an invoiceDate, and same-day receipts share a payment date.
+      if (a.kind === 'invoice' && b.kind === 'invoice') {
+        return (
+          new Date(a.invoice.dueDate).getTime() - new Date(b.invoice.dueDate).getTime() ||
+          a.invoice.id.localeCompare(b.invoice.id)
+        )
+      }
+      if (a.kind === 'payment' && b.kind === 'payment') {
+        return (
+          (b.receipt.number ?? '').localeCompare(a.receipt.number ?? '') ||
+          a.receipt.id.localeCompare(b.receipt.id)
+        )
+      }
+      return 0
+    })
+  }, [items, receipts, customerFilter])
+
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
     if (!res.success)
       alert(res.message || res.error || 'Send failed — check Account Mapping settings')
     load()
+  }
+
+  /** Opens the receipt on its own page — the same document layout the AR
+   * invoice detail page renders, with its own Print/Download. The (invoice,
+   * payment) pairs travel in the URL because a grouped receipt (see
+   * ARReceiptListItem.applications) has no single document endpoint of its
+   * own; that page fetches and combines them. */
+  const viewReceipt = (r: ARReceiptListItem) => {
+    if (r.applications.length === 0) return
+    router.push(collectionReceiptHref(r.applications))
   }
 
   /** Scenario 26 Part 6 — no @Cron exists anywhere in the backend, so this
@@ -252,28 +340,41 @@ export default function ARInvoicesList({
             </>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <button
             onClick={load}
             className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          <button
-            onClick={sweepOverdue}
-            disabled={sweeping}
-            title="Notify Business Owner about any newly-overdue invoices"
-            className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-50"
-          >
-            <BellRing className={`w-4 h-4 ${sweeping ? 'animate-pulse' : ''}`} />
-            {sweeping ? 'Checking…' : 'Check Overdue'}
-          </button>
-          <button
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-          >
-            <Plus className="w-4 h-4" /> New Invoice
-          </button>
+          {/* Invoice-level actions (Check Overdue, New Invoice) only make
+              sense once a customer's own invoices are in view. */}
+          {customerFilter ? (
+            <>
+              <button
+                onClick={sweepOverdue}
+                disabled={sweeping}
+                title="Notify Business Owner about any newly-overdue invoices"
+                className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-50"
+              >
+                <BellRing className={`w-4 h-4 ${sweeping ? 'animate-pulse' : ''}`} />
+                {sweeping ? 'Checking…' : 'Check Overdue'}
+              </button>
+              <button
+                onClick={() => setCreating(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+              >
+                <Plus className="w-4 h-4" /> New Invoice
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => router.push('/accounting/ar-invoices/receipts/new')}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+            >
+              <Plus className="w-4 h-4" /> New Receipt
+            </button>
+          )}
         </div>
       </div>
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -393,28 +494,44 @@ export default function ARInvoicesList({
                   Loading...
                 </td>
               </tr>
-            ) : items.length === 0 ? (
+            ) : customerFilter ? (
+              customerRows.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                    No invoices.
+                  </td>
+                </tr>
+              ) : (
+                customerRows.map((row) =>
+                  row.kind === 'invoice' ? (
+                    <InvoiceRow
+                      key={row.invoice.id}
+                      i={row.invoice}
+                      onOpen={() => router.push(`/accounting/ar-invoices/${row.invoice.id}`)}
+                      onSend={() => send(row.invoice.id)}
+                      onPay={() => setPayingFor(row.invoice)}
+                      onHistory={() => setHistoryFor(row.invoice)}
+                      onCredit={() => setCreditingFor(row.invoice)}
+                      onDebit={() => setDebitingFor(row.invoice)}
+                      onEdit={() => setEditing(row.invoice)}
+                      onVoid={() => setVoidingFor(row.invoice)}
+                      onDelete={() => setDeletingFor(row.invoice)}
+                    />
+                  ) : (
+                    <PaymentReferenceRow
+                      key={row.receipt.id}
+                      r={row.receipt}
+                      onView={() => viewReceipt(row.receipt)}
+                    />
+                  )
+                )
+              )
+            ) : customerGroups.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   No invoices.
                 </td>
               </tr>
-            ) : customerFilter ? (
-              items.map((i) => (
-                <InvoiceRow
-                  key={i.id}
-                  i={i}
-                  onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
-                  onSend={() => send(i.id)}
-                  onPay={() => setPayingFor(i)}
-                  onHistory={() => setHistoryFor(i)}
-                  onCredit={() => setCreditingFor(i)}
-                  onDebit={() => setDebitingFor(i)}
-                  onEdit={() => setEditing(i)}
-                  onVoid={() => setVoidingFor(i)}
-                  onDelete={() => setDeletingFor(i)}
-                />
-              ))
             ) : (
               customerGroups.map((g) => (
                 <tr
@@ -711,6 +828,63 @@ function InvoiceRow({
             </Tooltip>
           </div>
         </div>
+      </td>
+    </tr>
+  )
+}
+
+/** One payment/receipt, shown as its own row inline with a customer's
+ * due-invoices (not just a fragment split across the dues it settled) — the
+ * one amount actually paid, with its own CR number, same column layout as
+ * InvoiceRow so it reads as one merged, date-sorted table. */
+function PaymentReferenceRow({ r, onView }: { r: ARReceiptListItem; onView: () => void }) {
+  const cancelled = !!r.cancelledAt
+  return (
+    <tr
+      onClick={onView}
+      className={`cursor-pointer hover:bg-gray-50 ${cancelled ? 'opacity-50' : ''}`}
+    >
+      <td className="px-3 py-2 max-w-40">
+        {/* The cashier's CR number wins — that's the number off the physical
+            booklet the customer is holding, and what this reconciles
+            against. The generated CR-YYYYMMDD-NNNN is only a fallback for
+            payments recorded before a CR was required. */}
+        <span
+          title={r.reference ?? r.number ?? undefined}
+          className="block truncate font-mono text-xs text-emerald-700"
+        >
+          {r.reference ?? r.number ?? '—'}
+        </span>
+        <span className="block truncate text-[10px] text-gray-400">Payment</span>
+      </td>
+      <td className="px-3 py-2 max-w-40">
+        <span title={r.customerName} className="block truncate">
+          {r.customerName}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap text-gray-400">—</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
+      <td className="px-3 py-2 text-right text-gray-400">—</td>
+      <td className="px-3 py-2 text-right text-gray-400">—</td>
+      <td className="px-3 py-2">
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cancelled ? 'bg-gray-100 text-gray-600' : 'bg-emerald-50 text-emerald-700'}`}
+        >
+          {cancelled ? 'VOIDED' : 'PAID'}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <Tooltip label="View receipt">
+          <button
+            onClick={onView}
+            aria-label="View receipt"
+            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+        </Tooltip>
       </td>
     </tr>
   )
@@ -1600,14 +1774,8 @@ function InvoiceFormDialog({
     description: initial?.description ?? '',
     subtotal: String(initial?.subtotal ?? ''),
     taxAmount: String(initial?.taxAmount ?? ''),
-    taxCode: (initial as any)?.taxCode ?? '',
   })
   const [saving, setSaving] = useState(false)
-  // ACC-21 bridge: load tax rates so users can pick one instead of typing taxAmount manually
-  const [taxRates, setTaxRates] = useState<TaxRate[]>([])
-  useEffect(() => {
-    getTaxRates().then((r) => setTaxRates(r.data ?? []))
-  }, [])
 
   // Customer picker — search rather than a full-list <select>, and scoped
   // to accounting:ar-invoices:read (see ARInvoices.searchCustomers), so an
@@ -1633,22 +1801,14 @@ function InvoiceFormDialog({
     return () => clearTimeout(timer)
   }, [customerSearch])
 
-  // When subtotal or tax code changes, recompute tax automatically
-  const onTaxCodeChange = (id: string) => {
-    const rate = taxRates.find((r) => r.id === id)
-    const subtotal = Number(form.subtotal) || 0
-    const tax = rate
-      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
-      : Number(form.taxAmount) || 0
-    setForm({ ...form, taxCode: id, taxAmount: rate ? String(tax) : form.taxAmount })
-  }
+  // Tax is a flat 12% VAT applied automatically as subtotal changes, but
+  // stays freely editable afterward (matches how POS checkout now applies
+  // the same flat rate).
+  const FLAT_VAT_RATE = 12 // matches backend FLAT_VAT_RATE_PERCENT
   const onSubtotalChange = (val: string) => {
-    const rate = taxRates.find((r) => r.id === form.taxCode)
     const subtotal = Number(val) || 0
-    const tax = rate
-      ? +(subtotal * (Number(rate.rate) / 100)).toFixed(2)
-      : Number(form.taxAmount) || 0
-    setForm({ ...form, subtotal: val, taxAmount: rate ? String(tax) : form.taxAmount })
+    const tax = +(subtotal * (FLAT_VAT_RATE / 100)).toFixed(2)
+    setForm({ ...form, subtotal: val, taxAmount: String(tax) })
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -1756,23 +1916,6 @@ function InvoiceFormDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Tax Rate">
-            <select
-              value={form.taxCode}
-              onChange={(e) => onTaxCodeChange(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— None / Manual entry —</option>
-              {taxRates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({Number(t.rate).toFixed(2)}%)
-                </option>
-              ))}
-            </select>
-            {form.taxCode && (
-              <p className="mt-1 text-xs text-gray-500">Tax auto-calculates as subtotal × rate.</p>
-            )}
-          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Subtotal *">
               <input
@@ -1790,9 +1933,8 @@ function InvoiceFormDialog({
                 step="0.01"
                 value={form.taxAmount}
                 onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-                disabled={!!form.taxCode}
-                className={`w-full px-3 py-2 text-sm border border-gray-200 rounded-lg ${form.taxCode ? 'bg-gray-50 text-gray-600' : ''}`}
-                title={form.taxCode ? 'Auto-calculated from tax rate' : 'Enter tax amount manually'}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                title="Auto-calculated as 12% of subtotal — editable"
               />
             </Field>
           </div>
@@ -1863,9 +2005,17 @@ function PaymentDialog({
   }, [])
   const totalApplied = (Number(form.amount) || 0) + (Number(form.withholdingAmount) || 0)
   const wouldOverpay = totalApplied > outstanding + 0.01
+  // Scenario 42 Part 4 — a system-generated Bank Reconciliation worksheet is
+  // only as trustworthy as this being filled in for every non-cash payment;
+  // Cash stays untracked (an actual cash drawer, not a bank account).
+  const requiresBankAccount = form.method !== 'CASH'
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (requiresBankAccount && !form.bankAccountId) {
+      setError(`Source of Fund is required for ${form.method.replace('_', ' ')} payments.`)
+      return
+    }
     setSaving(true)
     setError(null)
     const res = await ARInvoices.recordPayment(invoice.id, {
@@ -2018,19 +2168,26 @@ function PaymentDialog({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
-          <Field label="Source of Fund">
+          <Field label={requiresBankAccount ? 'Source of Fund *' : 'Source of Fund'}>
             <select
+              required={requiresBankAccount}
               value={form.bankAccountId}
               onChange={(e) => setForm({ ...form, bankAccountId: e.target.value })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             >
-              <option value="">— Not tracked —</option>
+              <option value="">{requiresBankAccount ? '— Select —' : '— Not tracked —'}</option>
               {bankAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
                   {acc.name} — {acc.bankName} ({acc.accountNumber})
                 </option>
               ))}
             </select>
+            {requiresBankAccount && !form.bankAccountId && (
+              <p className="mt-1 text-[12px] text-amber-700">
+                Required for {form.method.replace('_', ' ').toLowerCase()} payments, so this shows
+                up in Bank Reconciliation.
+              </p>
+            )}
           </Field>
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -2116,7 +2273,7 @@ function PaymentHistoryModal({
                         </div>
                       )}
                     </div>
-                    {p.isOverpayment && !p.cancelledAt && (
+                    {!p.cancelledAt && (
                       <button
                         onClick={() => setCancelTarget(p)}
                         className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
@@ -2154,11 +2311,19 @@ function PaymentHistoryModal({
 function CancelPaymentDialog({
   invoiceId,
   payment,
+  applications,
   onClose,
   onCancelled,
 }: {
   invoiceId: string
   payment: ARPayment
+  /** When a receipt is several grouped applications (see ARReceiptListItem),
+   * cancel loops the same single-row endpoint over every one of them —
+   * cancelPayment already reasons correctly about a shared journal entry
+   * per row (full reversal only once it's the sole active owner), so this
+   * is just as safe done N times as once. Omitted (or empty) falls back to
+   * the single `payment` above, the pre-existing per-invoice-history usage. */
+  applications?: { arInvoiceId: string; paymentId: string }[]
   onClose: () => void
   onCancelled: () => void
 }) {
@@ -2181,12 +2346,23 @@ function CancelPaymentDialog({
       setCancelling(false)
       return
     }
-    const res = await ARInvoices.cancelPayment(invoiceId, payment.id, reason.trim() || undefined)
-    setCancelling(false)
-    if (!res.success) {
-      setError(res.message || res.error || 'Cancel failed')
-      return
+    const targets =
+      applications && applications.length > 0
+        ? applications
+        : [{ arInvoiceId: invoiceId, paymentId: payment.id }]
+    for (const t of targets) {
+      const res = await ARInvoices.cancelPayment(
+        t.arInvoiceId,
+        t.paymentId,
+        reason.trim() || undefined
+      )
+      if (!res.success) {
+        setCancelling(false)
+        setError(res.message || res.error || 'Cancel failed')
+        return
+      }
     }
+    setCancelling(false)
     onCancelled()
   }
 
@@ -2194,7 +2370,7 @@ function CancelPaymentDialog({
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">Cancel Overpayment</h3>
+          <h3 className="text-lg font-semibold">Cancel Receipt</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -2247,7 +2423,7 @@ function CancelPaymentDialog({
               disabled={cancelling || !pin.trim()}
               className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
             >
-              {cancelling ? 'Cancelling...' : 'Cancel Payment'}
+              {cancelling ? 'Cancelling...' : 'Cancel Receipt'}
             </button>
           </div>
         </form>

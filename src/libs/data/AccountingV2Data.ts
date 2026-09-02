@@ -334,6 +334,24 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
+  /** The wider payment this one is a slice of, present only when that
+   * payment settled dues other than this invoice (findOne populates it).
+   * `amount` is the live total across the receipt's still-active
+   * applications, not the raw tendered column. */
+  receipt?: {
+    id: string
+    number: string | null
+    reference: string | null
+    amount: number
+    settledOthers: {
+      arInvoiceId: string
+      invoiceNumber: string
+      lineNumber: number | null
+      termMonths: number | null
+      amount: number
+      cancelledAt: string | null
+    }[]
+  } | null
 }
 
 // Scenario 38 Gap 5 — row shape for the Pending 2307 / CWT Variance lists,
@@ -410,7 +428,11 @@ export interface ARInvoice {
   id: string
   invoiceNumber: string
   customerId: string
-  customer?: { id: string; name: string }
+  // Address/TIN are only ever populated by get()/getDocument() (findOne
+  // returns the whole Customer row) — the list endpoint's lighter select
+  // stops at id/name, so the letterhead block on the detail sheet treats
+  // them as optional.
+  customer?: { id: string; name: string; address?: string | null; taxId?: string | null }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -468,9 +490,70 @@ export interface ARInvoiceCustomerResult {
   customerCode: string
 }
 
+export interface ARReceiptListItem {
+  id: string
+  /** Every (arInvoiceId, paymentId) this receipt actually applied to — a
+   * single payment action (overflow onto the next due, or "Pay Selected"
+   * bulk pay) can touch several invoices at once and they're grouped back
+   * into one receipt row here, so this can have more than one entry. Edit/
+   * Cancel loop over these against the existing single-row endpoints;
+   * empty for a down-payment row (nothing to edit/cancel/view). */
+  applications: { arInvoiceId: string; paymentId: string }[]
+  arInvoiceId: string
+  customerId: string
+  customerName: string
+  paymentDate: string
+  /** System-generated CR number (CR-YYYYMMDD-NNNN). Null for a down-payment
+   * row (no CollectionReceipt) or a receipt created before this field
+   * existed. Distinct from `reference`, which stays free-text/cashier-entered. */
+  number: string | null
+  reference: string | null
+  notes: string | null
+  receivedIn: string
+  description: string | null
+  accountLine: string
+  invoiceNumber: string
+  dueDate: string
+  branchName: string | null
+  amount: number
+  withholdingAmount: number
+  cancelledAt: string | null
+  cancelReason: string | null
+  /** 'down_payment' rows are read from PosPayment directly (an in-house
+   * installment down payment, which never becomes a real ARPayment — it's
+   * already netted out of the financed principal before the schedule's
+   * due-date invoices are generated, so it has no ARInvoice to belong to).
+   * They're display-only: no edit/cancel/void, no receipt document to
+   * print. Absent (undefined) on every real ARPayment-backed row. */
+  source?: 'ar_payment' | 'down_payment'
+}
+
+// Print/document envelope for one invoice (GET /ar-invoices/:id/document)
+// — the invoice plus the letterhead's enterprise block. Mirrors
+// APBillDocument: AR Invoice and AP Bill are structural opposites and both
+// render the same on-screen sheet their print builder produces.
+export interface ARInvoiceDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: ARInvoice
+}
 export const ARInvoices = {
   list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // Scenario 44 — flat cross-customer Receipts register (one row per
+  // ARPayment) backing the AR Invoices landing page, distinct from list()
+  // above which returns ARInvoice rows for the customer-grouped rollup.
+  listReceipts: (params?: { search?: string; customerId?: string; branchId?: string }) =>
+    api.get<{ items: ARReceiptListItem[]; total: number }>('/ar-invoices/receipts', params as any),
   // Scoped to accounting:ar-invoices:read (not the CRM customer list, which
   // needs crm:customers:read — a permission Accountant doesn't hold) so
   // this screen's own customer picker works without any CRM grant.
@@ -485,8 +568,13 @@ export const ARInvoices = {
   get: (id: string) => api.get<ARInvoice>(`/ar-invoices/${id}`),
   // Scenario 25 — print-ready envelope for the per-invoice detail page's
   // Print/Download action, same PrintDocumentEnvelope shape Purchase Orders
-  // already use with printInventoryDocument().
-  getDocument: (id: string) => api.get<unknown>(`/ar-invoices/${id}/document`),
+  // already use with printInventoryDocument(). Also backs the detail page
+  // itself, which renders the same document layout on screen as
+  // buildARInvoiceHtml() prints — one fetch for both.
+  getDocument: (id: string) => api.get<ARInvoiceDocument>(`/ar-invoices/${id}/document`),
+  // Scenario 44 Part 2 — print-ready envelope for one Collection Receipt.
+  getReceiptDocument: (invoiceId: string, paymentId: string) =>
+    api.get<unknown>(`/ar-invoices/${invoiceId}/payments/${paymentId}/document`),
   create: (body: any) => api.post<ARInvoice>('/ar-invoices', body),
   update: (id: string, body: any) => api.patch<ARInvoice>(`/ar-invoices/${id}`, body),
   send: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/send`, {}),
@@ -496,6 +584,13 @@ export const ARInvoices = {
     api.post<BulkRecordPaymentResult>('/ar-invoices/bulk-payments', body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
+  // Scenario 44 Part 3 — reference/notes only; anything else requires
+  // cancelPayment + a fresh receipt instead.
+  updatePayment: (
+    invoiceId: string,
+    paymentId: string,
+    body: { reference?: string; notes?: string }
+  ) => api.patch<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}`, body),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
   void: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/void`, {}),
   // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
@@ -661,11 +756,31 @@ export interface APBillPayment {
 }
 export interface APBill {
   id: string
-  billNumber: string
+  // Scenario 41 — the supplier's own invoice number, as printed on their
+  // invoice. Never generated by this system. Null on a DRAFT bill
+  // auto-generated straight off a goods receipt, before anyone's typed in
+  // the real invoice number yet — required before it can be received.
+  billNumber: string | null
   // Scenario 33 collapsed the old separate vendorId (required) + supplierId
   // (optional) pair into this single required field.
   supplierId: string
-  supplier?: { id: string; code: string; name: string } | null
+  supplier?: {
+    id: string
+    code: string
+    name: string
+    // Letterhead fields — findOne() returns the whole Supplier row, so the
+    // detail page's document view can print the same party block the PDF does.
+    address?: string | null
+    taxId?: string | null
+    // Scenario 43 Part B — fallback account for the printed/on-screen
+    // Account breakdown table when the bill has no override of its own.
+    defaultExpenseAccount?: { id: string; name: string } | null
+  } | null
+  // Scenario 43 Part B — override expense account for this bill; falls
+  // back to supplier.defaultExpenseAccount, then (print-only, resolved
+  // server-side in getDocument()) the tenant's DEFAULT_EXPENSE mapping.
+  expenseAccountId?: string | null
+  expenseAccount?: { id: string; name: string } | null
   // Scenario 10 Part 2 — the PO this invoice bills against, and the RRs
   // matched to it, for the 3-way match.
   purchaseOrderId?: string | null
@@ -698,21 +813,22 @@ export interface APBill {
       item?: { id: string; name: string; sku?: string } | null
     }[]
   }[]
-  // Scenario 10 Part 4 — manual voucher number + two-step approval status.
+  // Scenario 10 Part 4 — voucher + two-step approval status. Scenario 43 —
+  // voucherNumber is system-generated (never typed in); 'voided' means a
+  // still-pending voucher was retracted before approval — its number stays
+  // on the row permanently (retired, not reissued) rather than clearing.
   voucherNumber?: string | null
   voucherApprovalStatus?:
     | 'pending_online_approval'
     | 'pending_onsite_approval'
     | 'approved'
     | 'rejected'
+    | 'voided'
     | null
   voucherRejectedReason?: string | null
   billDate: string
   dueDate: string
   description?: string
-  // The supplier's own invoice number, as printed on their invoice —
-  // distinct from billNumber above, which is our internal AP bill number.
-  supplierInvoiceReferenceNo?: string | null
   subtotal: number
   // Input tax (VAT) on this purchase.
   taxAmount: number
@@ -739,25 +855,63 @@ export interface APBill {
   // typed in by hand — see ap-bills.service.ts's createOrAttachDraftFromReceipt.
   isAutoGenerated?: boolean
 }
+// Scenario 43 Part D — one row of the standalone Payments list, across all
+// bills (GET /ap-bills/payments). Read-only, no create/edit type needed.
+export interface APPaymentListItem {
+  id: string
+  billId: string
+  paymentDate: string
+  reference: string | null
+  bankAccount: { id: string; name: string } | null
+  description: string | null
+  payee: string | null
+  billNumber: string | null
+  voucherNumber: string | null
+  effectiveExpenseAccount: { id: string; name: string } | null
+  amount: number
+}
+// Print/document envelope for one bill (GET /ap-bills/:id/document) — the
+// bill plus the letterhead's enterprise block and the server-resolved
+// expense account. Also backs the detail page, which renders the same
+// document layout on screen as buildAPBillHtml() prints.
+export interface APBillDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: APBill & { effectiveExpenseAccount?: { id: string; name: string } | null }
+}
 export const APBills = {
   list: (params?: { search?: string; status?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
-  getDocument: (id: string) => api.get<unknown>(`/ap-bills/${id}/document`),
+  getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
   recordPayment: (id: string, body: any) => api.post<APBill>(`/ap-bills/${id}/payments`, body),
   remove: (id: string) => api.delete(`/ap-bills/${id}`),
   // Scenario 10 Part 4 — voucher creation + two-step approval.
-  createVoucher: (id: string, voucherNumber: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher`, { voucherNumber }),
+  // Scenario 43 — voucherNumber is system-generated, no longer sent by the
+  // caller; voidVoucher resets a still-pending voucher back to unraised.
+  createVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher`, {}),
+  voidVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher/void`, {}),
   approveVoucherOnline: (id: string) =>
     api.post<APBill>(`/ap-bills/${id}/voucher/approve-online`, {}),
   approveVoucherOnsite: (id: string) =>
     api.post<APBill>(`/ap-bills/${id}/voucher/approve-onsite`, {}),
   rejectVoucher: (id: string, reason: string) =>
     api.post<APBill>(`/ap-bills/${id}/voucher/reject`, { reason }),
+  // Scenario 43 Part D — standalone Payments list across all bills.
+  listPayments: (params?: { search?: string; supplierId?: string }) =>
+    api.get<{ items: APPaymentListItem[]; total: number }>('/ap-bills/payments', params as any),
 }
 
 // ============ File Attachments (shared — used by AP voucher, Scenario 10 Part 4) ============
@@ -983,6 +1137,38 @@ export interface BankAccount {
   /** GL account this bank/fund posts to instead of the shared Default Cash/Bank mapping. */
   glAccountId?: string | null
 }
+// Scenario 42 — the itemized worksheet. sourceType/direction mirror the
+// backend's BankReconciliationLineSourceType/Direction enums.
+export type BankReconciliationLineSourceType = 'AR_PAYMENT' | 'AP_PAYMENT' | 'CLEARING_SETTLEMENT'
+export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
+export interface BankReconciliationLine {
+  id: string
+  bankReconciliationId: string
+  sourceType: BankReconciliationLineSourceType
+  sourceId: string
+  direction: BankReconciliationLineDirection
+  amount: number
+  date: string
+  reference?: string | null
+  checked: boolean
+}
+export interface BankReconciliation {
+  id: string
+  bankAccountId: string
+  bankAccount?: BankAccount
+  statementDate: string
+  statementBalance: number
+  systemBalance: number
+  /** Persisted at Complete time only — null until then. */
+  discrepancy?: number | null
+  reconciled: boolean
+  notes?: string | null
+  reconciledAt?: string | null
+  lines: BankReconciliationLine[]
+  /** Only present on the single-worksheet GET — not the list endpoint. */
+  pendingDeposits?: BankReconciliationLine[]
+  pendingWithdrawals?: BankReconciliationLine[]
+}
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),
   get: (id: string) => api.get<BankAccount>(`/bank-accounts/${id}`),
@@ -990,8 +1176,22 @@ export const BankAccounts = {
   update: (id: string, body: any) => api.patch<BankAccount>(`/bank-accounts/${id}`, body),
   remove: (id: string) => api.delete(`/bank-accounts/${id}`),
   listReconciliations: (bankAccountId?: string) =>
-    api.get<any[]>('/bank-accounts/reconciliations', bankAccountId ? { bankAccountId } : undefined),
-  createReconciliation: (body: any) => api.post<any>('/bank-accounts/reconciliations', body),
+    api.get<BankReconciliation[]>(
+      '/bank-accounts/reconciliations',
+      bankAccountId ? { bankAccountId } : undefined
+    ),
+  createReconciliation: (body: {
+    bankAccountId: string
+    statementDate: string
+    statementBalance: number
+    notes?: string
+  }) => api.post<BankReconciliation>('/bank-accounts/reconciliations', body),
+  getReconciliationWorksheet: (id: string) =>
+    api.get<BankReconciliation>(`/bank-accounts/reconciliations/${id}`),
+  toggleReconciliationLine: (id: string, lineId: string, checked: boolean) =>
+    api.patch<BankReconciliationLine>(`/bank-accounts/reconciliations/${id}/lines/${lineId}`, {
+      checked,
+    }),
   completeReconciliation: (id: string) =>
     api.post<any>(`/bank-accounts/reconciliations/${id}/complete`, {}),
 }
@@ -1118,16 +1318,6 @@ export const FiscalPeriods = {
 }
 
 // ============ Tax ============
-export const Tax = {
-  listConfigs: () => api.get<any[]>('/tax/configurations'),
-  createConfig: (body: any) => api.post<any>('/tax/configurations', body),
-  updateConfig: (id: string, body: any) => api.patch<any>(`/tax/configurations/${id}`, body),
-  removeConfig: (id: string) => api.delete(`/tax/configurations/${id}`),
-  calculate: (amount: number, rate: number) => api.post<any>('/tax/calculate', { amount, rate }),
-  filingSummary: (startDate: string, endDate: string) =>
-    api.get<any>('/tax/filing-summary', { startDate, endDate }),
-}
-
 // ============ Account Mapping ============
 export interface AccountMapping {
   key: string
