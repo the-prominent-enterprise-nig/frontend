@@ -158,13 +158,11 @@ export function PurchaseOrderFormFields({
           <p className="mb-2 text-xs text-red-500">{errors.lines.message}</p>
         )}
 
-        <div className="hidden grid-cols-[32px_minmax(180px,360px)_64px_128px_144px_120px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
+        <div className="hidden grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
           <span />
           <span>Item</span>
           <span>Qty</span>
           <span>SRP</span>
-          <span>Unit Price</span>
-          <span className="text-right">Line Total</span>
           <span />
         </div>
 
@@ -199,7 +197,7 @@ export function PurchaseOrderFormFields({
               isFreebie: false,
             })
           }
-          className="mt-3 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+          className="mt-2 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
         >
           <Plus className="h-3.5 w-3.5" />
           Add Line
@@ -207,7 +205,7 @@ export function PurchaseOrderFormFields({
       </div>
 
       {/* Subtotal */}
-      <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+      <div className="flex items-center justify-end rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5">
         <span className="text-sm font-medium text-zinc-700">Subtotal:&nbsp;</span>
         <PoSubtotal control={control} fmtAmount={fmtAmount} />
       </div>
@@ -308,8 +306,10 @@ function PurchaseOrderLineCard({
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-      {/* Primary row — Freebie / Item / Qty / SRP / Unit Price / Line Total / Remove */}
-      <div className="grid grid-cols-[32px_minmax(180px,360px)_64px_128px_144px_120px_36px] items-center gap-2">
+      {/* Primary row — Freebie / Item / Qty / SRP / Remove. Unit Price and
+          Line Total sit below the discount chain that derives them, matching
+          the PO line format used by ConvertPrToPoModal. */}
+      <div className="grid grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] items-center gap-2">
         <label
           className="flex h-9 items-center justify-center"
           title="Freebie (supplier-given free unit — no cost)"
@@ -359,24 +359,6 @@ function PurchaseOrderLineCard({
           className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         />
 
-        <input
-          type="number"
-          min={0}
-          step={0.01}
-          aria-label="Unit price"
-          placeholder="Unit price"
-          disabled={isFreebie}
-          {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
-          className="w-full min-w-0 rounded-lg border border-zinc-200 px-2 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
-        />
-
-        <div
-          className="flex h-9 min-w-0 items-center justify-end truncate text-xs font-medium text-zinc-800"
-          title={fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
-        >
-          {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
-        </div>
-
         {canRemove ? (
           <button
             type="button"
@@ -399,11 +381,12 @@ function PurchaseOrderLineCard({
         </div>
       )}
 
-      {/* Secondary row — supplier discount chain (Scenario 10 Part 6, revised;
-          applied in order off srp, feeding Unit Price above) + Description */}
-      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-          Discounts
+      {/* Secondary block — supplier discount chain (Scenario 10 Part 6,
+          revised; applied in order off srp), then the Unit Price it feeds,
+          the Line Total, and Description */}
+      <div className="mt-1.5 flex flex-col items-start gap-1 border-t border-zinc-200 pt-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Discounts <span className="normal-case tracking-normal">(off SRP)</span>
         </span>
         {discountFields.map((discountField, discountIndex) => (
           <div key={discountField.id} className="flex items-center gap-1">
@@ -413,12 +396,12 @@ function PurchaseOrderLineCard({
               maxLength={100}
               aria-label="Discount name"
               {...register(`lines.${index}.discounts.${discountIndex}.name`)}
-              className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+              className="w-44 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
             />
             <select
               aria-label="Discount type"
               {...register(`lines.${index}.discounts.${discountIndex}.type`)}
-              className="w-14 rounded-lg border border-zinc-200 px-1 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+              className="w-16 rounded-lg border border-zinc-200 px-1 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
             >
               <option value="percentage">%</option>
               <option value="amount">₱</option>
@@ -432,7 +415,7 @@ function PurchaseOrderLineCard({
               {...register(`lines.${index}.discounts.${discountIndex}.value`, {
                 valueAsNumber: true,
               })}
-              className="w-16 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+              className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
             />
             <button
               type="button"
@@ -447,18 +430,47 @@ function PurchaseOrderLineCard({
         <button
           type="button"
           onClick={() => appendDiscount({ name: undefined, type: 'percentage', value: 0 })}
-          className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:underline"
+          className="flex items-center gap-1 text-sm font-medium text-prominent-purple-700 hover:underline"
         >
           <Plus className="h-3 w-3" />
           Add
         </button>
+
+        {/* Unit Price — srp with the chain above applied, still editable —
+            and the resulting Line Total */}
+        <div className="mt-1 flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+            Unit Price
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            aria-label="Unit price"
+            placeholder="Unit price"
+            disabled={isFreebie}
+            {...register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
+            className="w-32 min-w-0 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500 disabled:bg-zinc-100 disabled:text-zinc-400"
+          />
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+              Line Total
+            </span>
+            <span
+              className="truncate text-sm font-semibold text-zinc-800"
+              title={fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+            >
+              {fmtAmount((Number(quantity) || 0) * (Number(unitPrice) || 0))}
+            </span>
+          </div>
+        </div>
 
         <input
           type="text"
           placeholder="Description (optional)"
           aria-label="Line description"
           {...register(`lines.${index}.description`)}
-          className="min-w-40 flex-1 rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+          className="mt-1 w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
         />
       </div>
     </div>
