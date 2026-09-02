@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, AlertTriangle, Banknote, CheckCircle2, Loader2, Users, X } from 'lucide-react'
 import { useCustomerInstallmentSchedules, useCollectionsCustomers } from '../../_hooks/usePos'
 import {
@@ -279,11 +280,15 @@ function CustomerListSkeleton() {
 }
 
 export default function CollectionsScreen() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const deepLinkHandled = useRef(false)
   const [query, setQuery] = useState('')
   const [branchId, setBranchId] = useState('')
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
   const [showBulkPay, setShowBulkPay] = useState(false)
+  const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
@@ -305,6 +310,33 @@ export default function CollectionsScreen() {
     setCustomer(next)
     setSelectedInvoiceIds(new Set())
   }
+
+  // Deep link from an installment plan's due row (Customer360 / Installment
+  // Account Detail) — arrives as ?customerId&customerName&scheduleId. It
+  // pre-selects the customer and, once schedules load, checks that
+  // schedule's next open due and opens the pay modal on it, which is the
+  // "Pay Selected" equivalent of landing straight on that due. The query
+  // string is cleared right after so a refresh doesn't re-trigger it.
+  useEffect(() => {
+    if (deepLinkHandled.current) return
+    const dlCustomerId = searchParams.get('customerId')
+    if (!dlCustomerId) return
+    deepLinkHandled.current = true
+    selectCustomer({ id: dlCustomerId, name: searchParams.get('customerName') || 'Customer' })
+    setPendingScheduleId(searchParams.get('scheduleId'))
+    router.replace('/pos/collections')
+  }, [searchParams, router])
+
+  useEffect(() => {
+    if (!pendingScheduleId || schedulesQuery.isLoading) return
+    const match = schedules.find((s) => s.id === pendingScheduleId)
+    const nextDue = match?.lines.filter(isEligibleForBulkPay)[0]
+    if (match && nextDue) {
+      setSelectedInvoiceIds(toggleLineSelection(match.lines, nextDue, new Set()))
+      setShowBulkPay(true)
+    }
+    setPendingScheduleId(null)
+  }, [pendingScheduleId, schedules, schedulesQuery.isLoading])
 
   return (
     <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">

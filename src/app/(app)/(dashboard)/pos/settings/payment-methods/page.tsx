@@ -168,7 +168,7 @@ export default function PaymentMethodsPage() {
         )}
 
         {/* Table */}
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           {isLoading ? (
             <div className="space-y-4 p-6">
               {Array.from({ length: 5 }).map((_, i) => (

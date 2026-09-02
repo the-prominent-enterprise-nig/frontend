@@ -228,7 +228,7 @@ export default function SkuReservationsList({
         {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
         <div
-          className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
+          className={`scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${
             isFetching && !isLoading ? 'opacity-60' : ''
           }`}
         >

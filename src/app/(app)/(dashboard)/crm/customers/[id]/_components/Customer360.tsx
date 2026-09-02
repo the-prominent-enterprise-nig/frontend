@@ -449,6 +449,7 @@ export default function Customer360({
         <InstallmentScheduleDetailModal
           schedule={scheduleDetailTarget}
           customerId={id}
+          customerName={data.name}
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
@@ -893,12 +894,33 @@ function InstallmentStatusBadge({ status }: { status: string }) {
 function InstallmentScheduleDetailModal({
   schedule,
   customerId,
+  customerName,
   onClose,
 }: {
   schedule: InstallmentSchedule
   customerId: string
+  customerName: string
   onClose: () => void
 }) {
+  const router = useRouter()
+  const totalPayments = schedule.lines.reduce(
+    (sum, line) => sum + Number(line.arInvoice.amountPaid),
+    0
+  )
+  const remainingBalance = Math.max(0, Number(schedule.totalPayable) - totalPayments)
+  const hasUnpaidLine = schedule.lines.some(
+    (line) => !['PAID', 'CANCELLED'].includes(line.arInvoice.status)
+  )
+
+  function goToCollections() {
+    const params = new URLSearchParams({
+      customerId,
+      customerName,
+      scheduleId: schedule.id,
+    })
+    router.push(`/pos/collections?${params.toString()}`)
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
@@ -965,28 +987,32 @@ function InstallmentScheduleDetailModal({
 
           <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
             <Row label="Term" value={`${schedule.termMonths} months`} />
-            <Row label="Factor rate" value={`${Number(schedule.factorRate).toFixed(2)}x`} />
             <Row label="Down payment" value={formatPeso(schedule.downPayment)} />
             {schedule.installmentAccount && (
               <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
             )}
             <div className="border-t border-gray-200 pt-2">
-              <Row label="Total" value={formatPeso(schedule.totalPayable)} bold />
+              <Row label="Total price" value={formatPeso(schedule.totalPayable)} bold />
+              <Row label="Total payments made" value={formatPeso(totalPayments)} />
+              <Row label="Remaining balance" value={formatPeso(remainingBalance)} bold />
             </div>
           </div>
 
           <div className="mt-4">
             <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Due Dates</p>
+            {hasUnpaidLine && (
+              <p className="mb-2 text-[12px] text-gray-400">
+                Click any due date to collect a payment — it always settles the earliest unpaid due
+                first.
+              </p>
+            )}
             <ul className="divide-y divide-gray-100">
-              {schedule.lines.map((line) => (
-                <li key={line.lineNumber} className="py-1.5 text-[13px]">
-                  {/* Scenario 25 — each due date is its own real ARInvoice;
-                   * link straight into its per-invoice detail/print page
-                   * instead of only reaching it via the unfiltered ledger. */}
-                  <Link
-                    href={`/accounting/ar-invoices/${line.arInvoice.id}`}
-                    className="flex items-center justify-between gap-2 hover:bg-gray-50 rounded-lg -mx-1 px-1"
-                  >
+              {schedule.lines.map((line) => {
+                const paid = Number(line.arInvoice.amountPaid)
+                const total = Number(line.arInvoice.totalAmount)
+                const isPartial = line.arInvoice.status === 'PARTIAL' && paid > 0 && paid < total
+                const rowContent = (
+                  <>
                     <span className="text-gray-700">
                       <span className="font-mono text-[11px] text-gray-400">
                         {line.arInvoice.invoiceNumber}
@@ -994,16 +1020,36 @@ function InstallmentScheduleDetailModal({
                       {' · '}
                       Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
                       {new Date(line.arInvoice.dueDate).toLocaleDateString()}
+                      {isPartial && (
+                        <span className="block text-[11px] text-amber-600">
+                          {formatPeso(paid)} paid · {formatPeso(total - paid)} remaining
+                        </span>
+                      )}
                     </span>
                     <span className="flex items-center gap-2">
-                      <span className="font-medium text-gray-800">
-                        {formatPeso(line.arInvoice.totalAmount)}
-                      </span>
+                      <span className="font-medium text-gray-800">{formatPeso(total)}</span>
                       <InstallmentStatusBadge status={line.arInvoice.status} />
                     </span>
-                  </Link>
-                </li>
-              ))}
+                  </>
+                )
+                return (
+                  <li key={line.lineNumber} className="py-1.5 text-[13px]">
+                    {hasUnpaidLine ? (
+                      <button
+                        type="button"
+                        onClick={goToCollections}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg -mx-1 px-1 text-left hover:bg-gray-50"
+                      >
+                        {rowContent}
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 -mx-1 px-1">
+                        {rowContent}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </div>
         </div>

@@ -182,7 +182,7 @@ export default function CashDrawerPage() {
 
         {/* Events table */}
         {activeSessionId ? (
-          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="scroll-fade-x overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
             {isLoading ? (
               <div>
                 <div className="flex items-center gap-4 border-b border-gray-200 bg-gray-50 px-5 py-3">

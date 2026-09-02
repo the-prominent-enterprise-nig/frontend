@@ -51,10 +51,9 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
       ? { purchaseOrderNumber: purchaseOrderNumber.trim() }
       : {}),
     ...(purchaseOrderDate && purchaseOrderDate.trim() ? { poDate: purchaseOrderDate.trim() } : {}),
-    lines: lines.map(({ itemId, expiryDate, batchNumber, serialNumbers, ...lineRest }) => ({
+    lines: lines.map(({ itemId, batchNumber, serialNumbers, ...lineRest }) => ({
       ...lineRest,
       itemId,
-      ...(expiryDate ? { expiryDate } : {}),
       ...(batchNumber ? { batchNumber } : {}),
       ...(serialNumbers && serialNumbers.length > 0 ? { serialNumbers } : {}),
     })),

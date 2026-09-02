@@ -2827,6 +2827,28 @@ export async function getPendingReturnRefundRequests(
   }
 }
 
+// type-filtered, unlike getPendingReturnRefundRequests above — that one
+// returns void+cancellation+refund combined, which would double-count
+// against the dedicated void/cancellation getters if summed together
+// (e.g. for the POS overview's pending-approvals counts).
+export async function getPendingRefundRequests(
+  branchId?: string
+): Promise<ApiResponse<PosReturnRefundRequest[]>> {
+  try {
+    const result = await api.get<PosReturnRefundRequest[]>(
+      '/pos/return-refund-requests/pending',
+      { ...(branchId ? { branchId } : {}), type: 'refund' },
+      { tags: [TAGS.returnRefundRequests] }
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch pending refund requests' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch pending refund requests' }
+  }
+}
+
 export async function approveReturnRefundRequest(
   requestId: string,
   input?: ReviewReturnRefundInput

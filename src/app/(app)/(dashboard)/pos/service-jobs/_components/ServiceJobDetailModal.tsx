@@ -192,7 +192,7 @@ export function ServiceJobDetailModal({
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                     Types of Service
                   </p>
-                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                  <div className="scroll-fade-x overflow-x-auto rounded-lg border border-zinc-200">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-zinc-200 bg-zinc-50">
@@ -246,7 +246,7 @@ export function ServiceJobDetailModal({
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                   Estimated Materials
                 </p>
-                <div className="overflow-hidden rounded-lg border border-zinc-200">
+                <div className="scroll-fade-x overflow-x-auto rounded-lg border border-zinc-200">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 bg-zinc-50">
@@ -348,7 +348,7 @@ export function ServiceJobDetailModal({
                       {draft.invoice.invoiceNumber}
                     </span>
                   </div>
-                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                  <div className="scroll-fade-x overflow-x-auto rounded-lg border border-zinc-200">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-zinc-200 bg-zinc-50">

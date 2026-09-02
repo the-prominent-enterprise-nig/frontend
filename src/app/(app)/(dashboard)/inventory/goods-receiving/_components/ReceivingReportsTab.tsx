@@ -15,8 +15,24 @@ import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { getReceivingDocument } from '../_actions/get-receiving-document'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 
-function printDocument(data: unknown) {
-  printReceivingReportDocument(data)
+function printDocument(data: unknown, showAmounts: boolean) {
+  printReceivingReportDocument(data, { showAmounts })
+}
+
+const fmtMoney = (n: number) =>
+  n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+
+// A line's cost is only meaningful when someone actually entered it — a
+// freebie or a receipt with no cost-view access carries unitCost 0/null,
+// which must read as "no cost recorded", not "this cost is zero".
+function lineAmount(line: ReceivingReport['lines'][number]): number | null {
+  if (line.unitCost == null) return null
+  return line.quantityReceived * line.unitCost
+}
+
+function reportAmount(report: ReceivingReport): number | null {
+  const amounts = report.lines.map(lineAmount).filter((a): a is number => a != null)
+  return amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null
 }
 
 // The real linked PO's code (when this receipt came from Receive Against
@@ -59,8 +75,9 @@ function JournalEntryBadge({ journalEntryId }: { journalEntryId?: string | null 
   )
 }
 
-function DetailPanel({ report }: { report: ReceivingReport }) {
+function DetailPanel({ report, showAmounts }: { report: ReceivingReport; showAmounts: boolean }) {
   const [isPrinting, setIsPrinting] = useState(false)
+  const totalAmount = showAmounts ? reportAmount(report) : null
 
   return (
     <div className="overflow-hidden rounded-lg border border-prominent-purple-100 bg-white">
@@ -137,6 +154,11 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
                 <span className="font-medium text-zinc-700">₱{report.vatAmount.toFixed(2)}</span>
               </span>
             )}
+            {totalAmount != null && (
+              <span>
+                Amount: <span className="font-medium text-zinc-700">{fmtMoney(totalAmount)}</span>
+              </span>
+            )}
             <span>
               <JournalEntryBadge journalEntryId={report.journalEntryId} />
             </span>
@@ -148,7 +170,7 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
             setIsPrinting(true)
             try {
               const res = await getReceivingDocument(report.id)
-              if (res.success && res.data) printDocument(res.data)
+              if (res.success && res.data) printDocument(res.data, showAmounts)
             } finally {
               setIsPrinting(false)
             }
@@ -179,6 +201,11 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
               <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Qty Received
               </th>
+              {showAmounts && (
+                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Amount
+                </th>
+              )}
               <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Variance
               </th>
@@ -218,6 +245,18 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
                   <td className="px-4 py-3 text-center font-semibold text-zinc-800">
                     {line.quantityReceived}
                   </td>
+                  {showAmounts && (
+                    <td className="px-4 py-3 text-right text-zinc-700">
+                      {(() => {
+                        const amount = lineAmount(line)
+                        return amount != null ? (
+                          fmtMoney(amount)
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )
+                      })()}
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-center">
                     {d ? (
                       <span
@@ -268,7 +307,14 @@ function DetailPanel({ report }: { report: ReceivingReport }) {
   )
 }
 
-export default function ReceivingReportsTab() {
+type Props = {
+  // Amounts are financial info (unit cost / total cost) — shown for
+  // Accounting's own Receiving Reports view, hidden for Inventory's
+  // (warehouse/receiving staff don't need supplier cost visibility here).
+  showAmounts?: boolean
+}
+
+export default function ReceivingReportsTab({ showAmounts = false }: Props) {
   const {
     reports,
     meta,
@@ -378,6 +424,11 @@ export default function ReceivingReportsTab() {
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                     Received
                   </th>
+                  {showAmounts && (
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Amount
+                    </th>
+                  )}
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     Status
                   </th>
@@ -418,6 +469,18 @@ export default function ReceivingReportsTab() {
                             year: 'numeric',
                           })}
                         </td>
+                        {showAmounts && (
+                          <td className="px-4 py-3 text-right text-zinc-700">
+                            {(() => {
+                              const amount = reportAmount(report)
+                              return amount != null ? (
+                                fmtMoney(amount)
+                              ) : (
+                                <span className="text-zinc-400">—</span>
+                              )
+                            })()}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-center">
                           <DiscrepancyBadge report={report} />
                         </td>
@@ -430,7 +493,7 @@ export default function ReceivingReportsTab() {
                       {isSelected && (
                         <tr>
                           <td
-                            colSpan={8}
+                            colSpan={showAmounts ? 9 : 8}
                             className="border-l-4 border-prominent-purple-300 bg-prominent-purple-50/40 p-3"
                           >
                             {isLoadingDetail ? (
@@ -438,7 +501,7 @@ export default function ReceivingReportsTab() {
                                 <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
                               </div>
                             ) : selectedReport ? (
-                              <DetailPanel report={selectedReport} />
+                              <DetailPanel report={selectedReport} showAmounts={showAmounts} />
                             ) : (
                               <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 py-10 text-center">
                                 <AlertTriangle className="h-5 w-5 text-red-500" />

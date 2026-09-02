@@ -271,617 +271,610 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="flex w-full max-w-5xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        {/* Header */}
-        <div className="flex shrink-0 items-start justify-between border-b border-zinc-200 px-6 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900">Receive Stock Against PO</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              <span className="font-mono font-medium text-prominent-purple-700">{po.code}</span>
-              {' · '}
-              {po.supplier.name}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      {/* Header */}
+      <div className="flex shrink-0 items-start justify-between border-b border-zinc-200 px-6 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-900">Receive Stock Against PO</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            <span className="font-mono font-medium text-prominent-purple-700">{po.code}</span>
+            {' · '}
+            {po.supplier.name}
+          </p>
         </div>
-
-        <form
-          onSubmit={handleSubmit(handleFormSubmit)}
-          noValidate
-          className="flex flex-col overflow-hidden"
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
         >
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            {/* Warehouse + Date */}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Destination Warehouse <span className="text-red-500">*</span>
-                </label>
-                {po.warehouseId ? (
-                  <>
-                    <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-                      {po.warehouse?.name ?? 'Warehouse'}
-                    </div>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Set when this PO was created — stock always lands where it was ordered for.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    {/* Fallback for a PO created before the destination warehouse
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-col overflow-hidden"
+      >
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* Warehouse + Date */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Destination Warehouse <span className="text-red-500">*</span>
+              </label>
+              {po.warehouseId ? (
+                <>
+                  <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+                    {po.warehouse?.name ?? 'Warehouse'}
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Set when this PO was created — stock always lands where it was ordered for.
+                  </p>
+                </>
+              ) : (
+                <>
+                  {/* Fallback for a PO created before the destination warehouse
                         became required at PO-creation time — still restricted to
                         the 2 real warehouses, just editable here instead of locked. */}
-                    <Controller
-                      name="warehouseId"
-                      control={control}
-                      render={({ field }) => (
-                        <select {...field} className={`${fieldClass} bg-white`}>
-                          <option value="">Select warehouse…</option>
-                          {warehouses.map((wh) => (
-                            <option key={wh.id} value={wh.id}>
-                              {wh.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    />
-                    {errors.warehouseId && (
-                      <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+                  <Controller
+                    name="warehouseId"
+                    control={control}
+                    render={({ field }) => (
+                      <select {...field} className={`${fieldClass} bg-white`}>
+                        <option value="">Select warehouse…</option>
+                        {warehouses.map((wh) => (
+                          <option key={wh.id} value={wh.id}>
+                            {wh.name}
+                          </option>
+                        ))}
+                      </select>
                     )}
-                  </>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Date Received
-                </label>
-                <Controller
-                  name="receivedAt"
-                  control={control}
-                  render={({ field }) => (
-                    <input {...field} type="datetime-local" className={fieldClass} />
+                  />
+                  {errors.warehouseId && (
+                    <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
                   )}
-                />
-              </div>
+                </>
+              )}
             </div>
-
-            {/* Reference + Notes */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Receiving Report Reference
-                  <span className="ml-1 text-xs font-normal text-zinc-400">
-                    (auto-generated if blank)
-                  </span>
-                </label>
-                <Controller
-                  name="code"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="RR-YYYYMMDD-0001"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
-                <Controller
-                  name="notes"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="text"
-                      placeholder="Delivery notes…"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
-                Receiving Report */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Delivery Receipt No.
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
-                </label>
-                <Controller
-                  name="deliveryReceiptNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. DR-00123"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Supplier Invoice No.
-                  <span className="text-red-500"> *</span>
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
-                </label>
-                <Controller
-                  name="supplierInvoiceNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. SI-00456"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Tax off the supplier's invoice. Two different taxes moving in
-                opposite directions: VAT is charged BY the supplier and grows
-                what the invoice totals; withholding is held back FROM them
-                and remitted to the BIR, shrinking only what's paid out. */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Input VAT amount
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(₱, from the SI)</span>
-                </label>
-                <Controller
-                  name="vatAmount"
-                  control={control}
-                  render={({ field }) => (
-                    <div className="relative">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-                        ₱
-                      </span>
-                      <input
-                        value={field.value == null || isNaN(field.value) ? '' : field.value}
-                        onChange={(e) =>
-                          field.onChange(
-                            isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
-                          )
-                        }
-                        onBlur={field.onBlur}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className={`${fieldClass} pl-7 text-right`}
-                      />
-                    </div>
-                  )}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Withholding tax amount
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(₱, BIR 2307)</span>
-                </label>
-                <Controller
-                  name="withheldAmount"
-                  control={control}
-                  render={({ field }) => (
-                    <div className="relative">
-                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-                        ₱
-                      </span>
-                      <input
-                        value={field.value == null || isNaN(field.value) ? '' : field.value}
-                        onChange={(e) =>
-                          field.onChange(
-                            isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
-                          )
-                        }
-                        onBlur={field.onBlur}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className={`${fieldClass} pl-7 text-right`}
-                      />
-                    </div>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* What the two numbers above actually add up to, so it can be
-                ticked against the supplier's invoice before confirming. */}
-            {canViewCost && grossSelected > 0 && (
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
-                <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Stock value</dt>
-                    <dd className="font-medium tabular-nums text-zinc-800">{fmtPeso(netTotal)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">Input VAT</dt>
-                    <dd className="font-medium tabular-nums text-zinc-800">
-                      {fmtPeso(effectiveVat)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
-                    <dt className="font-medium text-zinc-700">Invoice total</dt>
-                    <dd className="font-semibold tabular-nums text-zinc-900">
-                      {fmtPeso(invoiceTotal)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
-                    <dt className="font-medium text-zinc-700">
-                      Payable to supplier
-                      {withheldAmountValue ? ' (net of withholding)' : ''}
-                    </dt>
-                    <dd className="font-semibold tabular-nums text-zinc-900">
-                      {fmtPeso(invoiceTotal - (withheldAmountValue ?? 0))}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            )}
-
-            {/* Lines table */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-zinc-700">
-                  Line Items
-                  <span className="ml-1.5 text-xs font-normal text-zinc-400">
-                    — check the lines being delivered
-                  </span>
-                </p>
-                <span className="text-xs text-zinc-400">
-                  {selectedCount} of {fields.length} selected
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Date Received</label>
+              <Controller
+                name="receivedAt"
+                control={control}
+                render={({ field }) => (
+                  <input {...field} type="datetime-local" className={fieldClass} />
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Reference + Notes */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Receiving Report Reference
+                <span className="ml-1 text-xs font-normal text-zinc-400">
+                  (auto-generated if blank)
                 </span>
-              </div>
+              </label>
+              <Controller
+                name="code"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="RR-YYYYMMDD-0001"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
+              <Controller
+                name="notes"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    type="text"
+                    placeholder="Delivery notes…"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+          </div>
 
-              {fields.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 py-10 text-center">
-                  <PackageCheck className="mb-2 h-8 w-8 text-zinc-300" />
-                  <p className="text-sm text-zinc-400">No line items on this PO</p>
+          {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
+                Receiving Report */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Delivery Receipt No.
+                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
+              </label>
+              <Controller
+                name="deliveryReceiptNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="e.g. DR-00123"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Supplier Invoice No.
+                <span className="text-red-500"> *</span>
+                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
+              </label>
+              <Controller
+                name="supplierInvoiceNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="e.g. SI-00456"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Tax off the supplier's invoice. Two different taxes moving in
+              opposite directions: VAT is charged BY the supplier and grows
+              what the invoice totals; withholding is held back FROM them
+              and remitted to the BIR, shrinking only what's paid out. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Input VAT amount
+                <span className="ml-1 text-xs font-normal text-zinc-400">(₱, from the SI)</span>
+              </label>
+              <Controller
+                name="vatAmount"
+                control={control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+                      ₱
+                    </span>
+                    <input
+                      value={field.value == null || isNaN(field.value) ? '' : field.value}
+                      onChange={(e) =>
+                        field.onChange(
+                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
+                        )
+                      }
+                      onBlur={field.onBlur}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-7 text-right`}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Withholding tax amount
+                <span className="ml-1 text-xs font-normal text-zinc-400">(₱, BIR 2307)</span>
+              </label>
+              <Controller
+                name="withheldAmount"
+                control={control}
+                render={({ field }) => (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+                      ₱
+                    </span>
+                    <input
+                      value={field.value == null || isNaN(field.value) ? '' : field.value}
+                      onChange={(e) =>
+                        field.onChange(
+                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
+                        )
+                      }
+                      onBlur={field.onBlur}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-7 text-right`}
+                    />
+                  </div>
+                )}
+              />
+            </div>
+          </div>
+
+          {/* What the two numbers above actually add up to, so it can be
+              ticked against the supplier's invoice before confirming. */}
+          {canViewCost && grossSelected > 0 && (
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-zinc-500">Stock value</dt>
+                  <dd className="font-medium tabular-nums text-zinc-800">{fmtPeso(netTotal)}</dd>
                 </div>
-              ) : (
-                <div className="overflow-hidden rounded-xl border border-zinc-200">
-                  <table className="w-full text-sm">
-                    <thead className="border-b border-zinc-100 bg-zinc-50">
-                      <tr>
-                        <th className="w-10 px-3 py-2.5" />
-                        <th className="px-4 py-2.5 text-left text-xs font-medium text-zinc-500 w-[200px]">
-                          Item
-                        </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                          Ordered
-                        </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                          Received to Date
-                        </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                          Remaining
-                        </th>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-zinc-500">Input VAT</dt>
+                  <dd className="font-medium tabular-nums text-zinc-800">
+                    {fmtPeso(effectiveVat)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
+                  <dt className="font-medium text-zinc-700">Invoice total</dt>
+                  <dd className="font-semibold tabular-nums text-zinc-900">
+                    {fmtPeso(invoiceTotal)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
+                  <dt className="font-medium text-zinc-700">
+                    Payable to supplier
+                    {withheldAmountValue ? ' (net of withholding)' : ''}
+                  </dt>
+                  <dd className="font-semibold tabular-nums text-zinc-900">
+                    {fmtPeso(invoiceTotal - (withheldAmountValue ?? 0))}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          )}
+
+          {/* Lines table */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-700">
+                Line Items
+                <span className="ml-1.5 text-xs font-normal text-zinc-400">
+                  — check the lines being delivered
+                </span>
+              </p>
+              <span className="text-xs text-zinc-400">
+                {selectedCount} of {fields.length} selected
+              </span>
+            </div>
+
+            {fields.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 py-10 text-center">
+                <PackageCheck className="mb-2 h-8 w-8 text-zinc-300" />
+                <p className="text-sm text-zinc-400">No line items on this PO</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-zinc-200">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-zinc-100 bg-zinc-50">
+                    <tr>
+                      <th className="w-10 px-3 py-2.5" />
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-zinc-500 w-[200px]">
+                        Item
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
+                        Ordered
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
+                        Received to Date
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
+                        Remaining
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
+                        Qty to Receive <span className="text-red-400">*</span>
+                      </th>
+                      {canViewCost && (
                         <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
-                          Qty to Receive <span className="text-red-400">*</span>
+                          Unit Cost
                         </th>
-                        {canViewCost && (
-                          <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
-                            Unit Cost
-                          </th>
-                        )}
-                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[110px]">
-                          Batch No.
-                        </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
-                          QC Hold
-                        </th>
-                        <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                          Serials <span className="text-red-400">*</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-50">
-                      {fields.map((field, idx) => {
-                        const poLine = po.lines[idx]
-                        const alreadyReceived = Number(poLine?.receivedQuantity ?? 0)
-                        const ordered = Number(poLine?.quantity ?? 0)
-                        const remaining = Math.max(ordered - alreadyReceived, 0)
+                      )}
+                      <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[110px]">
+                        Batch No.
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
+                        QC Hold
+                      </th>
+                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
+                        Serials <span className="text-red-400">*</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {fields.map((field, idx) => {
+                      const poLine = po.lines[idx]
+                      const alreadyReceived = Number(poLine?.receivedQuantity ?? 0)
+                      const ordered = Number(poLine?.quantity ?? 0)
+                      const remaining = Math.max(ordered - alreadyReceived, 0)
 
-                        const isSelected = selectedLines[idx] ?? true
-                        const isSerialTracked = !!poLine?.item?.isSerialTracked
+                      const isSelected = selectedLines[idx] ?? true
+                      const isSerialTracked = !!poLine?.item?.isSerialTracked
 
-                        return (
-                          <Fragment key={field.id}>
-                            <tr
-                              className={`transition-colors ${isSelected ? 'hover:bg-zinc-50/50' : 'bg-zinc-50/40 opacity-50'}`}
-                            >
-                              {/* Select checkbox */}
-                              <td className="px-3 py-3 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleLine(idx)}
-                                  className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500 cursor-pointer"
-                                />
-                              </td>
+                      return (
+                        <Fragment key={field.id}>
+                          <tr
+                            className={`transition-colors ${isSelected ? 'hover:bg-zinc-50/50' : 'bg-zinc-50/40 opacity-50'}`}
+                          >
+                            {/* Select checkbox */}
+                            <td className="px-3 py-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleLine(idx)}
+                                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500 cursor-pointer"
+                              />
+                            </td>
 
-                              {/* Item */}
-                              <td className="px-4 py-3">
-                                <p className="font-medium text-zinc-800 leading-tight">
-                                  {poLine?.item?.name ?? poLine?.itemId}
-                                </p>
-                                {poLine?.item?.sku && (
-                                  <p className="font-mono text-xs text-zinc-400">
-                                    {poLine.item.sku}
-                                  </p>
-                                )}
-                                {isSerialTracked && (
-                                  <span
-                                    title="Each unit needs its own supplier-provided serial number — enter them in the Serials column."
-                                    className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
-                                  >
-                                    Serial-tracked
-                                  </span>
-                                )}
-                              </td>
-
-                              {/* Ordered */}
-                              <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
-
-                              {/* Already received */}
-                              <td className="px-3 py-3 text-center">
+                            {/* Item */}
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-zinc-800 leading-tight">
+                                {poLine?.item?.name ?? poLine?.itemId}
+                              </p>
+                              {poLine?.item?.sku && (
+                                <p className="font-mono text-xs text-zinc-400">{poLine.item.sku}</p>
+                              )}
+                              {isSerialTracked && (
                                 <span
-                                  className={
-                                    alreadyReceived > 0
-                                      ? 'font-medium text-zinc-800'
-                                      : 'text-zinc-300'
-                                  }
+                                  title="Each unit needs its own supplier-provided serial number — enter them in the Serials column."
+                                  className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
                                 >
-                                  {alreadyReceived > 0 ? alreadyReceived : '—'}
+                                  Serial-tracked
                                 </span>
-                              </td>
+                              )}
+                            </td>
 
-                              {/* Remaining */}
-                              <td className="px-3 py-3 text-center">
-                                <span
-                                  className={
-                                    remaining === 0
-                                      ? 'text-green-600 font-medium'
-                                      : 'text-amber-600 font-medium'
-                                  }
-                                >
-                                  {remaining === 0 ? '✓' : remaining}
-                                </span>
-                              </td>
+                            {/* Ordered */}
+                            <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
 
-                              {/* Qty to receive */}
+                            {/* Already received */}
+                            <td className="px-3 py-3 text-center">
+                              <span
+                                className={
+                                  alreadyReceived > 0
+                                    ? 'font-medium text-zinc-800'
+                                    : 'text-zinc-300'
+                                }
+                              >
+                                {alreadyReceived > 0 ? alreadyReceived : '—'}
+                              </span>
+                            </td>
+
+                            {/* Remaining */}
+                            <td className="px-3 py-3 text-center">
+                              <span
+                                className={
+                                  remaining === 0
+                                    ? 'text-green-600 font-medium'
+                                    : 'text-amber-600 font-medium'
+                                }
+                              >
+                                {remaining === 0 ? '✓' : remaining}
+                              </span>
+                            </td>
+
+                            {/* Qty to receive */}
+                            <td className="px-3 py-3">
+                              <Controller
+                                name={`lines.${idx}.quantityReceived`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    value={isNaN(f.value) ? '' : f.value}
+                                    onChange={(e) => {
+                                      const next = e.target.valueAsNumber
+                                      f.onChange(next)
+                                      // Serial boxes below are rendered per-unit and registered
+                                      // individually — react-hook-form doesn't clear a hidden
+                                      // index's value when the array shrinks, so a lowered qty
+                                      // (partial receipt) left stale empty slots that silently
+                                      // failed the serials-length refine and blocked submit.
+                                      const nextCount = Number.isFinite(next)
+                                        ? Math.max(0, Math.floor(next))
+                                        : 0
+                                      setValue(
+                                        `lines.${idx}.serialNumbers`,
+                                        (watchedLines?.[idx]?.serialNumbers ?? []).slice(
+                                          0,
+                                          nextCount
+                                        ),
+                                        { shouldValidate: true }
+                                      )
+                                    }}
+                                    onBlur={f.onBlur}
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    className={`${cellInputClass} text-center ${
+                                      errors.lines?.[idx]?.quantityReceived
+                                        ? 'border-red-400 ring-1 ring-red-400'
+                                        : ''
+                                    }`}
+                                  />
+                                )}
+                              />
+                            </td>
+
+                            {/* Unit cost */}
+                            {canViewCost && (
                               <td className="px-3 py-3">
                                 <Controller
-                                  name={`lines.${idx}.quantityReceived`}
+                                  name={`lines.${idx}.unitCost`}
                                   control={control}
                                   render={({ field: f }) => (
                                     <input
-                                      value={isNaN(f.value) ? '' : f.value}
+                                      value={f.value == null || isNaN(f.value) ? '' : f.value}
                                       onChange={(e) => {
                                         const next = e.target.valueAsNumber
-                                        f.onChange(next)
-                                        // Serial boxes below are rendered per-unit and registered
-                                        // individually — react-hook-form doesn't clear a hidden
-                                        // index's value when the array shrinks, so a lowered qty
-                                        // (partial receipt) left stale empty slots that silently
-                                        // failed the serials-length refine and blocked submit.
-                                        const nextCount = Number.isFinite(next)
-                                          ? Math.max(0, Math.floor(next))
-                                          : 0
-                                        setValue(
-                                          `lines.${idx}.serialNumbers`,
-                                          (watchedLines?.[idx]?.serialNumbers ?? []).slice(
-                                            0,
-                                            nextCount
-                                          ),
-                                          { shouldValidate: true }
-                                        )
+                                        f.onChange(Number.isNaN(next) ? undefined : next)
                                       }}
                                       onBlur={f.onBlur}
                                       type="number"
                                       min="0"
-                                      step="1"
-                                      className={`${cellInputClass} text-center ${
-                                        errors.lines?.[idx]?.quantityReceived
-                                          ? 'border-red-400 ring-1 ring-red-400'
-                                          : ''
-                                      }`}
+                                      step="0.01"
+                                      className={`${cellInputClass} text-right`}
                                     />
                                   )}
                                 />
                               </td>
+                            )}
 
-                              {/* Unit cost */}
-                              {canViewCost && (
-                                <td className="px-3 py-3">
-                                  <Controller
-                                    name={`lines.${idx}.unitCost`}
-                                    control={control}
-                                    render={({ field: f }) => (
-                                      <input
-                                        value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                        onChange={(e) =>
-                                          f.onChange(e.target.valueAsNumber || undefined)
-                                        }
-                                        onBlur={f.onBlur}
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        className={`${cellInputClass} text-right`}
-                                      />
-                                    )}
+                            {/* Batch */}
+                            <td className="px-3 py-3">
+                              <Controller
+                                name={`lines.${idx}.batchNumber`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    {...f}
+                                    value={f.value ?? ''}
+                                    type="text"
+                                    placeholder="Optional"
+                                    className={cellInputClass}
                                   />
-                                </td>
+                                )}
+                              />
+                            </td>
+
+                            {/* QC Hold */}
+                            <td className="px-3 py-3 text-center">
+                              <Controller
+                                name={`lines.${idx}.qualityHold`}
+                                control={control}
+                                render={({ field: f }) => (
+                                  <input
+                                    type="checkbox"
+                                    checked={f.value}
+                                    onChange={f.onChange}
+                                    className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                                  />
+                                )}
+                              />
+                            </td>
+
+                            {/* Serials */}
+                            <td className="px-3 py-3">
+                              {isSerialTracked ? (
+                                <div className="flex justify-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSerialEntry(idx)}
+                                    className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                                  >
+                                    {expandedSerialRows.has(idx) ? (
+                                      <ChevronUp className="h-3 w-3" />
+                                    ) : (
+                                      <ScanBarcode className="h-3 w-3" />
+                                    )}
+                                    {(watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length ??
+                                      0) > 0
+                                      ? `${watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
+                                      : 'Enter serials'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="block text-center text-xs text-zinc-300">—</span>
                               )}
+                            </td>
+                          </tr>
 
-                              {/* Batch */}
-                              <td className="px-3 py-3">
-                                <Controller
-                                  name={`lines.${idx}.batchNumber`}
-                                  control={control}
-                                  render={({ field: f }) => (
-                                    <input
-                                      {...f}
-                                      value={f.value ?? ''}
-                                      type="text"
-                                      placeholder="Optional"
-                                      className={cellInputClass}
-                                    />
-                                  )}
-                                />
-                              </td>
-
-                              {/* QC Hold */}
-                              <td className="px-3 py-3 text-center">
-                                <Controller
-                                  name={`lines.${idx}.qualityHold`}
-                                  control={control}
-                                  render={({ field: f }) => (
-                                    <input
-                                      type="checkbox"
-                                      checked={f.value}
-                                      onChange={f.onChange}
-                                      className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
-                                    />
-                                  )}
-                                />
-                              </td>
-
-                              {/* Serials */}
-                              <td className="px-3 py-3">
-                                {isSerialTracked ? (
-                                  <div className="flex justify-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleSerialEntry(idx)}
-                                      className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
-                                    >
-                                      {expandedSerialRows.has(idx) ? (
-                                        <ChevronUp className="h-3 w-3" />
-                                      ) : (
-                                        <ScanBarcode className="h-3 w-3" />
-                                      )}
-                                      {(watchedLines?.[idx]?.serialNumbers?.filter(Boolean)
-                                        .length ?? 0) > 0
-                                        ? `${watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
-                                        : 'Enter serials'}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="block text-center text-xs text-zinc-300">—</span>
+                          {isSerialTracked && expandedSerialRows.has(idx) && (
+                            <tr className="bg-zinc-50">
+                              <td colSpan={canViewCost ? 10 : 9} className="px-4 py-3">
+                                <p className="mb-2 text-xs font-medium text-zinc-600">
+                                  Enter the serial number for each unit —{' '}
+                                  {Math.max(
+                                    0,
+                                    Math.floor(Number(watchedLines?.[idx]?.quantityReceived) || 0)
+                                  )}{' '}
+                                  unit(s) to receive
+                                </p>
+                                <div className="space-y-2">
+                                  {Array.from({
+                                    length: Math.max(
+                                      0,
+                                      Math.floor(Number(watchedLines?.[idx]?.quantityReceived) || 0)
+                                    ),
+                                  }).map((_, unitIdx) => {
+                                    const unitError =
+                                      errors.lines?.[idx]?.serialNumbers?.[unitIdx]?.message ??
+                                      (unitIdx === 0
+                                        ? errors.lines?.[idx]?.serialNumbers?.message
+                                        : undefined)
+                                    return (
+                                      <div key={unitIdx} className="flex items-center gap-2">
+                                        <span className="w-16 shrink-0 text-xs text-zinc-500">
+                                          Unit {unitIdx + 1} of{' '}
+                                          {Math.max(
+                                            0,
+                                            Math.floor(
+                                              Number(watchedLines?.[idx]?.quantityReceived) || 0
+                                            )
+                                          )}
+                                        </span>
+                                        <input
+                                          {...register(
+                                            `lines.${idx}.serialNumbers.${unitIdx}` as `lines.${number}.serialNumbers.${number}`
+                                          )}
+                                          type="text"
+                                          placeholder={`SN-00${unitIdx + 1}`}
+                                          className={`${cellInputClass} font-mono text-xs ${
+                                            unitError ? 'border-red-400 ring-1 ring-red-400' : ''
+                                          }`}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                {errors.lines?.[idx]?.serialNumbers?.message && (
+                                  <p className="mt-1 text-xs text-red-600">
+                                    {errors.lines[idx]?.serialNumbers?.message}
+                                  </p>
                                 )}
                               </td>
                             </tr>
-
-                            {isSerialTracked && expandedSerialRows.has(idx) && (
-                              <tr className="bg-zinc-50">
-                                <td colSpan={canViewCost ? 10 : 9} className="px-4 py-3">
-                                  <p className="mb-2 text-xs font-medium text-zinc-600">
-                                    Enter the serial number for each unit —{' '}
-                                    {Math.max(
-                                      0,
-                                      Math.floor(Number(watchedLines?.[idx]?.quantityReceived) || 0)
-                                    )}{' '}
-                                    unit(s) to receive
-                                  </p>
-                                  <div className="space-y-2">
-                                    {Array.from({
-                                      length: Math.max(
-                                        0,
-                                        Math.floor(
-                                          Number(watchedLines?.[idx]?.quantityReceived) || 0
-                                        )
-                                      ),
-                                    }).map((_, unitIdx) => {
-                                      const unitError =
-                                        errors.lines?.[idx]?.serialNumbers?.[unitIdx]?.message ??
-                                        (unitIdx === 0
-                                          ? errors.lines?.[idx]?.serialNumbers?.message
-                                          : undefined)
-                                      return (
-                                        <div key={unitIdx} className="flex items-center gap-2">
-                                          <span className="w-16 shrink-0 text-xs text-zinc-500">
-                                            Unit {unitIdx + 1} of{' '}
-                                            {Math.max(
-                                              0,
-                                              Math.floor(
-                                                Number(watchedLines?.[idx]?.quantityReceived) || 0
-                                              )
-                                            )}
-                                          </span>
-                                          <input
-                                            {...register(
-                                              `lines.${idx}.serialNumbers.${unitIdx}` as `lines.${number}.serialNumbers.${number}`
-                                            )}
-                                            type="text"
-                                            placeholder={`SN-00${unitIdx + 1}`}
-                                            className={`${cellInputClass} font-mono text-xs ${
-                                              unitError ? 'border-red-400 ring-1 ring-red-400' : ''
-                                            }`}
-                                          />
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                  {errors.lines?.[idx]?.serialNumbers?.message && (
-                                    <p className="mt-1 text-xs text-red-600">
-                                      {errors.lines[idx]?.serialNumbers?.message}
-                                    </p>
-                                  )}
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || selectedCount === 0}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-5 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60 transition-colors"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              Confirm Receipt
-            </button>
-          </div>
-        </form>
-      </div>
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || selectedCount === 0}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-5 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60 transition-colors"
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Confirm Receipt
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

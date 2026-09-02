@@ -49,7 +49,6 @@ const emptyLine = (): ReceiveStockFormValues['lines'][number] => ({
   unitCost: undefined,
   isFreebie: false,
   batchNumber: '',
-  expiryDate: '',
   qualityHold: false,
   notes: '',
 })
@@ -198,562 +197,558 @@ export default function ReceiveStockModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
-        {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Receive Stock</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">Record incoming stock into inventory.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">Receive Stock</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">Record incoming stock into inventory.</p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-5 px-6 py-5">
-            {/* Reference Number + Date Received */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Reference Number
-                </label>
-                <Controller
-                  name="code"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="text"
-                      placeholder="Auto-generated if blank"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-                <p className="mt-0.5 text-xs text-zinc-400">
-                  Leave blank to auto-generate (RR-YYYYMMDD-NNNN)
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Date Received
-                </label>
-                <Controller
-                  name="receivedAt"
-                  control={control}
-                  render={({ field }) => (
-                    <input {...field} type="datetime-local" className={fieldClass} />
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* PO Number + PO Date */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">PO Number</label>
-                <Controller
-                  name="purchaseOrderNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="text"
-                      placeholder="e.g. PO-2025-001"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Purchase Order Date
-                </label>
-                <Controller
-                  name="purchaseOrderDate"
-                  control={control}
-                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                />
-              </div>
-            </div>
-
-            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
-                Receiving Report */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Delivery Receipt No.
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
-                </label>
-                <Controller
-                  name="deliveryReceiptNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. DR-00123"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Supplier Invoice No.
-                  {watchedApplicationType === 'new_stock' && (
-                    <span className="text-red-500"> *</span>
-                  )}
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
-                </label>
-                <Controller
-                  name="supplierInvoiceNumber"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. SI-00456"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-                {errors.supplierInvoiceNumber && (
-                  <p className="mt-1 text-xs text-red-600">
-                    {errors.supplierInvoiceNumber.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Supplier */}
-            <div className="sm:w-1/2">
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          {/* Reference Number + Date Received */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Supplier <span className="text-red-500">*</span>
+                Reference Number
               </label>
               <Controller
-                name="supplierId"
+                name="code"
                 control={control}
                 render={({ field }) => (
-                  <SupplierSearchCombobox
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    error={errors.supplierId?.message}
+                  <input
+                    {...field}
+                    type="text"
+                    placeholder="Auto-generated if blank"
+                    className={fieldClass}
                   />
                 )}
               />
               <p className="mt-0.5 text-xs text-zinc-400">
-                Required unless a line below is linked to a PO.
+                Leave blank to auto-generate (RR-YYYYMMDD-NNNN)
               </p>
             </div>
 
-            {/* Destination Location */}
-            <div className="sm:w-1/2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Date Received</label>
+              <Controller
+                name="receivedAt"
+                control={control}
+                render={({ field }) => (
+                  <input {...field} type="datetime-local" className={fieldClass} />
+                )}
+              />
+            </div>
+          </div>
+
+          {/* PO Number + PO Date */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">PO Number</label>
+              <Controller
+                name="purchaseOrderNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    type="text"
+                    placeholder="e.g. PO-2025-001"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+
+            <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Destination Location <span className="text-red-500">*</span>
+                Purchase Order Date
               </label>
               <Controller
-                name="warehouseId"
+                name="purchaseOrderDate"
+                control={control}
+                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+              />
+            </div>
+          </div>
+
+          {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
+                Receiving Report */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Delivery Receipt No.
+                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
+              </label>
+              <Controller
+                name="deliveryReceiptNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="e.g. DR-00123"
+                    className={fieldClass}
+                  />
+                )}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Supplier Invoice No.
+                {watchedApplicationType === 'new_stock' && <span className="text-red-500"> *</span>}
+                <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
+              </label>
+              <Controller
+                name="supplierInvoiceNumber"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    value={field.value ?? ''}
+                    type="text"
+                    placeholder="e.g. SI-00456"
+                    className={fieldClass}
+                  />
+                )}
+              />
+              {errors.supplierInvoiceNumber && (
+                <p className="mt-1 text-xs text-red-600">{errors.supplierInvoiceNumber.message}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Supplier */}
+          <div className="sm:w-1/2">
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Supplier <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              name="supplierId"
+              control={control}
+              render={({ field }) => (
+                <SupplierSearchCombobox
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  error={errors.supplierId?.message}
+                />
+              )}
+            />
+            <p className="mt-0.5 text-xs text-zinc-400">
+              Required unless a line below is linked to a PO.
+            </p>
+          </div>
+
+          {/* Destination Location */}
+          <div className="sm:w-1/2">
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Destination Location <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              name="warehouseId"
+              control={control}
+              render={({ field }) => (
+                <select {...field} className={`${fieldClass} bg-white`}>
+                  <option value="">Select location…</option>
+                  {warehouses.map((wh) => (
+                    <option key={wh.id} value={wh.id}>
+                      {wh.branch?.name ?? wh.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+            {errors.warehouseId && (
+              <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+            )}
+          </div>
+
+          {/* Application Type + Mode of Transfer */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Application Type <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="applicationType"
                 control={control}
                 render={({ field }) => (
                   <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select location…</option>
-                    {warehouses.map((wh) => (
-                      <option key={wh.id} value={wh.id}>
-                        {wh.branch?.name ?? wh.name}
-                      </option>
-                    ))}
+                    <option value="new_stock">New Stock</option>
+                    <option value="revert">Revert</option>
                   </select>
                 )}
               />
-              {errors.warehouseId && (
-                <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
-              )}
             </div>
 
-            {/* Application Type + Mode of Transfer */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Application Type <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="applicationType"
-                  control={control}
-                  render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="new_stock">New Stock</option>
-                      <option value="revert">Revert</option>
-                    </select>
-                  )}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Mode of Transfer
-                </label>
-                <Controller
-                  name="modeOfTransfer"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="text"
-                      placeholder="e.g. Road, Air, Sea"
-                      className={fieldClass}
-                    />
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* NNDP Cost */}
-            {canViewCost && (
-              <div className="sm:w-1/2">
-                <label className="mb-1 block text-sm font-medium text-zinc-700">NNDP Cost</label>
-                <Controller
-                  name="nndpCost"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={field.value ?? ''}
-                      className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) =>
-                        field.onChange(e.target.value === '' ? undefined : Number(e.target.value))
-                      }
-                    />
-                  )}
-                />
-                {errors.nndpCost && (
-                  <p className="mt-1 text-xs text-red-600">{errors.nndpCost.message}</p>
-                )}
-              </div>
-            )}
-
-            {/* Withholding */}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
-                <Controller
-                  name="withholding"
-                  control={control}
-                  render={({ field }) => (
-                    <select
-                      {...field}
-                      value={field.value ?? 'none'}
-                      className={`${fieldClass} bg-white`}
-                    >
-                      <option value="none">None</option>
-                      <option value="pct_1">1% Withholding</option>
-                    </select>
-                  )}
-                />
-              </div>
-
-              {withholding === 'pct_1' && canViewCost && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Withheld Amount
-                  </label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={withheldAmount.toFixed(2)}
-                    className={`${fieldClass} bg-zinc-50 text-zinc-600`}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Items to Receive */}
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-800">Items to Receive</h3>
-                <button
-                  type="button"
-                  onClick={() => append(emptyLine())}
-                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Item
-                </button>
-              </div>
-
-              {fields.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-center text-sm text-zinc-400">
-                  No items added yet. Click &ldquo;Add Item&rdquo; to begin.
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-zinc-200">
-                  <table className="w-full text-sm">
-                    <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      <tr>
-                        <th className="px-3 py-2">Item</th>
-                        <th className="px-3 py-2">Qty</th>
-                        {canViewCost && <th className="px-3 py-2">Unit Cost</th>}
-                        <th className="px-3 py-2 text-center">Freebie</th>
-                        <th className="px-3 py-2">Batch No.</th>
-                        <th className="px-3 py-2 text-center">QC Hold</th>
-                        <th className="px-3 py-2 text-center">Serials</th>
-                        <th className="px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100">
-                      {fields.map((field, idx) => (
-                        <Fragment key={field.id}>
-                          <tr className="hover:bg-zinc-50">
-                            <td className="px-3 py-2 min-w-64">
-                              <Controller
-                                name={`lines.${idx}.itemId`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <ItemSearchCombobox
-                                    value={f.value}
-                                    onChange={(itemId) => handleItemChange(idx, itemId)}
-                                    onSelect={handleItemSelect}
-                                    error={errors.lines?.[idx]?.itemId?.message}
-                                    initialLabel={
-                                      pickedItems[f.value]?.name ??
-                                      items.find((i) => i.id === f.value)?.name
-                                    }
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <Controller
-                                name={`lines.${idx}.quantityReceived`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    type="number"
-                                    min="0.01"
-                                    step="any"
-                                    value={f.value === 0 ? '' : f.value}
-                                    placeholder="0"
-                                    className={`w-24 ${cellInputClass}`}
-                                    onChange={(e) =>
-                                      f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
-                                    }
-                                  />
-                                )}
-                              />
-                              {errors.lines?.[idx]?.quantityReceived && (
-                                <p className="mt-0.5 text-xs text-red-600">
-                                  {errors.lines[idx]?.quantityReceived?.message}
-                                </p>
-                              )}
-                            </td>
-                            {canViewCost && (
-                              <td className="px-3 py-2">
-                                {watchedLines?.[idx]?.isFreebie ? (
-                                  <span className="inline-block w-28 text-zinc-400">Free</span>
-                                ) : (
-                                  <>
-                                    <Controller
-                                      name={`lines.${idx}.unitCost`}
-                                      control={control}
-                                      render={({ field: f }) => (
-                                        <input
-                                          {...f}
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          value={f.value ?? ''}
-                                          className={`w-28 ${cellInputClass}`}
-                                          onChange={(e) =>
-                                            f.onChange(
-                                              e.target.value === ''
-                                                ? undefined
-                                                : Number(e.target.value)
-                                            )
-                                          }
-                                        />
-                                      )}
-                                    />
-                                    {errors.lines?.[idx]?.unitCost && (
-                                      <p className="mt-0.5 text-xs text-red-600">
-                                        {errors.lines[idx]?.unitCost?.message}
-                                      </p>
-                                    )}
-                                  </>
-                                )}
-                              </td>
-                            )}
-                            <td className="px-3 py-2 text-center">
-                              <Controller
-                                name={`lines.${idx}.isFreebie`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    type="checkbox"
-                                    checked={f.value ?? false}
-                                    onChange={(e) => {
-                                      f.onChange(e.target.checked)
-                                      if (e.target.checked) {
-                                        setValue(`lines.${idx}.unitCost`, undefined)
-                                      }
-                                    }}
-                                    className="h-4 w-4 rounded border-zinc-300"
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <Controller
-                                name={`lines.${idx}.batchNumber`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    type="text"
-                                    placeholder="Optional"
-                                    className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <Controller
-                                name={`lines.${idx}.qualityHold`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    type="checkbox"
-                                    checked={f.value ?? false}
-                                    onChange={(e) => f.onChange(e.target.checked)}
-                                    className="h-4 w-4 rounded border-zinc-300"
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              {isLineSerialTracked(idx) ? (
-                                <div className="flex justify-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleSerialEntry(field.id)}
-                                    className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
-                                  >
-                                    {expandedSerialRows.has(field.id) ? (
-                                      <ChevronUp className="h-3 w-3" />
-                                    ) : (
-                                      <ScanBarcode className="h-3 w-3" />
-                                    )}
-                                    {(watchedLines?.[idx]?.serialNumbers?.length ?? 0) > 0
-                                      ? `${watchedLines?.[idx]?.serialNumbers?.length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
-                                      : 'Enter serials'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="block text-center text-xs text-zinc-300">—</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2">
-                              <button
-                                type="button"
-                                onClick={() => remove(idx)}
-                                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                          {expandedSerialRows.has(field.id) && (
-                            <tr className="bg-zinc-50">
-                              <td colSpan={7} className="px-4 py-3">
-                                <label
-                                  htmlFor={`serial-entry-${field.id}`}
-                                  className="mb-1 block text-xs font-medium text-zinc-600"
-                                >
-                                  Serial numbers for this line — one per line or comma-separated
-                                  (must total {watchedLines?.[idx]?.quantityReceived || 0})
-                                </label>
-                                <textarea
-                                  id={`serial-entry-${field.id}`}
-                                  rows={3}
-                                  value={serialText[field.id] ?? ''}
-                                  onChange={(e) =>
-                                    handleSerialTextChange(field.id, idx, e.target.value)
-                                  }
-                                  placeholder="SN-001&#10;SN-002&#10;SN-003"
-                                  className={`${fieldClass} resize-none font-mono text-xs`}
-                                />
-                                {errors.lines?.[idx]?.serialNumbers && (
-                                  <p className="mt-1 text-xs text-red-600">
-                                    {errors.lines[idx]?.serialNumbers?.message}
-                                  </p>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {errors.lines && !Array.isArray(errors.lines) && (
-                <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
-              )}
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Mode of Transfer
+              </label>
               <Controller
-                name="notes"
+                name="modeOfTransfer"
                 control={control}
                 render={({ field }) => (
-                  <textarea
+                  <input
                     {...field}
-                    rows={2}
-                    placeholder="Optional notes about this receipt…"
-                    className={`${fieldClass} resize-none`}
+                    type="text"
+                    placeholder="e.g. Road, Air, Sea"
+                    className={fieldClass}
                   />
                 )}
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || fields.length === 0}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Receiving…' : 'Receive Stock'}
-            </button>
+          {/* NNDP Cost */}
+          {canViewCost && (
+            <div className="sm:w-1/2">
+              <label className="mb-1 block text-sm font-medium text-zinc-700">NNDP Cost</label>
+              <Controller
+                name="nndpCost"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    {...field}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={field.value ?? ''}
+                    className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === '' ? undefined : Number(e.target.value))
+                    }
+                  />
+                )}
+              />
+              {errors.nndpCost && (
+                <p className="mt-1 text-xs text-red-600">{errors.nndpCost.message}</p>
+              )}
+            </div>
+          )}
+
+          {/* Withholding */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Withholding</label>
+              <Controller
+                name="withholding"
+                control={control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value ?? 'none'}
+                    className={`${fieldClass} bg-white`}
+                  >
+                    <option value="none">None</option>
+                    <option value="pct_1">1% Withholding</option>
+                  </select>
+                )}
+              />
+            </div>
+
+            {withholding === 'pct_1' && canViewCost && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Withheld Amount
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={withheldAmount.toFixed(2)}
+                  className={`${fieldClass} bg-zinc-50 text-zinc-600`}
+                />
+              </div>
+            )}
           </div>
-        </form>
-      </div>
+
+          {/* Items to Receive */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-800">Items to Receive</h3>
+              <button
+                type="button"
+                onClick={() => append(emptyLine())}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Item
+              </button>
+            </div>
+
+            {fields.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 py-8 text-center text-sm text-zinc-400">
+                No items added yet. Click &ldquo;Add Item&rdquo; to begin.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-zinc-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th className="px-3 py-2">Item</th>
+                      <th className="px-3 py-2">Qty</th>
+                      {canViewCost && <th className="px-3 py-2">Unit Cost</th>}
+                      <th className="px-3 py-2 text-center">Freebie</th>
+                      <th className="px-3 py-2">Batch No.</th>
+                      <th className="px-3 py-2 text-center">QC Hold</th>
+                      <th className="px-3 py-2 text-center">Serials</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {fields.map((field, idx) => (
+                      <Fragment key={field.id}>
+                        <tr className="hover:bg-zinc-50">
+                          <td className="px-3 py-2 min-w-64">
+                            <Controller
+                              name={`lines.${idx}.itemId`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <ItemSearchCombobox
+                                  value={f.value}
+                                  onChange={(itemId) => handleItemChange(idx, itemId)}
+                                  onSelect={handleItemSelect}
+                                  error={errors.lines?.[idx]?.itemId?.message}
+                                  initialLabel={
+                                    pickedItems[f.value]?.name ??
+                                    items.find((i) => i.id === f.value)?.name
+                                  }
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Controller
+                              name={`lines.${idx}.quantityReceived`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="number"
+                                  min="0.01"
+                                  step="any"
+                                  value={f.value === 0 ? '' : f.value}
+                                  placeholder="0"
+                                  className={`w-24 ${cellInputClass}`}
+                                  onChange={(e) =>
+                                    f.onChange(e.target.value === '' ? 0 : Number(e.target.value))
+                                  }
+                                />
+                              )}
+                            />
+                            {errors.lines?.[idx]?.quantityReceived && (
+                              <p className="mt-0.5 text-xs text-red-600">
+                                {errors.lines[idx]?.quantityReceived?.message}
+                              </p>
+                            )}
+                          </td>
+                          {canViewCost && (
+                            <td className="px-3 py-2">
+                              {watchedLines?.[idx]?.isFreebie ? (
+                                <span className="inline-block w-28 text-zinc-400">Free</span>
+                              ) : (
+                                <>
+                                  <Controller
+                                    name={`lines.${idx}.unitCost`}
+                                    control={control}
+                                    render={({ field: f }) => (
+                                      <input
+                                        {...f}
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={f.value ?? ''}
+                                        className={`w-28 ${cellInputClass}`}
+                                        onChange={(e) =>
+                                          f.onChange(
+                                            e.target.value === ''
+                                              ? undefined
+                                              : Number(e.target.value)
+                                          )
+                                        }
+                                      />
+                                    )}
+                                  />
+                                  {errors.lines?.[idx]?.unitCost && (
+                                    <p className="mt-0.5 text-xs text-red-600">
+                                      {errors.lines[idx]?.unitCost?.message}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-3 py-2 text-center">
+                            <Controller
+                              name={`lines.${idx}.isFreebie`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  type="checkbox"
+                                  checked={f.value ?? false}
+                                  onChange={(e) => {
+                                    f.onChange(e.target.checked)
+                                    if (e.target.checked) {
+                                      setValue(`lines.${idx}.unitCost`, undefined)
+                                    }
+                                  }}
+                                  className="h-4 w-4 rounded border-zinc-300"
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Controller
+                              name={`lines.${idx}.batchNumber`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  {...f}
+                                  type="text"
+                                  placeholder="Optional"
+                                  className="w-28 rounded border border-zinc-200 px-2 py-1 text-sm"
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <Controller
+                              name={`lines.${idx}.qualityHold`}
+                              control={control}
+                              render={({ field: f }) => (
+                                <input
+                                  type="checkbox"
+                                  checked={f.value ?? false}
+                                  onChange={(e) => f.onChange(e.target.checked)}
+                                  className="h-4 w-4 rounded border-zinc-300"
+                                />
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            {isLineSerialTracked(idx) ? (
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSerialEntry(field.id)}
+                                  className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                                >
+                                  {expandedSerialRows.has(field.id) ? (
+                                    <ChevronUp className="h-3 w-3" />
+                                  ) : (
+                                    <ScanBarcode className="h-3 w-3" />
+                                  )}
+                                  {(watchedLines?.[idx]?.serialNumbers?.length ?? 0) > 0
+                                    ? `${watchedLines?.[idx]?.serialNumbers?.length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
+                                    : 'Enter serials'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="block text-center text-xs text-zinc-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => remove(idx)}
+                              className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedSerialRows.has(field.id) && (
+                          <tr className="bg-zinc-50">
+                            <td colSpan={7} className="px-4 py-3">
+                              <label
+                                htmlFor={`serial-entry-${field.id}`}
+                                className="mb-1 block text-xs font-medium text-zinc-600"
+                              >
+                                Serial numbers for this line — one per line or comma-separated (must
+                                total {watchedLines?.[idx]?.quantityReceived || 0})
+                              </label>
+                              <textarea
+                                id={`serial-entry-${field.id}`}
+                                rows={3}
+                                value={serialText[field.id] ?? ''}
+                                onChange={(e) =>
+                                  handleSerialTextChange(field.id, idx, e.target.value)
+                                }
+                                placeholder="SN-001&#10;SN-002&#10;SN-003"
+                                className={`${fieldClass} resize-none font-mono text-xs`}
+                              />
+                              {errors.lines?.[idx]?.serialNumbers && (
+                                <p className="mt-1 text-xs text-red-600">
+                                  {errors.lines[idx]?.serialNumbers?.message}
+                                </p>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {errors.lines && !Array.isArray(errors.lines) && (
+              <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
+            )}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
+            <Controller
+              name="notes"
+              control={control}
+              render={({ field }) => (
+                <textarea
+                  {...field}
+                  rows={2}
+                  placeholder="Optional notes about this receipt…"
+                  className={`${fieldClass} resize-none`}
+                />
+              )}
+            />
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || fields.length === 0}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSubmitting ? 'Receiving…' : 'Receive Stock'}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

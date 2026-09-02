@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Search } from 'lucide-react'
 import {
   PriceListFormSchema,
   type PriceListFormValues,
@@ -66,6 +66,15 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   expired: 'bg-zinc-100 text-zinc-500',
 }
 
+const REGION_LABELS: Record<string, string> = {
+  negros: 'Negros',
+  panay: 'Panay',
+}
+
+function regionLabel(region: string | null | undefined): string {
+  return region ? (REGION_LABELS[region] ?? region) : 'Other'
+}
+
 function toFormValues(list?: PriceList): PriceListFormValues {
   if (!list) return EMPTY_VALUES
   return {
@@ -122,11 +131,13 @@ export default function PriceListModal({
   // clearing "0" to type "25") instead of a forced field.onChange(0)
   // re-rendering a literal "0" back into the DOM ahead of the next keystroke.
   const [priorityText, setPriorityText] = useState(String(EMPTY_VALUES.priority))
+  const [branchSearch, setBranchSearch] = useState('')
 
   useEffect(() => {
     const values = isOpen ? toFormValues(initial) : EMPTY_VALUES
     reset(values)
     setPriorityText(String(values.priority))
+    setBranchSearch('')
   }, [isOpen, initial, reset])
 
   if (!isOpen) return null
@@ -160,192 +171,193 @@ export default function PriceListModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">
-              {isEdit ? 'Edit Price List' : 'New Price List'}
-            </h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              {isEdit
-                ? 'Update this pricing tier.'
-                : 'Create a new pricing tier for your inventory items.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">
+            {isEdit ? 'Edit Price List' : 'New Price List'}
+          </h2>
+          <p className="mt-0.5 text-sm text-zinc-500">
+            {isEdit
+              ? 'Update this pricing tier.'
+              : 'Create a new pricing tier for your inventory items.'}
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="space-y-5 px-6 py-5">
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <Controller
+              name="name"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  type="text"
+                  placeholder="e.g. Retail Standard 2026"
+                  className={fieldClass}
+                />
+              )}
+            />
+            {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Name <span className="text-red-500">*</span>
+                Price Use Type <span className="text-red-500">*</span>
               </label>
               <Controller
-                name="name"
+                name="priceUseTypeId"
                 control={control}
                 render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. Retail Standard 2026"
-                    className={fieldClass}
+                  <Select
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Select price use type…"
+                    options={priceUseTypes.map((t) => ({ value: t.id, label: t.name }))}
+                    extraAction={{
+                      label: 'Add new price use type…',
+                      onClick: () => setIsCreateTypeOpen(true),
+                    }}
                   />
                 )}
               />
-              {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Price Use Type <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="priceUseTypeId"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onChange={field.onChange}
-                      placeholder="Select price use type…"
-                      options={priceUseTypes.map((t) => ({ value: t.id, label: t.name }))}
-                      extraAction={{
-                        label: 'Add new price use type…',
-                        onClick: () => setIsCreateTypeOpen(true),
-                      }}
-                    />
-                  )}
-                />
-                {errors.priceUseTypeId && (
-                  <p className="mt-1 text-xs text-red-600">{errors.priceUseTypeId.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Currency</label>
-                <div className={`${fieldClass} bg-zinc-50 text-zinc-500`}>
-                  Philippine Peso (PHP)
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Description{' '}
-                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-              </label>
-              <Controller
-                name="description"
-                control={control}
-                render={({ field }) => (
-                  <textarea
-                    {...field}
-                    rows={2}
-                    placeholder="Brief description of this price list…"
-                    className={`${fieldClass} resize-none`}
-                  />
-                )}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Effective From{' '}
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-                </label>
-                <Controller
-                  name="effectiveFrom"
-                  control={control}
-                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Effective To{' '}
-                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-                </label>
-                <Controller
-                  name="effectiveTo"
-                  control={control}
-                  render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Priority{' '}
-                  <span className="ml-1 text-xs font-normal text-zinc-400">
-                    (higher wins conflicts)
-                  </span>
-                </label>
-                <Controller
-                  name="priority"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      ref={field.ref}
-                      name={field.name}
-                      type="number"
-                      step="1"
-                      placeholder="0"
-                      className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
-                      value={priorityText}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        setPriorityText(raw)
-                        field.onChange(raw === '' ? 0 : Number(raw))
-                      }}
-                      onBlur={() => {
-                        field.onBlur()
-                        if (priorityText === '') setPriorityText('0')
-                      }}
-                    />
-                  )}
-                />
-                <p className="mt-1 text-xs text-zinc-400">
-                  Only matters if this could clash with another price list on the same sale — the
-                  higher number wins. Leave at 0 if you&apos;re not sure.
-                </p>
-                {errors.priority && (
-                  <p className="mt-1 text-xs text-red-600">{errors.priority.message}</p>
-                )}
-              </div>
-              {isEdit && initial && (
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">Status</label>
-                  <span
-                    className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_CLASS[initial.status] ?? 'bg-zinc-100 text-zinc-500'}`}
-                  >
-                    {STATUS_LABELS[initial.status] ?? initial.status}
-                  </span>
-                  <p className="mt-1 text-xs text-zinc-400">
-                    Set by the approval workflow, not editable here.
-                  </p>
-                </div>
+              {errors.priceUseTypeId && (
+                <p className="mt-1 text-xs text-red-600">{errors.priceUseTypeId.message}</p>
               )}
             </div>
 
-            {isEdit && initial?.status === 'rejected' && initial.remarks && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-                <p className="text-xs font-medium text-red-800">Rejection reason</p>
-                <p className="mt-0.5 text-sm text-red-700">{initial.remarks}</p>
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Currency</label>
+              <div className={`${fieldClass} bg-zinc-50 text-zinc-500`}>Philippine Peso (PHP)</div>
+            </div>
+          </div>
 
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Description <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+            </label>
+            <Controller
+              name="description"
+              control={control}
+              render={({ field }) => (
+                <textarea
+                  {...field}
+                  rows={2}
+                  placeholder="Brief description of this price list…"
+                  className={`${fieldClass} resize-none`}
+                />
+              )}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Effective From{' '}
+                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+              </label>
+              <Controller
+                name="effectiveFrom"
+                control={control}
+                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Effective To{' '}
+                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+              </label>
+              <Controller
+                name="effectiveTo"
+                control={control}
+                render={({ field }) => <input {...field} type="date" className={fieldClass} />}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Priority{' '}
+                <span className="ml-1 text-xs font-normal text-zinc-400">
+                  (higher wins conflicts)
+                </span>
+              </label>
+              <Controller
+                name="priority"
+                control={control}
+                render={({ field }) => (
+                  <input
+                    ref={field.ref}
+                    name={field.name}
+                    type="number"
+                    step="1"
+                    placeholder="0"
+                    className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                    value={priorityText}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      setPriorityText(raw)
+                      field.onChange(raw === '' ? 0 : Number(raw))
+                    }}
+                    onBlur={() => {
+                      field.onBlur()
+                      if (priorityText === '') setPriorityText('0')
+                    }}
+                  />
+                )}
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                Only matters if this could clash with another price list on the same sale — the
+                higher number wins. Leave at 0 if you&apos;re not sure.
+              </p>
+              {errors.priority && (
+                <p className="mt-1 text-xs text-red-600">{errors.priority.message}</p>
+              )}
+            </div>
+            {isEdit && initial && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Status</label>
+                <span
+                  className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_CLASS[initial.status] ?? 'bg-zinc-100 text-zinc-500'}`}
+                >
+                  {STATUS_LABELS[initial.status] ?? initial.status}
+                </span>
+                <p className="mt-1 text-xs text-zinc-400">
+                  Set by the approval workflow, not editable here.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {isEdit && initial?.status === 'rejected' && initial.remarks && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <p className="text-xs font-medium text-red-800">Rejection reason</p>
+              <p className="mt-0.5 text-sm text-red-700">{initial.remarks}</p>
+            </div>
+          )}
+
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-sm font-medium text-zinc-700">
                 Branches{' '}
                 <span className="ml-1 text-xs font-normal text-zinc-400">
                   (leave all unchecked for company-wide)
@@ -354,92 +366,188 @@ export default function PriceListModal({
               <Controller
                 name="allowedBranchIds"
                 control={control}
-                render={({ field }) => (
-                  <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-200 p-3">
-                    {branches.length === 0 && (
-                      <p className="text-xs text-zinc-400">No branches found.</p>
-                    )}
-                    {branches.map((branch) => {
-                      const selected = field.value ?? []
-                      const checked = selected.includes(branch.id)
-                      return (
-                        <label
-                          key={branch.id}
-                          className="flex items-center gap-2 text-sm text-zinc-700"
+                render={({ field }) => {
+                  const selectedCount = (field.value ?? []).length
+                  return (
+                    <span className="text-xs font-medium text-zinc-500">
+                      {selectedCount === 0
+                        ? 'Company-wide'
+                        : `${selectedCount} branch${selectedCount === 1 ? '' : 'es'} selected`}
+                    </span>
+                  )
+                }}
+              />
+            </div>
+
+            <Controller
+              name="allowedBranchIds"
+              control={control}
+              render={({ field }) => {
+                const selected = field.value ?? []
+                const toggleOne = (branchId: string, checked: boolean) => {
+                  field.onChange(
+                    checked ? [...selected, branchId] : selected.filter((id) => id !== branchId)
+                  )
+                }
+                const toggleGroup = (groupBranches: Branch[], select: boolean) => {
+                  const groupIds = new Set(groupBranches.map((b) => b.id))
+                  field.onChange(
+                    select
+                      ? [...new Set([...selected, ...groupIds])]
+                      : selected.filter((id) => !groupIds.has(id))
+                  )
+                }
+
+                const query = branchSearch.trim().toLowerCase()
+                const filtered = query
+                  ? branches.filter(
+                      (b) =>
+                        b.name.toLowerCase().includes(query) ||
+                        b.code?.toLowerCase().includes(query)
+                    )
+                  : branches
+                const groups = filtered.reduce<Record<string, Branch[]>>((acc, branch) => {
+                  const key = branch.region ?? 'other'
+                  ;(acc[key] ??= []).push(branch)
+                  return acc
+                }, {})
+                const groupKeys = Object.keys(groups).sort((a, b) =>
+                  regionLabel(a).localeCompare(regionLabel(b))
+                )
+
+                return (
+                  <div className="rounded-lg border border-zinc-200">
+                    <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2">
+                      <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <input
+                        type="text"
+                        value={branchSearch}
+                        onChange={(e) => setBranchSearch(e.target.value)}
+                        placeholder="Search branches by name or code…"
+                        className="flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+                      />
+                      {selected.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => field.onChange([])}
+                          className="shrink-0 text-xs font-medium text-prominent-purple-700 hover:underline"
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.checked
-                                  ? [...selected, branch.id]
-                                  : selected.filter((id) => id !== branch.id)
-                              )
-                            }
-                          />
-                          {branch.name}
-                        </label>
-                      )
-                    })}
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 space-y-3 overflow-y-auto p-3">
+                      {branches.length === 0 && (
+                        <p className="text-xs text-zinc-400">No branches found.</p>
+                      )}
+                      {branches.length > 0 && filtered.length === 0 && (
+                        <p className="text-xs text-zinc-400">
+                          No branches match &ldquo;{branchSearch}&rdquo;.
+                        </p>
+                      )}
+                      {groupKeys.map((key) => {
+                        const groupBranches = groups[key]
+                        const allSelected = groupBranches.every((b) => selected.includes(b.id))
+                        return (
+                          <div key={key}>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                                {regionLabel(key === 'other' ? undefined : key)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleGroup(groupBranches, !allSelected)}
+                                className="text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                              >
+                                {allSelected ? 'Deselect all' : 'Select all'}
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+                              {groupBranches.map((branch) => {
+                                const checked = selected.includes(branch.id)
+                                return (
+                                  <label
+                                    key={branch.id}
+                                    className="flex items-center gap-2 text-sm text-zinc-700"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => toggleOne(branch.id, e.target.checked)}
+                                    />
+                                    <span className="truncate">{branch.name}</span>
+                                    {branch.code && (
+                                      <span className="shrink-0 text-xs text-zinc-400">
+                                        {branch.code}
+                                      </span>
+                                    )}
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                )}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Supersedes{' '}
-                <span className="ml-1 text-xs font-normal text-zinc-400">
-                  (optional — the prior version this replaces)
-                </span>
-              </label>
-              <Controller
-                name="supersedesId"
-                control={control}
-                render={({ field }) => (
-                  <Select
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    placeholder={
-                      selectedPriceUseTypeId
-                        ? 'None — this is a new list, not a replacement'
-                        : 'Pick a Price Use Type first'
-                    }
-                    options={supersedeCandidates.map((pl) => ({
-                      value: pl.id,
-                      label: pl.name,
-                    }))}
-                  />
-                )}
-              />
-              <p className="mt-1 text-xs text-zinc-400">
-                On approval, the superseded list auto-expires. Only lists under the same Price Use
-                Type are shown.
-              </p>
-            </div>
+                )
+              }}
+            />
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-            >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Price List'}
-            </button>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-zinc-700">
+              Supersedes{' '}
+              <span className="ml-1 text-xs font-normal text-zinc-400">
+                (optional — the prior version this replaces)
+              </span>
+            </label>
+            <Controller
+              name="supersedesId"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  placeholder={
+                    selectedPriceUseTypeId
+                      ? 'None — this is a new list, not a replacement'
+                      : 'Pick a Price Use Type first'
+                  }
+                  options={supersedeCandidates.map((pl) => ({
+                    value: pl.id,
+                    label: pl.name,
+                  }))}
+                />
+              )}
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              On approval, the superseded list auto-expires. Only lists under the same Price Use
+              Type are shown.
+            </p>
           </div>
-        </form>
-      </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+          >
+            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Price List'}
+          </button>
+        </div>
+      </form>
 
       <PriceUseTypeModal
         isOpen={isCreateTypeOpen}
