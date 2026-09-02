@@ -164,45 +164,6 @@ export default function APBillsList() {
                 >
                   <td className="px-3 py-2 font-mono text-xs">
                     {b.billNumber ?? <span className="italic text-gray-400">Pending SI #</span>}
-                    {b.purchaseOrder && (
-                      <span className="block text-[10px] text-gray-400">
-                        PO: {b.purchaseOrder.code}
-                        {b.purchaseOrder.status === 'partially_received' && (
-                          <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[9px] font-medium text-amber-700">
-                            Partial
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {(b.goodsReceipts?.length ?? 0) > 0 && (
-                      <span className="block text-[10px] text-gray-400">
-                        RR: {b.goodsReceipts!.map((r) => r.code).join(', ')}
-                      </span>
-                    )}
-                    {(() => {
-                      const siNumbers = Array.from(
-                        new Set(
-                          (b.goodsReceipts ?? [])
-                            .map((r) => r.supplierInvoiceNumber)
-                            .filter(Boolean)
-                        )
-                      )
-                      const drNumbers = Array.from(
-                        new Set(
-                          (b.goodsReceipts ?? [])
-                            .map((r) => r.deliveryReceiptNumber)
-                            .filter(Boolean)
-                        )
-                      )
-                      if (siNumbers.length === 0 && drNumbers.length === 0) return null
-                      return (
-                        <span className="block text-[10px] text-gray-400">
-                          {siNumbers.length > 0 && <>SI: {siNumbers.join(', ')}</>}
-                          {siNumbers.length > 0 && drNumbers.length > 0 && ' · '}
-                          {drNumbers.length > 0 && <>DR: {drNumbers.join(', ')}</>}
-                        </span>
-                      )
-                    })()}
                   </td>
                   <td className="px-3 py-2">
                     <div>{b.supplier?.name}</div>

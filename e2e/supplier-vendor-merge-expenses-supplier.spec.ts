@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, openCustomSelect } from './utils'
+import { gotoReady, pickFromCustomSelect } from './utils'
 
 // Scenario 33 (Supplier/Vendor merge) Part 3 — Business Expenses previously
 // had a "Vendor" selector (BusinessExpense.vendorId); repointed to Supplier.
@@ -25,10 +25,13 @@ import { gotoReady, openCustomSelect } from './utils'
 // it's opened via its aria-label and its first real option clicked directly,
 // since there's nothing to assert about which category ends up chosen here.
 //
-// Supplier also became a custom Select (src/components/ui/Select.tsx —
-// combobox/listbox/option roles, not a native <select>), so it's opened via
-// openCustomSelect and its options counted/read through role="option"
-// instead of getByLabel(...).selectOption(...) / <option> elements.
+// Supplier became a custom Select (src/components/ui/Select.tsx) and then,
+// in Scenario 45, a searchable CategorySelect — a plain button with a
+// filterable popup rather than a combobox — so it's opened by its
+// aria-label and its options read out of that popup's scroll list.
+//
+// Scenario 45 (2026-09-02) — Payee is a dropdown rather than a row of
+// tiles, so picking "Supplier" goes through pickFromCustomSelect.
 test.describe('Accounting — Expenses supplier link', () => {
   test('creates an expense with a linked supplier and shows it as the payee', async ({ page }) => {
     await gotoReady(page, '/accounting/expenses')
@@ -44,7 +47,7 @@ test.describe('Accounting — Expenses supplier link', () => {
       timeout: 10_000,
     })
 
-    await page.getByRole('button', { name: 'Supplier', exact: true }).click()
+    await pickFromCustomSelect(page, '— Select —', 'Supplier')
 
     await page.getByLabel('Category', { exact: true }).click()
     const categoryDropdown = page.locator('div.absolute.z-50')
@@ -52,12 +55,15 @@ test.describe('Accounting — Expenses supplier link', () => {
     // Index 0 is the "— Select —" clear button; index 1 is the first real category.
     await categoryDropdown.locator('button').nth(1).click()
 
-    await openCustomSelect(page.getByRole('combobox', { name: '— None —' }))
-    const supplierOptions = page.getByRole('option')
+    // Scenario 45 — Supplier is a searchable CategorySelect now, not a plain
+    // combobox, so its options are rows in that popup's own scroll list.
+    // Index 0 is the "— None —" clear row; index 1 is the first real supplier.
+    await page.getByLabel('Select supplier', { exact: true }).click()
+    const supplierOptions = page.locator('.max-h-60 button')
     const supplierOptionCount = await supplierOptions.count()
-    test.skip(supplierOptionCount === 0, 'No suppliers seeded — nothing to link')
-    const supplierLabel = (await supplierOptions.first().textContent())?.trim()
-    await supplierOptions.first().click()
+    test.skip(supplierOptionCount <= 1, 'No suppliers seeded — nothing to link')
+    const supplierLabel = (await supplierOptions.nth(1).textContent())?.trim()
+    await supplierOptions.nth(1).click()
 
     await page.getByLabel('Amount', { exact: true }).fill('250')
 

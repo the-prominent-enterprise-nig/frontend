@@ -571,15 +571,15 @@ export default function InstallmentAccountDetail({
       </section>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last OR</h2>
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Last CR</h2>
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-3">
-          <Row label="OR number" value={account.lastOrNumber ?? '—'} />
+          <Row label="CR number" value={account.lastOrNumber ?? '—'} />
           <Row
-            label="OR date"
+            label="CR date"
             value={account.lastOrDate ? new Date(account.lastOrDate).toLocaleDateString() : '—'}
           />
           <Row
-            label="OR amount"
+            label="CR amount"
             value={account.lastOrAmount != null ? peso(account.lastOrAmount) : '—'}
           />
         </div>

@@ -541,10 +541,9 @@ export default function CollectionsScreen() {
  * allocateBulkPayment() splits whatever's typed across the checked dues in
  * due order — settling one in full before any leftover flows to the next,
  * same order the defaults already imply — so a custom partial amount on an
- * earlier due still just means checking only that one. Reference (the OR
- * number) is only required once a Collector is picked, in both modes —
- * that's the only time an OR actually gets physically cut; a walk-in
- * payment with no collector has none to record.
+ * earlier due still just means checking only that one. The CR number is
+ * required in both modes — every collection cuts a collection receipt, and
+ * a payment recorded without one can't be reconciled against the booklet.
  */
 function CollectPaymentModal({
   lines,
@@ -1054,24 +1053,18 @@ function CollectPaymentModal({
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Reference {form.collectorId && <span className="text-red-500">*</span>}
+                CR number <span className="text-red-500">*</span>
               </label>
               <input
-                required={!!form.collectorId}
+                required
                 value={form.reference}
                 onChange={(e) => setForm({ ...form, reference: e.target.value })}
-                placeholder="OR number"
+                placeholder="CR number"
                 className={fieldClass}
               />
-              {form.collectorId ? (
-                <p className="mt-1 text-[12px] text-zinc-400">
-                  Required — the OR the collector wrote out for this payment.
-                </p>
-              ) : (
-                <p className="mt-1 text-[12px] text-zinc-400">
-                  Optional for a walk-in payment with no collector on hand to cut an OR.
-                </p>
-              )}
+              <p className="mt-1 text-[12px] text-zinc-400">
+                Required — the CR number on the collection receipt issued for this payment.
+              </p>
             </div>
 
             <div>
@@ -1099,12 +1092,7 @@ function CollectPaymentModal({
             </button>
             <button
               type="submit"
-              disabled={
-                submitting ||
-                isFullyPaid ||
-                rebateExceedsCap ||
-                (!!form.collectorId && !form.reference.trim())
-              }
+              disabled={submitting || isFullyPaid || rebateExceedsCap || !form.reference.trim()}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

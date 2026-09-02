@@ -32,8 +32,12 @@ export default function BillForm({ billId }: { billId?: string }) {
     if (!billId) return
     APBills.get(billId).then((res) => {
       if (res.success && res.data) {
-        if (res.data.status !== 'DRAFT') {
-          setLoadError('Only DRAFT bills can be edited.')
+        // Scenario 43 — a fully settled bill is genuinely locked (nothing
+        // left to edit), but DRAFT/RECEIVED/PARTIAL/OVERDUE can all still
+        // reach this form — how much of it is actually editable is decided
+        // below (BillFormFields' isLocked), not gated here.
+        if (['PAID', 'CANCELLED'].includes(res.data.status)) {
+          setLoadError('This bill is fully settled and can no longer be edited.')
         } else {
           setInitial(res.data)
         }
@@ -94,6 +98,10 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Scenario 43 — a bill that's left DRAFT (already received/posted to the
+  // GL) locks everything except how it's paid. See ap-bills.service.ts's
+  // update() for the matching backend guard.
+  const isLocked = !!initial && initial.status !== 'DRAFT'
   const [purchaseOrders, setPurchaseOrders] = useState<APBillPurchaseOrderOption[]>([])
   const [receipts, setReceipts] = useState<APBillGoodsReceiptOption[]>([])
   const [matchCheck, setMatchCheck] = useState<APBillMatchCheck | null>(null)
@@ -139,6 +147,25 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isLocked) {
+      // Scenario 43 — only these three fields are still writable once a
+      // bill has left DRAFT; sending anything else trips the backend's
+      // matching guard, so the payload is deliberately minimal here.
+      setSaving(true)
+      setError(null)
+      const res = await APBills.update(initial!.id, {
+        sourceOfPayment: form.sourceOfPayment || undefined,
+        referenceNumber: form.referenceNumber || undefined,
+        serialNumber: form.serialNumber || undefined,
+      })
+      setSaving(false)
+      if (!res.success) {
+        setError(res.message || res.error || 'Save failed')
+        return
+      }
+      onSaved()
+      return
+    }
     if (!form.supplierId) {
       setError('Supplier is required')
       return
@@ -196,137 +223,166 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-5"
       >
-        <Field label="Supplier *">
-          <SupplierSearchCombobox
-            value={form.supplierId}
-            onChange={(id) => setForm({ ...form, supplierId: id })}
-            initialLabel={
-              initial?.supplier ? `${initial.supplier.code} — ${initial.supplier.name}` : undefined
-            }
-          />
-        </Field>
-        {form.supplierId && (
-          <Field label="Purchase Order (for the 3-way match)">
-            <select
-              value={form.purchaseOrderId}
-              onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            >
-              <option value="">— None —</option>
-              {purchaseOrders.map((po) => (
-                <option key={po.id} value={po.id}>
-                  {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        {form.purchaseOrderId && (
-          <Field label="Receiving Reports matched to this bill">
-            {receipts.length === 0 ? (
-              <p className="text-xs text-gray-400">
-                No receiving reports posted against this PO yet.
-              </p>
-            ) : (
-              <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
-                {receipts.map((r) => (
-                  <label key={r.id} className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={form.goodsReceiptIds.includes(r.id)}
-                      onChange={() => toggleReceipt(r.id)}
-                    />
-                    {r.code} — {fmtDate(r.receivedAt)}
-                  </label>
-                ))}
+        {isLocked ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              This bill has already been received and posted to the GL — only how it&apos;s paid can
+              still be changed below.
+            </div>
+            <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
+            {initial?.purchaseOrder && (
+              <InfoRow label="Purchase Order" value={initial.purchaseOrder.code} />
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <InfoRow label="Bill Date" value={fmtDate(initial?.billDate)} />
+              <InfoRow label="Due Date" value={fmtDate(initial?.dueDate)} />
+            </div>
+            {initial?.description && <InfoRow label="Description" value={initial.description} />}
+            <InfoRow label="SI / Invoice Number" value={initial?.billNumber ?? '—'} />
+            <div className="grid grid-cols-2 gap-3">
+              <InfoRow label="Subtotal" value={fmtMoney(initial?.subtotal ?? 0)} />
+              <InfoRow label="Input Tax (VAT)" value={fmtMoney(initial?.taxAmount ?? 0)} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <Field label="Supplier *">
+              <SupplierSearchCombobox
+                value={form.supplierId}
+                onChange={(id) => setForm({ ...form, supplierId: id })}
+                initialLabel={
+                  initial?.supplier
+                    ? `${initial.supplier.code} — ${initial.supplier.name}`
+                    : undefined
+                }
+              />
+            </Field>
+            {form.supplierId && (
+              <Field label="Purchase Order (for the 3-way match)">
+                <select
+                  value={form.purchaseOrderId}
+                  onChange={(e) => setForm({ ...form, purchaseOrderId: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  <option value="">— None —</option>
+                  {purchaseOrders.map((po) => (
+                    <option key={po.id} value={po.id}>
+                      {po.code} — {fmtMoney(po.totalAmount)} ({po.status})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {form.purchaseOrderId && (
+              <Field label="Receiving Reports matched to this bill">
+                {receipts.length === 0 ? (
+                  <p className="text-xs text-gray-400">
+                    No receiving reports posted against this PO yet.
+                  </p>
+                ) : (
+                  <div className="space-y-1 border border-gray-200 rounded-lg p-2 max-h-28 overflow-y-auto">
+                    {receipts.map((r) => (
+                      <label key={r.id} className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={form.goodsReceiptIds.includes(r.id)}
+                          onChange={() => toggleReceipt(r.id)}
+                        />
+                        {r.code} — {fmtDate(r.receivedAt)}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            )}
+            {matchCheck?.applicable && (
+              <div
+                className={`text-xs px-3 py-2 rounded-lg ${
+                  matchCheck.matched
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-amber-50 text-amber-700'
+                }`}
+              >
+                3-way match:{' '}
+                <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
+                {' — '}PO {fmtMoney(matchCheck.poTotal ?? 0)} · RRs{' '}
+                {fmtMoney(matchCheck.rrTotal ?? 0)} · Bill {fmtMoney(matchCheck.invoiceTotal)}
               </div>
             )}
-          </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Bill Date *">
+                <input
+                  required
+                  type="date"
+                  value={form.billDate}
+                  onChange={(e) => setForm({ ...form, billDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              <Field label="Due Date *">
+                <input
+                  required
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+            </div>
+            <Field label="Description">
+              <input
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </Field>
+            <Field label={initial ? 'SI / Invoice Number' : 'SI / Invoice Number *'}>
+              <input
+                required={!initial}
+                value={form.billNumber}
+                onChange={(e) => setForm({ ...form, billNumber: e.target.value })}
+                placeholder="The Supplier Invoice (SI) number printed on the supplier's own invoice"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+              {initial && !form.billNumber && (
+                <p className="mt-1 text-xs text-amber-600">
+                  Required before this bill can be received.
+                </p>
+              )}
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Subtotal *">
+                <input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={form.subtotal}
+                  onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+              <Field label="Input Tax (VAT)">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={form.taxAmount}
+                  onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              </Field>
+            </div>
+            <Field label="Withholding Tax">
+              <input
+                type="number"
+                step="0.01"
+                value={form.withholdingAmount}
+                onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
+                placeholder="Auto-calculated from the supplier's withholding rate if left blank"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </Field>
+          </>
         )}
-        {matchCheck?.applicable && (
-          <div
-            className={`text-xs px-3 py-2 rounded-lg ${
-              matchCheck.matched ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-            }`}
-          >
-            3-way match:{' '}
-            <span className="font-semibold">{matchCheck.matched ? 'Matched' : 'Variance'}</span>
-            {' — '}PO {fmtMoney(matchCheck.poTotal ?? 0)} · RRs {fmtMoney(matchCheck.rrTotal ?? 0)}{' '}
-            · Bill {fmtMoney(matchCheck.invoiceTotal)}
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Bill Date *">
-            <input
-              required
-              type="date"
-              value={form.billDate}
-              onChange={(e) => setForm({ ...form, billDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <Field label="Due Date *">
-            <input
-              required
-              type="date"
-              value={form.dueDate}
-              onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-        </div>
-        <Field label="Description">
-          <input
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
-        </Field>
-        <Field label={initial ? 'Invoice Number' : 'Invoice Number *'}>
-          <input
-            required={!initial}
-            value={form.billNumber}
-            onChange={(e) => setForm({ ...form, billNumber: e.target.value })}
-            placeholder="The number printed on the supplier's own invoice"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
-          {initial && !form.billNumber && (
-            <p className="mt-1 text-xs text-amber-600">
-              Required before this bill can be received.
-            </p>
-          )}
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Subtotal *">
-            <input
-              required
-              type="number"
-              step="0.01"
-              value={form.subtotal}
-              onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-          <Field label="Input Tax (VAT)">
-            <input
-              type="number"
-              step="0.01"
-              value={form.taxAmount}
-              onChange={(e) => setForm({ ...form, taxAmount: e.target.value })}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </Field>
-        </div>
-        <Field label="Withholding Tax">
-          <input
-            type="number"
-            step="0.01"
-            value={form.withholdingAmount}
-            onChange={(e) => setForm({ ...form, withholdingAmount: e.target.value })}
-            placeholder="Auto-calculated from the supplier's withholding rate if left blank"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-          />
-        </Field>
         {initial && (
           <>
             <div className="pt-1 border-t text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -398,5 +454,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
       {children}
     </label>
+  )
+}
+
+// Scenario 43 — read-only counterpart to Field, for a locked bill's fields.
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
+      <p className="text-sm text-gray-800">{value}</p>
+    </div>
   )
 }

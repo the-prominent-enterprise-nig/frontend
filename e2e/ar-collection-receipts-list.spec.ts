@@ -61,8 +61,8 @@ test('the landing page shows the Receipts register, not the old customer-rollup 
 
   // View opens the printed Collection Receipt document (Part 2) — same
   // letterhead family (logo top-right, title left) every sibling document
-  // uses. Edit still opens the parent invoice, since Part 3's real inline
-  // editing isn't built yet.
+  // uses. Edit opens the in-place edit dialog (Part 3) — covered in its own
+  // dedicated spec, not re-tested here.
   const [popup] = await Promise.all([
     page.waitForEvent('popup'),
     row.getByRole('button', { name: 'View' }).click(),
@@ -74,9 +74,6 @@ test('the landing page shows the Receipts register, not the old customer-rollup 
   await expect(popup.getByText(invoice.invoiceNumber, { exact: false })).toBeVisible()
   await expect(popup.getByText('E2E receipts register fixture', { exact: false })).toBeVisible()
   await popup.close()
-
-  await row.getByRole('button', { name: 'Edit' }).click()
-  await expect(page).toHaveURL(`/accounting/ar-invoices/${invoice.id}`)
 })
 
 test('"New Receipt" opens a real dedicated page, not a modal', async ({ page }) => {

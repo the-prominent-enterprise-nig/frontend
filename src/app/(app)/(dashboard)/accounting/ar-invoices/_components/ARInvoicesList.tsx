@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { printCollectionReceiptDocument } from '@/src/libs/print/printInventoryDocument'
+import { collectionReceiptHref } from '../receipts/view/_components/CollectionReceiptDetail'
 import {
   Plus,
   RefreshCw,
@@ -26,6 +26,7 @@ import {
   User,
   Loader2,
   Eye,
+  ChevronRight,
 } from 'lucide-react'
 import {
   ARInvoices,
@@ -78,11 +79,8 @@ export default function ARInvoicesList({
 } = {}) {
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
-  // Scenario 44 — the top-level (no customerFilter) landing view; a flat
-  // cross-customer Receipts register instead of the old customer-rollup
-  // table. Kept separate from `items` above, which still backs the
-  // customer-filtered flat invoice list (dedicated customer route or a
-  // generic list filtered by customerId) — unchanged, own actions.
+  // A customer's own payment receipts, merged into their due-invoice table
+  // below (there is no separate Receipts view any more — one table).
   const [receipts, setReceipts] = useState<ARReceiptListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
@@ -118,18 +116,29 @@ export default function ARInvoicesList({
   const load = useCallback(async () => {
     setLoading(true)
     if (customerFilter) {
+      // A customer's due-invoice list also merges in their payment receipts
+      // (sorted together by date below) — paying across several dues in one
+      // shot should visibly show the one amount actually paid, not just the
+      // per-due fragments it settled.
+      const [invRes, rcptRes] = await Promise.all([
+        ARInvoices.list({
+          customerId: customerFilter,
+          ...(appliedSearch ? { search: appliedSearch } : {}),
+        }),
+        ARInvoices.listReceipts({
+          customerId: customerFilter,
+          ...(appliedSearch ? { search: appliedSearch } : {}),
+        }),
+      ])
+      setItems(invRes.data?.items ?? [])
+      setReceipts(rcptRes.data?.items ?? [])
+    } else {
+      // Customer-rollup landing view — every invoice tenant-wide (optionally
+      // narrowed by search), grouped client-side by customer below.
       const res = await ARInvoices.list({
-        customerId: customerFilter,
         ...(appliedSearch ? { search: appliedSearch } : {}),
       })
       setItems(res.data?.items ?? [])
-    } else {
-      // Scenario 44 — the landing view has no customer picked yet, so it's
-      // the flat Receipts register, not an invoice list.
-      const res = await ARInvoices.listReceipts({
-        ...(appliedSearch ? { search: appliedSearch } : {}),
-      })
-      setReceipts(res.data?.items ?? [])
     }
     setLoading(false)
   }, [customerFilter, appliedSearch])
@@ -172,11 +181,122 @@ export default function ARInvoicesList({
     return () => clearTimeout(timer)
   }, [customerSearch])
 
+  // One entry per distinct customer in the currently loaded `items` — e.g.
+  // an installment plan's ~12 due-date invoices collapse into one row here,
+  // which is the whole point of this view: a customer with several open
+  // dues shouldn't need 12 scans of the flat table to see what they owe in
+  // total. Only meaningful for the customer-rollup landing view — `items`
+  // holds a single customer's own invoices whenever customerFilter is set,
+  // making this a no-op group of one in that case.
+  const customerGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        customerId: string
+        customerName: string
+        invoices: ARInvoice[]
+        total: number
+        paid: number
+        outstanding: number
+        dueNow: number
+        overdueCount: number
+      }
+    >()
+    for (const inv of items) {
+      let g = map.get(inv.customerId)
+      if (!g) {
+        g = {
+          customerId: inv.customerId,
+          customerName: inv.customer?.name ?? 'Unknown customer',
+          invoices: [],
+          total: 0,
+          paid: 0,
+          outstanding: 0,
+          dueNow: 0,
+          overdueCount: 0,
+        }
+        map.set(inv.customerId, g)
+      }
+      g.invoices.push(inv)
+      g.total += inv.totalAmount
+      g.paid += inv.amountPaid
+      g.outstanding += inv.totalAmount - inv.amountPaid
+      if (new Date(inv.dueDate) <= new Date()) {
+        g.dueNow += Math.max(inv.totalAmount - inv.amountPaid, 0)
+      }
+      if (inv.status === 'OVERDUE') g.overdueCount += 1
+    }
+    // Customers owing the most float to the top — that's who collections
+    // triage actually cares about first.
+    return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
+  }, [items])
+
+  // A customer's due-invoice table, merged with their payment receipts —
+  // paying across several dues in one shot must show that one payment as
+  // its own line here (not just as fragments split across the dues it
+  // settled). Only built for the customer-filtered view; `receipts` is
+  // otherwise driven by the separate landingView==='receipts' tab.
+  type CustomerRow =
+    | { kind: 'invoice'; date: string; invoice: ARInvoice }
+    | { kind: 'payment'; date: string; receipt: ARReceiptListItem }
+  const customerRows = useMemo((): CustomerRow[] => {
+    if (!customerFilter) return []
+    return [
+      ...items.map((i): CustomerRow => ({ kind: 'invoice', date: i.invoiceDate, invoice: i })),
+      ...receipts
+        // Down payments never become an ARPayment — they're netted out of
+        // the financed principal before this schedule's due-date invoices
+        // even exist, so they were never applied to any row in this table.
+        // Listing them here would show money that settled none of these
+        // dues. (`source` is undefined on rows that predate the field —
+        // those are all real ARPayment-backed receipts, so keep them.)
+        .filter((r) => r.source !== 'down_payment')
+        .map((r): CustomerRow => ({ kind: 'payment', date: r.paymentDate, receipt: r })),
+    ].sort((a, b) => {
+      // Payments first, ranked by kind BEFORE date — deliberately not a
+      // chronological sort. CollectionReceipt.paymentDate is date-only
+      // (persisted at 00:00 from a YYYY-MM-DD string) while
+      // ARInvoice.invoiceDate carries the sale's wall-clock time, so a
+      // straight date sort drops every receipt below every invoice raised
+      // that same day. On real data that buried a payment made minutes ago
+      // 23 rows down, reading as "my payment never showed up".
+      if (a.kind !== b.kind) return a.kind === 'payment' ? -1 : 1
+      // Newest first within each block.
+      const byDate = new Date(b.date).getTime() - new Date(a.date).getTime()
+      if (byDate !== 0) return byDate
+      // Deterministic tiebreak — all 12 dues of one installment schedule
+      // share an invoiceDate, and same-day receipts share a payment date.
+      if (a.kind === 'invoice' && b.kind === 'invoice') {
+        return (
+          new Date(a.invoice.dueDate).getTime() - new Date(b.invoice.dueDate).getTime() ||
+          a.invoice.id.localeCompare(b.invoice.id)
+        )
+      }
+      if (a.kind === 'payment' && b.kind === 'payment') {
+        return (
+          (b.receipt.number ?? '').localeCompare(a.receipt.number ?? '') ||
+          a.receipt.id.localeCompare(b.receipt.id)
+        )
+      }
+      return 0
+    })
+  }, [items, receipts, customerFilter])
+
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
     if (!res.success)
       alert(res.message || res.error || 'Send failed — check Account Mapping settings')
     load()
+  }
+
+  /** Opens the receipt on its own page — the same document layout the AR
+   * invoice detail page renders, with its own Print/Download. The (invoice,
+   * payment) pairs travel in the URL because a grouped receipt (see
+   * ARReceiptListItem.applications) has no single document endpoint of its
+   * own; that page fetches and combines them. */
+  const viewReceipt = (r: ARReceiptListItem) => {
+    if (r.applications.length === 0) return
+    router.push(collectionReceiptHref(r.applications))
   }
 
   /** Scenario 26 Part 6 — no @Cron exists anywhere in the backend, so this
@@ -220,17 +340,15 @@ export default function ARInvoicesList({
             </>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <button
             onClick={load}
             className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
-          {/* Scenario 44 — invoice-level actions (Check Overdue, New Invoice)
-              only make sense once a customer's own invoices are in view;
-              the landing page (no customerFilter) is the Receipts register
-              now, so "New Receipt" replaces them there. */}
+          {/* Invoice-level actions (Check Overdue, New Invoice) only make
+              sense once a customer's own invoices are in view. */}
           {customerFilter ? (
             <>
               <button
@@ -312,7 +430,7 @@ export default function ARInvoicesList({
         )}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
-            {customerFilter ? 'Invoice # or Transaction #' : 'Reference # or Customer'}
+            Invoice # or Transaction #
           </label>
           <div className="relative">
             <Search
@@ -321,7 +439,7 @@ export default function ARInvoicesList({
             />
             <input
               className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-purple-500 focus:outline-none"
-              placeholder={customerFilter ? 'Search…' : 'Search receipts by reference or customer…'}
+              placeholder="Search…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -355,91 +473,106 @@ export default function ARInvoicesList({
       )}
       <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
-          {customerFilter ? (
-            <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Invoice #</th>
-                <th className="px-3 py-2 text-left">Customer</th>
-                <th className="px-3 py-2 text-left">Invoice Date</th>
-                <th className="px-3 py-2 text-left">Due Date</th>
-                <th className="px-3 py-2 text-right">Total</th>
-                <th className="px-3 py-2 text-right">Paid</th>
-                <th className="px-3 py-2 text-right">Outstanding</th>
-                <th className="px-3 py-2 text-right">Due</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-          ) : (
-            // Scenario 44 — the Receipts register (one row per ARPayment,
-            // any customer/invoice), matching the client's own paper
-            // "Receipts" ledger. Edit/View both open the parent invoice for
-            // now (Parts 2-3 add the real Collection Receipt document and
-            // in-place editing).
-            <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-              <tr>
-                <th className="px-3 py-2 text-left">Edit</th>
-                <th className="px-3 py-2 text-left">View</th>
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Reference</th>
-                <th className="px-3 py-2 text-left">Received in</th>
-                <th className="px-3 py-2 text-left">Description</th>
-                <th className="px-3 py-2 text-left">Accounts</th>
-                <th className="px-3 py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-          )}
+          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Invoice #</th>
+              <th className="px-3 py-2 text-left">Customer</th>
+              <th className="px-3 py-2 text-left">Invoice Date</th>
+              <th className="px-3 py-2 text-left">Due Date</th>
+              <th className="px-3 py-2 text-right">Total</th>
+              <th className="px-3 py-2 text-right">Paid</th>
+              <th className="px-3 py-2 text-right">Outstanding</th>
+              <th className="px-3 py-2 text-right">Due</th>
+              <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-right">Actions</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td
-                  colSpan={customerFilter ? 10 : 8}
-                  className="px-3 py-8 text-center text-gray-400"
-                >
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                   Loading...
                 </td>
               </tr>
             ) : customerFilter ? (
-              items.length === 0 ? (
+              customerRows.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                     No invoices.
                   </td>
                 </tr>
               ) : (
-                items.map((i) => (
-                  <InvoiceRow
-                    key={i.id}
-                    i={i}
-                    onOpen={() => router.push(`/accounting/ar-invoices/${i.id}`)}
-                    onSend={() => send(i.id)}
-                    onPay={() => setPayingFor(i)}
-                    onHistory={() => setHistoryFor(i)}
-                    onCredit={() => setCreditingFor(i)}
-                    onDebit={() => setDebitingFor(i)}
-                    onEdit={() => setEditing(i)}
-                    onVoid={() => setVoidingFor(i)}
-                    onDelete={() => setDeletingFor(i)}
-                  />
-                ))
+                customerRows.map((row) =>
+                  row.kind === 'invoice' ? (
+                    <InvoiceRow
+                      key={row.invoice.id}
+                      i={row.invoice}
+                      onOpen={() => router.push(`/accounting/ar-invoices/${row.invoice.id}`)}
+                      onSend={() => send(row.invoice.id)}
+                      onPay={() => setPayingFor(row.invoice)}
+                      onHistory={() => setHistoryFor(row.invoice)}
+                      onCredit={() => setCreditingFor(row.invoice)}
+                      onDebit={() => setDebitingFor(row.invoice)}
+                      onEdit={() => setEditing(row.invoice)}
+                      onVoid={() => setVoidingFor(row.invoice)}
+                      onDelete={() => setDeletingFor(row.invoice)}
+                    />
+                  ) : (
+                    <PaymentReferenceRow
+                      key={row.receipt.id}
+                      r={row.receipt}
+                      onView={() => viewReceipt(row.receipt)}
+                    />
+                  )
+                )
               )
-            ) : receipts.length === 0 ? (
+            ) : customerGroups.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
-                  No receipts.
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                  No invoices.
                 </td>
               </tr>
             ) : (
-              receipts.map((r) => (
-                <ReceiptRow
-                  key={r.id}
-                  r={r}
-                  onEdit={() => router.push(`/accounting/ar-invoices/${r.arInvoiceId}`)}
-                  onView={async () => {
-                    const res = await ARInvoices.getReceiptDocument(r.arInvoiceId, r.id)
-                    if (res.success && res.data) printCollectionReceiptDocument(res.data)
-                  }}
-                />
+              customerGroups.map((g) => (
+                <tr
+                  key={g.customerId}
+                  onClick={() => router.push(`/accounting/ar-invoices/customer/${g.customerId}`)}
+                  className="cursor-pointer bg-gray-50 font-medium hover:bg-gray-100"
+                >
+                  <td className="px-3 py-2" colSpan={2}>
+                    <div className="flex items-center gap-2">
+                      <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+                      <span className="truncate">{g.customerName}</span>
+                      <span className="shrink-0 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">
+                        {g.invoices.length} invoice{g.invoices.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs" colSpan={2}>
+                    {g.overdueCount > 0 && (
+                      <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
+                  <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {g.dueNow > 0 ? (
+                      <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2" />
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <Link
+                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
+                      className="text-xs font-medium text-purple-700 hover:underline"
+                    >
+                      Statement
+                    </Link>
+                  </td>
+                </tr>
               ))
             )}
           </tbody>
@@ -700,51 +833,59 @@ function InvoiceRow({
   )
 }
 
-/** Scenario 44 — one row in the Receipts register (top-level landing view,
- * no customerFilter). "View" opens/prints this receipt's own Collection
- * Receipt document (Part 2); "Edit" still opens the parent invoice for now
- * — Part 3 adds real in-place editing (reference/notes) + void-and-reraise. */
-function ReceiptRow({
-  r,
-  onEdit,
-  onView,
-}: {
-  r: ARReceiptListItem
-  onEdit: () => void
-  onView: () => void
-}) {
+/** One payment/receipt, shown as its own row inline with a customer's
+ * due-invoices (not just a fragment split across the dues it settled) — the
+ * one amount actually paid, with its own CR number, same column layout as
+ * InvoiceRow so it reads as one merged, date-sorted table. */
+function PaymentReferenceRow({ r, onView }: { r: ARReceiptListItem; onView: () => void }) {
+  const cancelled = !!r.cancelledAt
   return (
-    <tr onClick={onEdit} className="cursor-pointer hover:bg-gray-50">
-      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-        <Tooltip label="Edit">
-          <button
-            onClick={onEdit}
-            aria-label="Edit"
-            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-        </Tooltip>
+    <tr
+      onClick={onView}
+      className={`cursor-pointer hover:bg-gray-50 ${cancelled ? 'opacity-50' : ''}`}
+    >
+      <td className="px-3 py-2 max-w-40">
+        {/* The cashier's CR number wins — that's the number off the physical
+            booklet the customer is holding, and what this reconciles
+            against. The generated CR-YYYYMMDD-NNNN is only a fallback for
+            payments recorded before a CR was required. */}
+        <span
+          title={r.reference ?? r.number ?? undefined}
+          className="block truncate font-mono text-xs text-emerald-700"
+        >
+          {r.reference ?? r.number ?? '—'}
+        </span>
+        <span className="block truncate text-[10px] text-gray-400">Payment</span>
       </td>
-      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-        <Tooltip label="View">
+      <td className="px-3 py-2 max-w-40">
+        <span title={r.customerName} className="block truncate">
+          {r.customerName}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
+      <td className="px-3 py-2 text-xs whitespace-nowrap text-gray-400">—</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
+      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
+      <td className="px-3 py-2 text-right text-gray-400">—</td>
+      <td className="px-3 py-2 text-right text-gray-400">—</td>
+      <td className="px-3 py-2">
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cancelled ? 'bg-gray-100 text-gray-600' : 'bg-emerald-50 text-emerald-700'}`}
+        >
+          {cancelled ? 'VOIDED' : 'PAID'}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <Tooltip label="View receipt">
           <button
             onClick={onView}
-            aria-label="View"
+            aria-label="View receipt"
             className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
           >
             <Eye className="w-4 h-4" />
           </button>
         </Tooltip>
       </td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
-      <td className="px-3 py-2 font-mono text-xs text-purple-700">{r.reference || '—'}</td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap">{r.receivedIn}</td>
-      <td className="px-3 py-2 text-xs">{r.description || '—'}</td>
-      <td className="px-3 py-2 text-xs">
-        {r.accountLine} — {fmtDate(r.dueDate)}
-      </td>
-      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
     </tr>
   )
 }
@@ -2132,7 +2273,7 @@ function PaymentHistoryModal({
                         </div>
                       )}
                     </div>
-                    {p.isOverpayment && !p.cancelledAt && (
+                    {!p.cancelledAt && (
                       <button
                         onClick={() => setCancelTarget(p)}
                         className="shrink-0 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
@@ -2170,11 +2311,19 @@ function PaymentHistoryModal({
 function CancelPaymentDialog({
   invoiceId,
   payment,
+  applications,
   onClose,
   onCancelled,
 }: {
   invoiceId: string
   payment: ARPayment
+  /** When a receipt is several grouped applications (see ARReceiptListItem),
+   * cancel loops the same single-row endpoint over every one of them —
+   * cancelPayment already reasons correctly about a shared journal entry
+   * per row (full reversal only once it's the sole active owner), so this
+   * is just as safe done N times as once. Omitted (or empty) falls back to
+   * the single `payment` above, the pre-existing per-invoice-history usage. */
+  applications?: { arInvoiceId: string; paymentId: string }[]
   onClose: () => void
   onCancelled: () => void
 }) {
@@ -2197,12 +2346,23 @@ function CancelPaymentDialog({
       setCancelling(false)
       return
     }
-    const res = await ARInvoices.cancelPayment(invoiceId, payment.id, reason.trim() || undefined)
-    setCancelling(false)
-    if (!res.success) {
-      setError(res.message || res.error || 'Cancel failed')
-      return
+    const targets =
+      applications && applications.length > 0
+        ? applications
+        : [{ arInvoiceId: invoiceId, paymentId: payment.id }]
+    for (const t of targets) {
+      const res = await ARInvoices.cancelPayment(
+        t.arInvoiceId,
+        t.paymentId,
+        reason.trim() || undefined
+      )
+      if (!res.success) {
+        setCancelling(false)
+        setError(res.message || res.error || 'Cancel failed')
+        return
+      }
     }
+    setCancelling(false)
     onCancelled()
   }
 
@@ -2210,7 +2370,7 @@ function CancelPaymentDialog({
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b">
-          <h3 className="text-lg font-semibold">Cancel Overpayment</h3>
+          <h3 className="text-lg font-semibold">Cancel Receipt</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -2263,7 +2423,7 @@ function CancelPaymentDialog({
               disabled={cancelling || !pin.trim()}
               className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
             >
-              {cancelling ? 'Cancelling...' : 'Cancel Payment'}
+              {cancelling ? 'Cancelling...' : 'Cancel Receipt'}
             </button>
           </div>
         </form>

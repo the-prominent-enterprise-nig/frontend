@@ -16,10 +16,13 @@ import {
   X,
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
-import { getCustomerTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { type SessionUser } from '@/src/libs/guards/permission'
 import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
-import type { InstallmentSchedule, PosTransaction } from '@/src/schema/pos'
+import type { InstallmentSchedule, PosTransaction, CustomerHistoryItem } from '@/src/schema/pos'
 
 // Same mapping TransactionsList.tsx uses for its own transaction rows —
 // kept local rather than imported since that file doesn't export it.
@@ -31,6 +34,13 @@ const txTypeColor: Record<string, string> = {
 const txStatusColor: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   voided: 'bg-red-100 text-red-700',
+}
+
+function summarizeTransactionItems(tx: PosTransaction): string {
+  const names = (tx.lines ?? []).map((l) => l.itemName)
+  if (names.length === 0) return 'No items'
+  if (names.length <= 2) return names.join(', ')
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`
 }
 
 type CustomerView = Customer & {
@@ -75,11 +85,20 @@ export default function Customer360({
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState<string | null>(null)
 
-  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId)
-  // — covers cash/full-payment sales too, unlike Installment Plans above.
-  const [transactionHistory, setTransactionHistory] = useState<PosTransaction[]>([])
+  // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId/history-with-payments)
+  // — covers cash/full-payment sales too, unlike Installment Plans above,
+  // merged with installment-due payments collected later via Collections.
+  const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  // TransactionDetail (the same receipt modal POS's own pages use) requires
+  // a real SessionUser — this page.tsx doesn't pass one down, so fetch it
+  // client-side the same way pos/page.tsx does for its Recent Transactions.
+  const [posSession, setPosSession] = useState<SessionUser | null>(null)
+  const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
+  useEffect(() => {
+    getSessionOrNull().then((s) => setPosSession(s))
+  }, [])
 
   const upcomingPayables = useMemo(
     () => flattenUpcomingPayables(installmentSchedules),
@@ -132,7 +151,7 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    getCustomerTransactions(id).then((res) => {
+    getCustomerHistoryWithPayments(id).then((res) => {
       if (res.success && res.data) setTransactionHistory(res.data)
       else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
@@ -587,43 +606,79 @@ export default function Customer360({
           ) : (
             <>
               <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) => (
-                  <li
-                    key={tx.id}
-                    className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-medium text-gray-800">
-                        {tx.transactionNumber}
+                {transactionHistory.map((tx) =>
+                  tx.kind === 'PAYMENT' ? (
+                    <li
+                      key={tx.id}
+                      className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          Payment received
+                          {tx.reference ? ` — ${tx.reference}` : ''}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.paymentDate).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.invoiceNumbers.length > 0 && (
+                            <span className="truncate">{tx.invoiceNumbers.join(', ')}</span>
+                          )}
+                          {tx.cancelledAt && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                              cancelled
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-green-700">
+                        {formatPeso(tx.amount)}
                       </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.transactionType}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                      >
-                        {tx.status}
-                      </span>
-                    </div>
-                    <span className="flex items-center gap-3 text-gray-600">
-                      <span>
-                        {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                      <span>
-                        {tx.lines?.length ?? 0} item{tx.lines?.length === 1 ? '' : 's'}
-                      </span>
-                      <span className="font-medium text-gray-800">
+                    </li>
+                  ) : (
+                    <li
+                      key={tx.id}
+                      onClick={() => setSelectedTransaction(tx)}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          {summarizeTransactionItems(tx)}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.transactionType !== 'sale' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.transactionType}
+                            </span>
+                          )}
+                          {tx.status !== 'completed' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-gray-800">
                         {formatPeso(tx.totalAmount)}
                       </span>
-                    </span>
-                  </li>
-                ))}
+                    </li>
+                  )
+                )}
               </ul>
               {transactionHistory.length >= 20 && (
                 <p className="mt-2 text-center text-[11px] text-gray-400">
@@ -667,6 +722,14 @@ export default function Customer360({
         assignedTo={currentUserId}
         target={{ customerId: id }}
       />
+
+      {selectedTransaction && posSession && (
+        <TransactionDetail
+          transaction={selectedTransaction}
+          session={posSession}
+          onClose={() => setSelectedTransaction(null)}
+        />
+      )}
     </div>
   )
 }

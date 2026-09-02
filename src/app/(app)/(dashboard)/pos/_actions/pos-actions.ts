@@ -20,6 +20,7 @@ import type {
   SessionReconciliation,
   SalesSummary,
   PosTransaction,
+  CustomerHistoryItem,
   CreateTransactionInput,
   AddPaymentInput,
   PromoCode,
@@ -1344,6 +1345,22 @@ export async function getCustomerTransactions(
     return { success: true, data: result.data }
   } catch {
     return { success: false, error: 'Failed to fetch customer transactions' }
+  }
+}
+
+export async function getCustomerHistoryWithPayments(
+  customerId: string
+): Promise<ApiResponse<CustomerHistoryItem[]>> {
+  try {
+    const result = await api.get<CustomerHistoryItem[]>(
+      `/pos/transactions/customer/${customerId}/history-with-payments`
+    )
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to fetch customer history' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to fetch customer history' }
   }
 }
 

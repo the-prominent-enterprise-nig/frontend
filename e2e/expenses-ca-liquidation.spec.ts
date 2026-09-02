@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickFromCustomSelect } from './utils'
 
 // Scenario 40 Part 2 — CA-Liquidation. Payee → Other → CA-Liquidation asks
 // which Special Account type is being closed out, then the employee/party,
@@ -14,6 +14,23 @@ import { gotoReady } from './utils'
 // Over-liquidating is now rejected by the server (the client no longer
 // pre-checks it, since balances are tracked per recipient across possibly
 // several lines) — same error text surfaces either way.
+//
+// Scenario 45 (2026-09-02) — the Payee tile this test starts from is
+// labeled "Special Account" now, not "Other" (see expenses-category-quick-
+// pick.spec.ts). Also fixed here: "Special Account type *"/"Which type is
+// this closing out? *" are custom Selects (combobox/listbox/option roles,
+// not native <select>s) — this file's own selectOption() calls had gone
+// stale since that change (expenses-special-account-payee.spec.ts was
+// already updated to pickFromCustomSelect at the time; this file wasn't),
+// pre-existing breakage unrelated to Scenario 45, fixed here since it sits
+// on the exact line already touched for the tile-label rename.
+//
+// Scenario 45 (2026-09-02) — Recipient is a plain text field now, so this
+// no longer picks a real employee. The balance lookup keys on the typed
+// name, which is exactly what makes the same constant below matter: the
+// advance and both liquidations have to spell the recipient identically or
+// the outstanding balance comes back 0.
+const RECIPIENT = 'E2E Liquidation Recipient'
 test.describe('Accounting — Expenses CA-Liquidation (Scenario 40 Part 2)', () => {
   test('records a partial liquidation against an Employee Cash Advance and shows the remaining balance', async ({
     page,
@@ -26,17 +43,9 @@ test.describe('Accounting — Expenses CA-Liquidation (Scenario 40 Part 2)', () 
     const before1 = new Set(await page.locator('tbody tr td:first-child').allTextContents())
     await page.getByRole('link', { name: 'New Expense' }).click()
     await page.waitForURL('**/accounting/expenses/new')
-    await page.getByRole('button', { name: 'Other', exact: true }).click()
-    await page.getByLabel('Special Account type *').selectOption('EMPLOYEE_CASH_ADVANCE')
-    const employeeInput = page.getByPlaceholder('Search employee by name or code…')
-    await employeeInput.click()
-    await employeeInput.fill('TEC')
-    const employeeDropdown = page.locator('div.absolute.z-50')
-    await expect(employeeDropdown).toBeVisible({ timeout: 10_000 })
-    const firstResult = employeeDropdown.locator('button').first()
-    const employeeLabel = (await firstResult.locator('span').first().textContent())?.trim()
-    expect(employeeLabel).toBeTruthy()
-    await firstResult.click()
+    await pickFromCustomSelect(page, '— Select —', 'Special Account')
+    await pickFromCustomSelect(page, '— Select —', 'Employee Cash Advance')
+    await page.getByLabel('Recipient', { exact: true }).fill(RECIPIENT)
     await page.getByLabel('Amount', { exact: true }).fill('2000')
     await page.getByRole('button', { name: 'Save' }).click()
     await page.waitForURL('**/accounting/expenses', { timeout: 10_000 })
@@ -60,24 +69,13 @@ test.describe('Accounting — Expenses CA-Liquidation (Scenario 40 Part 2)', () 
     const before2 = new Set(await page.locator('tbody tr td:first-child').allTextContents())
     await page.getByRole('link', { name: 'New Expense' }).click()
     await page.waitForURL('**/accounting/expenses/new')
-    await page.getByRole('button', { name: 'Other', exact: true }).click()
-    await page.getByLabel('Special Account type *').selectOption('CA_LIQUIDATION')
+    await pickFromCustomSelect(page, '— Select —', 'Special Account')
+    await pickFromCustomSelect(page, '— Select —', 'CA-Liquidation')
+    await pickFromCustomSelect(page, '— Select —', 'Employee Cash Advance')
 
-    const liquidatesTypeSelect = page.getByLabel('Which type is this closing out? *')
-    await expect(liquidatesTypeSelect).toBeVisible({ timeout: 5_000 })
-    await liquidatesTypeSelect.selectOption('EMPLOYEE_CASH_ADVANCE')
-
-    const liqEmployeeInput = page.getByPlaceholder('Search employee by name or code…')
-    await expect(liqEmployeeInput).toBeVisible({ timeout: 5_000 })
-    await liqEmployeeInput.click()
-    // Same deterministic ordering as the setup step above ([firstName,
-    // lastName] asc) — searching "TEC" again and picking the first result
-    // reliably lands on the same employee, without needing to know their name.
-    await liqEmployeeInput.fill('TEC')
-    const liqDropdown = page.locator('div.absolute.z-50')
-    await expect(liqDropdown).toBeVisible({ timeout: 10_000 })
-    await liqDropdown.locator('button').first().click()
-
+    // Scenario 45: the balance is found by the typed name alone, so the
+    // liquidation has to spell the recipient exactly as the advance did.
+    await page.getByLabel('Recipient', { exact: true }).fill(RECIPIENT)
     await expect(page.getByText(/Outstanding: /)).toContainText('2,000', { timeout: 10_000 })
 
     await page.getByLabel('Amount', { exact: true }).fill('800')
@@ -99,7 +97,7 @@ test.describe('Accounting — Expenses CA-Liquidation (Scenario 40 Part 2)', () 
     const liquidationRow = page.locator('tbody tr', { hasText: liquidationNumber })
     await expect(liquidationRow).toContainText('Employee Cash Advance')
     await expect(liquidationRow).toContainText('(Liquidation)')
-    if (employeeLabel) await expect(liquidationRow).toContainText(employeeLabel)
+    await expect(liquidationRow).toContainText(RECIPIENT)
 
     // Confirm the remaining balance (1200) shows on a fresh liquidation attempt.
     await liquidationRow.locator('button[title="Record — posts to GL"]').click()
@@ -107,14 +105,10 @@ test.describe('Accounting — Expenses CA-Liquidation (Scenario 40 Part 2)', () 
 
     await page.getByRole('link', { name: 'New Expense' }).click()
     await page.waitForURL('**/accounting/expenses/new')
-    await page.getByRole('button', { name: 'Other', exact: true }).click()
-    await page.getByLabel('Special Account type *').selectOption('CA_LIQUIDATION')
-    await page.getByLabel('Which type is this closing out? *').selectOption('EMPLOYEE_CASH_ADVANCE')
-    const checkInput = page.getByPlaceholder('Search employee by name or code…')
-    await checkInput.click()
-    await checkInput.fill('TEC')
-    await expect(page.locator('div.absolute.z-50')).toBeVisible({ timeout: 10_000 })
-    await page.locator('div.absolute.z-50').locator('button').first().click()
+    await pickFromCustomSelect(page, '— Select —', 'Special Account')
+    await pickFromCustomSelect(page, '— Select —', 'CA-Liquidation')
+    await pickFromCustomSelect(page, '— Select —', 'Employee Cash Advance')
+    await page.getByLabel('Recipient', { exact: true }).fill(RECIPIENT)
     await expect(page.getByText(/Outstanding: /)).toContainText('1,200', { timeout: 10_000 })
 
     // Over-liquidating the remaining 1200 by asking for 5000 is rejected by the server.

@@ -129,7 +129,7 @@ export default function RecordRemittanceModal({
               id="remit-reference"
               value={form.reference ?? ''}
               onChange={(e) => setField('reference', e.target.value)}
-              placeholder="e.g. OR number"
+              placeholder="e.g. remittance slip #"
               className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
             />
           </div>

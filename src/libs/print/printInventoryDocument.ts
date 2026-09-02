@@ -990,9 +990,9 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
     'Tot Price %',
     'LCP',
     'NOT MVG',
-    'Last OR Date',
-    'Last ORlastnum',
-    'Last ORAmt',
+    'Last CR Date',
+    'Last CR Number',
+    'Last CR Amount',
     'OVER',
   ]
   // Every numeric column right-aligns its header to match its cells; text/
@@ -1013,7 +1013,7 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
     'Tot Price %',
     'LCP',
     'NOT MVG',
-    'Last ORAmt',
+    'Last CR Amount',
     'OVER',
   ])
 
@@ -1131,23 +1131,24 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
 }
 
 /**
- * Bespoke letterhead layout for the AR Invoice print/download — same
- * typographic family as buildReceivingReportHtml()/buildStockTransferHtml()/
- * printPurchaseOrderDocument() (title left / logo right, three-column info
- * row, light #ccc-bordered table) instead of printInventoryDocument()'s bare
- * generic shell (no logo, plain label/value grid) that AR Invoice used to
- * share with AP Bill.
+ * The AR document, in the client's own Collection Receipt shape (their
+ * existing system's AR document, which is what they asked this to look
+ * like): customer + address left, Date/Reference centre, enterprise right,
+ * an uppercase description line, then a numbered Account/Total table.
+ *
+ * Deliberately the same layout as buildCollectionReceiptHtml() below, which
+ * prints one *payment*; this one prints the invoice itself, so its single
+ * account row is the receivable being billed — customer, invoice number and
+ * due date — not a settled application.
+ *
+ * No VAT line: the client's AR document doesn't carry one (removed on their
+ * instruction). ARInvoice.taxAmount is still stored and still posts an
+ * Output VAT leg — it just isn't shown here.
  */
 export function buildARInvoiceHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const inv = doc.document as Record<string, unknown>
   const customer = inv.customer as { name?: string; address?: string; taxId?: string } | undefined
-  const posTransaction = inv.posTransaction as { transactionNumber?: string } | null
-  const installmentDetail = inv.installmentDetail as {
-    termMonths: number | null
-    rebate: number | string | null
-    items: Record<string, unknown>[]
-  } | null
   const enterprise = doc.enterprise
 
   const fmt = (n: number) =>
@@ -1157,122 +1158,64 @@ export function buildARInvoiceHtml(data: unknown): string {
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const totalAmount = Number(inv.totalAmount ?? 0)
-  const amountPaid = Number(inv.amountPaid ?? 0)
-  const outstanding = totalAmount - amountPaid
-
-  const itemsRows = (installmentDetail?.items ?? [])
-    .map((l) => {
-      const item = l.item as { name?: string; brand?: { name?: string } | null } | null
-      const qty = Number(l.quantity ?? 0)
-      const unitPrice = Number(l.unitPrice ?? 0)
-      const lineTotal = Number(l.lineTotal ?? qty * unitPrice)
-      const brand = item?.brand ? ` — ${esc(item.brand.name)}` : ''
-      const serialNumber = l.serialNumber as {
-        serialNumber?: string
-        goodsReceiptLine?: {
-          goodsReceipt?: {
-            code?: string
-            supplier?: { name?: string } | null
-            purchaseOrderNumber?: string | null
-          } | null
-        } | null
-      } | null
-      const secondarySerialNumber = l.secondarySerialNumber as { serialNumber?: string } | null
-      const serials = serialNumber
-        ? `<div class="mono" style="color:#7c3aed;font-size:11px;margin-top:2px">SN: ${esc(serialNumber.serialNumber)}${secondarySerialNumber ? ` / ${esc(secondarySerialNumber.serialNumber)}` : ''}</div>`
-        : ''
-      const goodsReceipt = serialNumber?.goodsReceiptLine?.goodsReceipt
-      const receiving = goodsReceipt
-        ? `<div style="color:#999;font-size:10px;margin-top:1px">RR: ${esc(goodsReceipt.code)}${goodsReceipt.supplier ? ` — ${esc(goodsReceipt.supplier.name)}` : ''}${goodsReceipt.purchaseOrderNumber ? ` · PO: ${esc(goodsReceipt.purchaseOrderNumber)}` : ''}</div>`
-        : ''
-      return `<tr>
-        <td>${esc(item?.name) || '—'}${brand}${serials}${receiving}</td>
-        <td class="right">${qty}</td>
-        <td class="right">${fmt(unitPrice)}</td>
-        <td class="right">${fmt(lineTotal)}</td>
-      </tr>`
-    })
-    .join('')
+  const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(inv.invoiceNumber)} — ${fmtDate(inv.dueDate)}`
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
-    h2 { font-size: 14px; margin: 0 0 4px; }
+    h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 20px; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
-    .disclaimer { font-size: 12px; color: #666; margin: -6px 0 10px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    .mono { font-family: "Courier New", monospace; }
-    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
-    .total-wrap table { width: auto; }
-    .total-wrap td { padding: 5px 10px; }
-    .total-wrap td.label { text-align: right; }
-    .total-wrap td.value { text-align: right; min-width: 130px; }
-    .total-wrap tr.strong td { font-weight: 700; }
+    td.num, th.num { width: 34px; text-align: center; }
+    tr.total-row td { font-weight: 700; text-align: right; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>AR Invoice</h1>
+      <h1>Collection Receipt</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
     <div class="info">
       <div class="party">
-        <p class="meta-label">Bill To</p>
         <p class="party-name">${esc(customer?.name) || '—'}</p>
         ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
         ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
       </div>
       <div class="meta">
-        <p class="meta-label">Invoice No.</p>
-        <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Invoice Date</p>
+        <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(inv.invoiceDate)}</p>
-        <p class="meta-label">Due Date</p>
-        <p class="meta-value">${fmtDate(inv.dueDate)}</p>
-        <p class="meta-label">Status</p>
-        <p class="meta-value">${esc(inv.status) || '—'}</p>
-        ${posTransaction ? `<p class="meta-label">Source Sale</p><p class="meta-value">${esc(posTransaction.transactionNumber)}</p>` : ''}
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${esc(inv.invoiceNumber)}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
-        ${enterprise?.companyTradingName ? `<p class="party-address">${esc(enterprise.companyTradingName)}</p>` : ''}
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        ${enterprise?.taxId ? `<p class="party-address">TIN: ${esc(enterprise.taxId)}</p>` : ''}
       </div>
     </div>
 
-    ${
-      installmentDetail
-        ? `<h2>Financed items — full plan</h2>
-    <p class="disclaimer">Full price of everything on this ${installmentDetail.termMonths ?? '—'}-month plan — this invoice only covers 1 of ${installmentDetail.termMonths ?? '—'} monthly payments, not the full amount shown below.</p>
-    <table>
-      <thead><tr><th>Item</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Line total</th></tr></thead>
-      <tbody>${itemsRows}</tbody>
-    </table>
-    <p style="font-size:12px;color:#666;text-align:right;margin-top:6px">Rebate on this due date: ${fmt(Number(installmentDetail.rebate ?? 0))}</p>`
-        : ''
-    }
+    ${inv.description ? `<p class="description">${esc(inv.description)}</p>` : ''}
 
-    <div class="total-wrap">
-      <table>
-        <tr><td class="label">Subtotal</td><td class="value">${fmt(Number(inv.subtotal ?? 0))}</td></tr>
-        <tr><td class="label">Tax</td><td class="value">${fmt(Number(inv.taxAmount ?? 0))}</td></tr>
-        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
-        <tr><td class="label">Paid</td><td class="value">${fmt(amountPaid)}</td></tr>
-        <tr class="strong"><td class="label">Outstanding</td><td class="value">${fmt(outstanding)}</td></tr>
-      </table>
-    </div>
+    <table>
+      <thead>
+        <tr><th class="num">#</th><th>Account</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="num">1</td><td>${accountLine}</td><td class="right">${fmt(totalAmount)}</td></tr>
+        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(totalAmount)}</td></tr>
+      </tbody>
+    </table>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`
@@ -1297,6 +1240,13 @@ export function printARInvoiceDocument(data: unknown): void {
  * No per-line tax column: this schema only tracks tax at the bill level
  * (APBill.taxAmount), not per goods-receipt-line/item, so — unlike the
  * client's reference invoice — tax only appears in the totals block.
+ *
+ * That block is ordered so it reconciles top to bottom: APBill.totalAmount
+ * is VAT-exclusive (subtotal + taxAmount), so Input VAT is an addend above
+ * Total, not an "includes VAT" note below it; and withholding sits under
+ * Total with the payments, since it never reduced totalAmount — receive()
+ * counts it into amountPaid instead (it goes to the BIR, not the supplier),
+ * which is exactly how it reaches Balance due.
  */
 export function buildAPBillHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
@@ -1361,6 +1311,7 @@ export function buildAPBillHtml(data: unknown): string {
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
+    .info .meta { text-align: right; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
     .rr-note { font-weight: 700; margin: 0 0 16px; }
@@ -1392,7 +1343,7 @@ export function buildAPBillHtml(data: unknown): string {
         <p class="meta-value">${fmtDate(bill.billDate)}</p>
         <p class="meta-label">Due date</p>
         <p class="meta-value">${fmtDate(bill.dueDate)}</p>
-        <p class="meta-label">Invoice number</p>
+        <p class="meta-label">SI number</p>
         <p class="meta-value">${bill.billNumber ? esc(bill.billNumber) : 'Pending SI #'}</p>
         ${purchaseOrder ? `<p class="meta-label">Order number</p><p class="meta-value">${esc(purchaseOrder.code)}</p>` : ''}
         <p class="meta-label">PAYEE'S TIN:</p>
@@ -1438,9 +1389,9 @@ export function buildAPBillHtml(data: unknown): string {
     <div class="total-wrap">
       <table>
         <tr><td class="label">Sub-total</td><td class="value">${fmt(Number(bill.subtotal ?? 0))}</td></tr>
-        ${withholdingAmount > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">- ${fmt(withholdingAmount)}</td></tr>` : ''}
+        <tr><td class="label">Input VAT</td><td class="value">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
         <tr class="strong"><td class="label">Total</td><td class="value">${fmt(totalAmount)}</td></tr>
-        <tr><td class="label">Includes VAT</td><td class="value">${fmt(Number(bill.taxAmount ?? 0))}</td></tr>
+        ${withholdingAmount > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">- ${fmt(withholdingAmount)}</td></tr>` : ''}
         ${paymentRows}
         <tr class="balance"><td class="label">Balance due</td><td class="value">${fmt(outstanding)}</td></tr>
       </table>
@@ -1609,16 +1560,31 @@ export function buildCollectionReceiptHtml(data: unknown): string {
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const amount = Number(r.amount ?? 0)
-  const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(r.invoiceNumber) || '—'}`
+  // A grouped receipt (one payment action that touched several installment
+  // dues at once — see ARInvoicesList's viewReceipt) carries a `lines`
+  // array instead of a single invoiceNumber; render one row per due plus a
+  // total row rather than collapsing back into one misleadingly-labeled
+  // account line.
+  const lines = r.lines as { accountLine: string; amount: number }[] | undefined
+  const rows =
+    lines && lines.length > 0
+      ? lines
+          .map(
+            (l, i) =>
+              `<tr><td class="num">${i + 1}</td><td>${esc(l.accountLine)}</td><td class="right">${fmt(l.amount)}</td></tr>`
+          )
+          .join('')
+      : `<tr><td class="num">1</td><td>Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(r.invoiceNumber) || '—'}</td><td class="right">${fmt(amount)}</td></tr>`
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
-    h1 { font-size: 26px; margin: 0; }
+    h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .info .meta { text-align: right; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
@@ -1628,7 +1594,8 @@ export function buildCollectionReceiptHtml(data: unknown): string {
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    tr.total-row td { font-weight: 700; }
+    td.num, th.num { width: 34px; text-align: center; }
+    tr.total-row td { font-weight: 700; text-align: right; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
@@ -1658,14 +1625,11 @@ export function buildCollectionReceiptHtml(data: unknown): string {
 
     <table>
       <thead>
-        <tr><th>Account</th><th class="right">Total</th></tr>
+        <tr><th class="num">#</th><th>Account</th><th class="right">Total</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td>${accountLine}</td>
-          <td class="right">${fmt(amount)}</td>
-        </tr>
-        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+        ${rows}
+        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
       </tbody>
     </table>
 

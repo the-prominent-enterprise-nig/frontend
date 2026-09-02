@@ -177,13 +177,13 @@ export default function RecordPaymentModal({
                 htmlFor="payment-orNumber"
                 className="block text-[13px] font-medium text-gray-700"
               >
-                OR number
+                CR number
               </label>
               <input
                 id="payment-orNumber"
                 value={form.orNumber ?? ''}
                 onChange={(e) => setField('orNumber', e.target.value)}
-                placeholder="e.g. OR-1234"
+                placeholder="e.g. CR#092398"
                 className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
               />
             </div>

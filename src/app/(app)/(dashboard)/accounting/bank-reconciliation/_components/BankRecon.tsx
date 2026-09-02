@@ -201,115 +201,124 @@ export default function BankRecon() {
           </tbody>
         </table>
       </div>
-      <div className="mt-6 flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-lg font-semibold">Clearing Settlements</h3>
-          <p className="text-xs text-gray-500">
-            Card/e-wallet/bank-transfer batches and TPF partner receivables settling into the bank.
-          </p>
-        </div>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">Type</th>
-              <th className="px-3 py-2 text-left">Bank Account</th>
-              <th className="px-3 py-2 text-left">Settled</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2 text-right">Fee</th>
-              <th className="px-3 py-2 text-left">Reference</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {settlements.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                  No settlements recorded.
-                </td>
-              </tr>
-            ) : (
-              settlements.map((s) => (
-                <tr key={s.id}>
-                  <td className="px-3 py-2">
-                    {CLEARING_TYPE_LABELS[s.clearingType]}
-                    {s.tpfProvider && (
-                      <span className="text-gray-500"> — {s.tpfProvider.name}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">{s.bankAccount?.name}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(s.settledAt)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(s.amount)}</td>
-                  <td className="px-3 py-2 text-right">
-                    {s.feeAmount > 0 ? fmtMoney(s.feeAmount) : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-xs">{s.referenceNo || '—'}</td>
+      {(loading || settlements.length > 0) && (
+        <>
+          <div className="mt-6 flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-semibold">Clearing Settlements</h3>
+              <p className="text-xs text-gray-500">
+                Card/e-wallet/bank-transfer batches and TPF partner receivables settling into the
+                bank.
+              </p>
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Type</th>
+                  <th className="px-3 py-2 text-left">Bank Account</th>
+                  <th className="px-3 py-2 text-left">Settled</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                  <th className="px-3 py-2 text-right">Fee</th>
+                  <th className="px-3 py-2 text-left">Reference</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                      Loading...
+                    </td>
+                  </tr>
+                ) : (
+                  settlements.map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-3 py-2">
+                        {CLEARING_TYPE_LABELS[s.clearingType]}
+                        {s.tpfProvider && (
+                          <span className="text-gray-500"> — {s.tpfProvider.name}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">{s.bankAccount?.name}</td>
+                      <td className="px-3 py-2 text-xs">{fmtDate(s.settledAt)}</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney(s.amount)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {s.feeAmount > 0 ? fmtMoney(s.feeAmount) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs">{s.referenceNo || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
-      <div className="mt-6 flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-lg font-semibold">Unidentified Bank Credits</h3>
-          <p className="text-xs text-gray-500">
-            Bank credits with no matching sale or settlement yet — reclassify once identified.
-          </p>
-        </div>
-      </div>
-      <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">Bank Account</th>
-              <th className="px-3 py-2 text-left">Credit Date</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2 text-left">Bank Ref</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {credits.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                  No unidentified credits.
-                </td>
-              </tr>
-            ) : (
-              credits.map((c) => (
-                <tr key={c.id}>
-                  <td className="px-3 py-2">{c.bankAccount?.name}</td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(c.creditDate)}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(c.amount)}</td>
-                  <td className="px-3 py-2 text-xs">{c.bankRef || '—'}</td>
-                  <td className="px-3 py-2 text-xs">
-                    {c.status === 'unmatched' ? (
-                      <span className="text-amber-700">Unmatched</span>
-                    ) : (
-                      <span className="text-emerald-700" title={c.reclassifiedNote ?? ''}>
-                        Reclassified
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {c.status === 'unmatched' && (
-                      <button
-                        onClick={() => setReclassifying(c)}
-                        className="px-2 py-1 text-xs text-purple-700 hover:bg-purple-50 border border-purple-200 rounded"
-                      >
-                        Reclassify
-                      </button>
-                    )}
-                  </td>
+      {(loading || credits.length > 0) && (
+        <>
+          <div className="mt-6 flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-semibold">Unidentified Bank Credits</h3>
+              <p className="text-xs text-gray-500">
+                Bank credits with no matching sale or settlement yet — reclassify once identified.
+              </p>
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Bank Account</th>
+                  <th className="px-3 py-2 text-left">Credit Date</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                  <th className="px-3 py-2 text-left">Bank Ref</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                      Loading...
+                    </td>
+                  </tr>
+                ) : (
+                  credits.map((c) => (
+                    <tr key={c.id}>
+                      <td className="px-3 py-2">{c.bankAccount?.name}</td>
+                      <td className="px-3 py-2 text-xs">{fmtDate(c.creditDate)}</td>
+                      <td className="px-3 py-2 text-right">{fmtMoney(c.amount)}</td>
+                      <td className="px-3 py-2 text-xs">{c.bankRef || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {c.status === 'unmatched' ? (
+                          <span className="text-amber-700">Unmatched</span>
+                        ) : (
+                          <span className="text-emerald-700" title={c.reclassifiedNote ?? ''}>
+                            Reclassified
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {c.status === 'unmatched' && (
+                          <button
+                            onClick={() => setReclassifying(c)}
+                            className="px-2 py-1 text-xs text-purple-700 hover:bg-purple-50 border border-purple-200 rounded"
+                          >
+                            Reclassify
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {settling && (
         <SettlementForm

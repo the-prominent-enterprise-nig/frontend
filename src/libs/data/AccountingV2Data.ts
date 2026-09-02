@@ -334,6 +334,24 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
+  /** The wider payment this one is a slice of, present only when that
+   * payment settled dues other than this invoice (findOne populates it).
+   * `amount` is the live total across the receipt's still-active
+   * applications, not the raw tendered column. */
+  receipt?: {
+    id: string
+    number: string | null
+    reference: string | null
+    amount: number
+    settledOthers: {
+      arInvoiceId: string
+      invoiceNumber: string
+      lineNumber: number | null
+      termMonths: number | null
+      amount: number
+      cancelledAt: string | null
+    }[]
+  } | null
 }
 
 // Scenario 38 Gap 5 — row shape for the Pending 2307 / CWT Variance lists,
@@ -410,7 +428,11 @@ export interface ARInvoice {
   id: string
   invoiceNumber: string
   customerId: string
-  customer?: { id: string; name: string }
+  // Address/TIN are only ever populated by get()/getDocument() (findOne
+  // returns the whole Customer row) — the list endpoint's lighter select
+  // stops at id/name, so the letterhead block on the detail sheet treats
+  // them as optional.
+  customer?: { id: string; name: string; address?: string | null; taxId?: string | null }
   invoiceDate: string
   dueDate: string
   description?: string
@@ -470,11 +492,23 @@ export interface ARInvoiceCustomerResult {
 
 export interface ARReceiptListItem {
   id: string
+  /** Every (arInvoiceId, paymentId) this receipt actually applied to — a
+   * single payment action (overflow onto the next due, or "Pay Selected"
+   * bulk pay) can touch several invoices at once and they're grouped back
+   * into one receipt row here, so this can have more than one entry. Edit/
+   * Cancel loop over these against the existing single-row endpoints;
+   * empty for a down-payment row (nothing to edit/cancel/view). */
+  applications: { arInvoiceId: string; paymentId: string }[]
   arInvoiceId: string
   customerId: string
   customerName: string
   paymentDate: string
+  /** System-generated CR number (CR-YYYYMMDD-NNNN). Null for a down-payment
+   * row (no CollectionReceipt) or a receipt created before this field
+   * existed. Distinct from `reference`, which stays free-text/cashier-entered. */
+  number: string | null
   reference: string | null
+  notes: string | null
   receivedIn: string
   description: string | null
   accountLine: string
@@ -482,8 +516,36 @@ export interface ARReceiptListItem {
   dueDate: string
   branchName: string | null
   amount: number
+  withholdingAmount: number
+  cancelledAt: string | null
+  cancelReason: string | null
+  /** 'down_payment' rows are read from PosPayment directly (an in-house
+   * installment down payment, which never becomes a real ARPayment — it's
+   * already netted out of the financed principal before the schedule's
+   * due-date invoices are generated, so it has no ARInvoice to belong to).
+   * They're display-only: no edit/cancel/void, no receipt document to
+   * print. Absent (undefined) on every real ARPayment-backed row. */
+  source?: 'ar_payment' | 'down_payment'
 }
 
+// Print/document envelope for one invoice (GET /ar-invoices/:id/document)
+// — the invoice plus the letterhead's enterprise block. Mirrors
+// APBillDocument: AR Invoice and AP Bill are structural opposites and both
+// render the same on-screen sheet their print builder produces.
+export interface ARInvoiceDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: ARInvoice
+}
 export const ARInvoices = {
   list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
     api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
@@ -506,8 +568,10 @@ export const ARInvoices = {
   get: (id: string) => api.get<ARInvoice>(`/ar-invoices/${id}`),
   // Scenario 25 — print-ready envelope for the per-invoice detail page's
   // Print/Download action, same PrintDocumentEnvelope shape Purchase Orders
-  // already use with printInventoryDocument().
-  getDocument: (id: string) => api.get<unknown>(`/ar-invoices/${id}/document`),
+  // already use with printInventoryDocument(). Also backs the detail page
+  // itself, which renders the same document layout on screen as
+  // buildARInvoiceHtml() prints — one fetch for both.
+  getDocument: (id: string) => api.get<ARInvoiceDocument>(`/ar-invoices/${id}/document`),
   // Scenario 44 Part 2 — print-ready envelope for one Collection Receipt.
   getReceiptDocument: (invoiceId: string, paymentId: string) =>
     api.get<unknown>(`/ar-invoices/${invoiceId}/payments/${paymentId}/document`),
@@ -520,6 +584,13 @@ export const ARInvoices = {
     api.post<BulkRecordPaymentResult>('/ar-invoices/bulk-payments', body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
+  // Scenario 44 Part 3 — reference/notes only; anything else requires
+  // cancelPayment + a fresh receipt instead.
+  updatePayment: (
+    invoiceId: string,
+    paymentId: string,
+    body: { reference?: string; notes?: string }
+  ) => api.patch<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}`, body),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
   void: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/void`, {}),
   // Scenario 26 Part 6 — manually-triggered sweep (no @Cron anywhere in the
@@ -697,6 +768,10 @@ export interface APBill {
     id: string
     code: string
     name: string
+    // Letterhead fields — findOne() returns the whole Supplier row, so the
+    // detail page's document view can print the same party block the PDF does.
+    address?: string | null
+    taxId?: string | null
     // Scenario 43 Part B — fallback account for the printed/on-screen
     // Account breakdown table when the bill has no override of its own.
     defaultExpenseAccount?: { id: string; name: string } | null
@@ -795,11 +870,29 @@ export interface APPaymentListItem {
   effectiveExpenseAccount: { id: string; name: string } | null
   amount: number
 }
+// Print/document envelope for one bill (GET /ap-bills/:id/document) — the
+// bill plus the letterhead's enterprise block and the server-resolved
+// expense account. Also backs the detail page, which renders the same
+// document layout on screen as buildAPBillHtml() prints.
+export interface APBillDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: APBill & { effectiveExpenseAccount?: { id: string; name: string } | null }
+}
 export const APBills = {
   list: (params?: { search?: string; status?: string; supplierId?: string }) =>
     api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
-  getDocument: (id: string) => api.get<unknown>(`/ap-bills/${id}/document`),
+  getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
