@@ -453,6 +453,7 @@ export type CollectionsCalendarFilters = {
   branchId?: string
   collectorId?: string
   customerId?: string
+  leadId?: string
 } & Record<string, string | number | boolean | undefined>
 
 export const collectionsCalendarApi = {
