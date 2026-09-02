@@ -158,8 +158,7 @@ export function PurchaseOrderFormFields({
           <p className="mb-2 text-xs text-red-500">{errors.lines.message}</p>
         )}
 
-        <div className="hidden grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
-          <span />
+        <div className="hidden grid-cols-[minmax(180px,1fr)_80px_140px_36px] gap-2 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 md:grid">
           <span>Item</span>
           <span>Qty</span>
           <span>SRP</span>
@@ -306,24 +305,28 @@ function PurchaseOrderLineCard({
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
-      {/* Primary row — Freebie / Item / Qty / SRP / Remove. Unit Price and
-          Line Total sit below the discount chain that derives them, matching
-          the PO line format used by ConvertPrToPoModal. */}
-      <div className="grid grid-cols-[32px_minmax(180px,1fr)_80px_140px_36px] items-center gap-2">
-        <label
-          className="flex h-9 items-center justify-center"
-          title="Freebie (supplier-given free unit — no cost)"
-        >
-          <input
-            type="checkbox"
-            checked={Boolean(isFreebie)}
-            onChange={(e) => {
-              setValue(`lines.${index}.isFreebie`, e.target.checked)
-              if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
-            }}
-          />
-        </label>
+      {/* Freebie sits on its own line above the item row: as an unlabelled
+          box in the grid it read as a select/remove toggle, and it silently
+          zeroes the price and drops the line out of the Subtotal. */}
+      <label
+        className="mb-1.5 flex w-fit items-center gap-2 text-xs font-medium text-zinc-600"
+        title="Freebie (supplier-given free unit — no cost)"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(isFreebie)}
+          onChange={(e) => {
+            setValue(`lines.${index}.isFreebie`, e.target.checked)
+            if (e.target.checked) setValue(`lines.${index}.unitPrice`, 0)
+          }}
+        />
+        Freebie
+      </label>
 
+      {/* Primary row — Item / Qty / SRP / Remove. Unit Price and Line Total
+          sit below the discount chain that derives them, matching the PO
+          line format used by ConvertPrToPoModal. */}
+      <div className="grid grid-cols-[minmax(180px,1fr)_80px_140px_36px] items-center gap-2">
         <Controller
           name={`lines.${index}.itemId`}
           control={control}
