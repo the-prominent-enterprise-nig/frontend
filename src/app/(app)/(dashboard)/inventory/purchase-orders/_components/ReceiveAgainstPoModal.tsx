@@ -40,29 +40,51 @@ const ReceivePoLineSchema = z
     // Serial-tracked items reject receiving unless serialNumbers is set
     // (stock.service.ts) — one supplier-provided serial per unit, typed in
     // by whoever is physically receiving the delivery.
-    serialNumbers: z.array(z.string().min(1, 'Required')).optional(),
+    // Deliberately no per-element .min() here: element rules run on every
+    // line, so an empty box on an *unticked* line failed validation and
+    // blocked Confirm Receipt even though that line isn't being received.
+    // Requiring a serial is the selection-aware job of superRefine below.
+    serialNumbers: z.array(z.string()).optional(),
   })
-  .refine(
-    (line) => {
-      if (!line.selected) return true
-      if (line.isSerialTracked) {
-        return (
-          !!line.serialNumbers &&
-          line.serialNumbers.length === line.quantityReceived &&
-          line.serialNumbers.every((s) => s.trim().length > 0)
-        )
+  .superRefine((line, ctx) => {
+    if (!line.selected) return
+
+    if (line.isSerialTracked) {
+      const serials = line.serialNumbers ?? []
+      if (serials.length !== line.quantityReceived) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'A serial number is required for every unit',
+          path: ['serialNumbers'],
+        })
+        return
       }
-      return (
-        !line.serialNumbers ||
-        line.serialNumbers.length === 0 ||
-        line.serialNumbers.length === line.quantityReceived
-      )
-    },
-    {
-      message: 'A serial number is required for every unit',
-      path: ['serialNumbers'],
+      // Flag the specific blank units so a partly-filled multi-unit line
+      // shows which box is missing, not just the first.
+      serials.forEach((serial, unitIdx) => {
+        if (serial.trim().length === 0) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Required',
+            path: ['serialNumbers', unitIdx],
+          })
+        }
+      })
+      return
     }
-  )
+
+    if (
+      line.serialNumbers &&
+      line.serialNumbers.length > 0 &&
+      line.serialNumbers.length !== line.quantityReceived
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'A serial number is required for every unit',
+        path: ['serialNumbers'],
+      })
+    }
+  })
 
 const ReceivePoFormSchema = z.object({
   code: z.string().optional(),
