@@ -2,7 +2,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Plus, RefreshCw, CheckCircle, X, FileEdit, ArrowRightLeft, Landmark } from 'lucide-react'
+import {
+  Plus,
+  RefreshCw,
+  CheckCircle,
+  X,
+  FileEdit,
+  ArrowRightLeft,
+  Landmark,
+  Trash2,
+} from 'lucide-react'
 import {
   BankAccounts,
   BankAdjusting,
@@ -72,6 +81,24 @@ export default function BankRecon() {
     const res = await BankAccounts.completeReconciliation(id)
     if (!res.success) {
       alert(res.message || res.error || 'Failed to complete reconciliation')
+      return
+    }
+    load()
+  }
+  // Deleting a completed one hands its cleared payments back to the next
+  // worksheet, so the confirm says how many are coming back.
+  const remove = async (r: BankReconciliation) => {
+    const clearedCount = (r.lines ?? []).filter((l) => l.checked).length
+    const warning =
+      r.reconciled && clearedCount > 0
+        ? `Delete this completed reconciliation? The ${clearedCount} item${
+            clearedCount === 1 ? '' : 's'
+          } it cleared go back to pending and reappear in this account's next worksheet.`
+        : 'Delete this reconciliation? Its worksheet is discarded.'
+    if (!confirm(`${warning} This cannot be undone.`)) return
+    const res = await BankAccounts.deleteReconciliation(r.id)
+    if (!res.success) {
+      alert(res.message || res.error || 'Failed to delete reconciliation')
       return
     }
     load()
@@ -176,23 +203,35 @@ export default function BankRecon() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      {!r.reconciled && (
+                      <div className="flex items-center justify-end gap-1">
+                        {!r.reconciled && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              complete(r.id)
+                            }}
+                            disabled={!isZero}
+                            title={
+                              isZero
+                                ? 'Mark reconciled'
+                                : `Cannot complete — discrepancy of ${fmtMoney(discrepancy)}. Open the worksheet to check off cleared items.`
+                            }
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            complete(r.id)
+                            remove(r)
                           }}
-                          disabled={!isZero}
-                          title={
-                            isZero
-                              ? 'Mark reconciled'
-                              : `Cannot complete — discrepancy of ${fmtMoney(discrepancy)}. Open the worksheet to check off cleared items.`
-                          }
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                          title="Delete reconciliation"
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded"
                         >
-                          <CheckCircle className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 )

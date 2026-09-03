@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, CheckCircle, Pencil, Trash2 } from 'lucide-react'
 import {
   BankAccounts,
   fmtMoney,
@@ -24,10 +25,19 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
 // the real bank statement PATCHes it immediately (persisted per-line, not
 // batched at Complete) so progress survives a refresh mid-session.
 export default function ReconciliationWorksheet({ id }: { id: string }) {
+  const router = useRouter()
   const [rec, setRec] = useState<BankReconciliation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [completing, setCompleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    statementDate: '',
+    statementBalance: '',
+    notes: '',
+  })
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -60,6 +70,57 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
       setError(res.message || res.error || 'Failed to update line')
       load()
     }
+  }
+
+  const openEdit = () => {
+    if (!rec) return
+    setEditForm({
+      statementDate: String(rec.statementDate).slice(0, 10),
+      statementBalance: String(rec.statementBalance),
+      notes: rec.notes ?? '',
+    })
+    setEditing(true)
+  }
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingEdit(true)
+    setError(null)
+    const res = await BankAccounts.updateReconciliation(id, {
+      statementDate: editForm.statementDate,
+      statementBalance: Number(editForm.statementBalance),
+      notes: editForm.notes,
+    })
+    setSavingEdit(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to update reconciliation')
+      return
+    }
+    setEditing(false)
+    // A new statement date rebuilds the worksheet server-side, so re-read the
+    // whole thing rather than patching the header in place.
+    load()
+  }
+
+  const remove = async () => {
+    if (!rec) return
+    const clearedCount = rec.lines.filter((l) => l.checked).length
+    const warning =
+      rec.reconciled && clearedCount > 0
+        ? `Delete this completed reconciliation? The ${clearedCount} item${
+            clearedCount === 1 ? '' : 's'
+          } it cleared go back to pending and reappear in this account's next worksheet.`
+        : 'Delete this reconciliation? Its worksheet is discarded.'
+    if (!confirm(`${warning} This cannot be undone.`)) return
+    setDeleting(true)
+    setError(null)
+    const res = await BankAccounts.deleteReconciliation(id)
+    if (!res.success) {
+      setDeleting(false)
+      setError(res.message || res.error || 'Failed to delete reconciliation')
+      return
+    }
+    router.push('/accounting/bank-reconciliation')
   }
 
   const complete = async () => {
@@ -119,17 +180,102 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
           </h1>
           <p className="mt-1 text-sm text-gray-500">Statement date {fmtDate(rec.statementDate)}</p>
         </div>
-        {rec.reconciled ? (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold border border-emerald-200">
-            <CheckCircle className="w-4 h-4" />
-            Reconciled
-          </span>
-        ) : (
-          <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">
-            Pending
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {rec.reconciled ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold border border-emerald-200">
+              <CheckCircle className="w-4 h-4" />
+              Reconciled
+            </span>
+          ) : (
+            <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200">
+              Pending
+            </span>
+          )}
+          {/* Editing is open-only: a completed worksheet's lines are locked
+              and its clearings are already written, so the way back from a
+              wrong Complete is Delete, which un-clears them. */}
+          {!rec.reconciled && (
+            <button
+              onClick={openEdit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <Pencil className="w-4 h-4" /> Edit
+            </button>
+          )}
+          <button
+            onClick={remove}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
       </div>
+
+      {editing && (
+        <form
+          onSubmit={saveEdit}
+          className="mt-4 rounded-xl border border-gray-200 bg-white p-4 space-y-3"
+        >
+          <div>
+            <h2 className="text-sm font-semibold text-prominent-purple-900">Edit Reconciliation</h2>
+            <p className="text-xs text-gray-500">
+              Changing the statement date regenerates the pending items below from the new cutoff.
+              Anything you&apos;ve already ticked stays ticked if it&apos;s still in range.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-600 mb-1">Statement Date</span>
+              <input
+                required
+                type="date"
+                value={editForm.statementDate}
+                onChange={(e) => setEditForm({ ...editForm, statementDate: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-600 mb-1">
+                Statement Balance
+              </span>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={editForm.statementBalance}
+                onChange={(e) => setEditForm({ ...editForm, statementBalance: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="block text-xs font-medium text-gray-600 mb-1">Notes</span>
+            <textarea
+              value={editForm.notes}
+              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+            />
+          </label>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-4 py-2 text-sm text-gray-700 rounded-lg hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingEdit}
+              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {savingEdit ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
         <SummaryTile label="Statement Balance" value={rec.statementBalance} />

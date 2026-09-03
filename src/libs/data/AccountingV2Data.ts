@@ -1188,6 +1188,16 @@ export const BankAccounts = {
   }) => api.post<BankReconciliation>('/bank-accounts/reconciliations', body),
   getReconciliationWorksheet: (id: string) =>
     api.get<BankReconciliation>(`/bank-accounts/reconciliations/${id}`),
+  // Editing the statement date rebuilds the worksheet server-side (the
+  // candidate list is generated from that cutoff), so re-read after saving.
+  updateReconciliation: (
+    id: string,
+    body: { statementDate?: string; statementBalance?: number; notes?: string }
+  ) => api.patch<BankReconciliation>(`/bank-accounts/reconciliations/${id}`, body),
+  // `uncleared` counts the payments handed back to future worksheets when a
+  // completed reconciliation is deleted.
+  deleteReconciliation: (id: string) =>
+    api.delete<{ deleted: boolean; uncleared: number }>(`/bank-accounts/reconciliations/${id}`),
   toggleReconciliationLine: (id: string, lineId: string, checked: boolean) =>
     api.patch<BankReconciliationLine>(`/bank-accounts/reconciliations/${id}/lines/${lineId}`, {
       checked,

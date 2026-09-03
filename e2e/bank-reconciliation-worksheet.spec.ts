@@ -33,10 +33,9 @@ function parseMoney(text: string | null): number {
 
 // Scenario 42 Part 2 — Bank Reconciliation's "New Reconciliation" is now a
 // full page (not a modal), and creating one generates a real worksheet page
-// instead of just logging two typed numbers. No delete endpoint exists for
-// a BankReconciliation (same as Fund Transfer, see fund-transfer.spec.ts) —
-// this spec doesn't attempt cleanup, same accepted-permanent-fixture
-// precedent used there.
+// instead of just logging two typed numbers. These two describe blocks
+// predate the delete endpoint and still leave their fixtures behind; the
+// edit/delete block at the bottom cleans up after itself.
 test.describe('Accounting — Bank Reconciliation Worksheet (Scenario 42 Part 2)', () => {
   test('starts a reconciliation from the New Reconciliation page and lands on a generated worksheet', async ({
     page,
@@ -141,5 +140,85 @@ test.describe('Accounting — Bank Reconciliation Complete Gating (Scenario 42 P
     await readyButton.click()
     await expect(page.getByText('Reconciled', { exact: true })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole('button', { name: 'Mark Reconciled' })).toHaveCount(0)
+  })
+})
+
+// Bank reconciliation edit/delete — the recovery path for a mis-keyed
+// worksheet. Editing is open-only (a completed one has already stamped
+// clearedAt onto its items, so Delete, which un-clears them, is the way
+// back); delete works either way. Both tests remove their own fixture.
+test.describe('Accounting — Bank Reconciliation Edit & Delete', () => {
+  test('edits a pending reconciliation from the worksheet, then deletes it', async ({ page }) => {
+    await startReconciliation(page, '654321')
+    await expect(page.getByText('₱654,321.00').first()).toBeVisible({ timeout: 10_000 })
+
+    await page.getByRole('button', { name: 'Edit' }).click()
+    await expect(page.getByRole('heading', { name: 'Edit Reconciliation' })).toBeVisible()
+    await page.getByLabel('Statement Balance').fill('654999')
+    await page.getByLabel('Statement Date').fill('2026-08-31')
+    await page.getByRole('button', { name: 'Save Changes' }).click()
+
+    // The panel closes and the header re-reads from the server — a new
+    // statement date rebuilds the worksheet, so this is a fresh GET.
+    await expect(page.getByRole('heading', { name: 'Edit Reconciliation' })).toHaveCount(0, {
+      timeout: 10_000,
+    })
+    await expect(page.getByText('₱654,999.00').first()).toBeVisible({ timeout: 10_000 })
+    // Rendered in the viewer's locale/timezone, so match the month loosely.
+    await expect(page.getByText(/Statement date Aug \d+, 2026/)).toBeVisible()
+
+    // Survives a reload — the edit was persisted, not just local state.
+    await page.reload()
+    await expect(page.getByText('₱654,999.00').first()).toBeVisible({ timeout: 10_000 })
+
+    // Delete it from the list's row action — '654,999.00' is distinctive
+    // enough to name exactly one row.
+    await gotoReady(page, '/accounting/bank-reconciliation')
+    const table = page.locator('table').first()
+    await expect(table.locator('tbody')).not.toContainText('Loading...', { timeout: 10_000 })
+    const row = table.locator('tbody tr', { hasText: '654,999.00' })
+    await expect(row).toHaveCount(1)
+    page.once('dialog', (d) => d.accept())
+    await row.getByTitle('Delete reconciliation').click()
+    await expect(table.locator('tbody tr', { hasText: '654,999.00' })).toHaveCount(0, {
+      timeout: 10_000,
+    })
+  })
+
+  test('hides Edit once completed, and deleting it hands its cleared items back', async ({
+    page,
+  }) => {
+    // Same zero-discrepancy trick Part 3 uses: read the real System Balance
+    // off a probe, then start one whose Statement Balance lands on it.
+    await startReconciliation(page, '0')
+    const systemBalance = parseMoney(
+      await page.getByText('System Balance').locator('..').locator('p').nth(1).textContent()
+    )
+    const worksheetUrl = await startReconciliation(page, String(systemBalance))
+
+    // Editable while pending...
+    await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible({ timeout: 10_000 })
+    const markReconciled = page.getByRole('button', { name: 'Mark Reconciled' })
+    await expect(markReconciled).toBeEnabled({ timeout: 10_000 })
+    await markReconciled.click()
+    await expect(page.getByText('Reconciled', { exact: true })).toBeVisible({ timeout: 10_000 })
+
+    // ...but not once completed. Delete stays, since it's the only way back
+    // from a wrong Complete — deleting un-clears whatever it cleared.
+    await expect(page.getByRole('button', { name: 'Edit' })).toHaveCount(0)
+    const deleteButton = page.getByRole('button', { name: 'Delete' })
+    await expect(deleteButton).toBeVisible()
+
+    // Deleted from the worksheet (the URL names this exact one — the list
+    // can't tell two same-balance reconciliations apart).
+    page.once('dialog', (d) => d.accept())
+    await deleteButton.click()
+    await page.waitForURL('**/accounting/bank-reconciliation', { timeout: 10_000 })
+
+    // It's really gone: its own worksheet URL no longer resolves.
+    await gotoReady(page, worksheetUrl)
+    await expect(page.getByText(/not found|Failed to load worksheet/i)).toBeVisible({
+      timeout: 10_000,
+    })
   })
 })
