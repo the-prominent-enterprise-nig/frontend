@@ -4036,7 +4036,7 @@ export default function CheckoutPage() {
                     data-testid="card-txn-mode-toggle"
                     className="rounded-lg border border-purple-100 p-2.5"
                   >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Credit/Debit Card</p>
+                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select POS Terminal</p>
                     {(() => {
                       const cardConfig = configuredMethods.find((m) => m.key === 'card')
                       const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
