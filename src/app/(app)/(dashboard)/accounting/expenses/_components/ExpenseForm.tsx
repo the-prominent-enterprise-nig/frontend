@@ -66,9 +66,6 @@ interface LineState {
   description: string
   amount: string
   vatAmount: string
-  /** Set once someone types their own VAT figure, which pins it: after that
-   * changing the line amount no longer re-derives VAT at the flat rate. */
-  vatEdited: boolean
 }
 function emptyLine(): LineState {
   return {
@@ -77,22 +74,12 @@ function emptyLine(): LineState {
     description: '',
     amount: '',
     vatAmount: '',
-    vatEdited: false,
   }
 }
 
 /** Mirrors the backend's FLAT_VAT_RATE_PERCENT — the single rate left after
  * the configurable TaxRate table was removed. */
 const VAT_RATE_PERCENT = 12
-
-/** VAT a line amount attracts at the flat rate. The backend adds a line's
- * taxAmount on top of its amount (totalAmount = subtotal + tax) and debits it
- * to Input VAT, so what's typed in Amount is the VAT-exclusive figure. */
-function autoVat(amount: string): string {
-  const n = Number(amount)
-  if (!n || !Number.isFinite(n)) return ''
-  return ((n * VAT_RATE_PERCENT) / 100).toFixed(2)
-}
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -242,12 +229,6 @@ function ExpenseFormFields({
           description: (l as any).description ?? '',
           amount: String((l as any).amount ?? ''),
           vatAmount: (l as any).taxAmount ? String((l as any).taxAmount) : '',
-          // A saved VAT that isn't the flat rate on that amount was typed by
-          // hand — reopen it pinned so editing the amount can't silently
-          // round it back to 12%.
-          vatEdited:
-            Number((l as any).taxAmount) > 0 &&
-            Number((l as any).taxAmount) !== Number(autoVat(String((l as any).amount ?? ''))),
         }))
       : [emptyLine()]
   )
@@ -318,11 +299,6 @@ function ExpenseFormFields({
 
   const setLine = (index: number, patch: Partial<LineState>) => {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
-  }
-  /** VAT trails the amount at the flat rate until the VAT box is typed in. */
-  const setAmount = (index: number, amount: string) => {
-    const pinned = !showVatColumn || lines[index]?.vatEdited
-    setLine(index, pinned ? { amount } : { amount, vatAmount: autoVat(amount) })
   }
   const addLine = () =>
     setLines((prev) => [...prev, { ...emptyLine(), categoryAccountId: presetAccountId ?? '' }])
@@ -617,7 +593,7 @@ function ExpenseFormFields({
                         min="0.01"
                         aria-label="Amount"
                         value={line.amount}
-                        onChange={(e) => setAmount(i, e.target.value)}
+                        onChange={(e) => setLine(i, { amount: e.target.value })}
                         className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     </div>
@@ -629,9 +605,7 @@ function ExpenseFormFields({
                           min="0"
                           aria-label="VAT"
                           value={line.vatAmount}
-                          onChange={(e) =>
-                            setLine(i, { vatAmount: e.target.value, vatEdited: true })
-                          }
+                          onChange={(e) => setLine(i, { vatAmount: e.target.value })}
                           placeholder="0.00"
                           className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                         />
