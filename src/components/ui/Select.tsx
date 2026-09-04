@@ -21,6 +21,10 @@ type Props = {
    * else about the component stays the same. Off by default so existing
    * usages are unaffected. */
   compact?: boolean
+  /** For a dropdown whose options don't exist yet — a Department list before
+   * a Branch has been picked, say. Renders greyed and unopenable rather
+   * than opening onto an empty list. */
+  disabled?: boolean
 }
 
 /**
@@ -38,6 +42,7 @@ export function Select({
   placeholder = 'Select…',
   extraAction,
   compact = false,
+  disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -75,10 +80,11 @@ export function Select({
         // accessible name isn't computed from visible text content, so it
         // needs an explicit label reflecting the current selection.
         aria-label={selected ? selected.label : placeholder}
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white text-left outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
-          compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
-        }`}
+        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 text-left outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
+          disabled ? 'cursor-not-allowed bg-zinc-50' : 'bg-white'
+        } ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
       >
         <span className={selected ? 'text-zinc-900' : 'text-zinc-400'}>
           {selected ? selected.label : placeholder}
@@ -88,7 +94,7 @@ export function Select({
         />
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
           ref={popupRef}
           id={listboxId}

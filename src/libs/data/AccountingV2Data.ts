@@ -1044,6 +1044,11 @@ export type SpecialAccountType =
   | 'CA_LIQUIDATION'
 // The three types a liquidation can actually close out.
 export type LiquidatableType = 'EMPLOYEE_CASH_ADVANCE' | 'EMPLOYEE_CASH_LOAN' | 'CASH_LOAN_OTHERS'
+// A line's VAT treatment. The form sends the treatment and the server
+// computes the amount from it at the flat rate — a typed VAT figure could
+// disagree with the line it sat on, and the Input VAT debit posted from it
+// had no way to tell.
+export type ExpenseTaxCode = 'NON_TAXABLE' | 'INPUT_VAT'
 // Scenario 40 Part 6 — one entry is now a header + N lines. Which
 // dimension is fixed at the header vs. varies per line depends on
 // payeeType: CUSTOMER/SUPPLIER fixes the payee and lets each line pick its
@@ -1059,7 +1064,7 @@ export interface BusinessExpenseLine {
   payee?: string | null
   description?: string | null
   amount: number
-  taxCode?: string | null
+  taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
 }
 export interface BusinessExpense {
@@ -1075,6 +1080,13 @@ export interface BusinessExpense {
   liquidatesType?: LiquidatableType | null
   payee?: string | null
   description?: string | null
+  // Payroll dimensions — fixed at the header for the whole entry.
+  branchId?: string | null
+  branch?: { id: string; name: string; code?: string | null } | null
+  departmentId?: string | null
+  department?: { id: string; name: string; code?: string | null } | null
+  divisionId?: string | null
+  division?: { id: string; name: string; code?: string | null } | null
   lines: BusinessExpenseLine[]
   subtotal: number
   taxAmount: number
@@ -1094,6 +1106,9 @@ export const Expenses = {
     supplierId?: string
     startDate?: string
     endDate?: string
+    branchId?: string
+    departmentId?: string
+    divisionId?: string
   }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),
   get: (id: string) => api.get<BusinessExpense>(`/expenses/${id}`),
   create: (body: any) => api.post<BusinessExpense>('/expenses', body),
@@ -1169,6 +1184,28 @@ export interface BankReconciliation {
   pendingDeposits?: BankReconciliationLine[]
   pendingWithdrawals?: BankReconciliationLine[]
 }
+// One GL movement through a bank's own account — the drill-down rows behind
+// the reconciliation worksheet's Discrepancy tile.
+export interface BankLedgerEntry {
+  id: string
+  date: string
+  reference?: string | null
+  description?: string | null
+  account?: { id: string; name: string; number?: string } | null
+  debit: number
+  credit: number
+  balance: number | null
+  journalEntryId?: string | null
+}
+export interface BankLedgerWindow {
+  bankAccount: { id: string; name: string; glAccountId: string | null }
+  // Null when the account has never been reconciled before, i.e. the window
+  // opens at the start of its history.
+  startDate: string | null
+  endDate: string
+  transactions: BankLedgerEntry[]
+  totals: { debit: number; credit: number; net: number; count: number }
+}
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),
   get: (id: string) => api.get<BankAccount>(`/bank-accounts/${id}`),
@@ -1204,6 +1241,11 @@ export const BankAccounts = {
     }),
   completeReconciliation: (id: string) =>
     api.post<any>(`/bank-accounts/reconciliations/${id}/complete`, {}),
+  // The Discrepancy tile's drill-down: every GL movement through this bank
+  // over the period. With no dates the server defaults to the day after the
+  // previous reconciliation's statement date through this one's.
+  getReconciliationTransactions: (id: string, params?: { startDate?: string; endDate?: string }) =>
+    api.get<BankLedgerWindow>(`/bank-accounts/reconciliations/${id}/transactions`, params),
 }
 
 // ============ Fixed Assets ============

@@ -222,3 +222,43 @@ test.describe('Accounting — Bank Reconciliation Edit & Delete', () => {
     })
   })
 })
+
+// The Discrepancy tile is a drill-down, not just a number: clicking it opens
+// every transaction that hit this bank over the period, with the date range
+// editable so a discrepancy that landed outside the default window can still
+// be found. Self-cleaning — deletes the reconciliation it starts.
+test.describe('Accounting — Bank Reconciliation discrepancy drill-down', () => {
+  test('opens this bank’s transactions and accepts a typed date range', async ({ page }) => {
+    await startReconciliation(page, '123456')
+
+    // The tile itself is the control — a button, not a static card.
+    const discrepancyTile = page.getByRole('button', { name: /Discrepancy/ })
+    await expect(discrepancyTile).toBeVisible({ timeout: 10_000 })
+    await discrepancyTile.click()
+
+    const dialog = page.getByRole('heading', { name: /^Transactions — / })
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+
+    // The window defaults server-side; the To date echoes back the
+    // reconciliation's own statement date when nothing precedes it.
+    const from = page.getByLabel('From')
+    const to = page.getByLabel('To')
+    await expect(to).toHaveValue('2026-07-31', { timeout: 10_000 })
+
+    // A range the user types wins over the default.
+    await from.fill('2026-07-01')
+    await to.fill('2026-07-15')
+    await page.getByRole('button', { name: 'Apply' }).click()
+    await expect(page.getByText('Loading…')).toHaveCount(0, { timeout: 10_000 })
+    await expect(from).toHaveValue('2026-07-01')
+    await expect(to).toHaveValue('2026-07-15')
+
+    await page.getByRole('button', { name: 'Close' }).click()
+    await expect(dialog).toHaveCount(0)
+
+    // Cleanup
+    page.once('dialog', (d) => d.accept())
+    await page.getByRole('button', { name: 'Delete' }).click()
+    await page.waitForURL('**/accounting/bank-reconciliation', { timeout: 10_000 })
+  })
+})

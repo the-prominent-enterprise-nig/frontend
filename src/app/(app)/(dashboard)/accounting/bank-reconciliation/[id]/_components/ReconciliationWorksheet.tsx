@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Pencil, Trash2, X } from 'lucide-react'
 import {
   BankAccounts,
   fmtMoney,
@@ -11,6 +11,7 @@ import {
   type BankReconciliation,
   type BankReconciliationLine,
   type BankReconciliationLineSourceType,
+  type BankLedgerWindow,
 } from '@/src/libs/data/AccountingV2Data'
 
 const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
@@ -38,6 +39,9 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   })
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // The Discrepancy drill-down. Opening it is what triggers the first fetch,
+  // so an untouched worksheet never pays for a ledger it isn't showing.
+  const [showLedger, setShowLedger] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -281,8 +285,25 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
         <SummaryTile label="Statement Balance" value={rec.statementBalance} />
         <SummaryTile label="System Balance" value={rec.systemBalance} hint="Computed from the GL" />
         <SummaryTile label="Adjusted Balance" value={adjustedBalance} />
-        <SummaryTile label="Discrepancy" value={discrepancy} tone={isZero ? 'good' : 'bad'} />
+        {/* The tile states the gap; clicking it shows the transactions the
+            gap has to be hiding in. */}
+        <SummaryTile
+          label="Discrepancy"
+          value={discrepancy}
+          tone={isZero ? 'good' : 'bad'}
+          hint="Click to see this bank's transactions"
+          onClick={() => setShowLedger(true)}
+        />
       </div>
+
+      {showLedger && (
+        <BankLedgerModal
+          reconciliationId={id}
+          bankName={rec.bankAccount?.name ?? 'this bank'}
+          statementDate={rec.statementDate}
+          onClose={() => setShowLedger(false)}
+        />
+      )}
 
       {error && (
         <div className="mt-4 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -331,19 +352,215 @@ function SummaryTile({
   value,
   hint,
   tone,
+  onClick,
 }: {
   label: string
   value: number
   hint?: string
   tone?: 'good' | 'bad'
+  onClick?: () => void
 }) {
   const toneClass =
     tone === 'good' ? 'text-emerald-700' : tone === 'bad' ? 'text-amber-700' : 'text-gray-900'
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+  const body = (
+    <>
       <p className="text-xs font-medium text-gray-500">{label}</p>
       <p className={`mt-1 text-lg font-semibold ${toneClass}`}>{fmtMoney(value)}</p>
       {hint && <p className="mt-0.5 text-[11px] text-gray-400">{hint}</p>}
+    </>
+  )
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-purple-300 hover:bg-purple-50/40"
+      >
+        {body}
+      </button>
+    )
+  }
+  return <div className="rounded-xl border border-gray-200 bg-white p-4">{body}</div>
+}
+
+/**
+ * Everything that moved through this bank's GL account over the period —
+ * what the Discrepancy tile drills into. The gap between the statement and
+ * the books has to be one (or several) of these rows, so the point is to
+ * put them in front of the person reconciling rather than making them go
+ * open the general ledger report and re-derive the account and dates.
+ *
+ * The window defaults server-side to the day after the previous
+ * reconciliation's statement date through this one's — the span this
+ * worksheet is actually responsible for. Both ends are editable, because a
+ * discrepancy is just as often something that landed outside the window as
+ * something inside it.
+ */
+function BankLedgerModal({
+  reconciliationId,
+  bankName,
+  statementDate,
+  onClose,
+}: {
+  reconciliationId: string
+  bankName: string
+  statementDate: string
+  onClose: () => void
+}) {
+  const [data, setData] = useState<BankLedgerWindow | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // Empty means "let the server pick" — only a date the user actually typed
+  // is sent, so the default window isn't overridden by a pre-filled box.
+  const [range, setRange] = useState({ startDate: '', endDate: '' })
+
+  const load = useCallback(
+    async (override?: { startDate: string; endDate: string }) => {
+      setLoading(true)
+      setError(null)
+      const params = override ?? range
+      const res = await BankAccounts.getReconciliationTransactions(reconciliationId, {
+        startDate: params.startDate || undefined,
+        endDate: params.endDate || undefined,
+      })
+      if (res.success && res.data) {
+        setData(res.data)
+        // Reflect whatever window the server settled on, so the inputs show
+        // the period being displayed rather than staying blank.
+        setRange({
+          startDate: res.data.startDate?.slice(0, 10) ?? '',
+          endDate: res.data.endDate.slice(0, 10),
+        })
+      } else {
+        setError(res.message || res.error || 'Failed to load transactions')
+      }
+      setLoading(false)
+    },
+    // `range` is read through the override/closure on each call; re-creating
+    // this on every keystroke would re-fire the effect below mid-typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reconciliationId]
+  )
+
+  useEffect(() => {
+    load({ startDate: '', endDate: '' })
+  }, [load])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Transactions — {bankName}</h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Everything posted to this bank in the period. Statement date {fmtDate(statementDate)}.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            load()
+          }}
+          className="flex flex-wrap items-end gap-3 border-b border-gray-200 bg-gray-50 px-5 py-3"
+        >
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-600">From</span>
+            <input
+              type="date"
+              value={range.startDate}
+              onChange={(e) => setRange({ ...range, startDate: e.target.value })}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-600">To</span>
+            <input
+              type="date"
+              value={range.endDate}
+              onChange={(e) => setRange({ ...range, endDate: e.target.value })}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-lg bg-purple-700 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {loading ? 'Loading...' : 'Apply'}
+          </button>
+          {data && (
+            <p className="ml-auto text-xs text-gray-500">
+              {data.totals.count} transaction{data.totals.count === 1 ? '' : 's'} · in{' '}
+              {fmtMoney(data.totals.debit)} · out {fmtMoney(data.totals.credit)} · net{' '}
+              {fmtMoney(data.totals.net)}
+            </p>
+          )}
+        </form>
+
+        <div className="max-h-[55vh] overflow-y-auto">
+          {error && <p className="px-5 py-6 text-sm text-red-600">{error}</p>}
+          {!error && (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50 text-xs uppercase text-gray-600">
+                <tr>
+                  <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-left">Reference</th>
+                  <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-right">In</th>
+                  <th className="px-4 py-2 text-right">Out</th>
+                  <th className="px-4 py-2 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {loading && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                      Loading…
+                    </td>
+                  </tr>
+                )}
+                {!loading && data?.transactions.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                      No transactions hit this bank in that period.
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  data?.transactions.map((t) => (
+                    <tr key={t.id}>
+                      <td className="whitespace-nowrap px-4 py-2 text-xs">{fmtDate(t.date)}</td>
+                      <td className="px-4 py-2 text-xs text-gray-500">{t.reference || '—'}</td>
+                      <td className="px-4 py-2 text-xs">{t.description || '—'}</td>
+                      <td className="px-4 py-2 text-right">{t.debit ? fmtMoney(t.debit) : '—'}</td>
+                      <td className="px-4 py-2 text-right">
+                        {t.credit ? fmtMoney(t.credit) : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-500">
+                        {t.balance === null ? '—' : fmtMoney(t.balance)}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

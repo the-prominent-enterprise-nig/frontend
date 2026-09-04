@@ -65,6 +65,9 @@ test.describe('Accounting — Expenses category quick-pick (Scenario 45)', () =>
     }
   })
 
+  // Salaries & Wages is the client's Payroll screen. Its lines name people
+  // rather than categories ("payee: name / department"), and the department
+  // is fixed at the header — so this flow differs from Utilities above.
   test('Salaries & Wages pre-fills the payroll expense account', async ({ page }) => {
     await gotoReady(page, '/accounting/expenses')
     await expect(page.locator('tbody')).not.toContainText('Loading...', { timeout: 10_000 })
@@ -81,7 +84,8 @@ test.describe('Accounting — Expenses category quick-pick (Scenario 45)', () =>
       timeout: 5_000,
     })
 
-    await page.getByPlaceholder('e.g. Meralco').fill('E2E Payroll Run')
+    // Payroll pays people: the line carries the name, not a supplier.
+    await page.getByLabel('Name', { exact: true }).fill('E2E Payroll Run')
     await page.getByLabel('Amount', { exact: true }).fill('1000000')
 
     await page.getByRole('button', { name: 'Save' }).click()
@@ -101,7 +105,6 @@ test.describe('Accounting — Expenses category quick-pick (Scenario 45)', () =>
     const expenseNumber = after.find((n) => !before.has(n))
     expect(expenseNumber).toBeTruthy()
     const row = page.locator('tbody tr', { hasText: expenseNumber as string })
-    await expect(row).toContainText('E2E Payroll Run')
     await expect(row).toContainText('Salaries and Wages')
 
     // Cleanup

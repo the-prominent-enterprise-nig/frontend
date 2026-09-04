@@ -14,20 +14,25 @@ const STATUS_STYLES: Record<string, string> = {
 
 // Scenario 40 Part 6 — payee is fixed at the header for CUSTOMER/SUPPLIER,
 // but varies per line for OTHER (each line has its own recipient).
+//
+// Payroll is a third shape: payeeType SUPPLIER with no supplier or header
+// payee at all, and a person named on every line. It reads "name /
+// department" — the department is the header's, shared by the whole run.
 function payeeLabel(x: BusinessExpense): string {
   if (x.supplier?.name) return x.supplier.name
   if (x.customer?.name) return x.customer.name
   if (x.payee) return x.payee
-  if (x.payeeType === 'OTHER' && x.lines.length > 0) {
+  if (x.lines.length > 0) {
+    const suffix = x.department ? ` / ${x.department.name}` : ''
     if (x.lines.length === 1) {
       const l = x.lines[0]
-      if (l.employee) return `${l.employee.firstName} ${l.employee.lastName}`
-      if (l.payee) return l.payee
-    } else {
-      return `${x.lines.length} recipients`
+      if (l.employee) return `${l.employee.firstName} ${l.employee.lastName}${suffix}`
+      if (l.payee) return `${l.payee}${suffix}`
+    } else if (x.lines.some((l) => l.payee || l.employee)) {
+      return `${x.lines.length} recipients${suffix}`
     }
   }
-  return '—'
+  return x.department?.name ?? '—'
 }
 
 // Category is fixed at the header for OTHER (every line shares it), but

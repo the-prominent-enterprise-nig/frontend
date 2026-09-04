@@ -11,8 +11,17 @@ import {
   type APBillSupplierOption,
   type PayeeType,
   type LiquidatableType,
+  type ExpenseTaxCode,
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
+import {
+  BranchesApi,
+  DepartmentsApi,
+  DivisionsApi,
+  type BranchLite,
+  type Department,
+  type Division,
+} from '@/src/libs/data/OrgStructureData'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -65,7 +74,11 @@ interface LineState {
   payee: string
   description: string
   amount: string
-  vatAmount: string
+  taxCode: ExpenseTaxCode
+  // Payroll only — set when this line is a cash advance or cash loan rather
+  // than a salary line, in which case the server resolves the category from
+  // the Special Account mapping instead of categoryAccountId.
+  specialAccountType: '' | PayrollSpecialAccountType
 }
 function emptyLine(): LineState {
   return {
@@ -73,13 +86,49 @@ function emptyLine(): LineState {
     payee: '',
     description: '',
     amount: '',
-    vatAmount: '',
+    taxCode: 'NON_TAXABLE',
+    specialAccountType: '',
   }
 }
 
 /** Mirrors the backend's FLAT_VAT_RATE_PERCENT — the single rate left after
  * the configurable TaxRate table was removed. */
 const VAT_RATE_PERCENT = 12
+
+// The VAT treatment replaces the free-text VAT box the form used to collect.
+// Only the treatment is sent; the amount is computed from it, here for the
+// running total and again server-side for what actually posts, so the two
+// can't drift apart the way a typed figure could.
+const VAT_OPTIONS: { value: ExpenseTaxCode; label: string }[] = [
+  { value: 'NON_TAXABLE', label: 'Non-taxable' },
+  { value: 'INPUT_VAT', label: `Input VAT (${VAT_RATE_PERCENT}%)` },
+]
+function vatFor(line: LineState): number {
+  if (line.taxCode !== 'INPUT_VAT') return 0
+  return Math.round((Number(line.amount) || 0) * (VAT_RATE_PERCENT / 100) * 100) / 100
+}
+/** Which treatment a stored line reopens with. Rows written before the
+ * dropdown existed carry a legacy code (VAT/NON_VAT/EXEMPT) or none at all
+ * beside a hand-typed amount — a non-zero amount on one of those was always
+ * the same flat rate, so it maps onto Input VAT. */
+function normalizeStoredTaxCode(taxCode?: string | null, taxAmount?: number): ExpenseTaxCode {
+  const upper = (taxCode ?? '').toUpperCase()
+  if (upper === 'INPUT_VAT' || upper === 'VAT') return 'INPUT_VAT'
+  if (upper === 'NON_TAXABLE' || upper === 'NON_VAT' || upper === 'EXEMPT') return 'NON_TAXABLE'
+  return Number(taxAmount) > 0 ? 'INPUT_VAT' : 'NON_TAXABLE'
+}
+
+// Payroll pays salaries, but it also hands out advances and loans in the
+// same run. These two post to the same mapped Special Accounts a standalone
+// Payee → Special Account entry hits, so an advance issued through payroll
+// still shows against the recipient's outstanding balance and liquidates
+// later like any other.
+type PayrollSpecialAccountType = 'EMPLOYEE_CASH_ADVANCE' | 'EMPLOYEE_CASH_LOAN'
+const PAYROLL_LINE_KINDS: { value: '' | PayrollSpecialAccountType; label: string }[] = [
+  { value: '', label: 'Salary / Wage' },
+  { value: 'EMPLOYEE_CASH_ADVANCE', label: 'Cash Advance' },
+  { value: 'EMPLOYEE_CASH_LOAN', label: 'Cash Loan' },
+]
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -130,6 +179,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
   const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
+  const [branches, setBranches] = useState<BranchLite[]>([])
 
   useEffect(() => {
     getAccounts({ limit: 500 }).then((r) => {
@@ -137,6 +187,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       setExpenseAccounts(list.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE'))
     })
     APBillSuppliers.list().then((r) => setSuppliers(r.data?.data ?? []))
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
   }, [])
 
   useEffect(() => {
@@ -180,6 +231,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       initial={initial}
       suppliers={suppliers}
       expenseAccounts={expenseAccounts}
+      branches={branches}
       onSaved={() => router.push('/accounting/expenses')}
     />
   )
@@ -189,11 +241,13 @@ function ExpenseFormFields({
   initial,
   suppliers,
   expenseAccounts,
+  branches,
   onSaved,
 }: {
   initial: BusinessExpense | null
   suppliers: APBillSupplierOption[]
   expenseAccounts: Account[]
+  branches: BranchLite[]
   onSaved: () => void
 }) {
   // payeeType derivation for edit mode: new records always carry it; a
@@ -213,6 +267,9 @@ function ExpenseFormFields({
     description: initial?.description ?? '',
     paymentMethod: initial?.paymentMethod ?? 'CASH',
     reference: initial?.reference ?? '',
+    branchId: initial?.branchId ?? '',
+    departmentId: initial?.departmentId ?? '',
+    divisionId: initial?.divisionId ?? '',
   })
   const [lines, setLines] = useState<LineState[]>(
     initial?.lines && initial.lines.length > 0
@@ -228,7 +285,15 @@ function ExpenseFormFields({
               : ''),
           description: (l as any).description ?? '',
           amount: String((l as any).amount ?? ''),
-          vatAmount: (l as any).taxAmount ? String((l as any).taxAmount) : '',
+          // Legacy rows stored a typed VAT amount with no treatment beside
+          // it; any non-zero tax on one of those was the same flat 12%, so
+          // it reopens as Input VAT.
+          taxCode: normalizeStoredTaxCode((l as any).taxCode, (l as any).taxAmount),
+          // A saved cash advance/loan line is indistinguishable from a
+          // salary line on read (both carry a resolved categoryAccountId),
+          // so it reopens as a salary line with its category intact rather
+          // than guessing. Only new lines set this.
+          specialAccountType: '' as '' | PayrollSpecialAccountType,
         }))
       : [emptyLine()]
   )
@@ -281,6 +346,50 @@ function ExpenseFormFields({
     )
   }, [presetAccountId])
 
+  // Salaries & Wages is the client's "Payroll" screen — the Payee shortcut
+  // that routes through payeeType SUPPLIER. Its lines name people rather
+  // than categories, and can be advances/loans as well as salary.
+  const isPayroll = quickCategory === 'SALARIES_WAGES'
+
+  // Department and division cascade off the branch, which is what makes the
+  // Division dropdown derivable from branches and departments: pick a
+  // branch to get its departments, and a department to narrow its divisions
+  // (branch-wide divisions, which have no department of their own, stay in
+  // the list either way).
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [divisions, setDivisions] = useState<Division[]>([])
+  useEffect(() => {
+    if (!form.branchId) {
+      setDepartments([])
+      return
+    }
+    let cancelled = false
+    DepartmentsApi.list({ branchId: form.branchId }).then((r) => {
+      if (!cancelled) setDepartments(r.data?.data ?? [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [form.branchId])
+  useEffect(() => {
+    if (!form.branchId) {
+      setDivisions([])
+      return
+    }
+    let cancelled = false
+    DivisionsApi.list({
+      branchId: form.branchId,
+      departmentId: form.departmentId || undefined,
+    }).then((r) => {
+      if (!cancelled) setDivisions(r.data?.data ?? [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [form.branchId, form.departmentId])
+
+  const selectedDepartment = departments.find((d) => d.id === form.departmentId)
+
   const isLiquidation = form.specialAccountType === 'CA_LIQUIDATION'
   // Which type each line's "who" field is for — the direct Special Account
   // type, or (for a liquidation) whichever type is being closed out.
@@ -290,12 +399,14 @@ function ExpenseFormFields({
   const hasRecipientLines = SPECIAL_ACCOUNT_OPTIONS.some((o) => o.value === effectiveType)
 
   const subtotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
-  const vatTotal = lines.reduce((sum, l) => sum + (Number(l.vatAmount) || 0), 0)
+  const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
   const total = subtotal + vatTotal
 
   // VAT only applies to the payee types whose lines carry their own category;
-  // Special Account lines post straight to their mapped account.
-  const showVatColumn = form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER'
+  // Special Account lines post straight to their mapped account. Payroll is
+  // excluded too: neither a salary nor an advance is a VAT-able purchase.
+  const showVatColumn =
+    (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && !isPayroll
 
   const setLine = (index: number, patch: Partial<LineState>) => {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
@@ -312,10 +423,24 @@ function ExpenseFormFields({
       if (isLiquidation && !form.liquidatesType)
         return 'Choose which Special Account this liquidation is closing out.'
     }
+    if (form.departmentId && !form.branchId) return 'Pick a branch for that department.'
+    if (form.divisionId && !form.branchId) return 'Pick a branch for that division.'
+    // Payroll is the flow the dimensions were asked for, so it's the one
+    // that insists on them — but only once there are departments to pick.
+    // A tenant that hasn't set any up yet keeps entering payroll rather than
+    // being locked out by a settings page they haven't visited.
+    if (isPayroll && departments.length > 0 && !form.departmentId)
+      return 'Pick the department this payroll run is for.'
     if (lines.length === 0) return 'Add at least one line.'
     for (const l of lines) {
       if (!l.amount || Number(l.amount) <= 0) return 'Every line needs an amount greater than 0.'
-      if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
+      if (isPayroll) {
+        if (!l.payee.trim()) return 'Every payroll line needs a name.'
+        // A cash advance / cash loan line resolves its account from the
+        // Special Account mapping server-side, so it needs no category.
+        if (!l.specialAccountType && !l.categoryAccountId)
+          return 'Every salary line needs a category.'
+      } else if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
         if (!l.categoryAccountId) return 'Every line needs a category.'
       } else if (form.payeeType === 'OTHER') {
         if (hasRecipientLines && !l.payee.trim())
@@ -345,6 +470,12 @@ function ExpenseFormFields({
       description: form.description || undefined,
       paymentMethod: form.paymentMethod,
       reference: form.reference || undefined,
+      // Sent as explicit nulls rather than omitted so clearing a dimension
+      // on an existing draft actually clears it (PATCH treats undefined as
+      // "leave alone").
+      branchId: form.branchId || null,
+      departmentId: form.departmentId || null,
+      divisionId: form.divisionId || null,
     }
     if (form.payeeType === 'CUSTOMER') {
       payload.customerId = form.customerId
@@ -360,11 +491,22 @@ function ExpenseFormFields({
         amount: Number(l.amount),
         description: l.description || undefined,
       }
-      if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
+      if (isPayroll) {
+        // Payroll names the person on every line — "payee: name /
+        // department", with the department fixed at the header.
+        line.payee = l.payee.trim()
+        if (l.specialAccountType) {
+          // Resolves to the same mapped Special Account a standalone
+          // advance would hit, so it stays liquidatable.
+          line.specialAccountType = l.specialAccountType
+        } else {
+          line.categoryAccountId = l.categoryAccountId
+        }
+      } else if (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') {
         line.categoryAccountId = l.categoryAccountId
-        // Drives the Input VAT debit and the header total server-side.
-        const vat = Number(l.vatAmount)
-        if (vat > 0) line.taxAmount = vat
+        // Only the treatment is sent — the amount is computed server-side,
+        // and drives the Input VAT debit and the header total from there.
+        line.taxCode = l.taxCode
       } else if (form.payeeType === 'OTHER') {
         line.payee = l.payee
       }
@@ -438,6 +580,56 @@ function ExpenseFormFields({
               }}
               options={PAYEE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               placeholder="— Select —"
+            />
+          </Field>
+        </div>
+
+        {/* Branch → Department → Division. Shown for every payee type (any
+            expense can be tagged to where it was incurred), but required
+            only for payroll, which is what the dimensions were asked for. */}
+        <div className="grid grid-cols-3 gap-3">
+          <Field label={isPayroll && branches.length > 0 ? 'Branch *' : 'Branch'}>
+            <Select
+              compact
+              value={form.branchId}
+              onChange={(branchId) =>
+                // Department and division are scoped to the branch, so
+                // changing it drops both rather than leaving a stale pair
+                // the server would reject.
+                setForm({ ...form, branchId, departmentId: '', divisionId: '' })
+              }
+              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              placeholder="— None —"
+            />
+          </Field>
+          <Field label={isPayroll && departments.length > 0 ? 'Department *' : 'Department'}>
+            <Select
+              compact
+              value={form.departmentId}
+              onChange={(departmentId) => setForm({ ...form, departmentId, divisionId: '' })}
+              options={departments.map((d) => ({ value: d.id, label: d.name }))}
+              placeholder={form.branchId ? '— None —' : 'Pick a branch first'}
+              disabled={!form.branchId}
+            />
+            {form.branchId && departments.length === 0 && (
+              <p className="mt-1 text-[11px] text-zinc-400">
+                None set up — add them in Settings → Departments.
+              </p>
+            )}
+          </Field>
+          <Field label="Division">
+            <Select
+              compact
+              value={form.divisionId}
+              onChange={(divisionId) => setForm({ ...form, divisionId })}
+              options={divisions.map((d) => ({
+                value: d.id,
+                // A branch-wide division has no department of its own, so
+                // label it by the branch instead of leaving it bare.
+                label: d.department ? `${d.name} — ${d.department.name}` : `${d.name} — all`,
+              }))}
+              placeholder={form.branchId ? '— None —' : 'Pick a branch first'}
+              disabled={!form.branchId}
             />
           </Field>
         </div>
@@ -536,31 +728,57 @@ function ExpenseFormFields({
                   without clipping anything inside a row. */}
               <div className="grid grid-cols-12 gap-2 rounded-t-lg bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-500">
                 <div className="col-span-3">
-                  {form.payeeType === 'OTHER'
-                    ? isLiquidation
-                      ? 'Recipient (closing out)'
-                      : 'Recipient'
-                    : 'Category'}
+                  {isPayroll
+                    ? // "payee should be name / department" — the name is
+                      // per line, the department is fixed at the header, so
+                      // the column header carries both.
+                      selectedDepartment
+                      ? `Name / ${selectedDepartment.name}`
+                      : 'Name'
+                    : form.payeeType === 'OTHER'
+                      ? isLiquidation
+                        ? 'Recipient (closing out)'
+                        : 'Recipient'
+                      : 'Category'}
                 </div>
-                <div className="col-span-4">Description</div>
+                {isPayroll && <div className="col-span-2">Type</div>}
+                <div className={isPayroll ? 'col-span-2' : 'col-span-4'}>Description</div>
                 <div className="col-span-2">Amount</div>
-                {showVatColumn && <div className="col-span-2">VAT ({VAT_RATE_PERCENT}%)</div>}
+                {isPayroll && <div className="col-span-2">Category</div>}
+                {showVatColumn && <div className="col-span-2">VAT</div>}
                 <div className="col-span-1" />
               </div>
               <div className="divide-y divide-zinc-100">
                 {lines.map((line, i) => (
                   <div key={i} className="grid grid-cols-12 gap-2 items-center px-3 py-1.5">
                     <div className="col-span-3">
-                      {(form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
-                        <CategorySelect
-                          compact
-                          aria-label="Category"
-                          value={line.categoryAccountId}
-                          onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                          options={categoryOptions}
-                          placeholder="— Select —"
-                        />
+                      {isPayroll && (
+                        <>
+                          <input
+                            aria-label="Name"
+                            value={line.payee}
+                            onChange={(e) => setLine(i, { payee: e.target.value })}
+                            placeholder="Employee name"
+                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          />
+                          {selectedDepartment && (
+                            <p className="mt-1 text-[11px] text-zinc-400">
+                              {selectedDepartment.name}
+                            </p>
+                          )}
+                        </>
                       )}
+                      {!isPayroll &&
+                        (form.payeeType === 'CUSTOMER' || form.payeeType === 'SUPPLIER') && (
+                          <CategorySelect
+                            compact
+                            aria-label="Category"
+                            value={line.categoryAccountId}
+                            onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                            options={categoryOptions}
+                            placeholder="— Select —"
+                          />
+                        )}
                       {form.payeeType === 'OTHER' && hasRecipientLines && (
                         <input
                           aria-label="Recipient"
@@ -577,7 +795,28 @@ function ExpenseFormFields({
                         />
                       )}
                     </div>
-                    <div className="col-span-4">
+                    {isPayroll && (
+                      <div className="col-span-2">
+                        <Select
+                          compact
+                          value={line.specialAccountType}
+                          onChange={(value) =>
+                            setLine(i, {
+                              specialAccountType: value as '' | PayrollSpecialAccountType,
+                              // An advance/loan resolves its account from
+                              // the Special Account mapping server-side, so
+                              // a category picked earlier no longer applies.
+                              categoryAccountId: value ? '' : (presetAccountId ?? ''),
+                            })
+                          }
+                          options={PAYROLL_LINE_KINDS.map((k) => ({
+                            value: k.value,
+                            label: k.label,
+                          }))}
+                        />
+                      </div>
+                    )}
+                    <div className={isPayroll ? 'col-span-2' : 'col-span-4'}>
                       <input
                         aria-label="Line description"
                         value={line.description}
@@ -597,18 +836,38 @@ function ExpenseFormFields({
                         className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       />
                     </div>
+                    {isPayroll && (
+                      <div className="col-span-2">
+                        {line.specialAccountType ? (
+                          // Resolved server-side from the Special Account
+                          // mapping, so there's nothing to pick here.
+                          <p className="px-1 text-[12px] text-zinc-400">
+                            {PAYROLL_LINE_KINDS.find((k) => k.value === line.specialAccountType)
+                              ?.label ?? ''}
+                          </p>
+                        ) : (
+                          <CategorySelect
+                            compact
+                            aria-label="Category"
+                            value={line.categoryAccountId}
+                            onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                            options={categoryOptions}
+                            placeholder="— Select —"
+                          />
+                        )}
+                      </div>
+                    )}
                     {showVatColumn && (
                       <div className="col-span-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          aria-label="VAT"
-                          value={line.vatAmount}
-                          onChange={(e) => setLine(i, { vatAmount: e.target.value })}
-                          placeholder="0.00"
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        <Select
+                          compact
+                          value={line.taxCode}
+                          onChange={(value) => setLine(i, { taxCode: value as ExpenseTaxCode })}
+                          options={VAT_OPTIONS}
                         />
+                        {vatFor(line) > 0 && (
+                          <p className="mt-1 text-[11px] text-zinc-400">{fmtMoney(vatFor(line))}</p>
+                        )}
                       </div>
                     )}
                     <div className="col-span-1 flex justify-end">

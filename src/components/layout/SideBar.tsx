@@ -53,6 +53,7 @@ import {
   UserPlus,
   Wallet,
   Warehouse,
+  Network,
   Wrench,
   X,
   type LucideIcon,
@@ -802,6 +803,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Departments',
+    href: '/settings/departments',
+    icon: Network,
+  },
   {
     section: 'My Workspace',
     label: 'Business Policies',
