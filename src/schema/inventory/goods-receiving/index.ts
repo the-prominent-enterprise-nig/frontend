@@ -59,10 +59,21 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
-  .refine((data) => data.applicationType !== 'new_stock' || !!data.supplierInvoiceNumber?.trim(), {
-    message: 'Supplier invoice number is required for new stock receipts',
-    path: ['supplierInvoiceNumber'],
-  })
+  // A receipt raised against a PO already has the PO as its commercial
+  // paper trail, so the SI is allowed to still be in transit when the goods
+  // arrive (that form asks for the supplier's DR instead — see
+  // ReceiveAgainstPoModal). A receipt standing on its own has no such trail,
+  // so the SI is the only thing tying it to the supplier.
+  .refine(
+    (data) =>
+      data.applicationType !== 'new_stock' ||
+      data.lines.some((line) => !!line.purchaseOrderLineId) ||
+      !!data.supplierInvoiceNumber?.trim(),
+    {
+      message: 'Supplier invoice number is required for new stock receipts',
+      path: ['supplierInvoiceNumber'],
+    }
+  )
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

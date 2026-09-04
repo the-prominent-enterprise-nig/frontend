@@ -93,14 +93,11 @@ const ReceivePoFormSchema = z.object({
   notes: z.string().max(1000).optional(),
   // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier ->
   // this Receiving Report. Both are the supplier's own paperwork, typed in
-  // by whoever is physically receiving the delivery.
-  deliveryReceiptNumber: z.string().optional(),
-  // This modal always submits applicationType: 'new_stock' (see
-  // handleFormSubmit below), so — unlike ReceiveStockFormSchema, which
-  // branches on applicationType — the requirement here is unconditional.
-  supplierInvoiceNumber: z
-    .string()
-    .min(1, 'Supplier invoice number is required for new stock receipts'),
+  // by whoever is physically receiving the delivery. The DR is what arrives
+  // with the goods, so it's the one demanded here; the SI often follows
+  // later and the PO already covers the commercial side of this receipt.
+  deliveryReceiptNumber: z.string().min(1, 'Delivery receipt number is required'),
+  supplierInvoiceNumber: z.string().optional(),
   // Tax as printed on the supplier's invoice, typed off the SI rather than
   // picked from a rule — the BIR cares about the supplier's numbers, not
   // ours. Blank = let the server derive it at the flat rate.
@@ -418,6 +415,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Delivery Receipt No.
+                <span className="text-red-500"> *</span>
                 <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
               </label>
               <Controller
@@ -433,11 +431,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                   />
                 )}
               />
+              {errors.deliveryReceiptNumber && (
+                <p className="mt-1 text-xs text-red-600">{errors.deliveryReceiptNumber.message}</p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Supplier Invoice No.
-                <span className="text-red-500"> *</span>
                 <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
               </label>
               <Controller

@@ -32,7 +32,12 @@ export function WarehouseSearchCombobox({ value, onChange, error, initialLabel }
       onChange={onChange}
       error={error}
       initialLabel={initialLabel}
-      queryKey="inventory-warehouses-lookup"
+      // Its own namespace, not 'inventory-warehouses-lookup': SearchCombobox
+      // keys its internal cache as [queryKey, typedText], so sharing that
+      // prefix would let someone typing "standalone" collide with the
+      // ['inventory-warehouses-lookup', 'standalone'] entry other screens
+      // keep — a cached warehouse *response*, not an option list.
+      queryKey="warehouse-locations-search"
       placeholder="Search location by branch or code…"
       typeToSearchMessage="Type to search locations…"
       emptyMessage="No locations found"
