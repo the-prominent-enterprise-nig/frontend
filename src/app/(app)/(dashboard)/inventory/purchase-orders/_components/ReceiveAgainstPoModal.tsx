@@ -9,7 +9,7 @@ import { X, Loader2, PackageCheck, ScanBarcode, ChevronUp } from 'lucide-react'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { showToast } from '@/src/components/ui/toast'
-import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { poLocationLabel, type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -325,12 +325,12 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="sm:col-span-2">
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Destination Warehouse <span className="text-red-500">*</span>
+                Destination <span className="text-red-500">*</span>
               </label>
               {po.warehouseId ? (
                 <>
                   <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-                    {po.warehouse?.name ?? 'Warehouse'}
+                    {poLocationLabel(po.warehouse)}
                   </div>
                   <p className="mt-1 text-xs text-zinc-400">
                     Set when this PO was created — stock always lands where it was ordered for.
