@@ -12,7 +12,6 @@ import {
   PhilippinePeso,
   FileText,
   Printer,
-  Undo2,
   X,
 } from 'lucide-react'
 import {
@@ -26,7 +25,6 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import Tooltip from '@/src/components/ui/Tooltip'
 import VoucherPanel from './VoucherPanel'
-import SupplierDebitMemoDialog from './SupplierDebitMemoDialog'
 import { getApPaymentDocument } from '../_actions/get-ap-payment-document'
 import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
@@ -63,7 +61,6 @@ export default function APBillsList() {
   const [payingFor, setPayingFor] = useState<APBill | null>(null)
   const [voucherFor, setVoucherFor] = useState<APBill | null>(null)
   const [printingVoucherFor, setPrintingVoucherFor] = useState<string | null>(null)
-  const [debitMemoFor, setDebitMemoFor] = useState<APBill | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -136,7 +133,11 @@ export default function APBillsList() {
               <th className="px-3 py-2 text-left">Bill Date</th>
               <th className="px-3 py-2 text-left">Due Date</th>
               <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2 text-right">Paid</th>
+              {/* "Settled", not "Paid": amountPaid also absorbs withholding tax
+                  redirected to the BIR and posted debit memos, neither of
+                  which is money paid to the supplier. Open the bill for the
+                  breakdown. */}
+              <th className="px-3 py-2 text-right">Settled</th>
               <th className="px-3 py-2 text-right">Outstanding</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-right">Actions</th>
@@ -226,17 +227,6 @@ export default function APBillsList() {
                           </button>
                         </Tooltip>
                       )}
-                      {b.supplierId && ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) && (
-                        <Tooltip label="Issue supplier debit memo (return)">
-                          <button
-                            onClick={() => setDebitMemoFor(b)}
-                            aria-label="Issue supplier debit memo"
-                            className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
-                          >
-                            <Undo2 className="w-4 h-4" />
-                          </button>
-                        </Tooltip>
-                      )}
                       <Tooltip label="Voucher">
                         <button
                           onClick={() => setVoucherFor(b)}
@@ -290,16 +280,6 @@ export default function APBillsList() {
           onSaved={async () => {
             const res = await APBills.get(voucherFor.id)
             if (res.data) setVoucherFor(res.data)
-            load()
-          }}
-        />
-      )}
-      {debitMemoFor && (
-        <SupplierDebitMemoDialog
-          bill={debitMemoFor}
-          onClose={() => setDebitMemoFor(null)}
-          onSaved={() => {
-            setDebitMemoFor(null)
             load()
           }}
         />

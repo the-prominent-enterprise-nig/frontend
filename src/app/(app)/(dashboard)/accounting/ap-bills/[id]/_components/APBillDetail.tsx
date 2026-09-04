@@ -87,6 +87,7 @@ export default function APBillDetail({ id }: { id: string }) {
   const enterprise = doc.enterprise
   const goodsReceipts = bill.goodsReceipts ?? []
   const payments = bill.payments ?? []
+  const debitMemos = bill.debitMemos ?? []
   const withholding = bill.withholdingAmount ?? 0
   const outstanding = bill.totalAmount - bill.amountPaid
 
@@ -256,6 +257,19 @@ export default function APBillDetail({ id }: { id: string }) {
                   <td className={`${TOTAL_VALUE} min-w-[140px]`}>- {fmtMoney(withholding)}</td>
                 </tr>
               )}
+              {/* Debit memos sit with the payments rather than above Total:
+                  like withholding, they never reduced totalAmount — they
+                  reduce what is left to settle. Without them the document
+                  shows a Total and a Balance due that don't reconcile. */}
+              {debitMemos.map((m) => (
+                <tr key={m.id}>
+                  <td className={TOTAL_LABEL}>
+                    Debit memo — {m.memoNumber}
+                    {m.reason ? ` — ${m.reason}` : ''} — {docDate(m.memoDate)}
+                  </td>
+                  <td className={`${TOTAL_VALUE} min-w-[140px]`}>- {fmtMoney(m.amount)}</td>
+                </tr>
+              ))}
               {payments.map((p) => (
                 <tr key={p.id}>
                   <td className={TOTAL_LABEL}>

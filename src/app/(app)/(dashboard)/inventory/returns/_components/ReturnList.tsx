@@ -69,9 +69,12 @@ export default function ReturnList({ session }: { session: SessionUser }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Returns</h1>
+            {/* Says "in" explicitly because the Debit Memos tab next door
+                moves stock the opposite way, and the two labels can't tell
+                them apart on their own. */}
             <p className="mt-1 text-sm text-zinc-500">
-              Process returned items back into inventory. Sellable stock is immediately available;
-              damaged stock goes to on-hand only.
+              Customer stock coming <strong>back in</strong> to inventory. Sellable stock is
+              immediately available; damaged stock goes to on-hand only.
             </p>
           </div>
           <div className="flex items-center gap-2">

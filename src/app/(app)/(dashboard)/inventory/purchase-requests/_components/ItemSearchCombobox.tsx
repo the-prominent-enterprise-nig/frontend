@@ -14,9 +14,21 @@ type Props = {
   onSelect?: (option: SearchComboboxOption) => void
   error?: string
   initialLabel?: string
+  /** Dense row height, to match the other controls on a line-item row. */
+  compact?: boolean
+  /** Overrides the default, which is too long for a narrow grid column. */
+  placeholder?: string
 }
 
-export function ItemSearchCombobox({ value, onChange, onSelect, error, initialLabel }: Props) {
+export function ItemSearchCombobox({
+  value,
+  onChange,
+  onSelect,
+  error,
+  initialLabel,
+  compact,
+  placeholder = 'Search item by name or SKU…',
+}: Props) {
   return (
     <SearchCombobox
       value={value}
@@ -24,8 +36,9 @@ export function ItemSearchCombobox({ value, onChange, onSelect, error, initialLa
       onSelect={onSelect}
       error={error}
       initialLabel={initialLabel}
+      compact={compact}
       queryKey="items-search"
-      placeholder="Search item by name or SKU…"
+      placeholder={placeholder}
       typeToSearchMessage="Type to search items…"
       emptyMessage="No items found"
       search={async (query) => {

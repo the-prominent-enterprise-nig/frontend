@@ -40,6 +40,11 @@ type Props = {
    * feet in the same field is not something this component needs to chase).
    */
   initialLabel?: string
+  /** Tighter padding/font for dense layouts (e.g. a table row) — everything
+   * else about the component stays the same. Off by default so existing
+   * usages are unaffected. Matches CategorySelect's prop of the same name, so
+   * the two line up when they sit in the same row. */
+  compact?: boolean
 }
 
 /**
@@ -61,6 +66,7 @@ export function SearchCombobox({
   error,
   disabled,
   initialLabel,
+  compact = false,
 }: Props) {
   // confirmedLabel: what gets shown when the dropdown is closed (only changes on select/clear)
   const [confirmedLabel, setConfirmedLabel] = useState(initialLabel ?? '')
@@ -167,9 +173,11 @@ export function SearchCombobox({
   return (
     <div ref={containerRef} className="relative">
       <div
-        className={`flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors ${borderClass} ${disabled ? 'opacity-60' : ''}`}
+        className={`flex items-center gap-2 rounded-lg border bg-white transition-colors ${
+          compact ? 'px-2.5 py-1.5' : 'px-3 py-2'
+        } ${borderClass} ${disabled ? 'opacity-60' : ''}`}
       >
-        <Search className="h-4 w-4 shrink-0 text-zinc-400" />
+        <Search className={`shrink-0 text-zinc-400 ${compact ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
         <input
           ref={inputRef}
           type="text"
@@ -178,7 +186,9 @@ export function SearchCombobox({
           onFocus={() => !disabled && setOpen(true)}
           disabled={disabled}
           placeholder={confirmedLabel || placeholder || typeToSearchMessage}
-          className="flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed"
+          className={`flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed ${
+            compact ? 'text-[13px]' : 'text-sm'
+          }`}
         />
         {value && !disabled && (
           <button
