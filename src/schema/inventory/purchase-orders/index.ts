@@ -105,6 +105,11 @@ const PoSupplierSchema = z.object({
   name: z.string(),
   taxId: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
+  // Tax defaults, so the receiving screen can preview the Input VAT and
+  // withholding this receipt will generate — both derived server-side from
+  // these, not typed in. Optional so an older cached PO payload still parses.
+  defaultInputVat: z.enum(['pct_12', 'none']).optional().nullable(),
+  defaultWithholding: z.enum(['pct_1', 'none']).optional().nullable(),
 })
 
 const PoWarehouseSchema = z.object({
