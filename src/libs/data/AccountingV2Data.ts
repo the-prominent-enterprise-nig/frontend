@@ -826,6 +826,10 @@ export interface APBill {
     | 'voided'
     | null
   voucherRejectedReason?: string | null
+  /** What this bill charged for the item passed as `itemId` to APBills.list —
+   * from the goods receipt's cost, else the PO line's price. Only present on
+   * that item-filtered call, and null when neither carries a price. */
+  matchedItemUnitPrice?: number | null
   billDate: string
   dueDate: string
   description?: string
@@ -889,8 +893,13 @@ export interface APBillDocument {
   document: APBill & { effectiveExpenseAccount?: { id: string; name: string } | null }
 }
 export const APBills = {
-  list: (params?: { search?: string; status?: string; supplierId?: string }) =>
-    api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
+  list: (params?: {
+    search?: string
+    status?: string
+    supplierId?: string
+    /** Bills covering this item — matched through the bill's PO / goods receipts. */
+    itemId?: string
+  }) => api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
@@ -1036,7 +1045,11 @@ export const APPaymentMethods = {
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
-export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'OTHER'
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
+// Payee → Other sub-choice. UTILITIES/SALARIES_WAGES behave like SUPPLIER
+// (each line picks its own category); SPECIAL_ACCOUNTS is the pre-existing
+// Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow.
+export type OtherCategory = 'UTILITIES' | 'SALARIES_WAGES' | 'SPECIAL_ACCOUNTS'
 export type SpecialAccountType =
   | 'EMPLOYEE_CASH_ADVANCE'
   | 'EMPLOYEE_CASH_LOAN'
@@ -1057,20 +1070,47 @@ export interface BusinessExpenseLine {
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   payee?: string | null
+  /** SUPPLIER-only — optional catalog item this line is purchasing. */
+  itemId?: string | null
+  qty?: number | null
+  unitPrice?: number | null
+  /** Which Supplier Invoice (AP Bill) this item's purchase is against, when unambiguous. */
+  apBillId?: string | null
   description?: string | null
   amount: number
   taxCode?: string | null
   taxAmount: number
 }
+// One entry can be paid through several methods at once (e.g. part Cash,
+// part Bank Transfer) — rows must sum to the entry's total.
+export interface BusinessExpensePayment {
+  id: string
+  lineNumber: number
+  paymentMethod: string
+  bankAccountId?: string | null
+  /** Resolved bank name — list() only; bankAccountId has no relation to join on. */
+  bankAccount?: string | null
+  reference?: string | null
+  amount: number
+}
+export type ClearedType = 'SAME_DATE' | 'LATER_DATE'
 export interface BusinessExpense {
   id: string
   expenseNumber: string
   expenseDate: string
+  /** Whether the payment clears the bank on expenseDate itself or later (e.g. an uncashed check). */
+  clearedType?: ClearedType | null
+  clearedDate?: string | null
   payeeType?: PayeeType | null
+  otherCategory?: OtherCategory | null
   supplierId?: string | null
   supplier?: { id: string; name: string } | null
+  /** SUPPLIER-only — the disbursement voucher number. */
+  voucherNumber?: string | null
   customerId?: string | null
   customer?: { id: string; name: string } | null
+  employeeId?: string | null
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1079,12 +1119,68 @@ export interface BusinessExpense {
   subtotal: number
   taxAmount: number
   totalAmount: number
-  paymentMethod?: string | null
-  bankAccountId?: string | null
-  reference?: string | null
+  payments: BusinessExpensePayment[]
   costCenter?: string | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
+}
+/** Print-ready expense voucher — same envelope shape as APBillDocument.
+ * Also backs the read-only detail view, so it carries record-only fields
+ * (item, qty, SI number, bank, cleared date) the paper voucher never
+ * prints; buildExpenseVoucherHtml simply ignores them. */
+export interface ExpenseDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: {
+    payee: string | null
+    payeeAddress: string | null
+    payeeTin: string | null
+    expenseNumber: string
+    voucherNumber: string | null
+    expenseDate: string
+    description: string | null
+    payments: {
+      paymentMethod: string
+      reference: string | null
+      amount: number
+      bankAccount: string | null
+    }[]
+    /** Supplier invoice numbers these lines settle — the "PAYMENT FOR …" line. */
+    paidFor: string[]
+    lines: {
+      account: string | null
+      description: string | null
+      total: number
+      item: string | null
+      qty: number | null
+      unitPrice: number | null
+      siNumber: string | null
+      lineEmployee: string | null
+      linePayee: string | null
+      taxCode: string | null
+      amount: number
+      taxAmount: number
+    }[]
+    subtotal: number
+    taxAmount: number
+    totalAmount: number
+    status: string
+    payeeType: PayeeType | null
+    otherCategory: OtherCategory | null
+    clearedType: ClearedType | null
+    clearedDate: string | null
+    costCenter: string | null
+    journalEntryId: string | null
+  }
 }
 export const Expenses = {
   list: (params?: {
@@ -1096,6 +1192,7 @@ export const Expenses = {
     endDate?: string
   }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),
   get: (id: string) => api.get<BusinessExpense>(`/expenses/${id}`),
+  getDocument: (id: string) => api.get<ExpenseDocument>(`/expenses/${id}/document`),
   create: (body: any) => api.post<BusinessExpense>('/expenses', body),
   update: (id: string, body: any) => api.patch<BusinessExpense>(`/expenses/${id}`, body),
   record: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/record`, {}),

@@ -647,6 +647,10 @@ export async function itemLookup(
         isBundle: Boolean(item.isBundle),
         pricingMode: (item.pricingMode as 'inclusive' | 'exclusive' | undefined) ?? undefined,
         isSerialTracked: Boolean(item.isSerialTracked),
+        requiresSecondarySerial: Boolean(item.requiresSecondarySerial),
+        brand: (item.brand as { id: string; name: string } | null | undefined) ?? null,
+        category: (item.category as { id: string; name: string } | null | undefined) ?? null,
+        modelNumber: (item.modelNumber as string | null | undefined) ?? null,
       }
     })
 

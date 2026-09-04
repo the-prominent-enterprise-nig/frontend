@@ -160,17 +160,17 @@ test('a transaction created with SI/DR numbers shows them on the transaction det
   const created = await txRes.json()
   expect(created.salesInvoiceNumber).toBe(siNumber)
   expect(created.deliveryReceiptNumber).toBe(drNumber)
-  const transactionNumber = created.transactionNumber as string
 
   await gotoReady(page, '/pos/transactions')
   const searchInput = page.getByPlaceholder('Search…')
-  await fillStable(searchInput, transactionNumber)
+  // The list column shows the Sales Invoice No. now; search matches it too.
+  await fillStable(searchInput, siNumber)
   // Auto-searches ~400ms after typing stops — no Apply click needed.
-  await page.getByText(transactionNumber, { exact: true }).click()
+  await page.getByText(siNumber, { exact: true }).click()
 
-  await expect(page.getByText('SI Number', { exact: true })).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText(siNumber, { exact: true })).toBeVisible()
-  await expect(page.getByText('DR Number', { exact: true })).toBeVisible()
+  // The SI number is the detail modal's heading now, not a labelled row.
+  await expect(page.getByText(siNumber, { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
   await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
 })
 
@@ -232,21 +232,20 @@ test.describe('POS Checkout — SI/DR numbers end to end', () => {
     // client-side render.
     await page.getByRole('button', { name: /Confirm Sale/ }).click()
     await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText('SI #', { exact: true })).toBeVisible()
+    await expect(page.getByText('Sales Invoice No.', { exact: true })).toBeVisible()
     await expect(page.getByText(siNumber, { exact: true })).toBeVisible()
-    await expect(page.getByText('DR #', { exact: true })).toBeVisible()
+    await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
     await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
-
-    const transactionNumber = (await page.getByText(/^POS-/).first().innerText()).trim()
 
     await gotoReady(page, '/pos/transactions')
     const txSearchInput = page.getByPlaceholder('Search…')
-    await fillStable(txSearchInput, transactionNumber)
-    await page.getByText(transactionNumber, { exact: true }).click()
+    // The list column shows the Sales Invoice No. now; search matches it too.
+    await fillStable(txSearchInput, siNumber)
+    await page.getByText(siNumber, { exact: true }).click()
 
-    await expect(page.getByText('SI Number', { exact: true })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText(siNumber, { exact: true })).toBeVisible()
-    await expect(page.getByText('DR Number', { exact: true })).toBeVisible()
+    // The SI number is the detail modal's heading now, not a labelled row.
+    await expect(page.getByText(siNumber, { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('Delivery Receipt No.', { exact: true })).toBeVisible()
     await expect(page.getByText(drNumber, { exact: true })).toBeVisible()
   })
 })

@@ -48,6 +48,21 @@ export function displayUnitPriceWithTax(
   return line.unitPrice * (1 + rate / 100)
 }
 
+/** The unit price net of VAT — the item's actual (base) price, with any
+ * embedded tax stripped back out for an inclusive line. An exclusive line's
+ * unitPrice is already the base price, so it's returned as-is. Mirrors the
+ * exclBase extraction inside computePricingTotals so this always agrees with
+ * the cart's own Subtotal figure. */
+export function displayUnitPriceExclTax(
+  line: PriceableLine,
+  activeTaxRate: { rate: number } | null,
+  inclusivePricing: boolean
+): number {
+  const rate = resolveLineTaxRate(line, activeTaxRate)
+  if (rate == null || rate <= 0 || !isLineInclusive(line, inclusivePricing)) return line.unitPrice
+  return line.unitPrice / (1 + rate / 100)
+}
+
 /** The VAT amount actually attributable to one line — the embedded portion
  * for an inclusive line (extracted out of unitPrice, not added on top of it),
  * or the additive portion for an exclusive line. Mirrors the per-line

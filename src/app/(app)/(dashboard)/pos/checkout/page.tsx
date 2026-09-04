@@ -39,6 +39,7 @@ import {
   computePricingTotals,
   resolveLineTaxRate,
   displayUnitPriceWithTax,
+  displayUnitPriceExclTax,
   lineTaxAmount,
 } from './_utils/calculations'
 import { useRouter } from 'next/navigation'
@@ -262,7 +263,7 @@ function itemDisplayLabel(item: {
   modelNumber?: string | null
 }): string {
   if (item.brandName && item.categoryName && item.modelNumber) {
-    return `${item.brandName}  ·  ${item.categoryName}  ·  ${item.modelNumber}`
+    return `${item.brandName} ${item.categoryName} ${item.modelNumber}`
   }
   return item.name
 }
@@ -441,6 +442,10 @@ export default function CheckoutPage() {
   const [isTaxExempt, setIsTaxExempt] = useState(false)
   const [taxExemptionRef, setTaxExemptionRef] = useState('')
 
+  // Sales Invoice No. — required on every sale, typed in from the physical
+  // invoice booklet (maps to PosTransaction.salesInvoiceNumber).
+  const [invoiceNumberInput, setInvoiceNumberInput] = useState('')
+
   // Promo
   const [promoInput, setPromoInput] = useState('')
   const [promoResult, setPromoResult] = useState<PromoValidationResult | null>(null)
@@ -488,15 +493,6 @@ export default function CheckoutPage() {
   // Both providers' down payments are collected at this register and share
   // the one toggle above — the money crosses the counter identically
   // whether NIG or a financier carries the balance afterwards.
-
-  // Optional flat delivery fee — collected now via the regular Payment
-  // section regardless of payment mode, kept out of subtotal/totalAmount so
-  // it never affects an installment line's financed amount or 10% floor.
-  const [deliveryFeeInput, setDeliveryFeeInput] = useState('')
-  // Collection receipt reference for the delivery fee specifically — kept
-  // apart from the main payment's own CR Reference, since the fee is a
-  // transaction-level charge, not tied to any one payment.
-  const [deliveryFeeReferenceNumberInput, setDeliveryFeeReferenceNumberInput] = useState('')
 
   // Configured payment methods from API — falls back to hardcoded list if not loaded
   const [configuredMethods, setConfiguredMethods] = useState<
@@ -1170,20 +1166,12 @@ export default function CheckoutPage() {
     chargeCartLines.length === 0 &&
     inhouseInstallmentCartLines.length === 0
   const tpfCollectedAtRegister = isPureTpfCart ? tpfDownPaymentsTotal : tpfLinesTotal
-  const deliveryFeeAmount = Math.max(0, parseFloat(deliveryFeeInput) || 0)
-  // Grand total including the delivery fee, for customer-facing display only
-  // (submit buttons, mobile bar, Order Summary) — totalAmount itself stays
-  // fee-exclusive since it's what every per-line/down-payment calc is based on.
-  const grandTotalWithFee = Math.round((totalAmount + deliveryFeeAmount) * 100) / 100
 
-  // The down payment is tendered through this same Total + Delivery Fee
-  // pool — one CR Number, one payment method, one balance. It's split back
-  // out only when posting against each installment schedule at submit time
-  // (see regularTenderTarget in handleConfirm), not in the UI. The delivery
-  // fee rides in here too — it's due now regardless of payment mode, even
-  // on a cart that's otherwise 100% installment.
-  const regularTenderTarget =
-    Math.round((cashLinesTotal + tpfCollectedAtRegister + deliveryFeeAmount) * 100) / 100
+  // The down payment is tendered through this same Total pool — one CR
+  // Number, one payment method, one balance. It's split back out only when
+  // posting against each installment schedule at submit time (see
+  // regularTenderTarget in handleConfirm), not in the UI.
+  const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
@@ -1974,6 +1962,11 @@ export default function CheckoutPage() {
       return
     }
 
+    if (!invoiceNumberInput.trim()) {
+      setError('Enter the Sales Invoice No. for this sale.')
+      return
+    }
+
     const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
@@ -2051,23 +2044,22 @@ export default function CheckoutPage() {
         return
       }
       // CR Number (collection receipt) is required on every row whenever
-      // this sale has an inhouse installment/down-payment component — it
-      // doubles as the receipt/CR number issued at the time the down
-      // payment is collected, so plain cash isn't exempt the way it is
-      // elsewhere. A plain sale still needs a reference for card/bank/
-      // e-wallet/etc. (REF_METHODS), just not for plain cash.
+      // this sale has an inhouse installment/down-payment component, or a
+      // pure-TPF cart's own down payment — it doubles as the receipt/CR
+      // number issued at the time the down payment is collected, so plain
+      // cash isn't exempt the way it is elsewhere. A plain sale still needs
+      // a reference for card/bank/e-wallet/etc. (REF_METHODS), just not for
+      // plain cash.
       const missingRef = payments.find(
         (p) =>
           p.amount > 0 &&
           !p.referenceNumber.trim() &&
-          (inhouseInstallmentCartLines.length > 0 || REF_METHODS.includes(p.method))
+          (inhouseInstallmentCartLines.length > 0 ||
+            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
+            REF_METHODS.includes(p.method))
       )
       if (missingRef) {
         setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
-        return
-      }
-      if (deliveryFeeAmount > 0 && !deliveryFeeReferenceNumberInput.trim()) {
-        setError('Delivery Fee Reference is required.')
         return
       }
       const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
@@ -2096,9 +2088,8 @@ export default function CheckoutPage() {
         discountAmount: promoDiscount,
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
-        totalAmount: grandTotalWithFee,
-        deliveryFee: deliveryFeeAmount || undefined,
-        deliveryFeeReferenceNumber: deliveryFeeReferenceNumberInput.trim() || undefined,
+        totalAmount,
+        salesInvoiceNumber: invoiceNumberInput.trim(),
         isTaxExempt,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         offlinePaymentMethods: payments.filter((p) => p.amount > 0).map((p) => p.method),
@@ -2148,6 +2139,7 @@ export default function CheckoutPage() {
           // callers) never needs to apply here.
           creditApplicationId:
             inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
+          salesInvoiceNumber: invoiceNumberInput.trim(),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
           tpfReferenceNumber: tpfInstallmentCartLines.length > 0 ? tpfReferenceNumber : undefined,
           tpfApprovedAmount:
@@ -2165,14 +2157,22 @@ export default function CheckoutPage() {
                   | 'bank_transfer'
                   | 'qr')
               : undefined,
+          // The CR number for a pure-TPF cart's own down payment — collected
+          // via the same generic payment row(s) as everything else (see the
+          // missingRef check above), joined in the rare split-tender case.
+          tpfDownPaymentReferenceNumber:
+            isPureTpfCart && tpfDownPaymentsTotal > 0
+              ? payments
+                  .filter((p) => p.amount > 0 && p.referenceNumber.trim())
+                  .map((p) => p.referenceNumber.trim())
+                  .join(', ') || undefined
+              : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
           discountAmount: promoDiscount,
           taxAmount: taxTotal,
           subtotal: vatExclSubtotalForBackend,
-          totalAmount: grandTotalWithFee,
-          deliveryFee: deliveryFeeAmount || undefined,
-          deliveryFeeReferenceNumber: deliveryFeeReferenceNumberInput.trim() || undefined,
+          totalAmount,
           isTaxExempt,
           taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
           managerOverride: managerOverrideApproved || undefined,
@@ -2292,7 +2292,7 @@ export default function CheckoutPage() {
           setSubmitting(false)
           setPendingApproval({
             releaseFormRequestId,
-            totalAmount: grandTotalWithFee,
+            totalAmount,
             serialLines: displayLines,
             creditApplicationId:
               inhouseInstallmentCartLines.length > 0 ? creditApplicationId : undefined,
@@ -2414,7 +2414,7 @@ export default function CheckoutPage() {
         )
         const redeemRes = await redeemPoints(loyaltyAccount.id, {
           points: pointsToRedeem,
-          orderTotal: regularTenderTarget - deliveryFeeAmount,
+          orderTotal: regularTenderTarget,
           posTransactionId: txId,
         })
         if (!redeemRes.success) {
@@ -2429,10 +2429,7 @@ export default function CheckoutPage() {
       let loyaltyEarned = false
       if (loyaltyAccount) {
         try {
-          // The delivery fee is a cost pass-through, not a purchase amount —
-          // excluded from what earns points, same reasoning as the redeem
-          // orderTotal above.
-          const collectedToday = tenderTarget - deliveryFeeAmount
+          const collectedToday = tenderTarget
           const pointsEarned = Math.floor(collectedToday * (loyaltyProgram?.pointsPerUnit ?? 1))
           const earnRes = await earnPoints(loyaltyAccount.id, {
             points: pointsEarned,
@@ -2520,7 +2517,7 @@ export default function CheckoutPage() {
     setReservationSuccess(null)
     setIsTaxExempt(false)
     setTaxExemptionRef('')
-    setDeliveryFeeReferenceNumberInput('')
+    setInvoiceNumberInput('')
     setSearchQuery('')
     setManagerOverrideApproved(false)
     setOverrideManagerName('')
@@ -2682,7 +2679,7 @@ export default function CheckoutPage() {
     return (
       <SuccessScreen
         success={success}
-        totalAmount={grandTotalWithFee}
+        totalAmount={totalAmount}
         selectedCustomer={selectedCustomer}
         onReset={resetSale}
         fmt={fmt}
@@ -3149,6 +3146,27 @@ export default function CheckoutPage() {
             )}
           </div>
 
+          {/* Required on every sale — the number off the physical sales
+              invoice booklet. Deliberately never abbreviated "SI" here:
+              that abbreviation already means Supplier Invoice on the AP
+              Bills / goods-receiving side. */}
+          {saleMode === 'sale' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                Sales Invoice No. *
+              </p>
+              <input
+                type="text"
+                aria-label="Sales Invoice No."
+                value={invoiceNumberInput}
+                onChange={(e) => setInvoiceNumberInput(e.target.value)}
+                placeholder="Enter sales invoice number"
+                maxLength={100}
+                className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+              />
+            </div>
+          )}
+
           {/* QMS tab origin banner */}
           {fromTab && (
             <div className="flex items-center gap-2 px-5 py-2 bg-amber-50 border-b border-amber-200">
@@ -3339,7 +3357,7 @@ export default function CheckoutPage() {
                                   {line.priceResolved ? (
                                     <div className="flex flex-col items-end gap-0.5">
                                       {fmt(
-                                        displayUnitPriceWithTax(
+                                        displayUnitPriceExclTax(
                                           line,
                                           activeTaxRate,
                                           inclusivePricing
@@ -3418,27 +3436,10 @@ export default function CheckoutPage() {
                   <span>—</span>
                 </div>
               )}
-              {saleMode === 'sale' && (
-                <div className="flex items-center justify-between gap-2">
-                  <span>Delivery fee (optional)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    aria-label="Delivery fee"
-                    placeholder="0.00"
-                    value={deliveryFeeInput}
-                    onChange={(e) => setDeliveryFeeInput(e.target.value)}
-                    className="w-24 rounded-lg border border-purple-200 px-2 py-1 text-right font-mono text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                  />
-                </div>
-              )}
             </div>
             <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900">
-                {fmt(saleMode === 'sale' ? grandTotalWithFee : totalAmount)}
-              </span>
+              <span className="text-2xl font-bold text-gray-900">{fmt(totalAmount)}</span>
             </div>
 
             {/* Tax exempt toggle */}
@@ -4315,21 +4316,26 @@ export default function CheckoutPage() {
 
                 {/* Reference number / CR Number — a plain cash-mode sale
                     needs neither, unless this sale also has an inhouse
-                    installment/down-payment component (mirrors the down
-                    payment section below), in which case its cash-lines
-                    payment gets a CR Number too. card/bank/e-wallet/etc.
-                    (REF_METHODS) still always need their own reference,
-                    installment or not — same as reserve mode. */}
+                    installment/down-payment component, or is a pure-TPF
+                    cart's own down payment (mirrors the down payment section
+                    below), in which case its cash-lines payment gets a CR
+                    Number too. card/bank/e-wallet/etc. (REF_METHODS) still
+                    always need their own reference, installment or not —
+                    same as reserve mode. */}
                 {payments.some(
                   (p) =>
-                    (saleMode === 'sale' && inhouseInstallmentCartLines.length > 0) ||
+                    (saleMode === 'sale' &&
+                      (inhouseInstallmentCartLines.length > 0 ||
+                        (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
                     REF_METHODS.includes(p.method) ||
                     p.refFieldLabel
                 ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
                       const needsRef =
-                        (saleMode === 'sale' && inhouseInstallmentCartLines.length > 0) ||
+                        (saleMode === 'sale' &&
+                          (inhouseInstallmentCartLines.length > 0 ||
+                            (isPureTpfCart && tpfDownPaymentsTotal > 0))) ||
                         REF_METHODS.includes(p.method) ||
                         p.refFieldLabel
                       const label =
@@ -4346,7 +4352,9 @@ export default function CheckoutPage() {
                       // (matches the same-scoped check at submit time).
                       const isRequired =
                         saleMode === 'sale'
-                          ? inhouseInstallmentCartLines.length > 0 || REF_METHODS.includes(p.method)
+                          ? inhouseInstallmentCartLines.length > 0 ||
+                            (isPureTpfCart && tpfDownPaymentsTotal > 0) ||
+                            REF_METHODS.includes(p.method)
                           : (p.refRequired ?? REF_METHODS.includes(p.method))
                       // Scenario 37 — POS Terminal (card) / Bank (bank_transfer) /
                       // Gateway (qr) all live in Item Payment Mode now (transaction-
@@ -4377,15 +4385,6 @@ export default function CheckoutPage() {
                       ) : null
                     })}
                   </div>
-                )}
-
-                {saleMode === 'sale' && deliveryFeeAmount > 0 && (
-                  <input
-                    className="w-full rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs text-gray-800 outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="Delivery Fee Reference *"
-                    value={deliveryFeeReferenceNumberInput}
-                    onChange={(e) => setDeliveryFeeReferenceNumberInput(e.target.value)}
-                  />
                 )}
 
                 {/* Loyalty points balance indicator */}
@@ -5472,28 +5471,31 @@ function SuccessScreen({
               <span>Date</span>
               <span>{receiptDate}</span>
             </div>
-            <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-              <span className="shrink-0">TXN #</span>
-              <span className="break-all text-right font-mono text-[10px]">
-                {success.transactionNumber}
-              </span>
-            </div>
+            {/* Sales Invoice No. leads — it's the document the customer and
+                BIR actually go by. Transaction No. sits last, dimmed: it's
+                an internal system reference, only useful for lookups. */}
             {success.salesInvoiceNumber && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">SI #</span>
-                <span className="break-all text-right font-mono text-[10px]">
+                <span className="shrink-0">Sales Invoice No.</span>
+                <span className="break-all text-right font-mono font-medium text-gray-700">
                   {success.salesInvoiceNumber}
                 </span>
               </div>
             )}
             {success.deliveryReceiptNumber && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">DR #</span>
+                <span className="shrink-0">Delivery Receipt No.</span>
                 <span className="break-all text-right font-mono text-[10px]">
                   {success.deliveryReceiptNumber}
                 </span>
               </div>
             )}
+            <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
+              <span className="shrink-0">Transaction No.</span>
+              <span className="break-all text-right font-mono text-[10px]">
+                {success.transactionNumber}
+              </span>
+            </div>
             {/* Installment terms bill one invoice per due date, all created
                 at sale time — only the first (the plan's reference number)
                 belongs on the receipt, not every future month's. */}

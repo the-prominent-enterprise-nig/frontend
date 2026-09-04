@@ -1551,6 +1551,179 @@ export function printAPPaymentVoucherDocument(data: unknown): void {
 }
 
 /**
+ * The Expense screen's own payment voucher — same letterhead/signature/
+ * acknowledgment family as buildAPPaymentVoucherHtml() above, matching the
+ * client's own paper voucher. Differences from the AP one are all things
+ * that document actually shows and the AP payment doesn't: the payee's
+ * address and TIN, the "PAYMENT FOR …" reference line, and a real
+ * multi-row Account/Description/Total table (an expense has N lines; an AP
+ * payment settles a single bill).
+ */
+export function buildExpenseVoucherHtml(data: unknown): string {
+  const doc = data as PrintDocumentEnvelope
+  const e = doc.document as Record<string, unknown>
+  const enterprise = doc.enterprise
+
+  const fmt = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  // Zero-padded MM/DD/YYYY rather than the unpadded en-PH default the other
+  // print documents use — the client's paper voucher this replaces prints
+  // dates that way (e.g. 06/20/2026).
+  const fmtDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        })
+      : '—'
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+
+  const lines = (e.lines ?? []) as { account?: string; description?: string; total?: number }[]
+  const payments = (e.payments ?? []) as {
+    paymentMethod?: string
+    reference?: string | null
+    amount?: number
+  }[]
+  const paidFor = (e.paidFor ?? []) as string[]
+
+  // Every payment method's reference, so a split payment prints each
+  // check/OR number rather than just the first. Once an entry is split the
+  // reference alone is ambiguous, so each row also carries its method and
+  // amount — a single-payment voucher stays as terse as the paper original.
+  const split = payments.length > 1
+  const reference =
+    payments
+      .map((p) => {
+        const ref = p.reference ? esc(p.reference) : '—'
+        if (!split) return p.reference ? ref : ''
+        const method = esc(p.paymentMethod ?? '').replace(/_/g, ' ')
+        return `${method} ${fmt(Number(p.amount ?? 0))} (${ref})`
+      })
+      .filter(Boolean)
+      .join(split ? '<br />' : ', ') || '—'
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
+    h1 { font-size: 26px; margin: 0; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
+    .info { display: flex; gap: 28px; margin-bottom: 16px; }
+    .info > div { flex: 1; }
+    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
+    .party-name { font-weight: 700; margin: 0 0 4px; }
+    .party-address { margin: 0; color: #333; }
+    .meta { text-align: right; }
+    .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .meta-value { margin: 0 0 12px; }
+    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
+    th { background: #f5f5f5; text-align: left; font-weight: 700; }
+    td.right, th.right { text-align: right; }
+    tr.total-row td { font-weight: 700; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
+    .sig-block { flex: 1; }
+    .sig-label { font-weight: 700; margin: 0 0 32px; }
+    .sig-line { border-bottom: 1px solid #333; }
+    .ack { margin-top: 48px; text-align: center; }
+    .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
+    .ack-line.short { width: 120px; }
+    .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style></head><body>
+    <div class="top">
+      <h1>Payment</h1>
+      <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
+    </div>
+
+    <div class="info">
+      <div class="party">
+        <p class="party-name">${esc(e.payee) || '—'}</p>
+        ${e.payeeAddress ? `<p class="party-address">${esc(e.payeeAddress)}</p>` : ''}
+      </div>
+      <div class="meta">
+        <p class="meta-label">Date</p>
+        <p class="meta-value">${fmtDate(e.expenseDate)}</p>
+        <p class="meta-label">Reference</p>
+        <p class="meta-value">${reference}</p>
+        ${
+          e.payeeTin
+            ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(e.payeeTin)}</p>`
+            : ''
+        }
+        <p class="meta-label">VOUCHER #</p>
+        <p class="meta-value">${e.voucherNumber ? esc(e.voucherNumber) : '—'}</p>
+      </div>
+      <div class="enterprise">
+        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
+        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
+      </div>
+    </div>
+
+    ${
+      paidFor.length
+        ? `<p class="description">Payment for ${paidFor.map((n) => esc(n)).join(', ')}.</p>`
+        : e.description
+          ? `<p class="description">${esc(e.description)}</p>`
+          : ''
+    }
+
+    <table>
+      <thead>
+        <tr><th>Account</th><th>Description</th><th class="right">Total</th></tr>
+      </thead>
+      <tbody>
+        ${lines
+          .map(
+            (l) => `<tr>
+          <td>${l.account ? esc(l.account) : '—'}</td>
+          <td>${l.description ? esc(l.description) : ''}</td>
+          <td class="right">${fmt(Number(l.total ?? 0))}</td>
+        </tr>`
+          )
+          .join('')}
+        <tr class="total-row">
+          <td colspan="2">Total</td>
+          <td class="right">${fmt(Number(e.totalAmount ?? 0))}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="signatures">
+      <div class="sig-block">
+        <p class="sig-label">Prepared By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Certified By:</p>
+        <div class="sig-line"></div>
+      </div>
+      <div class="sig-block">
+        <p class="sig-label">Approved By:</p>
+        <div class="sig-line"></div>
+      </div>
+    </div>
+
+    <p class="ack">Acknowledged receipt of payment from ${esc(enterprise?.companyLegalName)}:</p>
+    <p class="ack" style="margin-top:24px">
+      <span class="ack-line"></span>/<span class="ack-line short"></span>
+    </p>
+    <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
+}
+
+export function printExpenseVoucherDocument(data: unknown): void {
+  const win = window.open('', '_blank', 'width=950,height=750')
+  if (!win) return
+  win.document.write(buildExpenseVoucherHtml(data))
+  win.document.close()
+}
+
+/**
  * Scenario 44 Part 2 — the AR-side mirror of buildAPPaymentVoucherHtml()
  * above: same letterhead/info-block/Account-Total-table family, titled
  * "Collection Receipt" per the client's own paper form. No signature

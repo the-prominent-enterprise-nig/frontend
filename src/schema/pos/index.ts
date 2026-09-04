@@ -240,10 +240,6 @@ export interface PosTransaction {
   createdAt: string
   journalEntryId?: string | null
   arInvoiceId?: string | null
-  /** Collection receipt reference for deliveryFee specifically — separate
-   * from a payment's own CR/referenceNumber since the delivery fee is a
-   * transaction-level charge, not tied to any one payment. */
-  deliveryFeeReferenceNumber?: string | null
   /** Sales Invoice number — optional, free-text, once per whole transaction
    * (not per payment/tender like the per-payment CR/referenceNumber). */
   salesInvoiceNumber?: string | null
@@ -367,6 +363,10 @@ export interface CreateTransactionInput {
   /** Register account the TPF lines' down payment debits — the financed
    * balance debits the financier's receivable instead. Defaults to cash. */
   tpfDownPaymentMethod?: 'cash' | 'card' | 'bank_transfer' | 'qr'
+  /** The collection receipt reference for a pure-TPF sale's down payment —
+   * required whenever that down payment is greater than 0. Separate from
+   * tpfReferenceNumber (the financier's own application/reference number). */
+  tpfDownPaymentReferenceNumber?: string
   customerId?: string
   originalTransactionId?: string
   promoCodeId?: string
@@ -374,16 +374,10 @@ export interface CreateTransactionInput {
   taxAmount?: number
   subtotal: number
   totalAmount: number
-  /** Optional flat add-on collected now regardless of payment mode — never
-   * counts toward an installment line's financed amount or its 10% down
-   * payment floor. Defaults to 0. */
-  deliveryFee?: number
-  /** Collection receipt reference for deliveryFee specifically — separate
-   * from a payment's own CR/referenceNumber since the delivery fee is a
-   * transaction-level charge, not tied to any one payment. */
-  deliveryFeeReferenceNumber?: string
-  /** Sales Invoice number — optional, free-text, once per whole transaction
-   * (not per payment/tender like the per-payment CR/referenceNumber). */
+  /** Sales Invoice number, free-text, once per whole transaction (not per
+   * payment/tender like the per-payment CR/referenceNumber) — required on
+   * every new sale; optional here only because a refund submission reuses
+   * this same shape without one. */
   salesInvoiceNumber?: string
   /** Delivery Receipt number — same once-per-transaction convention as
    * salesInvoiceNumber above. */
