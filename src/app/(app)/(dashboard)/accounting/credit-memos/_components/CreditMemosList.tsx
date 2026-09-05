@@ -12,6 +12,10 @@ import {
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
 import Tooltip from '@/src/components/ui/Tooltip'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import type { SessionUser } from '@/src/libs/guards/permission'
+import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import { showToast } from '@/src/components/ui/toast'
 import { ListShell } from '../../_shared/ListShell'
 import { MemoStatusBadge, MemoTable, type MemoColumn } from '../../_shared/MemoTable'
@@ -26,9 +30,11 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
  * Customer-side credit memos — reduces what a customer owes on an AR invoice.
  * Rebuilt onto ListShell + MemoTable to match its sibling memo screens.
  */
-export default function CreditMemosList() {
+export default function CreditMemosList({ session }: { session: SessionUser }) {
+  const canCreate = hasPermission(session, ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_CREATE)
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
+  const [raising, setRaising] = useState(false)
 
   const query = useQuery({
     queryKey: ['customer-credit-memos', search],
@@ -116,6 +122,9 @@ export default function CreditMemosList() {
       searchPlaceholder="Search memo no. or reason…"
       onRefresh={() => query.refetch()}
       isFetching={query.isFetching}
+      onAdd={() => setRaising(true)}
+      addLabel="New Credit Memo"
+      canAdd={canCreate}
     >
       <MemoTable
         rows={memos}
@@ -179,6 +188,17 @@ export default function CreditMemosList() {
           ) : null
         }
       />
+      {/* No invoice is chosen up front — the dialog asks for it as its first
+          field, so the form is visible while the choice is being made. */}
+      {raising && (
+        <CreditMemoDialog
+          onClose={() => setRaising(false)}
+          onSaved={() => {
+            setRaising(false)
+            query.refetch()
+          }}
+        />
+      )}
     </ListShell>
   )
 }

@@ -15,6 +15,7 @@ import {
   type SupplierDebitMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { hasPermission } from '@/src/hooks/usePermission'
+import DebitMemoDialog from '../../_shared/DebitMemoDialog'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -58,10 +59,15 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   const canReadCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ)
   const canReadSupplier = hasPermission(session, ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ)
   const canVoidCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_VOID)
+  // Customer-side only. A supplier debit memo needs the warehouse, the items,
+  // the DR number and the waybill — all of which live with the goods, so it
+  // is raised in Inventory and only ever read here.
+  const canCreateCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_CREATE)
 
   const [search, setSearch] = useState('')
   const [kindFilter, setKindFilter] = useState<'' | 'customer' | 'supplier'>('')
   const [voiding, setVoiding] = useState<string | null>(null)
+  const [raising, setRaising] = useState(false)
 
   // Arriving from an AP bill's row — narrow to that invoice's memos, which are
   // necessarily supplier-side.
@@ -181,7 +187,7 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   return (
     <ListShell
       title="Debit Memos"
-      description="Everything that raises what a customer owes us, or lowers what we owe a supplier. Supplier memos appear once Inventory has finalized them."
+      description="Everything that raises what a customer owes us, or lowers what we owe a supplier."
       search={search}
       onSearchChange={setSearch}
       searchPlaceholder="Search memo no. or reason…"
@@ -190,6 +196,9 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
         supplierQuery.refetch()
       }}
       isFetching={customerQuery.isFetching || supplierQuery.isFetching}
+      onAdd={() => setRaising(true)}
+      addLabel="New Debit Memo"
+      canAdd={canCreateCustomer}
       filters={
         <>
           <select
@@ -243,6 +252,17 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
           ) : null
         }
       />
+      {/* No invoice is chosen up front — the dialog asks for it as its first
+          field, so the form is visible while the choice is being made. */}
+      {raising && (
+        <DebitMemoDialog
+          onClose={() => setRaising(false)}
+          onSaved={() => {
+            setRaising(false)
+            customerQuery.refetch()
+          }}
+        />
+      )}
     </ListShell>
   )
 }
