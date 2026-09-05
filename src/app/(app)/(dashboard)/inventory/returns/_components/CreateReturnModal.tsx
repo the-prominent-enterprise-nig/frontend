@@ -81,10 +81,10 @@ export default function CreateReturnModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+    <div className="absolute inset-0 z-50 flex bg-white">
+      <div className="flex h-full w-full flex-col overflow-hidden">
         {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Process Return</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
@@ -100,8 +100,12 @@ export default function CreateReturnModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          <div className="grid gap-4 px-6 py-5">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          noValidate
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <div className="mx-auto grid w-full max-w-3xl flex-1 content-start gap-4 overflow-y-auto px-6 py-5">
             {/* Item */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
@@ -401,7 +405,7 @@ export default function CreateReturnModal({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
