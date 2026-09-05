@@ -18,7 +18,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import { showToast } from '@/src/components/ui/toast'
 import { ListShell } from '../../_shared/ListShell'
-import { MemoStatusBadge, MemoTable, type MemoColumn } from '../../_shared/MemoTable'
+import { MemoStatusBadge, MemoTable, type MemoColumn } from '@/src/components/accounting/MemoTable'
 
 const TYPE_LABELS: Record<CreditMemoType, string> = {
   sales_return: 'Sales Return',

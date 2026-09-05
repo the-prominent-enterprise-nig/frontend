@@ -10,7 +10,9 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
  * the shape never did (expandable row, status badge, row actions).
  *
  * Pairs with ListShell, which supplies the page frame and already renders the
- * bordered container this fills.
+ * bordered container this fills — though Inventory's supplier debit memo list
+ * uses the table inside its own frame, which is why this lives in components
+ * rather than under accounting's route folder.
  */
 
 export type MemoColumn<T> = {

@@ -21,7 +21,8 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { showToast } from '@/src/components/ui/toast'
 import { ListShell } from '../../_shared/ListShell'
-import { MemoStatusBadge, MemoTable, type MemoColumn } from '../../_shared/MemoTable'
+import { MemoStatusBadge, MemoTable, type MemoColumn } from '@/src/components/accounting/MemoTable'
+import { SupplierDebitMemoDetail } from '@/src/components/accounting/SupplierDebitMemoDetail'
 
 const CUSTOMER_TYPE_LABELS: Record<DebitMemoType, string> = {
   unit_replacement: 'Unit Replacement',
@@ -216,7 +217,7 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
           r.kind === 'customer' ? (
             <CustomerDetail memo={r.customer!} />
           ) : (
-            <SupplierDetail memo={r.supplier!} />
+            <SupplierDebitMemoDetail memo={r.supplier!} />
           )
         }
         renderActions={(r) =>
@@ -306,66 +307,6 @@ function CustomerDetail({ memo }: { memo: DebitMemo }) {
           </tbody>
         </table>
       )}
-    </>
-  )
-}
-
-function SupplierDetail({ memo }: { memo: SupplierDebitMemo }) {
-  return (
-    <>
-      <dl className="mb-3 grid gap-x-8 gap-y-1 text-xs sm:grid-cols-4">
-        <div className="flex gap-2">
-          <dt className="text-zinc-500">Returned from</dt>
-          <dd className="text-zinc-800">{memo.warehouse?.name ?? '—'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-zinc-500">DR No.</dt>
-          <dd className="text-zinc-800">{memo.deliveryReceiptNumber ?? '—'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-zinc-500">Journal entry</dt>
-          <dd className="text-zinc-800">{memo.journalEntryId ? 'Posted' : 'Not posted'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-zinc-500">Reason</dt>
-          <dd className="text-zinc-800">{memo.reason ?? '—'}</dd>
-        </div>
-      </dl>
-      <table className="w-full text-xs">
-        <thead className="text-left text-zinc-500">
-          <tr>
-            <th className="py-1">Item / Description</th>
-            <th className="py-1">Account</th>
-            <th className="py-1 text-right">Qty</th>
-            <th className="py-1 text-right">Amount</th>
-            <th className="py-1 text-right">Tax</th>
-            <th className="py-1 text-right">Line Total</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-200">
-          {memo.lines?.map((line) => (
-            <tr key={line.id}>
-              <td className="py-1.5 text-zinc-800">
-                {line.item
-                  ? `${line.item.sku} — ${line.item.name}`
-                  : (line.description ?? 'Supplier concession')}
-              </td>
-              <td className="py-1.5 text-zinc-600">{line.account?.name ?? '—'}</td>
-              <td className="py-1.5 text-right tabular-nums">{Number(line.quantity)}</td>
-              <td className="py-1.5 text-right tabular-nums">{fmtMoney(line.unitPrice)}</td>
-              <td className="py-1.5 text-right tabular-nums">{fmtMoney(line.taxAmount)}</td>
-              {/* Negative on a support line, which nets off the claim. */}
-              <td
-                className={`py-1.5 text-right font-medium tabular-nums ${
-                  line.lineTotal < 0 ? 'text-amber-700' : ''
-                }`}
-              >
-                {fmtMoney(line.lineTotal)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </>
   )
 }
