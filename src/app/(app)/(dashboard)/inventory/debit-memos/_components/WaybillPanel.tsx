@@ -6,6 +6,7 @@ import { Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
 import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import { uploadWaybillAttachment } from '../_actions/upload-waybill-attachment'
 import { showToast } from '@/src/components/ui/toast'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 
 // FileAttachment is polymorphic on (entityType, entityId), so a new document
 // type needs no schema change — just a stable string here.
@@ -31,6 +32,10 @@ type Props = {
  */
 export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedChange }: Props) {
   const [uploading, setUploading] = useState(false)
+  // The attachment awaiting its delete confirmation. Held by name as well as
+  // id so the dialog can say which file it is about.
+  const [detaching, setDetaching] = useState<{ id: string; name: string } | null>(null)
+  const [removing, setRemoving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const isStaging = !memoId
 
@@ -84,8 +89,10 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
   }
 
   async function detach(id: string) {
-    if (!confirm('Remove this attachment?')) return
+    setRemoving(true)
     const res = await FileAttachments.detach(id)
+    setRemoving(false)
+    setDetaching(null)
     if (!res.success) {
       showToast({
         title: 'Could not remove',
@@ -107,7 +114,7 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
     : attachments.map((a) => ({
         key: a.id,
         name: a.file.originalName,
-        onRemove: () => detach(a.id),
+        onRemove: () => setDetaching({ id: a.id, name: a.file.originalName }),
         href: `/api/files/${a.file.id}/download`,
       }))
 
@@ -192,6 +199,24 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
             </li>
           ))}
         </ul>
+      )}
+
+      {detaching && (
+        <ConfirmDialog
+          open
+          title="Remove this attachment?"
+          message={
+            <p>
+              <strong>{detaching.name}</strong> is unlinked from this memo. The waybill is the proof
+              the goods left, so remove it only to replace it with a better copy.
+            </p>
+          }
+          confirmLabel="Remove"
+          destructive
+          loading={removing}
+          onCancel={() => setDetaching(null)}
+          onConfirm={() => detach(detaching.id)}
+        />
       )}
     </div>
   )

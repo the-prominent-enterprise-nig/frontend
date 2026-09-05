@@ -23,13 +23,15 @@ import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/C
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { showToast } from '@/src/components/ui/toast'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 import WaybillPanel, { uploadStagedWaybills } from './WaybillPanel'
 
 type Props = {
   open: boolean
   onClose: () => void
   onSaved: () => void
-  /** Editing an existing draft. Omit to raise a new one. */
+  /** The memo being edited — a draft, or one that has already posted. Omit to
+   * raise a new one. */
   memo?: SupplierDebitMemo | null
   /** Pre-selects the invoice when arriving from an AP bill. */
   initialApBillId?: string
@@ -98,6 +100,13 @@ export default function DebitMemoFormModal({
   initialApBillId,
 }: Props) {
   const isEdit = !!memo
+  // Editing this one is not a draft edit: saving reverses what it posted and
+  // posts it again. The warning, the extra confirmation and the balance it is
+  // allowed to reach all key off this.
+  const isPosted = memo?.status === 'FINAL'
+  // The validated values waiting on the re-post confirmation, so the dialog
+  // only ever appears over a form that would actually save.
+  const [confirmingRepost, setConfirmingRepost] = useState<SupplierDebitMemoFormValues | null>(null)
   // Seeded once on mount. The parent gives this modal a `key` that changes per
   // open, so it remounts with fresh state rather than needing an effect to
   // re-sync when `memo` changes underneath it.
@@ -116,9 +125,11 @@ export default function DebitMemoFormModal({
     staleTime: 60_000,
   })
   // Only open bills can be deducted against — but any of them, not just the
-  // one the damaged unit arrived on.
-  const openBills = (billsQuery.data?.data?.items ?? []).filter((b: APBill) =>
-    ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status)
+  // one the damaged unit arrived on. The memo's own bill is always listed:
+  // a posted memo may have settled it outright, and its own effect must not
+  // be what stops it being edited.
+  const openBills = (billsQuery.data?.data?.items ?? []).filter(
+    (b: APBill) => ['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(b.status) || b.id === memo?.apBillId
   )
 
   // The schema's cap depends on which bill is selected, but useForm only reads
@@ -154,6 +165,10 @@ export default function DebitMemoFormModal({
         ? memo.lines.map((l) => ({
             itemId: l.itemId ?? undefined,
             serialNumberId: l.serialNumberId ?? undefined,
+            // Approving resolves a goods line's account to Inventory and
+            // writes it back. The picker lists revenue accounts only, so it
+            // cannot show that — but it is the account that actually posted,
+            // so it is kept and sent back unchanged.
             accountId: l.accountId ?? undefined,
             sourceApBillId: l.sourceApBillId ?? undefined,
             description: l.description ?? undefined,
@@ -195,7 +210,15 @@ export default function DebitMemoFormModal({
   const totals = useLineTotals(control)
   const selectedBillId = useWatch({ control, name: 'apBillId' })
   const selectedBill = openBills.find((b) => b.id === selectedBillId)
-  const outstanding = selectedBill ? selectedBill.totalAmount - selectedBill.amountPaid : null
+  // A posted memo has already taken its amount off its bill, so that amount is
+  // added back before the cap is judged — mirroring the server's own
+  // `alreadyApplied`. Otherwise raising a ₱500 memo to ₱800 would be refused
+  // by the ₱500 it had itself removed.
+  const outstanding = selectedBill
+    ? selectedBill.totalAmount -
+      selectedBill.amountPaid +
+      (isPosted && selectedBill.id === memo!.apBillId ? memo!.amount : 0)
+    : null
 
   // Keep the resolver's view current. Written in an effect rather than during
   // render (refs are not render-time state), which is soon enough: validation
@@ -205,7 +228,13 @@ export default function DebitMemoFormModal({
     outstandingRef.current = outstanding ?? Number.MAX_SAFE_INTEGER
   }, [outstanding])
 
-  async function onSubmit(data: SupplierDebitMemoFormValues) {
+  /** Runs after validation. A posted memo asks first — saving it re-posts. */
+  function onSubmit(data: SupplierDebitMemoFormValues): void {
+    if (isPosted) setConfirmingRepost(data)
+    else void save(data)
+  }
+
+  async function save(data: SupplierDebitMemoFormValues) {
     setSaving(true)
     const payload = {
       apBillId: data.apBillId,
@@ -232,6 +261,7 @@ export default function DebitMemoFormModal({
         description: res.message || res.error || 'Failed to save the debit memo',
         status: 'error',
       })
+      setConfirmingRepost(null)
       return
     }
     // The memo exists now, so staged waybills finally have something to
@@ -242,7 +272,7 @@ export default function DebitMemoFormModal({
     }
 
     showToast({
-      title: isEdit ? 'Draft updated' : 'Draft saved',
+      title: isPosted ? 'Memo re-posted' : isEdit ? 'Draft updated' : 'Draft saved',
       description:
         failedUploads > 0
           ? `Saved, but ${failedUploads} waybill file${failedUploads > 1 ? 's' : ''} failed to upload — reopen the memo to try again.`
@@ -250,6 +280,7 @@ export default function DebitMemoFormModal({
       status: failedUploads > 0 ? 'warning' : 'success',
     })
     setStagedWaybills([])
+    setConfirmingRepost(null)
     reset()
     onSaved()
   }
@@ -292,6 +323,19 @@ export default function DebitMemoFormModal({
             room rather than sitting inside a fixed max-width. */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="space-y-5">
+            {/* Nothing has happened yet — this warns about the save, unlike
+                a draft, where saving is inert. */}
+            {isPosted && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                <p className="font-medium">This memo has already posted. Saving re-posts it.</p>
+                <p className="mt-1">
+                  Its journal entry is reversed and a revised one posted, the stock it took out goes
+                  back and the new quantities come out, and the invoice is re-deducted. It stays one
+                  memo under one number, and you become its approver.
+                </p>
+              </div>
+            )}
+
             {/* Ref no. + issue date */}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -490,7 +534,9 @@ export default function DebitMemoFormModal({
                 memo is saved; while editing, they upload immediately. */}
             <WaybillPanel
               memoId={isEdit ? memo!.id : undefined}
-              readOnly={isEdit && memo!.status !== 'DRAFT'}
+              // A waybill is evidence, not a posting: it can be corrected on
+              // a memo that has posted without re-posting anything.
+              readOnly={false}
               staged={stagedWaybills}
               onStagedChange={setStagedWaybills}
             />
@@ -563,10 +609,35 @@ export default function DebitMemoFormModal({
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isEdit ? 'Save Draft' : 'Save as Draft'}
+            {isPosted ? 'Save and Re-post' : isEdit ? 'Save Draft' : 'Save as Draft'}
           </button>
         </div>
       </form>
+
+      {confirmingRepost && (
+        <ConfirmDialog
+          open
+          title={`Re-post ${memo!.memoNumber}?`}
+          message={
+            <>
+              <p>
+                Its journal entry is reversed and a revised one posted, the stock it took out goes
+                back and the new quantities come out, and the invoice is deducted again — now by{' '}
+                <strong>{fmtMoney(totals.total)}</strong> instead of{' '}
+                <strong>{fmtMoney(memo!.amount)}</strong>.
+              </p>
+              <p>
+                The memo keeps its number, and you replace {memo!.memoNumber}&apos;s approver, since
+                these are your figures.
+              </p>
+            </>
+          }
+          confirmLabel="Save and re-post"
+          loading={saving}
+          onCancel={() => setConfirmingRepost(null)}
+          onConfirm={() => void save(confirmingRepost)}
+        />
+      )}
     </div>
   )
 }

@@ -1,8 +1,8 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, RefreshCw, Pencil, PackageX, Paperclip, Check, Ban } from 'lucide-react'
+import { Plus, RefreshCw, Pencil, PackageX, Check, Ban } from 'lucide-react'
 import {
   SupplierDebitMemos,
   fmtDate,
@@ -14,6 +14,9 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { showToast } from '@/src/components/ui/toast'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { MemoTable, type MemoColumn } from '@/src/components/accounting/MemoTable'
+import { SupplierDebitMemoDetail } from '@/src/components/accounting/SupplierDebitMemoDetail'
 import DebitMemoFormModal from './DebitMemoFormModal'
 import WaybillPanel from './WaybillPanel'
 
@@ -42,6 +45,51 @@ const STATUS_HINT: Record<ShownStatus, string> = {
   VOID: 'Reversed',
 }
 
+/** A row action waiting on its confirmation. */
+type PendingAction = { memo: SupplierDebitMemo; action: 'approve' | 'void' }
+
+/** What each confirmation says. The three sit together rather than inline at
+ * their buttons because the wording is the only thing that separates them,
+ * and all three describe the same three consequences in the same order —
+ * the GL, the stock and the invoice. */
+function confirmCopy(pending: PendingAction): {
+  title: string
+  message: ReactNode
+  confirmLabel: string
+  destructive?: boolean
+} {
+  const { memo, action } = pending
+
+  if (action === 'approve') {
+    return {
+      title: `Approve ${memo.memoNumber}?`,
+      message: (
+        <p>
+          This posts it straight away — the stock moves, the journal entry is posted, and the
+          invoice balance drops by <strong>{fmtMoney(memo.amount)}</strong>. Accounting can see it
+          from then on.
+        </p>
+      ),
+      confirmLabel: 'Approve',
+    }
+  }
+
+  return {
+    title: `Void ${memo.memoNumber}?`,
+    message:
+      memo.status === 'FINAL' ? (
+        <p>
+          This reverses its journal entry, restores the stock and rolls the invoice balance back by{' '}
+          <strong>{fmtMoney(memo.amount)}</strong>.
+        </p>
+      ) : (
+        <p>It has posted nothing, so there is nothing to reverse.</p>
+      ),
+    confirmLabel: 'Void',
+    destructive: true,
+  }
+}
+
 export default function DebitMemoList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_CREATE)
   const canApprove = hasPermission(session, INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_APPROVE)
@@ -51,7 +99,10 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<SupplierDebitMemo | null>(null)
-  const [waybillFor, setWaybillFor] = useState<string | null>(null)
+  // Every row action that cannot be undone routes through one dialog rather
+  // than three: what is being confirmed is entirely a function of the memo
+  // and the verb, so a single <ConfirmDialog/> reads them off `pending`.
+  const [pending, setPending] = useState<PendingAction | null>(null)
 
   const query = useQuery({
     queryKey: ['supplier-debit-memos', statusFilter, search],
@@ -74,14 +125,14 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
     setFormOpen(true)
   }
 
-  async function run(id: string, action: 'approve' | 'void', confirmText?: string) {
-    if (confirmText && !confirm(confirmText)) return
+  async function run(id: string, action: 'approve' | 'void') {
     setBusy(id)
     const res =
       action === 'approve'
         ? await SupplierDebitMemos.approve(id)
         : await SupplierDebitMemos.void(id)
     setBusy(null)
+    setPending(null)
 
     if (!res.success) {
       showToast({
@@ -101,6 +152,43 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
     })
     query.refetch()
   }
+
+  // The same eight facts Accounting lists, minus its Party column — every row
+  // here is a supplier — and with the status read in Inventory's words.
+  const columns: MemoColumn<SupplierDebitMemo>[] = [
+    {
+      key: 'memoNumber',
+      header: 'Memo No.',
+      cellClassName: 'font-mono text-xs text-zinc-700',
+      render: (m) => m.memoNumber,
+    },
+    { key: 'memoDate', header: 'Issue Date', render: (m) => fmtDate(m.memoDate) },
+    { key: 'supplier', header: 'Supplier', render: (m) => m.supplier?.name ?? '—' },
+    { key: 'apBill', header: 'Invoice (SI)', render: (m) => m.apBill?.billNumber ?? '—' },
+    { key: 'dr', header: 'DR No.', render: (m) => m.deliveryReceiptNumber ?? '—' },
+    { key: 'items', header: 'Items', align: 'right', render: (m) => m.lines?.length ?? 0 },
+    {
+      key: 'amount',
+      header: 'Total',
+      align: 'right',
+      cellClassName: 'font-medium text-zinc-900',
+      render: (m) => fmtMoney(m.amount),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      // Not MemoStatusBadge: it paints APPROVED amber, meaning "waiting to
+      // post". Here APPROVED is what posted, so it has to read as done.
+      render: (m) => (
+        <span
+          title={STATUS_HINT[shownStatus(m.status)]}
+          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[shownStatus(m.status)]}`}
+        >
+          {shownStatus(m.status)}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">
@@ -161,152 +249,90 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3">Memo No.</th>
-                  <th className="px-4 py-3">Issue Date</th>
-                  <th className="px-4 py-3">Supplier</th>
-                  <th className="px-4 py-3">Invoice (SI)</th>
-                  <th className="px-4 py-3">DR No.</th>
-                  <th className="px-4 py-3 text-right">Items</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {query.isLoading && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-zinc-400">
-                      Loading…
-                    </td>
-                  </tr>
+          <MemoTable
+            rows={memos}
+            columns={columns}
+            getRowId={(m) => m.id}
+            loading={query.isLoading}
+            emptyState={
+              <>
+                <PackageX className="mx-auto h-8 w-8 text-zinc-300" />
+                <p className="mt-2 text-sm text-zinc-500">No debit memos yet.</p>
+                <p className="text-xs text-zinc-400">
+                  Raise one when a supplier agrees to take defective stock back.
+                </p>
+              </>
+            }
+            renderExpanded={(memo) => (
+              <SupplierDebitMemoDetail memo={memo}>
+                {/* Attaching or replacing the waybill posts nothing, so a
+                    posted memo stays open to it. A void one is closed, like
+                    the rest of it. */}
+                <WaybillPanel memoId={memo.id} readOnly={memo.status === 'VOID'} />
+              </SupplierDebitMemoDetail>
+            )}
+            renderActions={(memo) => (
+              <>
+                {/* A posted memo is editable too — saving one re-posts it
+                    rather than raising a second document. Only a void memo is
+                    closed to edits. */}
+                {memo.status !== 'VOID' && canCreate && (
+                  <button
+                    type="button"
+                    onClick={() => openEdit(memo)}
+                    className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                    aria-label={memo.status === 'DRAFT' ? 'Edit draft' : 'Edit memo'}
+                    title={
+                      memo.status === 'DRAFT' ? 'Edit draft' : 'Edit — saving re-posts this memo'
+                    }
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
                 )}
-                {!query.isLoading && memos.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center">
-                      <PackageX className="mx-auto h-8 w-8 text-zinc-300" />
-                      <p className="mt-2 text-sm text-zinc-500">No debit memos yet.</p>
-                      <p className="text-xs text-zinc-400">
-                        Raise one when a supplier agrees to take defective stock back.
-                      </p>
-                    </td>
-                  </tr>
+                {memo.status === 'DRAFT' && canApprove && (
+                  <button
+                    type="button"
+                    disabled={busy === memo.id}
+                    onClick={() => setPending({ memo, action: 'approve' })}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
                 )}
-                {memos.map((memo) => (
-                  <Fragment key={memo.id}>
-                    <tr className="hover:bg-zinc-50">
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-700">
-                        {memo.memoNumber}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-600">{fmtDate(memo.memoDate)}</td>
-                      <td className="px-4 py-3 text-zinc-800">{memo.supplier?.name ?? '—'}</td>
-                      <td className="px-4 py-3 text-zinc-600">{memo.apBill?.billNumber ?? '—'}</td>
-                      <td className="px-4 py-3 text-zinc-600">
-                        {memo.deliveryReceiptNumber ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-zinc-600">
-                        {memo.lines?.length ?? 0}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums text-zinc-900">
-                        {fmtMoney(memo.amount)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          title={STATUS_HINT[shownStatus(memo.status)]}
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_BADGE[shownStatus(memo.status)]}`}
-                        >
-                          {shownStatus(memo.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWaybillFor(waybillFor === memo.id ? null : memo.id)}
-                            className={`rounded p-1.5 hover:bg-zinc-100 ${
-                              waybillFor === memo.id
-                                ? 'text-prominent-purple-700'
-                                : 'text-zinc-400 hover:text-zinc-700'
-                            }`}
-                            aria-label="Waybill"
-                            title="Waybill"
-                          >
-                            <Paperclip className="h-4 w-4" />
-                          </button>
-                          {memo.status === 'DRAFT' && canCreate && (
-                            <button
-                              type="button"
-                              onClick={() => openEdit(memo)}
-                              className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                              aria-label="Edit draft"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          )}
-                          {memo.status === 'DRAFT' && canApprove && (
-                            <button
-                              type="button"
-                              disabled={busy === memo.id}
-                              onClick={() =>
-                                run(
-                                  memo.id,
-                                  'approve',
-                                  `Approve ${memo.memoNumber}? This posts it straight away — the stock moves, the journal entry is posted, and the invoice balance drops by ${fmtMoney(memo.amount)}.`
-                                )
-                              }
-                              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Approve
-                            </button>
-                          )}
-                          {memo.status !== 'VOID' && canVoid && (
-                            <button
-                              type="button"
-                              disabled={busy === memo.id}
-                              onClick={() =>
-                                run(
-                                  memo.id,
-                                  'void',
-                                  memo.status === 'FINAL'
-                                    ? `Void ${memo.memoNumber}? This reverses its journal entry, restores the stock and rolls back the invoice balance.`
-                                    : `Void ${memo.memoNumber}? It has posted nothing, so there is nothing to reverse.`
-                                )
-                              }
-                              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                            >
-                              <Ban className="h-3.5 w-3.5" />
-                              Void
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {waybillFor === memo.id && (
-                      <tr className="bg-zinc-50/60">
-                        <td colSpan={9} className="px-6 py-3">
-                          <WaybillPanel
-                            memoId={memo.id}
-                            readOnly={memo.status === 'FINAL' || memo.status === 'VOID'}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                {memo.status !== 'VOID' && canVoid && (
+                  <button
+                    type="button"
+                    disabled={busy === memo.id}
+                    onClick={() => setPending({ memo, action: 'void' })}
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Ban className="h-3.5 w-3.5" />
+                    Void
+                  </button>
+                )}
+              </>
+            )}
+          />
         </div>
 
         <p className="text-xs text-zinc-400">
           Approving is the step that posts the memo — it moves the stock, posts the journal entry
-          and reduces the invoice. Accounting sees it only once it is approved.
+          and reduces the invoice. Accounting sees it only once it is approved. Editing a memo that
+          has already posted re-posts it — one memo under one number, with the correction visible in
+          the ledger.
         </p>
       </div>
+
+      {pending && (
+        <ConfirmDialog
+          open
+          {...confirmCopy(pending)}
+          loading={busy === pending.memo.id}
+          onCancel={() => setPending(null)}
+          onConfirm={() => run(pending.memo.id, pending.action)}
+        />
+      )}
 
       <DebitMemoFormModal
         // Remounts per open so the form seeds cleanly from `editing` instead
