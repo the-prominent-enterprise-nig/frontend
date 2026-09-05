@@ -51,6 +51,11 @@ export const ReceiveStockFormSchema = z
     // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
     // -> this Receiving Report. Both are the supplier's own paperwork,
     // typed in by whoever is physically receiving the delivery.
+    // Scenario 46 — the DR is required at receiving, the SI is not. The
+    // delivery receipt comes in the driver's hand with the goods, so it always
+    // exists at this moment; the supplier's invoice often follows days later
+    // and the client wants it filled in (and editable) when it does. See the
+    // refine below — this used to be the other way round.
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
@@ -59,9 +64,9 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
-  .refine((data) => data.applicationType !== 'new_stock' || !!data.supplierInvoiceNumber?.trim(), {
-    message: 'Supplier invoice number is required for new stock receipts',
-    path: ['supplierInvoiceNumber'],
+  .refine((data) => data.applicationType !== 'new_stock' || !!data.deliveryReceiptNumber?.trim(), {
+    message: "Delivery receipt number is required — it's on the paper that came with the goods",
+    path: ['deliveryReceiptNumber'],
   })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>

@@ -290,6 +290,7 @@ export default function ReceiveStockModal({
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Delivery Receipt No.
+                {watchedApplicationType === 'new_stock' && <span className="text-red-500"> *</span>}
                 <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's DR)</span>
               </label>
               <Controller
@@ -305,12 +306,14 @@ export default function ReceiveStockModal({
                   />
                 )}
               />
+              {errors.deliveryReceiptNumber && (
+                <p className="mt-1 text-xs text-red-600">{errors.deliveryReceiptNumber.message}</p>
+              )}
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Supplier Invoice No.
-                {watchedApplicationType === 'new_stock' && <span className="text-red-500"> *</span>}
                 <span className="ml-1 text-xs font-normal text-zinc-400">(supplier's SI)</span>
               </label>
               <Controller

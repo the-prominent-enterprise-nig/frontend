@@ -118,6 +118,21 @@ const PoItemSchema = z.object({
   sku: z.string(),
   name: z.string(),
   isSerialTracked: z.boolean().optional(),
+  // Scenario 46 — how the warehouse actually identifies a unit: brand, group,
+  // model. "Group" is the primary category; the schema keeps group/subgroup on
+  // that category's own parent/child hierarchy rather than a separate table.
+  modelNumber: z.string().optional().nullable(),
+  brand: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
+  primaryCategory: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      // Group/subgroup is this category's own parent/child hierarchy: a leaf
+      // category is the subgroup, its parent is the group.
+      parentCategory: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 })
 
 const PoLineSchema = z.object({

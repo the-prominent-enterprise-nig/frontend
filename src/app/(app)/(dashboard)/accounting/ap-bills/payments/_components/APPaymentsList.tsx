@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Search, Plus, Printer } from 'lucide-react'
+import { getApPaymentDocument } from '../../_actions/get-ap-payment-document'
+import { printAPPaymentVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import {
   APBills,
   fmtMoney,
@@ -21,6 +23,7 @@ import {
 export default function APPaymentsList() {
   const router = useRouter()
   const [items, setItems] = useState<APPaymentListItem[]>([])
+  const [printingFor, setPrintingFor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
@@ -39,6 +42,19 @@ export default function APPaymentsList() {
     load(search || undefined)
   }
 
+  // Reuses the same document endpoint and print shell the bill list already
+  // uses, so a voucher looks identical wherever it is opened from.
+  const printVoucher = async (p: APPaymentListItem) => {
+    setPrintingFor(p.id)
+    try {
+      const res = await getApPaymentDocument(p.billId, p.id)
+      if (res.success && res.data) printAPPaymentVoucherDocument(res.data)
+      else alert(res.message || res.error || 'Could not build the voucher')
+    } finally {
+      setPrintingFor(null)
+    }
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <Link
@@ -50,9 +66,19 @@ export default function APPaymentsList() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold">Payments</h2>
-          <p className="text-sm text-gray-500">Every AP payment recorded, across all bills.</p>
+          <p className="text-sm text-gray-500">
+            Every AP payment recorded, across all bills — the register of what left the bank.
+          </p>
         </div>
         <div className="flex gap-2">
+          {/* Scenario 46 Part F — this page was read-only with no way to
+              create anything. Payment starts here as well as from AP Invoices. */}
+          <Link
+            href="/accounting/ap-bills/payments/new"
+            className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
+          >
+            <Plus className="h-4 w-4" /> Record Payment
+          </Link>
           <button
             onClick={() => load(search || undefined)}
             className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
@@ -82,18 +108,19 @@ export default function APPaymentsList() {
               <th className="px-3 py-2 text-left">Accounts</th>
               <th className="px-3 py-2 text-right">Amount</th>
               <th className="px-3 py-2 text-left">Voucher #</th>
+              <th className="px-3 py-2 text-right">Print</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                   Loading...
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                   No payments recorded yet.
                 </td>
               </tr>
@@ -114,6 +141,19 @@ export default function APPaymentsList() {
                     {fmtMoney(p.amount)}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{p.voucherNumber ?? '—'}</td>
+                  {/* Scenario 46 Part F — any voucher can be reopened as a PDF
+                      from here, which is the read-only "what was paid" view. */}
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => printVoucher(p)}
+                      disabled={printingFor === p.id}
+                      title="Print voucher"
+                      aria-label="Print voucher"
+                      className="rounded p-1.5 text-sky-600 hover:bg-sky-50 disabled:opacity-50"
+                    >
+                      <Printer className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))
             )}

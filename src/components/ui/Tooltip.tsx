@@ -11,15 +11,21 @@ export default function Tooltip({
   label,
   children,
   side = 'top',
+  align = 'center',
 }: {
   label: string
   children: ReactNode
   side?: 'top' | 'bottom'
+  /** Where the bubble sits horizontally relative to the trigger. 'center' is
+   * right for most things; use 'start'/'end' when the trigger sits against the
+   * edge of a clipping container (an overflow-auto table, say) and a centred
+   * bubble would have half of itself cut off. */
+  align?: 'center' | 'start' | 'end'
 }) {
+  const alignClass =
+    align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2'
   const positionClass =
-    side === 'top'
-      ? 'bottom-full left-1/2 mb-1.5 -translate-x-1/2'
-      : 'top-full left-1/2 mt-1.5 -translate-x-1/2'
+    side === 'top' ? `bottom-full mb-1.5 ${alignClass}` : `top-full mt-1.5 ${alignClass}`
 
   return (
     <span className="group/tooltip relative inline-flex">

@@ -826,6 +826,14 @@ export interface APBill {
     | 'voided'
     | null
   voucherRejectedReason?: string | null
+  /** Scenario 46 — a pending deletion request awaiting approval. */
+  deletionRequestedAt?: string | null
+  deletionRequestedById?: string | null
+  deletionReason?: string | null
+  /** The invoice's own line items — empty on bills entered before Scenario 46. */
+  lines?: APBillLine[]
+  /** Net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost. */
+  nndpCost?: number | null
   /** What this bill charged for the item passed as `itemId` to APBills.list —
    * from the goods receipt's cost, else the PO line's price. Only present on
    * that item-filtered call, and null when neither carries a price. */
@@ -892,6 +900,51 @@ export interface APBillDocument {
   } | null
   document: APBill & { effectiveExpenseAccount?: { id: string; name: string } | null }
 }
+/** Scenario 46 — one line of a disbursement: how much of this cheque goes
+ * against one bill. Defaults to that bill's whole outstanding balance;
+ * overtyping it is what makes a staggered payment. */
+export interface DisbursementAllocation {
+  apBillId: string
+  amount: number
+}
+export interface CreateDisbursementBody {
+  supplierId?: string
+  bankAccountId?: string
+  chequeNumber?: string
+  method?: string
+  reference?: string
+  paymentDate: string
+  /** SAME_DATE (default) or LATER_DATE — when the cheque clears the bank. */
+  clearedType?: string
+  /** Required when clearedType is LATER_DATE. */
+  clearedDate?: string
+  notes?: string
+  allocations: DisbursementAllocation[]
+}
+/** One payment transaction — one cheque, one voucher, settling N bills. */
+export interface APDisbursement {
+  id: string
+  voucherNumber: string | null
+  supplierId: string | null
+  supplier?: { id: string; name: string } | null
+  bankAccountId: string | null
+  chequeNumber: string | null
+  method: string | null
+  reference: string | null
+  paymentDate: string
+  clearedType: string | null
+  clearedDate: string | null
+  notes: string | null
+  journalEntryId: string | null
+  totalAmount: number
+  payments: {
+    id: string
+    apBillId: string
+    amount: number
+    apBill?: { id: string; billNumber: string | null } | null
+  }[]
+}
+
 export const APBills = {
   list: (params?: {
     search?: string
@@ -905,19 +958,35 @@ export const APBills = {
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
+  // Scenario 46 — each bill posts its own entry, so failures come back per
+  // bill rather than rolling the whole batch back.
+  receiveMany: (ids: string[]) =>
+    api.post<{
+      received: { id: string; billNumber: string | null }[]
+      failed: { id: string; billNumber: string | null; reason: string }[]
+    }>('/ap-bills/receive-many', { ids }),
   recordPayment: (id: string, body: any) => api.post<APBill>(`/ap-bills/${id}/payments`, body),
   remove: (id: string) => api.delete(`/ap-bills/${id}`),
-  // Scenario 10 Part 4 — voucher creation + two-step approval.
-  // Scenario 43 — voucherNumber is system-generated, no longer sent by the
-  // caller; voidVoucher resets a still-pending voucher back to unraised.
-  createVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher`, {}),
-  voidVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher/void`, {}),
-  approveVoucherOnline: (id: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/approve-online`, {}),
-  approveVoucherOnsite: (id: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/approve-onsite`, {}),
-  rejectVoucher: (id: string, reason: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/reject`, { reason }),
+  // Scenario 46 — one payment transaction across one or more bills: one
+  // cheque, one voucher. The voucher number is derived server-side from the
+  // bank and cheque, never sent by the caller.
+  //
+  // The old createVoucher / voidVoucher / approveVoucherOnline /
+  // approveVoucherOnsite / rejectVoucher clients were removed with their
+  // routes — the client asked for "no need digital approval for voucher", and
+  // the voucher moved off the bill onto the payment that produces it.
+  createDisbursement: (body: CreateDisbursementBody) =>
+    api.post<APDisbursement>('/ap-bills/disbursements', body),
+  // Scenario 46 Part D — a settled bill is editable only through the override
+  // route, which is gated on a permission only an owner holds.
+  updateWithOverride: (id: string, body: any) =>
+    api.patch<APBill>(`/ap-bills/${id}/override`, body),
+  // Deletion of a non-DRAFT bill is a request, then an approval — the request
+  // marks the bill, only the approval removes it.
+  requestDeletion: (id: string, reason: string) =>
+    api.post<APBill>(`/ap-bills/${id}/deletion-request`, { reason }),
+  approveDeletion: (id: string) => api.post<APBill>(`/ap-bills/${id}/deletion-request/approve`, {}),
+  rejectDeletion: (id: string) => api.post<APBill>(`/ap-bills/${id}/deletion-request/reject`, {}),
   // Scenario 43 Part D — standalone Payments list across all bills.
   listPayments: (params?: { search?: string; supplierId?: string }) =>
     api.get<{ items: APPaymentListItem[]; total: number }>('/ap-bills/payments', params as any),
@@ -946,6 +1015,36 @@ export const FileAttachments = {
 }
 
 // ============ AP Bill Suppliers (Scenario 10 Part 1) ============
+/** Scenario 46 — one line of a supplier invoice. The AP bill IS the SI, so it
+ * carries its own lines rather than borrowing the PO's: the PO is what we
+ * ordered, this is what they billed, and they are allowed to differ. */
+export interface APBillLineDiscount {
+  name?: string | null
+  type: 'percentage' | 'amount'
+  value: number
+}
+export interface APBillLine {
+  id: string
+  lineNumber: number
+  itemId?: string | null
+  item?: { id: string; name: string; sku?: string | null } | null
+  description?: string | null
+  quantity: number
+  unitPrice: number
+  /** Supplier SRP the discount chain applies off, when priced that way. */
+  srp?: number | null
+  discounts?: APBillLineDiscount[] | null
+  /** Computed from srp + the discounts chain — stored under the same name PO
+   * and RR lines use, so a 3-way match compares like with like. */
+  discountedCost?: number | null
+  lineTotal: number
+  taxCode?: string | null
+  taxAmount: number
+  /** A promotional/zero-cost unit that was still billed as a line. */
+  isFreebie?: boolean
+  notes?: string | null
+}
+
 export interface APBillSupplierOption {
   id: string
   code: string

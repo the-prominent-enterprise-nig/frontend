@@ -38,6 +38,7 @@ import {
   Percent,
   Receipt,
   ReceiptText,
+  PhilippinePeso,
   RefreshCcw,
   ScrollText,
   Settings,
@@ -236,6 +237,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'AP Invoices',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+      },
+      {
+        // Scenario 46 Part F — the disbursement register existed since
+        // Scenario 43 but had no nav entry, reachable only via a secondary
+        // button on AP Invoices. It is the record of everything that left the
+        // bank, so it sits at the same level rather than nested under AP.
+        label: 'Payments',
+        href: '/accounting/ap-bills/payments',
+        icon: PhilippinePeso,
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {

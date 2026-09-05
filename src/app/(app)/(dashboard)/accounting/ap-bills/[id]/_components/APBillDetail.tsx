@@ -1,10 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  Inbox,
+  Loader2,
+  Pencil,
+  Trash2,
+  Undo2,
+} from 'lucide-react'
 import { APBills, fmtMoney, type APBillDocument } from '@/src/libs/data/AccountingV2Data'
 import { printAPBillDocument } from '@/src/libs/print/printInventoryDocument'
+import SupplierDebitMemoDialog from '../../_components/SupplierDebitMemoDialog'
+import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -46,9 +58,20 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function APBillDetail({ id }: { id: string }) {
+  const router = useRouter()
   const [doc, setDoc] = useState<APBillDocument | null>(null)
+  // Scenario 46 — the list's per-row action icons moved here. Acting on a bill
+  // (Receive especially, which posts a journal entry) should happen where the
+  // bill itself is on screen, not from a row you may not have read.
+  const [busy, setBusy] = useState(false)
+  const [debitMemoOpen, setDebitMemoOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    const res = await APBills.getDocument(id)
+    if (res.success && res.data) setDoc(res.data)
+  }, [id])
 
   useEffect(() => {
     // The document envelope is a superset of GET /ap-bills/:id — it adds the
@@ -84,6 +107,85 @@ export default function APBillDetail({ id }: { id: string }) {
   }
 
   const bill = doc.document
+
+  // Everything that isn't this bill's headline action. Built from state so a
+  // bill never offers something it can't do.
+  const menuItems: RowMenuItem[] = [
+    ...(bill.status === 'DRAFT'
+      ? [
+          {
+            label: 'Print / Download',
+            icon: Download,
+            onClick: () => printAPBillDocument(doc),
+          },
+        ]
+      : []),
+    ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status)
+      ? [
+          {
+            label: 'Issue debit memo',
+            icon: Undo2,
+            onClick: () => setDebitMemoOpen(true),
+          },
+        ]
+      : []),
+    {
+      label: 'Edit',
+      icon: Pencil,
+      onClick: () => router.push(`/accounting/ap-bills/${id}/edit`),
+    },
+    {
+      label: bill.deletionRequestedAt
+        ? 'Deletion already requested'
+        : bill.status === 'DRAFT'
+          ? 'Delete'
+          : 'Request deletion',
+      icon: Trash2,
+      onClick: () => {
+        if (bill.deletionRequestedAt) return
+        removeOrRequest()
+      },
+      variant: 'danger' as const,
+    },
+  ]
+
+  const receive = async () => {
+    // Receiving posts a real journal entry, so say what it will do first —
+    // this is the whole reason the action moved off the list row.
+    if (
+      !confirm(
+        `Receive ${bill.billNumber ?? 'this bill'}? This posts a journal entry for ${fmtMoney(bill.totalAmount)}.`
+      )
+    )
+      return
+    setBusy(true)
+    const res = await APBills.receive(id)
+    setBusy(false)
+    if (!res.success)
+      alert(res.message || res.error || 'Receive failed — check Account Mapping settings')
+    reload()
+  }
+
+  const removeOrRequest = async () => {
+    if (bill.status === 'DRAFT') {
+      if (!confirm('Delete this bill?')) return
+      setBusy(true)
+      const res = await APBills.remove(id)
+      setBusy(false)
+      if (!res.success) return alert(res.message || res.error || 'Delete failed')
+      return router.push('/accounting/ap-bills')
+    }
+    const reason = prompt(
+      `This bill is ${bill.status} and can't be deleted directly.\nGive a reason and it will be sent for approval:`
+    )
+    if (!reason?.trim()) return
+    setBusy(true)
+    const res = await APBills.requestDeletion(id, reason.trim())
+    setBusy(false)
+    if (!res.success) alert(res.message || res.error || 'Could not request deletion')
+    else alert('Deletion requested — it needs approval before the bill is removed.')
+    reload()
+  }
   const enterprise = doc.enterprise
   const goodsReceipts = bill.goodsReceipts ?? []
   const payments = bill.payments ?? []
@@ -108,13 +210,29 @@ export default function APBillDetail({ id }: { id: string }) {
         >
           <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
         </Link>
-        <button
-          onClick={() => printAPBillDocument(doc)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
-        >
-          <Download className="h-4 w-4" />
-          Print / Download
-        </button>
+        {/* Scenario 46 — the list's per-row action icons live here now. One
+            filled button for the action this bill's state actually calls for,
+            everything else behind the overflow menu: four differently-coloured
+            buttons in a row read as decoration rather than hierarchy. */}
+        <div className="flex items-center gap-2">
+          {bill.status === 'DRAFT' ? (
+            <button
+              onClick={receive}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700 disabled:opacity-50"
+            >
+              <Inbox className="h-4 w-4" /> Receive
+            </button>
+          ) : (
+            <button
+              onClick={() => printAPBillDocument(doc)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
+            >
+              <Download className="h-4 w-4" /> Print / Download
+            </button>
+          )}
+          <RowActionsMenu items={menuItems} />
+        </div>
       </div>
 
       {/* Record data the paper document doesn't carry — kept outside the sheet
@@ -280,6 +398,16 @@ export default function APBillDetail({ id }: { id: string }) {
           </table>
         </div>
       </div>
+      {debitMemoOpen && (
+        <SupplierDebitMemoDialog
+          bill={bill}
+          onClose={() => setDebitMemoOpen(false)}
+          onSaved={() => {
+            setDebitMemoOpen(false)
+            reload()
+          }}
+        />
+      )}
     </div>
   )
 }
