@@ -65,7 +65,6 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
   const canCreateCustomer = hasPermission(session, ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_CREATE)
 
   const [search, setSearch] = useState('')
-  const [kindFilter, setKindFilter] = useState<'' | 'customer' | 'supplier'>('')
   const [voiding, setVoiding] = useState<string | null>(null)
   const [raising, setRaising] = useState(false)
 
@@ -117,10 +116,10 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
       status: m.status,
       supplier: m,
     }))
-    return [...customer, ...supplier]
-      .filter((r) => !kindFilter || r.kind === kindFilter)
-      .sort((a, b) => b.memoDate.localeCompare(a.memoDate))
-  }, [customerQuery.data, supplierQuery.data, kindFilter])
+    // Both sides in one list, newest first — the Party column tells them
+    // apart, which is the whole reason the two lists were merged.
+    return [...customer, ...supplier].sort((a, b) => b.memoDate.localeCompare(a.memoDate))
+  }, [customerQuery.data, supplierQuery.data])
 
   async function voidCustomerMemo(id: string) {
     if (
@@ -200,25 +199,11 @@ export function DebitMemosHub({ session }: { session: SessionUser }) {
       addLabel="New Debit Memo"
       canAdd={canCreateCustomer}
       filters={
-        <>
-          <select
-            value={kindFilter}
-            onChange={(e) => setKindFilter(e.target.value as '' | 'customer' | 'supplier')}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">Customer and supplier</option>
-            <option value="customer">Customer only</option>
-            <option value="supplier">Supplier only</option>
-          </select>
-          {apBillId && (
-            <a
-              href="/accounting/debit-memos"
-              className="text-xs text-prominent-purple-700 underline"
-            >
-              Filtered to one invoice — show all
-            </a>
-          )}
-        </>
+        apBillId ? (
+          <a href="/accounting/debit-memos" className="text-xs text-prominent-purple-700 underline">
+            Filtered to one invoice — show all
+          </a>
+        ) : null
       }
     >
       <MemoTable
