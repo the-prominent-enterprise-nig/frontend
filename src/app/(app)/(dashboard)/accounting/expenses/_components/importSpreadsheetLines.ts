@@ -111,6 +111,39 @@ function divisionCandidates(raw: string): string[] {
   return candidates.filter(Boolean)
 }
 
+/**
+ * Last resort when nothing matches exactly: the sheet and the branch list
+ * spell the same place differently — "BAGO CITY" for the branch "Bago",
+ * "GT MALL" for "GT", "JORDAN" for "Guimaras - Jordan".
+ *
+ * Only accepted when exactly one branch is a candidate. "GUIMARAS" is the
+ * reason: it prefixes both "Guimaras - Buenavista" and "Guimaras - Jordan",
+ * and picking either would file a whole branch's payroll under the wrong
+ * one. Ambiguity is left unmatched for a person to resolve.
+ */
+function looseBranchMatch(raw: string, divisions: DivisionOption[]): string | null {
+  const value = norm(raw)
+  if (!value) return null
+  const words = (s: string) => s.split(' ').filter(Boolean)
+  const startsWithWords = (haystack: string, needle: string) => {
+    const h = words(haystack)
+    const n = words(needle)
+    return n.length <= h.length && n.every((w, i) => h[i] === w)
+  }
+  const hits = divisions.filter((d) => {
+    if (d.kind !== 'branch') return false
+    const name = norm(d.name)
+    // "BAGO CITY" starts with branch "Bago"; "JORDAN" is the tail of
+    // "Guimaras - Jordan".
+    return (
+      startsWithWords(value, name) ||
+      startsWithWords(name, value) ||
+      words(name).slice(1).join(' ') === value
+    )
+  })
+  return hits.length === 1 ? hits[0].value : null
+}
+
 function parseAmount(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const n = typeof value === 'number' ? value : Number(String(value).replace(/[,\s₱]/g, ''))
@@ -141,9 +174,19 @@ export async function importSpreadsheetLines(
     // repeats across branches.
     if (d.kind === 'branch') {
       divisionByName.set(norm(d.name), d.value)
-    } else if (d.branchName) {
-      divisionByName.set(norm(`${d.name} ${d.branchName}`), d.value)
-      divisionByName.set(norm(d.label), d.value)
+    } else {
+      // A payroll sheet writes "ACCOUNTING & FINANCE-NEGROS" — department
+      // and *region*, not department and branch. Region is the half that
+      // matters: the departments live under the region's warehouse branch
+      // (NWHSE/PWHSE), whose name the sheet never uses. Both spellings are
+      // indexed so either resolves.
+      if (d.branchRegion) {
+        divisionByName.set(norm(`${d.name} ${d.branchRegion}`), d.value)
+      }
+      if (d.branchName) {
+        divisionByName.set(norm(`${d.name} ${d.branchName}`), d.value)
+        divisionByName.set(norm(d.label), d.value)
+      }
     }
   }
 
@@ -191,6 +234,9 @@ export async function importSpreadsheetLines(
           break
         }
       }
+      // Exact match first, always. Only if that finds nothing does the
+      // looser spelling comparison get a turn.
+      if (!division) division = looseBranchMatch(particulars, divisions) ?? ''
       if (!division) {
         // On a Special Account row this is the recipient, not a memo.
         if (specialAccountType) payee = particulars

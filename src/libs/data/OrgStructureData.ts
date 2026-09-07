@@ -13,6 +13,10 @@ export interface BranchLite {
   id: string
   name: string
   code?: string | null
+  /** 'panay' | 'negros'. A payroll sheet names departments by region
+   * ("ACCOUNTING & FINANCE-NEGROS"), not by branch, so the importer needs
+   * this to resolve them. */
+  region?: string | null
 }
 
 export interface Department {
@@ -52,6 +56,9 @@ export interface DivisionOption {
   /** The owning branch's name, for a department. Matching a spreadsheet's
    * "DEPARTMENT-REGION" cell needs both halves, not just the department. */
   branchName?: string
+  /** The owning branch's region — what a payroll sheet's "-NEGROS" /
+   * "-PANAY" suffix actually refers to. */
+  branchRegion?: string | null
 }
 
 /** Builds the Division option list: every branch, then every department
@@ -84,6 +91,7 @@ export function divisionOptions(
         id: d.id,
         name: d.name,
         branchName: b.name,
+        branchRegion: b.region ?? null,
       })
     }
   }
