@@ -156,8 +156,6 @@ export function SearchCombobox({
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  const displayValue = open ? searchQuery : confirmedLabel
-
   const borderClass = error
     ? 'border-red-400'
     : open
@@ -170,16 +168,35 @@ export function SearchCombobox({
         className={`flex items-center gap-2 rounded-lg border bg-white px-3 py-2 transition-colors ${borderClass} ${disabled ? 'opacity-60' : ''}`}
       >
         <Search className="h-4 w-4 shrink-0 text-zinc-400" />
-        <input
-          ref={inputRef}
-          type="text"
-          value={displayValue}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onFocus={() => !disabled && setOpen(true)}
-          disabled={disabled}
-          placeholder={confirmedLabel || placeholder || typeToSearchMessage}
-          className="flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed"
-        />
+        {open ? (
+          <input
+            ref={inputRef}
+            type="text"
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            disabled={disabled}
+            placeholder={confirmedLabel || placeholder || typeToSearchMessage}
+            className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed"
+          />
+        ) : (
+          // Closed state is a button, not the search <input>, on purpose — a
+          // real input scrolls a too-long value to keep the caret in view
+          // (often landing on the tail end, e.g. "...N-ITEM-1102)" instead
+          // of "Stand Fan (T..."), it can't ellipsize a value it didn't type
+          // itself. A button + `truncate` gets the ellipsis at a fixed,
+          // predictable spot no matter how long confirmedLabel is.
+          <button
+            type="button"
+            onClick={() => !disabled && setOpen(true)}
+            disabled={disabled}
+            className={`min-w-0 flex-1 truncate bg-transparent text-left text-sm outline-none disabled:cursor-not-allowed ${
+              confirmedLabel ? 'text-zinc-900' : 'text-zinc-400'
+            }`}
+          >
+            {confirmedLabel || placeholder || typeToSearchMessage}
+          </button>
+        )}
         {value && !disabled && (
           <button
             type="button"
