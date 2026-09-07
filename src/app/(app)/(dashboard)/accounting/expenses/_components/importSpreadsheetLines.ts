@@ -21,10 +21,19 @@ import type { DivisionOption } from '@/src/libs/data/OrgStructureData'
 
 export interface ImportedLine {
   categoryAccountId: string
+  /** Set instead of categoryAccountId when column A names a Special
+   * Account. Those are asset accounts (1-03-0xx) that never appear in the
+   * Account picker, so matching them by name would always fail — they are
+   * recognised by name here and resolved server-side from the mapping. */
+  specialAccountType: string
   /** Column A verbatim, kept whether or not it matched an account — an
    * unmatched row still has to show the user what it was trying to be. */
   accountLabel: string
   division: string
+  /** The line's recipient. On a Special Account row column B is a person's
+   * name, which is what ties the advance or loan to their outstanding
+   * balance — so it lands here rather than in Description. */
+  payee: string
   description: string
   amount: string
 }
@@ -50,6 +59,30 @@ export interface ImportResult {
  * Dropping both leaves lines that net to exactly the cash paid out.
  */
 const SUMMARY_ROW_LABELS = ['total net pay', 'grand totals', 'grand total', 'total']
+
+/**
+ * Column A spellings that name a Special Account rather than an expense
+ * category. The client's sheet writes them as "Advances to Officer's and
+ * Employees" and "Loans to Officer's and Employees" — 368 of its 657 rows —
+ * where the chart of accounts calls them "Employee Cash Advance" and
+ * "Employee Cash Loan". Matching on the account name alone would leave every
+ * one of those rows unmatched.
+ */
+const SPECIAL_ACCOUNT_ALIASES: { match: string; type: string }[] = [
+  { match: 'advances to officers and employees', type: 'EMPLOYEE_CASH_ADVANCE' },
+  { match: 'advances to officer s and employees', type: 'EMPLOYEE_CASH_ADVANCE' },
+  { match: 'employee cash advance', type: 'EMPLOYEE_CASH_ADVANCE' },
+  { match: 'loans to officers and employees', type: 'EMPLOYEE_CASH_LOAN' },
+  { match: 'loans to officer s and employees', type: 'EMPLOYEE_CASH_LOAN' },
+  { match: 'employee cash loan', type: 'EMPLOYEE_CASH_LOAN' },
+  { match: 'cash loan others', type: 'CASH_LOAN_OTHERS' },
+  { match: 'cash loan – others', type: 'CASH_LOAN_OTHERS' },
+]
+
+function specialAccountFor(accountLabel: string): string {
+  const key = norm(accountLabel)
+  return SPECIAL_ACCOUNT_ALIASES.find((a) => a.match === key)?.type ?? ''
+}
 
 /** Comparison key for a name: case, spacing and punctuation all vary between
  * a chart of accounts and a hand-maintained spreadsheet. */
@@ -140,11 +173,16 @@ export async function importSpreadsheetLines(
     const amount = (debit ?? 0) - (credit ?? 0)
     if (amount === 0) continue
 
-    const accountId = accountByName.get(norm(accountLabel)) ?? ''
-    if (accountLabel && !accountId) unmatchedAccounts.add(accountLabel)
+    // A Special Account short-circuits the category lookup entirely.
+    const specialAccountType = specialAccountFor(accountLabel)
+    const accountId = specialAccountType ? '' : (accountByName.get(norm(accountLabel)) ?? '')
+    if (accountLabel && !accountId && !specialAccountType) {
+      unmatchedAccounts.add(accountLabel)
+    }
 
     let division = ''
     let description = ''
+    let payee = ''
     if (particulars) {
       for (const candidate of divisionCandidates(particulars)) {
         const match = divisionByName.get(candidate)
@@ -154,15 +192,19 @@ export async function importSpreadsheetLines(
         }
       }
       if (!division) {
-        description = particulars
+        // On a Special Account row this is the recipient, not a memo.
+        if (specialAccountType) payee = particulars
+        else description = particulars
         unmatchedDivisions.add(particulars)
       }
     }
 
     lines.push({
       categoryAccountId: accountId,
+      specialAccountType,
       accountLabel,
       division,
+      payee,
       description,
       amount: String(amount),
     })

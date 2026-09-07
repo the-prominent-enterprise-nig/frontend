@@ -68,6 +68,24 @@ const TAX_CODE_OPTIONS = [
   { value: 'EXEMPT', label: 'Exempt' },
 ]
 
+/**
+ * A line can post straight to a Special Account instead of an expense
+ * category — that is how a payroll run carries an advance or a loan
+ * alongside its salary lines. These accounts are assets (1-03-0xx), so they
+ * never appear in the Account picker, which lists expense accounts only;
+ * the server resolves the account from the type instead.
+ *
+ * Picking one turns the line's Name into its recipient, which is what ties
+ * it back to that person's outstanding balance later.
+ */
+const LINE_SPECIAL_ACCOUNTS = [
+  { value: '', label: 'Category' },
+  { value: 'EMPLOYEE_CASH_ADVANCE', label: 'Employee Cash Advance' },
+  { value: 'EMPLOYEE_CASH_LOAN', label: 'Employee Cash Loan' },
+  { value: 'CASH_LOAN_OTHERS', label: 'Cash Loan – Others' },
+] as const
+type LineSpecialAccount = (typeof LINE_SPECIAL_ACCOUNTS)[number]['value']
+
 /** The one code that carries a claimable tax amount — everything else is,
  * by definition, a line with no VAT on it. */
 const TAXABLE_CODE = 'VAT'
@@ -94,6 +112,9 @@ interface LineState {
   /** The Division picker's value — `branch:<id>` or `department:<id>`,
    * unpacked into the two ids the API takes on submit. */
   division: string
+  /** Set when this line posts to a Special Account rather than a category.
+   * The server resolves the account; `payee` becomes the recipient. */
+  specialAccountType: LineSpecialAccount
   description: string
   amount: string
   taxCode: string
@@ -115,6 +136,7 @@ function emptyLine(): LineState {
     categoryAccountId: '',
     payee: '',
     division: '',
+    specialAccountType: '',
     description: '',
     amount: '',
     taxCode: '',
@@ -150,7 +172,7 @@ function emptyPayment(): PaymentState {
 const ITEM_MODE_GRID_COLS =
   'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]'
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -332,6 +354,13 @@ function ExpenseFormFields({
           categoryAccountId: l.categoryAccountId ?? '',
           payee: l.payee || (l.employee ? `${l.employee.firstName} ${l.employee.lastName}` : ''),
           division: divisionValueFor(l),
+          // The API reverses its own resolution on read, so a saved advance
+          // reopens as an advance rather than as an ordinary category line.
+          specialAccountType: (LINE_SPECIAL_ACCOUNTS.some(
+            (o) => o.value && o.value === l.specialAccountType
+          )
+            ? l.specialAccountType
+            : '') as LineSpecialAccount,
           description: l.description ?? '',
           amount: String(l.amount ?? ''),
           taxCode: l.taxCode ?? '',
@@ -383,7 +412,9 @@ function ExpenseFormFields({
         result.lines.map((l) => ({
           ...emptyLine(),
           categoryAccountId: l.categoryAccountId,
+          specialAccountType: l.specialAccountType as LineSpecialAccount,
           division: l.division,
+          payee: l.payee,
           description: l.description,
           amount: l.amount,
         }))
@@ -618,7 +649,14 @@ function ExpenseFormFields({
     for (const l of lines) {
       if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
         return 'Every line needs an amount — positive to add, negative to deduct.'
-      if (!l.categoryAccountId) return 'Every line needs an account.'
+      if (l.specialAccountType) {
+        // The name is the recipient — it is what ties an advance or loan
+        // back to that person's outstanding balance later.
+        if (!l.payee.trim())
+          return 'A Cash Advance or Cash Loan line needs a name — it is who the money is for.'
+      } else if (!l.categoryAccountId) {
+        return 'Every line needs an account.'
+      }
     }
     // The entry as a whole has to be money going out: record() credits cash
     // for the total, and deductions exceeding what they deduct from is a
@@ -664,10 +702,17 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        categoryAccountId: l.categoryAccountId,
         amount: Number(l.amount),
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
+      }
+      if (l.specialAccountType) {
+        // The server resolves the account from the mapping — the same one a
+        // standalone Payee → Special Account entry hits, so an advance
+        // issued here stays liquidatable.
+        line.specialAccountType = l.specialAccountType
+      } else {
+        line.categoryAccountId = l.categoryAccountId
       }
       // Only generic-mode lines carry a recipient or a division — an
       // inventory purchase line has neither, and neither column is rendered.
@@ -966,6 +1011,7 @@ function ExpenseFormFields({
                 </>
               )}
               <div>Account</div>
+              {!isItemMode && <div>Special Account</div>}
               {isItemMode ? (
                 <>
                   <div>Qty</div>
@@ -1045,15 +1091,46 @@ function ExpenseFormFields({
                         />
                       </>
                     )}
-                    <CategorySelect
-                      compact
-                      aria-label="Account"
-                      noun="accounts"
-                      value={line.categoryAccountId}
-                      onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                      options={isItemMode ? supplierCategoryOptions : categoryOptions}
-                      placeholder="— Select —"
-                    />
+                    {line.specialAccountType ? (
+                      // Resolved server-side from the Special Account
+                      // mapping, so there is nothing to pick here. These are
+                      // asset accounts and never appear in the picker below.
+                      <p className="min-w-0 truncate px-1 text-[12px] text-zinc-500">
+                        {
+                          LINE_SPECIAL_ACCOUNTS.find((o) => o.value === line.specialAccountType)
+                            ?.label
+                        }
+                      </p>
+                    ) : (
+                      <CategorySelect
+                        compact
+                        aria-label="Account"
+                        noun="accounts"
+                        value={line.categoryAccountId}
+                        onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                        options={isItemMode ? supplierCategoryOptions : categoryOptions}
+                        placeholder="— Select —"
+                      />
+                    )}
+                    {!isItemMode && (
+                      <Select
+                        compact
+                        value={line.specialAccountType}
+                        onChange={(value) =>
+                          setLine(i, {
+                            specialAccountType: value as LineSpecialAccount,
+                            // A Special Account line resolves its own
+                            // account, so a category picked earlier no
+                            // longer applies either way round.
+                            categoryAccountId: '',
+                          })
+                        }
+                        options={LINE_SPECIAL_ACCOUNTS.map((o) => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
+                      />
+                    )}
                     {isItemMode ? (
                       <>
                         <input
@@ -1081,7 +1158,9 @@ function ExpenseFormFields({
                           aria-label="Name"
                           value={line.payee}
                           onChange={(e) => setLine(i, { payee: e.target.value })}
-                          placeholder="Who this is for"
+                          placeholder={
+                            line.specialAccountType ? 'Recipient (required)' : 'Who this is for'
+                          }
                           className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                         />
                         <input
