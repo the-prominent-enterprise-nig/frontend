@@ -1066,6 +1066,10 @@ export interface BusinessExpenseLine {
   amount: number
   taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
+  /** Read-only. Set by the API when this line's account is one of the
+   * mapped Special Accounts — it's how an advance or loan line reopens as
+   * itself rather than as an ordinary category line. */
+  specialAccountType?: SpecialAccountType | null
 }
 export interface BusinessExpense {
   id: string

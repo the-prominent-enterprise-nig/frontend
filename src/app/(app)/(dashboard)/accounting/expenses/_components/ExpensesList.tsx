@@ -5,6 +5,12 @@ import Link from 'next/link'
 import { Plus, RefreshCw, Pencil, Trash2, CheckCircle, Ban, Search } from 'lucide-react'
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import {
+  BranchesApi,
+  DepartmentsApi,
+  type BranchLite,
+  type Department,
+} from '@/src/libs/data/OrgStructureData'
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -50,6 +56,12 @@ export default function ExpensesList() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  // Payroll dimensions. Department narrows to the chosen branch, same
+  // cascade the Expense form itself uses.
+  const [branchFilter, setBranchFilter] = useState('')
+  const [departmentFilter, setDepartmentFilter] = useState('')
+  const [branches, setBranches] = useState<BranchLite[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
 
   const expenseAccounts = accounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE')
 
@@ -59,14 +71,33 @@ export default function ExpensesList() {
       search: search || undefined,
       status: statusFilter || undefined,
       categoryAccountId: categoryFilter || undefined,
+      branchId: branchFilter || undefined,
+      departmentId: departmentFilter || undefined,
     })
     setItems(res.data?.items ?? [])
     setLoading(false)
-  }, [search, statusFilter, categoryFilter])
+  }, [search, statusFilter, categoryFilter, branchFilter, departmentFilter])
 
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+  }, [])
+  useEffect(() => {
+    if (!branchFilter) {
+      setDepartments([])
+      return
+    }
+    let cancelled = false
+    DepartmentsApi.list({ branchId: branchFilter }).then((r) => {
+      if (!cancelled) setDepartments(r.data?.data ?? [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [branchFilter])
   useEffect(() => {
     getAccounts({ limit: 500 }).then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
@@ -146,6 +177,36 @@ export default function ExpensesList() {
           {expenseAccounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={branchFilter}
+          onChange={(e) => {
+            setBranchFilter(e.target.value)
+            setDepartmentFilter('')
+          }}
+          aria-label="Filter by branch"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg"
+        >
+          <option value="">All branches</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          disabled={!branchFilter}
+          aria-label="Filter by department"
+          className="px-3 py-2 text-sm border border-gray-200 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+        >
+          <option value="">{branchFilter ? 'All departments' : 'Pick a branch first'}</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
             </option>
           ))}
         </select>

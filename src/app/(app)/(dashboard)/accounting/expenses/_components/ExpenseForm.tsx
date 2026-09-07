@@ -104,8 +104,12 @@ const VAT_OPTIONS: { value: ExpenseTaxCode; label: string }[] = [
   { value: 'INPUT_VAT', label: `Input VAT (${VAT_RATE_PERCENT}%)` },
 ]
 function vatFor(line: LineState): number {
-  if (line.taxCode !== 'INPUT_VAT') return 0
-  return Math.round((Number(line.amount) || 0) * (VAT_RATE_PERCENT / 100) * 100) / 100
+  const amount = Number(line.amount) || 0
+  // A deduction isn't a purchase, so it never carries Input VAT — the
+  // server enforces the same, and deriving a negative VAT here would make
+  // the running total disagree with what posts.
+  if (line.taxCode !== 'INPUT_VAT' || amount < 0) return 0
+  return Math.round(amount * (VAT_RATE_PERCENT / 100) * 100) / 100
 }
 /** Which treatment a stored line reopens with. Rows written before the
  * dropdown existed carry a legacy code (VAT/NON_VAT/EXEMPT) or none at all
@@ -124,6 +128,14 @@ function normalizeStoredTaxCode(taxCode?: string | null, taxAmount?: number): Ex
 // still shows against the recipient's outstanding balance and liquidates
 // later like any other.
 type PayrollSpecialAccountType = 'EMPLOYEE_CASH_ADVANCE' | 'EMPLOYEE_CASH_LOAN'
+/** Narrows what the API reports for a line to the two kinds this form
+ * offers. Anything else (or nothing) is an ordinary category line. */
+function payrollKindFromLine(specialAccountType?: string | null): '' | PayrollSpecialAccountType {
+  return specialAccountType === 'EMPLOYEE_CASH_ADVANCE' ||
+    specialAccountType === 'EMPLOYEE_CASH_LOAN'
+    ? specialAccountType
+    : ''
+}
 const PAYROLL_LINE_KINDS: { value: '' | PayrollSpecialAccountType; label: string }[] = [
   { value: '', label: 'Salary / Wage' },
   { value: 'EMPLOYEE_CASH_ADVANCE', label: 'Cash Advance' },
@@ -289,11 +301,12 @@ function ExpenseFormFields({
           // it; any non-zero tax on one of those was the same flat 12%, so
           // it reopens as Input VAT.
           taxCode: normalizeStoredTaxCode((l as any).taxCode, (l as any).taxAmount),
-          // A saved cash advance/loan line is indistinguishable from a
-          // salary line on read (both carry a resolved categoryAccountId),
-          // so it reopens as a salary line with its category intact rather
-          // than guessing. Only new lines set this.
-          specialAccountType: '' as '' | PayrollSpecialAccountType,
+          // The API reverses its own resolution on read (a line's account is
+          // matched back to the Special Account it was mapped from), so a
+          // saved advance reopens as an advance rather than silently
+          // becoming a salary line. CASH_LOAN_OTHERS isn't a payroll kind —
+          // it falls back to a plain line with its category intact.
+          specialAccountType: payrollKindFromLine((l as any).specialAccountType),
         }))
       : [emptyLine()]
   )
@@ -433,7 +446,8 @@ function ExpenseFormFields({
       return 'Pick the department this payroll run is for.'
     if (lines.length === 0) return 'Add at least one line.'
     for (const l of lines) {
-      if (!l.amount || Number(l.amount) <= 0) return 'Every line needs an amount greater than 0.'
+      if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
+        return 'Every line needs an amount — positive to add, negative to deduct.'
       if (isPayroll) {
         if (!l.payee.trim()) return 'Every payroll line needs a name.'
         // A cash advance / cash loan line resolves its account from the
@@ -449,6 +463,10 @@ function ExpenseFormFields({
             : 'Every line needs a recipient.'
       }
     }
+    // record() credits cash for the total, so the entry as a whole has to be
+    // money going out. Deductions exceeding what they're deducted from is a
+    // mis-key, and the server rejects it too.
+    if (total <= 0) return 'Deductions cannot meet or exceed the amounts they deduct from.'
     return null
   }
 
@@ -825,11 +843,14 @@ function ExpenseFormFields({
                       />
                     </div>
                     <div className="col-span-2">
+                      {/* Negative deducts — the payroll sheet's Credit
+                          column (statutory withholding, an advance taken
+                          back out of pay). No min, and the step stays at
+                          centavos. */}
                       <input
                         required
                         type="number"
                         step="0.01"
-                        min="0.01"
                         aria-label="Amount"
                         value={line.amount}
                         onChange={(e) => setLine(i, { amount: e.target.value })}
