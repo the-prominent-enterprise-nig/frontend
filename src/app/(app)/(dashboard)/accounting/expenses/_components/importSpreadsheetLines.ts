@@ -88,6 +88,28 @@ const ACCOUNT_NAME_ALIASES: Record<string, string> = {
   'withholding tax compensation': 'Withholding Tax Payable Wages',
 }
 
+/**
+ * Does this column B value name a person rather than a memo?
+ *
+ * The sheet writes recipients surname-first — "TRAYCO, JOSHUA",
+ * "DE LA TORRE, ELY ROSE APPLE D." — and one row uses a full stop where
+ * the rest use a comma ("REMOLA. GERALDINE"). Org units never contain
+ * either separator, and they are matched against the Division list first
+ * regardless, so this only ever sees what that failed to place.
+ *
+ * It matters because the recipient has to land in the line's Name, not its
+ * Description: outstanding advance and loan balances are matched on the
+ * name stored there, so a recovery filed under Description never draws
+ * anyone's balance down.
+ */
+function looksLikeAPersonName(value: string): boolean {
+  const parts = value
+    .split(/[,.]/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  return parts.length >= 2 && parts.every((p) => /^[A-Za-zÑñ' -]+$/.test(p))
+}
+
 function specialAccountFor(accountLabel: string): string {
   const key = norm(accountLabel)
   return SPECIAL_ACCOUNT_ALIASES.find((a) => a.match === key)?.type ?? ''
@@ -251,9 +273,15 @@ export async function importSpreadsheetLines(
       // looser spelling comparison get a turn.
       if (!division) division = looseBranchMatch(particulars, divisions) ?? ''
       if (!division) {
-        // On a Special Account row this is the recipient, not a memo.
-        if (specialAccountType) payee = particulars
-        else description = particulars
+        // A Special Account row is always a recipient; so is anything that
+        // reads as a person's name, whichever account it posts to — the
+        // sheet's advance, loan and receivable rows all name people, and
+        // they resolve to real accounts now rather than Special Accounts.
+        if (specialAccountType || looksLikeAPersonName(particulars)) {
+          payee = particulars
+        } else {
+          description = particulars
+        }
         unmatchedDivisions.add(particulars)
       }
     }
