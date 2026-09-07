@@ -30,6 +30,12 @@ export interface ImportedLine {
    * unmatched row still has to show the user what it was trying to be. */
   accountLabel: string
   division: string
+  /** Customer this line collects from, when the recipient's name matched
+   * exactly one customer. Left blank on no match or an ambiguous one —
+   * a wrong match settles the wrong person's instalments, so it is offered
+   * for confirmation rather than assumed. */
+  collectFromId: string
+  collectFromLabel: string
   /** The line's recipient. On a Special Account row column B is a person's
    * name, which is what ties the advance or loan to their outstanding
    * balance — so it lands here rather than in Description. */
@@ -50,6 +56,9 @@ export interface ImportResult {
   /** Column B values that matched no branch or department, deduplicated.
    * Those went to Description instead. */
   unmatchedDivisions: string[]
+  /** Recipients matched to a customer, so the import can say how many
+   * deductions will actually settle an instalment. */
+  matchedCustomers: number
 }
 
 /**
@@ -184,7 +193,11 @@ function parseAmount(value: unknown): number | null {
 export async function importSpreadsheetLines(
   file: File,
   accounts: Account[],
-  divisions: DivisionOption[]
+  divisions: DivisionOption[],
+  /** Customers to match recipient names against. Optional: without them
+   * every line simply imports with no customer, which is what happened
+   * before this existed. */
+  customers: { id: string; name: string }[] = []
 ): Promise<ImportResult> {
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -220,6 +233,39 @@ export async function importSpreadsheetLines(
       }
     }
   }
+
+  // Recipient names are written "SURNAME, FIRSTNAME" while customers are
+  // usually stored "Firstname Surname", so both orders are indexed. A name
+  // held by more than one customer is dropped from the index rather than
+  // resolved arbitrarily — settling the wrong person's instalments is worse
+  // than settling nobody's.
+  const customerByName = new Map<string, { id: string; name: string } | null>()
+  const remember = (key: string, c: { id: string; name: string }) => {
+    if (!key) return
+    customerByName.set(key, customerByName.has(key) ? null : c)
+  }
+  /** Every spelling one name might be written in: as given, surname-first
+   * flipped, and both with middle initials dropped — the sheet writes
+   * "ADVENCULA, JUVY B." where a customer record says "Juvy Advencula",
+   * and a single stray initial should not defeat the match. */
+  const nameKeys = (name: string): string[] => {
+    const dropInitials = (v: string) =>
+      norm(v)
+        .split(' ')
+        .filter((w) => w.length > 1)
+        .join(' ')
+    const keys = [norm(name), dropInitials(name)]
+    const parts = name
+      .split(/[,.]/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (parts.length >= 2) {
+      const flipped = `${parts.slice(1).join(' ')} ${parts[0]}`
+      keys.push(norm(flipped), dropInitials(flipped))
+    }
+    return [...new Set(keys.filter(Boolean))]
+  }
+  for (const c of customers) for (const k of nameKeys(c.name)) remember(k, c)
 
   const lines: ImportedLine[] = []
   const skippedSummaryRows: string[] = []
@@ -286,7 +332,21 @@ export async function importSpreadsheetLines(
       }
     }
 
+    // Match on the recipient's name, in either spelling.
+    let matched: { id: string; name: string } | null = null
+    if (payee) {
+      for (const key of nameKeys(payee)) {
+        const hit = customerByName.get(key)
+        if (hit) {
+          matched = hit
+          break
+        }
+      }
+    }
+
     lines.push({
+      collectFromId: matched?.id ?? '',
+      collectFromLabel: matched?.name ?? '',
       categoryAccountId: accountId,
       specialAccountType,
       accountLabel,
@@ -303,5 +363,6 @@ export async function importSpreadsheetLines(
     skippedSummaryRows,
     unmatchedAccounts: [...unmatchedAccounts],
     unmatchedDivisions: [...unmatchedDivisions],
+    matchedCustomers: lines.filter((l) => l.collectFromId).length,
   }
 }

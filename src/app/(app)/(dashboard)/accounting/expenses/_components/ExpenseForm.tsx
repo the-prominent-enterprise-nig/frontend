@@ -21,6 +21,7 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
+import { customersApi } from '@/src/libs/api/crm'
 import EmployeePicker from '@/src/components/accounting/EmployeePicker'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Select } from '@/src/components/ui/Select'
@@ -110,6 +111,11 @@ interface LineState {
   /** Carried against a named person. The Account picker says under which
    * control account; `payee` is who. */
   isSpecialAccount: boolean
+  /** Which customer this line collects from, when it is a payroll
+   * deduction of their monthly instalment. Recording the expense settles
+   * their instalment dues; blank means it settles nobody's. */
+  collectFromId: string
+  collectFromLabel: string
   description: string
   amount: string
   taxCode: string
@@ -132,6 +138,8 @@ function emptyLine(): LineState {
     payee: '',
     division: '',
     isSpecialAccount: false,
+    collectFromId: '',
+    collectFromLabel: '',
     description: '',
     amount: '',
     taxCode: '',
@@ -364,6 +372,8 @@ function ExpenseFormFields({
           payee: l.payee || (l.employee ? `${l.employee.firstName} ${l.employee.lastName}` : ''),
           division: divisionValueFor(l),
           isSpecialAccount: Boolean((l as any).isSpecialAccount),
+          collectFromId: (l as any).customerId ?? '',
+          collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
           amount: String(l.amount ?? ''),
           taxCode: l.taxCode ?? '',
@@ -384,9 +394,15 @@ function ExpenseFormFields({
   // once here and shared by every line.
   const [branches, setBranches] = useState<BranchLite[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([])
   useEffect(() => {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
     DepartmentsApi.list().then((r) => setDepartments(r.data?.data ?? []))
+    // Only used to pre-fill "collect from" on import — the picker itself
+    // searches server-side, so this list never has to be complete.
+    customersApi
+      .list({ limit: 1000 })
+      .then((r) => setCustomers((r.data?.data ?? []).map((c) => ({ id: c.id, name: c.name }))))
   }, [])
   const divisionChoices = useMemo(
     () => divisionOptions(branches, departments),
@@ -405,7 +421,12 @@ function ExpenseFormFields({
     setImporting(true)
     setError(null)
     try {
-      const result = await importSpreadsheetLines(file, postableAccounts, divisionChoices)
+      const result = await importSpreadsheetLines(
+        file,
+        postableAccounts,
+        divisionChoices,
+        customers
+      )
       if (result.lines.length === 0) {
         setError('No lines found in that file — expected Account, Particulars, Debit, Credit.')
         setImportResult(null)
@@ -416,6 +437,8 @@ function ExpenseFormFields({
           ...emptyLine(),
           categoryAccountId: l.categoryAccountId,
           isSpecialAccount: Boolean(l.specialAccountType),
+          collectFromId: l.collectFromId,
+          collectFromLabel: l.collectFromLabel,
           division: l.division,
           payee: l.payee,
           description: l.description,
@@ -708,6 +731,9 @@ function ExpenseFormFields({
       }
       line.categoryAccountId = l.categoryAccountId
       if (l.isSpecialAccount) line.isSpecialAccount = true
+      // Only a deduction can collect — a positive line would be issuing
+      // money, not receiving it.
+      if (l.collectFromId && Number(l.amount) < 0) line.customerId = l.collectFromId
       // Only generic-mode lines carry a recipient or a division — an
       // inventory purchase line has neither, and neither column is rendered.
       if (!isItemMode) {
@@ -1132,15 +1158,39 @@ function ExpenseFormFields({
                       </>
                     ) : (
                       <>
-                        <input
-                          aria-label="Name"
-                          value={line.payee}
-                          onChange={(e) => setLine(i, { payee: e.target.value })}
-                          placeholder={
-                            line.isSpecialAccount ? 'Name (required)' : 'Who this is for'
-                          }
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                        />
+                        <div className="min-w-0">
+                          <input
+                            aria-label="Name"
+                            value={line.payee}
+                            onChange={(e) => setLine(i, { payee: e.target.value })}
+                            placeholder={
+                              line.isSpecialAccount ? 'Name (required)' : 'Who this is for'
+                            }
+                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          />
+                          {/* Folded under the Name rather than given its own
+                            column: the typed name and the customer it was
+                            matched to read as a pair, so a wrong match is
+                            obvious. Only offered on a deduction — a positive
+                            line issues money rather than collecting it. */}
+                          {Number(line.amount) < 0 && (
+                            <div className="mt-1">
+                              <CustomerPicker
+                                compact
+                                value={line.collectFromId}
+                                selectedLabel={line.collectFromLabel}
+                                onChange={(collectFromId, collectFromLabel) =>
+                                  setLine(i, { collectFromId, collectFromLabel })
+                                }
+                              />
+                              {!line.collectFromId && (
+                                <p className="mt-0.5 text-[10px] text-zinc-400">
+                                  Collects from nobody — instalments stay unpaid
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <input
                           aria-label="Line description"
                           value={line.description}
@@ -1284,6 +1334,12 @@ function ExpenseFormFields({
                   <p className="mt-0.5 text-amber-700">
                     No matching account for {importResult.unmatchedAccounts.join(', ')} — those
                     lines need an Account picked before saving.
+                  </p>
+                )}
+                {importResult.matchedCustomers > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    {importResult.matchedCustomers} deduction(s) matched a customer and will settle
+                    their instalments on save.
                   </p>
                 )}
                 {importResult.unmatchedDivisions.length > 0 && (
