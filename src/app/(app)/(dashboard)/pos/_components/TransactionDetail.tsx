@@ -107,7 +107,13 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          <h2 className="mb-1 text-lg font-bold text-gray-900">{tx.transactionNumber}</h2>
+          {/* Lead with the Sales Invoice No. — that's the document anyone
+              looking this up actually has in hand. Falls back to the
+              internal transaction number for rows without one (refunds,
+              and sales predating the required-SI rule). */}
+          <h2 className="mb-1 text-lg font-bold text-gray-900">
+            {tx.salesInvoiceNumber ?? tx.transactionNumber}
+          </h2>
           <p className="mb-4 text-sm text-gray-500 capitalize">
             {tx.transactionType} · {tx.status}
           </p>
@@ -241,9 +247,12 @@ export function TransactionDetail({
                 )}
                 {customerName && <Row label="Customer" value={customerName} />}
                 {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
-                {tx.salesInvoiceNumber && <Row label="SI Number" value={tx.salesInvoiceNumber} />}
                 {tx.deliveryReceiptNumber && (
-                  <Row label="DR Number" value={tx.deliveryReceiptNumber} />
+                  <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
+                )}
+                {/* Only when it isn't already the heading above. */}
+                {tx.salesInvoiceNumber && (
+                  <Row label="Transaction No." value={tx.transactionNumber} muted />
                 )}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
