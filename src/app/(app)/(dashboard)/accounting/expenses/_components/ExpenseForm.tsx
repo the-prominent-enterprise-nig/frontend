@@ -35,6 +35,7 @@ import {
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
 import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
+import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
@@ -1269,6 +1270,25 @@ function ExpenseFormFields({
                   <Upload className="h-4 w-4" />
                 )}
                 {importing ? 'Reading…' : 'Import from spreadsheet'}
+              </button>
+              {/* Same affordance the inventory bulk-import modals offer: a
+                  template in the exact column order the parser reads, so
+                  nobody has to guess it from a tooltip. */}
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    'expense-lines-template.csv',
+                    ['Account', 'Particulars / Memo', 'Debit', 'Credit'],
+                    [
+                      ['Salaries and Wages', 'ACCOUNTING & FINANCE-NEGROS', 41008.47, ''],
+                      ['Employee Cash Advance', 'DELA CRUZ, JUAN', '', 2500],
+                    ]
+                  )
+                }
+                className="rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                Download template
               </button>
               <span className="text-[11px] text-zinc-400">
                 Account · Particulars · Debit · Credit — replaces the lines below
