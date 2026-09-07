@@ -11,6 +11,11 @@ type Props = {
   onChange: (value: string | undefined) => void
   options: CategorySelectOption[]
   placeholder?: string
+  /** What the list holds, lowercase plural — this component is reused for
+   * suppliers, bank accounts, invoices etc., not just categories, and the
+   * search box and empty state both read wrong when they say "categories"
+   * for those. */
+  noun?: string
   className?: string
   disabled?: boolean
   'aria-label'?: string
@@ -25,6 +30,7 @@ export default function CategorySelect({
   onChange,
   options,
   placeholder = 'Select category…',
+  noun = 'categories',
   className = '',
   disabled = false,
   'aria-label': ariaLabel,
@@ -98,7 +104,7 @@ export default function CategorySelect({
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white outline-none transition-colors focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`flex w-full min-w-0 items-center justify-between rounded-lg border border-zinc-200 bg-white outline-none transition-colors focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 ${
           compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
         } ${open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''}`}
       >
@@ -134,7 +140,7 @@ export default function CategorySelect({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search categories…"
+                placeholder={`Search ${noun}…`}
                 className={`w-full outline-none placeholder:text-zinc-400 ${compact ? 'text-[13px]' : 'text-sm'}`}
                 onClick={(e) => e.stopPropagation()}
               />
@@ -158,7 +164,7 @@ export default function CategorySelect({
                 <p
                   className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
                 >
-                  No categories match &ldquo;{query}&rdquo;
+                  No {noun} match &ldquo;{query}&rdquo;
                 </p>
               )}
               {filteredOptions.map((opt) => (

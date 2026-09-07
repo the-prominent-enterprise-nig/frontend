@@ -1,23 +1,9 @@
 'use client'
 
-import { Fragment, useState } from 'react'
-import {
-  X,
-  AlertTriangle,
-  CheckCircle2,
-  ChevronRight,
-  RefreshCw,
-  Loader2,
-  Printer,
-} from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react'
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
-import { getReceivingDocument } from '../_actions/get-receiving-document'
-import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
-
-function printDocument(data: unknown, showAmounts: boolean) {
-  printReceivingReportDocument(data, { showAmounts })
-}
 
 const fmtMoney = (n: number) =>
   n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -63,258 +49,22 @@ function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
   )
 }
 
-function JournalEntryBadge({ journalEntryId }: { journalEntryId?: string | null }) {
-  if (!journalEntryId) return <span className="text-zinc-400">MANUAL</span>
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className="rounded bg-prominent-purple-50 px-1.5 py-0.5 font-medium text-prominent-purple-700">
-        GL POSTED
-      </span>
-      <span className="font-mono text-zinc-500">{journalEntryId.slice(0, 8)}</span>
-    </span>
-  )
-}
-
-function DetailPanel({ report, showAmounts }: { report: ReceivingReport; showAmounts: boolean }) {
-  const [isPrinting, setIsPrinting] = useState(false)
-  const totalAmount = showAmounts ? reportAmount(report) : null
-
-  return (
-    <div className="overflow-hidden rounded-lg border border-prominent-purple-100 bg-white">
-      {/* Panel header */}
-      <div className="flex items-center justify-between border-b border-prominent-purple-100 bg-prominent-purple-50/40 px-5 py-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-zinc-900">{report.code}</h3>
-            <DiscrepancyBadge report={report} />
-          </div>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'} ·{' '}
-            {new Date(report.receivedAt).toLocaleDateString('en-PH', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-            <span>
-              Supplier:{' '}
-              <span className="font-medium text-zinc-700">{report.supplier?.name ?? '—'}</span>
-            </span>
-            {(() => {
-              const poCode = reportPoCode(report)
-              return poCode ? (
-                <span>
-                  PO Reference: <span className="font-mono text-zinc-700">{poCode}</span>
-                </span>
-              ) : (
-                report.purchaseOrderNumber && (
-                  <span>
-                    PO No:{' '}
-                    <span className="font-mono text-zinc-700">{report.purchaseOrderNumber}</span>
-                  </span>
-                )
-              )
-            })()}
-            {report.poDate && (
-              <span>
-                PO Date:{' '}
-                <span className="text-zinc-700">
-                  {new Date(report.poDate).toLocaleDateString('en-PH', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
-              </span>
-            )}
-            {report.deliveryReceiptNumber && (
-              <span>
-                DR No:{' '}
-                <span className="font-mono text-zinc-700">{report.deliveryReceiptNumber}</span>
-              </span>
-            )}
-            {report.supplierInvoiceNumber && (
-              <span>
-                SI No:{' '}
-                <span className="font-mono text-zinc-700">{report.supplierInvoiceNumber}</span>
-              </span>
-            )}
-            {report.withholding === 'pct_1' && (
-              <span>
-                Withholding:{' '}
-                <span className="font-medium text-amber-600">
-                  1% (₱{(report.withheldAmount ?? 0).toFixed(2)})
-                </span>
-              </span>
-            )}
-            {report.vatAmount != null && (
-              <span>
-                Input VAT:{' '}
-                <span className="font-medium text-zinc-700">₱{report.vatAmount.toFixed(2)}</span>
-              </span>
-            )}
-            {totalAmount != null && (
-              <span>
-                Amount: <span className="font-medium text-zinc-700">{fmtMoney(totalAmount)}</span>
-              </span>
-            )}
-            <span>
-              <JournalEntryBadge journalEntryId={report.journalEntryId} />
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={async () => {
-            setIsPrinting(true)
-            try {
-              const res = await getReceivingDocument(report.id)
-              if (res.success && res.data) printDocument(res.data, showAmounts)
-            } finally {
-              setIsPrinting(false)
-            }
-          }}
-          disabled={isPrinting}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
-        >
-          {isPrinting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Printer className="h-3.5 w-3.5" />
-          )}
-          Print
-        </button>
-      </div>
-
-      {/* Lines */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-100 bg-zinc-50">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Item
-              </th>
-              <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Qty Ordered
-              </th>
-              <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Qty Received
-              </th>
-              {showAmounts && (
-                <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Amount
-                </th>
-              )}
-              <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Variance
-              </th>
-              <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Condition
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Serial #s
-              </th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
-                Notes
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {report.lines.map((line) => {
-              const d = line.discrepancy
-              const hasIssue = d?.hasQtyDiscrepancy || d?.hasConditionIssue
-              return (
-                <tr key={line.id} className={hasIssue ? 'bg-red-50' : ''}>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-zinc-900">
-                      {line.item?.name ?? '—'}
-                      {line.isFreebie && (
-                        <span className="ml-2 inline-block rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
-                          Freebie
-                        </span>
-                      )}
-                    </p>
-                    {line.item?.sku && (
-                      <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center text-zinc-600">
-                    {d ? d.qtyOrdered : <span className="text-zinc-400">N/A</span>}
-                  </td>
-                  <td className="px-4 py-3 text-center font-semibold text-zinc-800">
-                    {line.quantityReceived}
-                  </td>
-                  {showAmounts && (
-                    <td className="px-4 py-3 text-right text-zinc-700">
-                      {(() => {
-                        const amount = lineAmount(line)
-                        return amount != null ? (
-                          fmtMoney(amount)
-                        ) : (
-                          <span className="text-zinc-400">—</span>
-                        )
-                      })()}
-                    </td>
-                  )}
-                  <td className="px-4 py-3 text-center">
-                    {d ? (
-                      <span
-                        className={`font-semibold ${
-                          d.qtyVariance === 0
-                            ? 'text-green-700'
-                            : d.qtyVariance > 0
-                              ? 'text-amber-600'
-                              : 'text-red-600'
-                        }`}
-                      >
-                        {d.qtyVariance > 0 ? `+${d.qtyVariance}` : d.qtyVariance}
-                      </span>
-                    ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {line.qualityHold ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                        <AlertTriangle className="h-3 w-3" />
-                        QC Hold
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                        <CheckCircle2 className="h-3 w-3" />
-                        OK
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600">
-                    {line.serialNumbers && line.serialNumbers.length > 0 ? (
-                      <span className="font-mono text-xs">{line.serialNumbers.join(', ')}</span>
-                    ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500 hidden md:table-cell max-w-xs truncate">
-                    {line.notes ?? '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
 type Props = {
   // Amounts are financial info (unit cost / total cost) — shown for
   // Accounting's own Receiving Reports view, hidden for Inventory's
   // (warehouse/receiving staff don't need supplier cost visibility here).
   showAmounts?: boolean
+  /** Where a row opens. This list is rendered by both Inventory and
+   * Accounting; a click should keep you inside whichever module you came from,
+   * rather than flinging an Accounting user into Inventory. */
+  detailBasePath?: string
 }
 
-export default function ReceivingReportsTab({ showAmounts = false }: Props) {
+export default function ReceivingReportsTab({
+  showAmounts = false,
+  detailBasePath = '/inventory/goods-receiving',
+}: Props) {
+  const router = useRouter()
   const {
     reports,
     meta,
@@ -332,11 +82,6 @@ export default function ReceivingReportsTab({ showAmounts = false }: Props) {
     setEndDate,
     resetFilters,
     setPage,
-    selectedId,
-    setSelectedId,
-    selectedReport,
-    isLoadingDetail,
-    detailError,
   } = useReceivingReports()
 
   const hasFilters = warehouseId || hasDiscrepancy !== undefined || startDate || endDate
@@ -437,90 +182,62 @@ export default function ReceivingReportsTab({ showAmounts = false }: Props) {
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {reports.map((report) => {
-                  const isSelected = selectedId === report.id
                   return (
-                    <Fragment key={report.id}>
-                      <tr
-                        className={`cursor-pointer hover:bg-zinc-50 ${isSelected ? 'bg-prominent-purple-50' : ''}`}
-                        onClick={() => setSelectedId(isSelected ? undefined : report.id)}
-                      >
-                        <td className="px-4 py-3 font-mono font-medium text-zinc-900">
-                          {report.code}
-                        </td>
-                        <td className="px-4 py-3 hidden sm:table-cell">
-                          {(reportPoCode(report) ?? report.purchaseOrderNumber) ? (
-                            <span className="font-mono text-zinc-600">
-                              {reportPoCode(report) ?? report.purchaseOrderNumber}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
-                          {report.lines.length}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                          {new Date(report.receivedAt).toLocaleDateString('en-PH', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </td>
-                        {showAmounts && (
-                          <td className="px-4 py-3 text-right text-zinc-700">
-                            {(() => {
-                              const amount = reportAmount(report)
-                              return amount != null ? (
-                                fmtMoney(amount)
-                              ) : (
-                                <span className="text-zinc-400">—</span>
-                              )
-                            })()}
-                          </td>
+                    <tr
+                      key={report.id}
+                      className="cursor-pointer hover:bg-zinc-50"
+                      onClick={() => router.push(`${detailBasePath}/${report.id}`)}
+                    >
+                      <td className="px-4 py-3 font-mono font-medium text-zinc-900">
+                        {report.code}
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        {(reportPoCode(report) ?? report.purchaseOrderNumber) ? (
+                          <span className="font-mono text-zinc-600">
+                            {reportPoCode(report) ?? report.purchaseOrderNumber}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-300">—</span>
                         )}
-                        <td className="px-4 py-3 text-center">
-                          <DiscrepancyBadge report={report} />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <ChevronRight
-                            className={`h-4 w-4 transition-transform ${isSelected ? 'rotate-90 text-prominent-purple-700' : 'text-zinc-400'}`}
-                          />
-                        </td>
-                      </tr>
-                      {isSelected && (
-                        <tr>
-                          <td
-                            colSpan={showAmounts ? 9 : 8}
-                            className="border-l-4 border-prominent-purple-300 bg-prominent-purple-50/40 p-3"
-                          >
-                            {isLoadingDetail ? (
-                              <div className="flex items-center justify-center py-10">
-                                <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
-                              </div>
-                            ) : selectedReport ? (
-                              <DetailPanel report={selectedReport} showAmounts={showAmounts} />
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
+                        {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
+                        {report.lines.length}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
+                        {new Date(report.receivedAt).toLocaleDateString('en-PH', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </td>
+                      {showAmounts && (
+                        <td className="px-4 py-3 text-right text-zinc-700">
+                          {(() => {
+                            const amount = reportAmount(report)
+                            return amount != null ? (
+                              fmtMoney(amount)
                             ) : (
-                              <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 py-10 text-center">
-                                <AlertTriangle className="h-5 w-5 text-red-500" />
-                                <p className="text-sm font-medium text-red-700">
-                                  {detailError ?? "Couldn't load this receipt."}
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedId(undefined)}
-                                  className="text-xs font-medium text-red-600 underline hover:text-red-800"
-                                >
-                                  Close
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+                              <span className="text-zinc-400">—</span>
+                            )
+                          })()}
+                        </td>
                       )}
-                    </Fragment>
+                      <td className="px-4 py-3 text-center">
+                        <DiscrepancyBadge report={report} />
+                      </td>
+                      {/* Scenario 46 — the inline expansion is gone. A row now
+                          opens the receiving report's own page, which shows the
+                          document as it prints (the same sheet the Accounting
+                          screen uses) with the ordered/variance/QC detail
+                          beside it. A data table inside a row was a different
+                          thing from the paper it represents. */}
+                      <td className="px-4 py-3 text-right">
+                        <ChevronRight className="h-4 w-4 text-zinc-400" />
+                      </td>
+                    </tr>
                   )
                 })}
               </tbody>

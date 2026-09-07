@@ -51,6 +51,11 @@ export const ReceiveStockFormSchema = z
     // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
     // -> this Receiving Report. Both are the supplier's own paperwork,
     // typed in by whoever is physically receiving the delivery.
+    // Scenario 46 — the DR is required at receiving, the SI is not. The
+    // delivery receipt comes in the driver's hand with the goods, so it always
+    // exists at this moment; the supplier's invoice often follows days later
+    // and the client wants it filled in (and editable) when it does. See the
+    // refine below — this used to be the other way round.
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
@@ -59,21 +64,10 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
-  // A receipt raised against a PO already has the PO as its commercial
-  // paper trail, so the SI is allowed to still be in transit when the goods
-  // arrive (that form asks for the supplier's DR instead — see
-  // ReceiveAgainstPoModal). A receipt standing on its own has no such trail,
-  // so the SI is the only thing tying it to the supplier.
-  .refine(
-    (data) =>
-      data.applicationType !== 'new_stock' ||
-      data.lines.some((line) => !!line.purchaseOrderLineId) ||
-      !!data.supplierInvoiceNumber?.trim(),
-    {
-      message: 'Supplier invoice number is required for new stock receipts',
-      path: ['supplierInvoiceNumber'],
-    }
-  )
+  .refine((data) => data.applicationType !== 'new_stock' || !!data.deliveryReceiptNumber?.trim(), {
+    message: "Delivery receipt number is required — it's on the paper that came with the goods",
+    path: ['deliveryReceiptNumber'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 
@@ -230,6 +224,22 @@ const ReceivingReportLineSchema = z.object({
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
   unitCost: z.number().optional().nullable(),
+  // Scenario 46 — the supplier's pricing as stated, not just the resulting
+  // cost, so the DR can show WHY a unit cost is what it is.
+  srp: z.number().optional().nullable(),
+  discounts: z
+    .array(
+      z.object({
+        name: z.string().optional().nullable(),
+        type: z.enum(['percentage', 'amount']),
+        value: z.number(),
+      })
+    )
+    .optional()
+    .nullable(),
+  discountedCost: z.number().optional().nullable(),
+  taxCode: z.string().optional().nullable(),
+  taxAmount: z.number().optional().nullable(),
   qualityHold: z.boolean(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
