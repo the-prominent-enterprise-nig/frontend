@@ -1,6 +1,8 @@
 'use client'
 
+import Link from 'next/link'
 import { X, RefreshCw } from 'lucide-react'
+import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { useStockLedger } from '../_hooks/useStockLedger'
 
 const TX_LABELS: Record<string, string> = {
@@ -11,6 +13,7 @@ const TX_LABELS: Record<string, string> = {
   adjustment: 'Adjustment',
   return: 'Return',
   write_off: 'Write-off',
+  supplier_return: 'Supplier Return',
 }
 
 const TX_COLORS: Record<string, string> = {
@@ -21,6 +24,7 @@ const TX_COLORS: Record<string, string> = {
   adjustment: 'bg-purple-100 text-purple-700',
   return: 'bg-orange-100 text-orange-700',
   write_off: 'bg-red-100 text-red-700',
+  supplier_return: 'bg-rose-100 text-rose-700',
 }
 
 const TRANSACTION_TYPES = [
@@ -32,6 +36,7 @@ const TRANSACTION_TYPES = [
   { value: 'adjustment', label: 'Adjustment' },
   { value: 'return', label: 'Return' },
   { value: 'write_off', label: 'Write-off' },
+  { value: 'supplier_return', label: 'Supplier Return' },
 ]
 
 export default function StockLedgerTab() {
@@ -150,6 +155,18 @@ export default function StockLedgerTab() {
                   <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                     Qty
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                    Unit Cost
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                    Value
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden xl:table-cell">
+                    Customer
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                    Accounting
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                     Date
                   </th>
@@ -177,6 +194,11 @@ export default function StockLedgerTab() {
                         {entry.item?.sku && (
                           <p className="font-mono text-xs text-zinc-400">{entry.item.sku}</p>
                         )}
+                        {entry.serialNumber && (
+                          <p className="font-mono text-xs text-zinc-500" title="Serial number">
+                            SN {entry.serialNumber}
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
                         {entry.warehouse?.branch?.name ?? entry.warehouse?.name ?? '—'}
@@ -187,6 +209,48 @@ export default function StockLedgerTab() {
                         >
                           {entry.quantity >= 0 ? `+${entry.quantity}` : entry.quantity}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-600 hidden lg:table-cell">
+                        {entry.unitCost != null ? fmtMoney(entry.unitCost) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-zinc-800 hidden lg:table-cell">
+                        {entry.unitCost != null
+                          ? fmtMoney(entry.unitCost * Math.abs(entry.quantity))
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 hidden xl:table-cell">
+                        {entry.customer ? (
+                          <>
+                            <p className="text-zinc-700">{entry.customer.name}</p>
+                            {entry.customer.customerCode && (
+                              <p className="font-mono text-xs text-zinc-400">
+                                {entry.customer.customerCode}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs hidden md:table-cell">
+                        {entry.creditMemoNumber ? (
+                          <Link
+                            href="/accounting/credit-memos"
+                            className="font-mono text-prominent-purple-700 hover:underline"
+                            title="Credit memo issued against the original invoice"
+                          >
+                            {entry.creditMemoNumber}
+                          </Link>
+                        ) : entry.journalEntryId ? (
+                          <Link
+                            href={`/accounting/journal-entries/${entry.journalEntryId}`}
+                            className="text-prominent-purple-700 hover:underline"
+                          >
+                            Posted
+                          </Link>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
                         {date

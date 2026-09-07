@@ -8,6 +8,7 @@ import {
   fmtMoney,
   fmtDate,
   type ARInvoiceDocument,
+  type ARInvoiceMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { printARInvoiceDocument } from '@/src/libs/print/printInventoryDocument'
 import CollectionReceiptSheet from '../../_components/CollectionReceiptSheet'
@@ -41,6 +42,53 @@ function dueLabel(s: {
   return s.lineNumber != null && s.termMonths
     ? `Payment ${s.lineNumber} of ${s.termMonths}`
     : s.invoiceNumber
+}
+
+const MEMO_TYPE_LABELS: Record<string, string> = {
+  sales_return: 'Sales Return',
+  billing_adjustment: 'Billing Adjustment',
+  goodwill: 'Goodwill',
+}
+
+/** One credit or debit memo against this invoice. Direction is what the
+ *  reader actually needs: a credit paid the invoice down, a debit added to
+ *  it, and the sign is the fastest way to say which. */
+function MemoRow({ memo, direction }: { memo: ARInvoiceMemo; direction: 'credit' | 'debit' }) {
+  const isVoided = memo.status !== 'ISSUED'
+  return (
+    <li className="flex items-start justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/accounting/${direction}-memos`}
+            className="font-mono text-[13px] text-prominent-purple-700 hover:underline"
+          >
+            {memo.memoNumber}
+          </Link>
+          <span className="text-[11px] text-gray-500">
+            {MEMO_TYPE_LABELS[memo.type] ?? memo.type}
+          </span>
+          {isVoided && (
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-500">
+              {memo.status}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 text-[11px] text-gray-500">
+          {fmtDate(memo.memoDate)}
+          {memo.reason ? ` · ${memo.reason}` : ''}
+        </div>
+      </div>
+      <span
+        className={`shrink-0 font-semibold tabular-nums ${
+          isVoided ? 'text-gray-400 line-through' : 'text-gray-900'
+        }`}
+      >
+        {direction === 'credit' ? '−' : '+'}
+        {fmtMoney(memo.amount)}
+      </span>
+    </li>
+  )
 }
 
 export default function ARInvoiceDetail({ id }: { id: string }) {
@@ -85,6 +133,8 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   const enterprise = doc.enterprise
   const detail = invoice.installmentDetail
   const payments = invoice.payments ?? []
+  const creditMemos = invoice.creditMemos ?? []
+  const debitMemos = invoice.debitMemos ?? []
   const outstanding = invoice.totalAmount - invoice.amountPaid
   // Scenario 29 ACC-05 — Outstanding is the total owed regardless of
   // maturity; Due only counts it once this invoice's own due date has
@@ -284,6 +334,25 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           </ul>
         )}
       </section>
+
+      {/* A credit memo moves amountPaid without any money changing hands, so
+          without this the balance appears to drop for no reason — which is
+          exactly what a customer return does to an invoice. */}
+      {(creditMemos.length > 0 || debitMemos.length > 0) && (
+        <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">
+            Credits &amp; adjustments
+          </h2>
+          <ul className="divide-y divide-gray-100">
+            {creditMemos.map((m) => (
+              <MemoRow key={m.id} memo={m} direction="credit" />
+            ))}
+            {debitMemos.map((m) => (
+              <MemoRow key={m.id} memo={m} direction="debit" />
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

@@ -1,12 +1,20 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, PackageCheck, AlertTriangle, Wrench } from 'lucide-react'
 import { CreateReturnFormSchema, CreateReturnFormValues } from '@/src/schema/inventory/returns'
+import { getCustomerPurchases } from '../_actions/get-customer-purchases'
+import ARInvoiceCombobox from '@/src/app/(app)/(dashboard)/accounting/_shared/ARInvoiceCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_components/ItemSearchCombobox'
+import { getSerialNumbers } from '@/src/app/(app)/(dashboard)/inventory/serial-numbers/_actions/get-serial-numbers'
+import { CustomerSearchCombobox } from '@/src/app/(app)/(dashboard)/pos/service-jobs/_components/CustomerSearchCombobox'
 import type { ApiResponse } from '@/src/libs/api/client'
-import type { ItemSummary } from '@/src/schema/inventory/items'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 
@@ -15,7 +23,6 @@ type Props = {
   onClose: () => void
   onSubmit: (data: CreateReturnFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
-  itemOptions: ItemSummary[]
   warehouseOptions: WarehouseSummary[]
   serialOptions: SerialNumberSummary[]
 }
@@ -25,7 +32,6 @@ export default function CreateReturnModal({
   onClose,
   onSubmit,
   isSubmitting,
-  itemOptions,
   warehouseOptions,
   serialOptions,
 }: Props) {
@@ -43,24 +49,75 @@ export default function CreateReturnModal({
       warehouseId: '',
       quantity: undefined,
       condition: 'sellable',
-      originalSaleId: '',
       notes: '',
       serialNumberId: '',
       repairDecision: undefined,
+      arInvoiceId: '',
+      customerId: '',
     },
   })
 
   const condition = watch('condition')
   const repairDecision = watch('repairDecision')
   const selectedItemId = watch('itemId')
+  const arInvoiceId = watch('arInvoiceId')
+  const customerId = watch('customerId')
+  const [invoiceCustomerName, setInvoiceCustomerName] = useState<string | null>(null)
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState('')
+  /** Escape hatch: the unit being returned isn't always on the customer's own
+   *  record (a gift, a walk-in with no history, a pre-migration sale). */
+  const [browseCatalogue, setBrowseCatalogue] = useState(false)
+
+  const purchasesQuery = useQuery({
+    queryKey: ['return-customer-purchases', customerId],
+    queryFn: () => getCustomerPurchases(customerId as string),
+    enabled: !!customerId,
+    staleTime: 60 * 1000,
+  })
+  const purchases = purchasesQuery.data?.data ?? []
+  /** Only known for the catalogue path — a unit picked from the customer's
+   *  purchases already carries its own serial, if it has one. */
+  const [catalogueItemIsSerialTracked, setCatalogueItemIsSerialTracked] = useState(false)
+
+  // The units that could actually come back are the ones that went out, so
+  // this asks for `sold` — not the in-stock list the repair picker used to
+  // filter, which by definition never contains the unit being returned.
+  const soldSerialsQuery = useQuery({
+    queryKey: ['return-item-sold-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'sold', limit: 100 }),
+    enabled: !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const selectedPurchase = purchases.find((p) => p.id === selectedPurchaseId) ?? null
+  const showPurchasePicker = !!customerId && !browseCatalogue && purchases.length > 0
+
+  // A unit taken in for repair stays the customer's property — it is never
+  // added to stock and never credited — so there is nothing an invoice could
+  // do here, and offering the field would promise a credit that never comes.
+  const isCustodialRepairIntake = repairDecision === 'flag_for_repair'
 
   const itemSerials = useMemo(
     () => serialOptions.filter((s) => s.item?.id === selectedItemId),
     [serialOptions, selectedItemId]
   )
+  const soldSerials = soldSerialsQuery.data?.data?.data ?? []
+  /** Sold units first; the in-stock list is only a fallback for an item whose
+   *  sale history predates serial tracking. */
+  const serialChoices = soldSerials.length > 0 ? soldSerials : itemSerials
+
+  const isRepairIntake = repairDecision === 'flag_for_repair'
+  // A serial-tracked unit returned through the catalogue used to record no
+  // serial at all — the picker only ever appeared for a repair.
+  const showSerialPicker = isRepairIntake || (catalogueItemIsSerialTracked && !selectedPurchase)
 
   useEffect(() => {
-    if (!isOpen) reset()
+    if (!isOpen) {
+      reset()
+      setInvoiceCustomerName(null)
+      setSelectedPurchaseId('')
+      setBrowseCatalogue(false)
+      setCatalogueItemIsSerialTracked(false)
+    }
   }, [isOpen, reset])
 
   useEffect(() => {
@@ -71,11 +128,37 @@ export default function CreateReturnModal({
 
   if (!isOpen) return null
 
+  /** One pick settles the item, the exact unit, what it sold for and the
+   *  invoice it sold on — the whole reason for asking who the customer is
+   *  before asking what came back. */
+  function handlePurchasePick(purchaseId: string) {
+    setSelectedPurchaseId(purchaseId)
+    const purchase = purchases.find((p) => p.id === purchaseId)
+    setValue('itemId', purchase?.itemId ?? '')
+    setValue('serialNumberId', purchase?.serialNumberId ?? '')
+    setValue('arInvoiceId', purchase?.arInvoiceId ?? '')
+    if (purchase) setValue('quantity', purchase.quantity)
+  }
+
+  /** Changing who returned it invalidates everything derived from them. */
+  function handleCustomerChange(id: string, onChange: (v: string) => void) {
+    onChange(id)
+    setSelectedPurchaseId('')
+    setBrowseCatalogue(false)
+    setCatalogueItemIsSerialTracked(false)
+    setValue('itemId', '')
+    setValue('serialNumberId', '')
+    setValue('arInvoiceId', '')
+  }
+
   async function handleFormSubmit(data: CreateReturnFormValues) {
     const result = await onSubmit({
       ...data,
-      originalSaleId: data.originalSaleId || undefined,
       notes: data.notes || undefined,
+      arInvoiceId: isCustodialRepairIntake ? undefined : data.arInvoiceId || undefined,
+      // Kept for a repair intake too — it is the custody record the UDS is
+      // built from, not just the credit-memo counterparty.
+      customerId: data.customerId || undefined,
     })
     if (result.success) onClose()
   }
@@ -105,31 +188,36 @@ export default function CreateReturnModal({
           noValidate
           className="flex flex-1 flex-col overflow-hidden"
         >
-          <div className="mx-auto grid w-full max-w-3xl flex-1 content-start gap-4 overflow-y-auto px-6 py-5">
-            {/* Item */}
+          <div className="mx-auto grid w-full max-w-4xl flex-1 content-start gap-x-6 gap-y-4 overflow-y-auto px-6 py-5 md:grid-cols-2">
+            {/* Customer — who the stock actually came back from. Worth
+                recording even with no invoice and no credit: without it a
+                return is an anonymous quantity, and a unit taken in for
+                repair has no custody trail at all. */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Item <span className="text-red-500">*</span>
+                Customer
+                <span className="ml-1 text-xs font-normal text-zinc-400">
+                  {isCustodialRepairIntake ? '(whose unit this is)' : '(optional)'}
+                </span>
               </label>
-              <Controller
-                name="itemId"
-                control={control}
-                render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">Select item…</option>
-                    {itemOptions.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} ({i.sku})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              />
-              {errors.itemId && (
-                <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
+              {invoiceCustomerName ? (
+                <div className="flex h-9.5 items-center rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700">
+                  {invoiceCustomerName}
+                </div>
+              ) : (
+                <Controller
+                  name="customerId"
+                  control={control}
+                  render={({ field }) => (
+                    <CustomerSearchCombobox
+                      value={field.value ?? ''}
+                      onChange={(id) => handleCustomerChange(id, field.onChange)}
+                    />
+                  )}
+                />
+              )}
+              {invoiceCustomerName && (
+                <p className="mt-1 text-xs text-zinc-400">Taken from the selected invoice.</p>
               )}
             </div>
 
@@ -157,6 +245,113 @@ export default function CreateReturnModal({
               />
               {errors.warehouseId && (
                 <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
+              )}
+            </div>
+
+            {/* Item — picked from the customer's own purchases where we know
+                them, so the unit, its serial, its price and its invoice all
+                come from one choice. Falls back to the catalogue otherwise. */}
+            <div className="md:col-span-2">
+              <div className="mb-1 flex items-baseline justify-between">
+                <label className="block text-sm font-medium text-zinc-700">
+                  {showPurchasePicker ? 'Returned unit' : 'Item'}{' '}
+                  <span className="text-red-500">*</span>
+                </label>
+                {!!customerId && purchases.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBrowseCatalogue(!browseCatalogue)
+                      setSelectedPurchaseId('')
+                      setValue('itemId', '')
+                    }}
+                    className="text-xs font-medium text-prominent-purple-700 hover:underline"
+                  >
+                    {browseCatalogue ? 'Pick from their purchases' : 'Search all items instead'}
+                  </button>
+                )}
+              </div>
+
+              {showPurchasePicker ? (
+                <>
+                  <select
+                    value={selectedPurchaseId}
+                    onChange={(e) => handlePurchasePick(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                  >
+                    <option value="">Select from their purchases…</option>
+                    {purchases.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.itemName ?? p.itemSku ?? 'Item'}
+                        {p.serialNumber ? ` · ${p.serialNumber}` : ''} · {p.transactionNumber}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedPurchase && (
+                    <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs sm:grid-cols-4">
+                      <div>
+                        <dt className="text-zinc-400">SKU</dt>
+                        <dd className="font-mono text-zinc-700">
+                          {selectedPurchase.itemSku ?? '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-zinc-400">Serial</dt>
+                        <dd className="font-mono text-zinc-700">
+                          {selectedPurchase.serialNumber ?? '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-zinc-400">Sold for</dt>
+                        <dd className="text-zinc-700">
+                          {selectedPurchase.unitPrice.toLocaleString('en-PH', {
+                            style: 'currency',
+                            currency: 'PHP',
+                          })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-zinc-400">Sold on</dt>
+                        <dd className="text-zinc-700">
+                          {new Date(selectedPurchase.occurredAt).toLocaleDateString('en-PH', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </>
+              ) : (
+                <Controller
+                  name="itemId"
+                  control={control}
+                  render={({ field }) => (
+                    <ItemSearchCombobox
+                      value={field.value}
+                      onChange={field.onChange}
+                      onSelect={(option) =>
+                        setCatalogueItemIsSerialTracked(
+                          !!(option.meta as ItemSearchMeta | undefined)?.isSerialTracked
+                        )
+                      }
+                      error={errors.itemId?.message}
+                    />
+                  )}
+                />
+              )}
+
+              {!!customerId && purchasesQuery.isLoading && (
+                <p className="mt-1 text-xs text-zinc-400">Loading their purchases…</p>
+              )}
+              {!!customerId && !purchasesQuery.isLoading && purchases.length === 0 && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  No recorded purchases for this customer — search the catalogue instead.
+                </p>
+              )}
+              {showPurchasePicker && errors.itemId && (
+                <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
               )}
             </div>
 
@@ -188,8 +383,47 @@ export default function CreateReturnModal({
               )}
             </div>
 
+            {/* Original Invoice — the customer-side half of the return */}
+            {!isCustodialRepairIntake && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Original Invoice
+                  <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
+                </label>
+                {selectedPurchase ? (
+                  <div className="flex h-[38px] items-center rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-700">
+                    {selectedPurchase.arInvoiceNumber ??
+                      `${selectedPurchase.transactionNumber} — cash sale, no invoice`}
+                  </div>
+                ) : (
+                  <Controller
+                    name="arInvoiceId"
+                    control={control}
+                    render={({ field }) => (
+                      <ARInvoiceCombobox
+                        value={field.value ?? ''}
+                        requireOutstanding
+                        onChange={(invoice) => {
+                          field.onChange(invoice?.id ?? '')
+                          setValue('customerId', invoice?.customer?.id ?? invoice?.customerId ?? '')
+                          setInvoiceCustomerName(invoice?.customer?.name ?? null)
+                        }}
+                      />
+                    )}
+                  />
+                )}
+                <p className="mt-1 text-xs text-zinc-400">
+                  {selectedPurchase && !selectedPurchase.arInvoiceId
+                    ? 'That sale was settled at the till, so there is no invoice to credit — the stock movement is recorded on its own.'
+                    : arInvoiceId
+                      ? 'A sales-return credit memo will be issued against this invoice and its balance reduced.'
+                      : 'Leave blank to record the stock movement only — the customer will not be credited automatically.'}
+                </p>
+              </div>
+            )}
+
             {/* Condition */}
-            <div>
+            <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-medium text-zinc-700">
                 Condition upon inspection <span className="text-red-500">*</span>
               </label>
@@ -258,7 +492,7 @@ export default function CreateReturnModal({
 
             {/* Damaged info banner */}
             {condition === 'damaged' && (
-              <div className="flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3">
+              <div className="flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 p-3 md:col-span-2">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
                 <p className="text-xs text-orange-700">
                   Damaged items are added to on-hand quantity only and will <strong>not</strong> be
@@ -269,7 +503,7 @@ export default function CreateReturnModal({
 
             {/* Repair Decision (for damaged/serial-tracked units) */}
             {condition === 'damaged' && (
-              <div>
+              <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-zinc-700">
                   What should happen to this unit?
                 </label>
@@ -320,27 +554,29 @@ export default function CreateReturnModal({
               </div>
             )}
 
-            {/* Serial Number (required when flagging for repair) */}
-            {repairDecision === 'flag_for_repair' && (
-              <div>
+            {/* Serial Number — required to raise a UDS, and worth recording on
+                any serial-tracked return so the unit that came back is the one
+                on file. */}
+            {showSerialPicker && (
+              <div className="md:col-span-2">
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Serial Number
-                  <span className="text-red-500">*</span>
+                  {isRepairIntake && <span className="text-red-500">*</span>}
                   <span className="ml-1 text-xs font-normal text-zinc-400">
-                    (required to create UDS)
+                    {isRepairIntake ? '(required to create UDS)' : '(which unit came back)'}
                   </span>
                 </label>
                 <Controller
                   name="serialNumberId"
                   control={control}
                   render={({ field }) =>
-                    itemSerials.length > 0 ? (
+                    serialChoices.length > 0 ? (
                       <select
                         {...field}
                         className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                       >
                         <option value="">Select serial number…</option>
-                        {itemSerials.map((s) => (
+                        {serialChoices.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.serialNumber}
                           </option>
@@ -357,35 +593,17 @@ export default function CreateReturnModal({
                   }
                 />
                 <p className="mt-1 text-xs text-zinc-400">
-                  {itemSerials.length > 0
-                    ? 'Select the unit to send for repair. A UDS will be auto-created.'
-                    : 'The unit will be marked as "in repair" and a UDS will be auto-created.'}
+                  {isRepairIntake
+                    ? 'The unit is marked "in repair" and a UDS is auto-created.'
+                    : soldSerials.length > 0
+                      ? 'Units of this item that were sold — pick the one coming back.'
+                      : 'No sold units on record for this item; leave blank if you are unsure.'}
                 </p>
               </div>
             )}
 
-            {/* Original Sale Reference */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Original Sale / Issue Reference
-                <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
-              </label>
-              <Controller
-                name="originalSaleId"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. SO-2024-0042"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-            </div>
-
             {/* Notes */}
-            <div>
+            <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium text-zinc-700">
                 Notes
                 <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
@@ -396,7 +614,7 @@ export default function CreateReturnModal({
                 render={({ field }) => (
                   <textarea
                     {...field}
-                    rows={3}
+                    rows={2}
                     placeholder="Reason for return, condition details…"
                     className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                   />

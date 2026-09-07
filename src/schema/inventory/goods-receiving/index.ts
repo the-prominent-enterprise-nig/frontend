@@ -163,6 +163,23 @@ export const StockLedgerEntrySchema = z.object({
   warehouse: LedgerWarehouseSchema.optional().nullable(),
   occurredAt: z.string().optional(),
   createdAt: z.string().optional(),
+  /** What the movement was worth. Carried by receipts and, since customer
+   *  returns started posting to the GL, by returns too. */
+  unitCost: z.coerce.number().optional().nullable(),
+  serialNumberId: z.string().optional().nullable(),
+  serialNumber: z.string().optional().nullable(),
+  customerId: z.string().optional().nullable(),
+  customer: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      customerCode: z.string().optional().nullable(),
+    })
+    .optional()
+    .nullable(),
+  journalEntryId: z.string().optional().nullable(),
+  creditMemoId: z.string().optional().nullable(),
+  creditMemoNumber: z.string().optional().nullable(),
 })
 
 export const StockLedgerListResponseSchema = z.object({

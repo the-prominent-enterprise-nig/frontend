@@ -67,12 +67,13 @@ function CreditMemoLineRow({
   })
   const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
 
-  // Not status-filtered to 'in_stock' — the whole point here is picking a
-  // unit that was already SOLD (and is now being returned/credited), the
-  // opposite of what a transfer's source-warehouse picker needs.
+  // Scoped to SOLD units — the opposite of what a transfer's source-warehouse
+  // picker needs. This used to pass no status at all, which got the intent
+  // half right: it stopped excluding sold units, but went on offering in_stock
+  // ones that are sitting in the warehouse and cannot have been returned.
   const serialsQuery = useQuery({
     queryKey: ['credit-memo-serials', selectedItemId],
-    queryFn: () => getSerialNumbers({ itemId: selectedItemId, limit: 500 }),
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'sold', limit: 500 }),
     enabled: isSerialTracked && !!selectedItemId,
     staleTime: 60 * 1000,
   })
@@ -226,6 +227,7 @@ export default function CreditMemoDialog({
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const lines = useWatch({ control, name: 'lines' })
+  const type = useWatch({ control, name: 'type' })
   const total = (lines ?? []).reduce(
     (sum, l) =>
       sum +
@@ -314,6 +316,21 @@ export default function CreditMemoDialog({
               )}
             />
           </Field>
+
+          {/* A memo raised here posts to AR and the GL and stops there — it
+              writes no stock ledger row, no cost layer and no
+              Dr Inventory / Cr COGS. The serial field below makes that easy
+              to forget, so it is said outright rather than left to be
+              discovered when inventory and the balance sheet disagree.
+              Deliberately not a link: the Accountant role holds no
+              inventory:* permissions, so it would only lead to a 403. */}
+          {type === 'sales_return' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+              This credits the customer only — it does <strong>not</strong> bring the goods back
+              into stock. If the unit was physically returned, process it under Inventory → Returns
+              instead: that restocks it, reverses the cost, and raises this memo for you.
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

@@ -424,6 +424,21 @@ export interface ARInvoiceInstallmentDetail {
   lineNumber: number | null
 }
 
+/** A credit or debit memo as it appears on an invoice — enough to explain a
+ *  movement in amountPaid without leaving the page. */
+export interface ARInvoiceMemo {
+  id: string
+  memoNumber: string
+  memoDate: string
+  type: string
+  amount: number
+  reason?: string | null
+  status: string
+  journalEntryId?: string | null
+  /** Set only on a memo auto-raised from an approved POS return. */
+  sourceReturnRequestId?: string | null
+}
+
 export interface ARInvoice {
   id: string
   invoiceNumber: string
@@ -447,6 +462,9 @@ export interface ARInvoice {
    * POS installment schedule; null for charge-mode invoices. */
   installmentDetail?: ARInvoiceInstallmentDetail | null
   posTransaction?: { id: string; transactionNumber: string; createdAt?: string } | null
+  /** Populated by get()/findOne only — the list endpoint's select stops short. */
+  creditMemos?: ARInvoiceMemo[]
+  debitMemos?: ARInvoiceMemo[]
 }
 
 export interface RecordPaymentResult extends ARInvoice {
