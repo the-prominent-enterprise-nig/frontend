@@ -69,15 +69,24 @@ const SUMMARY_ROW_LABELS = ['total net pay', 'grand totals', 'grand total', 'tot
  * one of those rows unmatched.
  */
 const SPECIAL_ACCOUNT_ALIASES: { match: string; type: string }[] = [
-  { match: 'advances to officers and employees', type: 'EMPLOYEE_CASH_ADVANCE' },
-  { match: 'advances to officer s and employees', type: 'EMPLOYEE_CASH_ADVANCE' },
   { match: 'employee cash advance', type: 'EMPLOYEE_CASH_ADVANCE' },
-  { match: 'loans to officers and employees', type: 'EMPLOYEE_CASH_LOAN' },
-  { match: 'loans to officer s and employees', type: 'EMPLOYEE_CASH_LOAN' },
   { match: 'employee cash loan', type: 'EMPLOYEE_CASH_LOAN' },
   { match: 'cash loan others', type: 'CASH_LOAN_OTHERS' },
   { match: 'cash loan – others', type: 'CASH_LOAN_OTHERS' },
 ]
+
+/**
+ * Spellings the sheet uses for accounts that do exist, just under a
+ * slightly different name. Only two are needed now that the client's own
+ * chart is loaded — "Advances to Officer's and Employees" and "Loans to
+ * Officers and Employees" match their real accounts directly, so the
+ * aliases that used to redirect them onto this project's invented
+ * Employee Cash Advance / Loan accounts are gone.
+ */
+const ACCOUNT_NAME_ALIASES: Record<string, string> = {
+  'pag big premium payable': 'Pag-Ibig Premium Payable',
+  'withholding tax compensation': 'Withholding Tax Payable Wages',
+}
 
 function specialAccountFor(accountLabel: string): string {
   const key = norm(accountLabel)
@@ -218,7 +227,11 @@ export async function importSpreadsheetLines(
 
     // A Special Account short-circuits the category lookup entirely.
     const specialAccountType = specialAccountFor(accountLabel)
-    const accountId = specialAccountType ? '' : (accountByName.get(norm(accountLabel)) ?? '')
+    const aliased = ACCOUNT_NAME_ALIASES[norm(accountLabel)]
+    const accountId = specialAccountType
+      ? ''
+      : (accountByName.get(norm(accountLabel)) ??
+        (aliased ? (accountByName.get(norm(aliased)) ?? '') : ''))
     if (accountLabel && !accountId && !specialAccountType) {
       unmatchedAccounts.add(accountLabel)
     }

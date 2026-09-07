@@ -226,7 +226,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [ready, setReady] = useState(!expenseId)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
-  const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
+  const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
   const [inventoryAccounts, setInventoryAccounts] = useState<Account[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [mappings, setMappings] = useState<AccountMapping[]>([])
@@ -234,7 +234,21 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   useEffect(() => {
     getAccounts({ limit: 500 }).then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
-      setExpenseAccounts(list.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE'))
+      // Not expenses only. A payroll run credits assets and liabilities as
+      // well as debiting expense — the client's own disbursement sheet
+      // posts to Accounts receivable - MI (asset), Pag-IBIG Premium
+      // Payable and Withholding Tax Payable Wages (liabilities), and their
+      // reference tool lets those be picked here directly. Restricting the
+      // picker to EXPENSE made every one of them unreachable.
+      //
+      // Header rows aren't postable, so they stay out. Equity is excluded
+      // too: nothing an expense entry does belongs there.
+      const postable = list.filter((a) => {
+        const type = (a.type ?? '').toUpperCase()
+        const isHeader = (a.number ?? '').endsWith('-000')
+        return !isHeader && type !== 'EQUITY'
+      })
+      setPostableAccounts(postable)
       // A Supplier line can be a real inventory purchase (an Asset, not an
       // Expense) — "1-04-*" is the Inventory account family (Inventory
       // itself, 1-04-000, plus its Appliances/Furniture/Aircon/IT Products
@@ -292,7 +306,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     <ExpenseFormFields
       initial={initial}
       suppliers={suppliers}
-      expenseAccounts={expenseAccounts}
+      postableAccounts={postableAccounts}
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
       mappings={mappings}
@@ -304,7 +318,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
 function ExpenseFormFields({
   initial,
   suppliers,
-  expenseAccounts,
+  postableAccounts,
   inventoryAccounts,
   bankAccounts,
   mappings,
@@ -312,7 +326,7 @@ function ExpenseFormFields({
 }: {
   initial: BusinessExpense | null
   suppliers: APBillSupplierOption[]
-  expenseAccounts: Account[]
+  postableAccounts: Account[]
   inventoryAccounts: Account[]
   bankAccounts: BankAccount[]
   mappings: AccountMapping[]
@@ -403,7 +417,7 @@ function ExpenseFormFields({
     setImporting(true)
     setError(null)
     try {
-      const result = await importSpreadsheetLines(file, expenseAccounts, divisionChoices)
+      const result = await importSpreadsheetLines(file, postableAccounts, divisionChoices)
       if (result.lines.length === 0) {
         setError('No lines found in that file — expected Account, Particulars, Debit, Credit.')
         setImportResult(null)
@@ -434,15 +448,15 @@ function ExpenseFormFields({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const categoryOptions = useMemo(
-    () => accountsToCategoryOptions(expenseAccounts),
-    [expenseAccounts]
+    () => accountsToCategoryOptions(postableAccounts),
+    [postableAccounts]
   )
   // Supplier lines can be a real inventory purchase — offer the Inventory
   // Asset accounts there too, on top of the usual Expense ones. Every other
   // payee type stays Expense-only (categoryOptions above).
   const supplierCategoryOptions = useMemo(
-    () => accountsToCategoryOptions([...expenseAccounts, ...inventoryAccounts]),
-    [expenseAccounts, inventoryAccounts]
+    () => accountsToCategoryOptions([...postableAccounts, ...inventoryAccounts]),
+    [postableAccounts, inventoryAccounts]
   )
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
