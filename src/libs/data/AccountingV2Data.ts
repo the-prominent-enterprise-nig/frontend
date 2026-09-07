@@ -1188,6 +1188,12 @@ export interface BusinessExpenseLine {
    * mapped Special Accounts — it's how an advance or loan line reopens as
    * itself rather than as an ordinary category line. */
   specialAccountType?: SpecialAccountType | null
+  /** This line's Division — one pick from the tenant's branches and
+   * departments, so exactly one of the two is ever set. */
+  divisionBranchId?: string | null
+  divisionBranch?: { id: string; name: string; code?: string | null } | null
+  divisionDepartmentId?: string | null
+  divisionDepartment?: { id: string; name: string; code?: string | null } | null
 }
 // One entry can be paid through several methods at once (e.g. part Cash,
 // part Bank Transfer) — rows must sum to the entry's total.
@@ -1223,13 +1229,6 @@ export interface BusinessExpense {
   liquidatesType?: LiquidatableType | null
   payee?: string | null
   description?: string | null
-  // Payroll dimensions — fixed at the header for the whole entry.
-  branchId?: string | null
-  branch?: { id: string; name: string; code?: string | null } | null
-  departmentId?: string | null
-  department?: { id: string; name: string; code?: string | null } | null
-  divisionId?: string | null
-  division?: { id: string; name: string; code?: string | null } | null
   lines: BusinessExpenseLine[]
   subtotal: number
   taxAmount: number
@@ -1305,9 +1304,8 @@ export const Expenses = {
     supplierId?: string
     startDate?: string
     endDate?: string
-    branchId?: string
-    departmentId?: string
-    divisionId?: string
+    divisionBranchId?: string
+    divisionDepartmentId?: string
   }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),
   get: (id: string) => api.get<BusinessExpense>(`/expenses/${id}`),
   getDocument: (id: string) => api.get<ExpenseDocument>(`/expenses/${id}/document`),

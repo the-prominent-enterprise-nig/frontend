@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -27,12 +27,14 @@ import { Select } from '@/src/components/ui/Select'
 import {
   BranchesApi,
   DepartmentsApi,
-  DivisionsApi,
+  divisionIdsFor,
+  divisionOptions,
+  divisionValueFor,
   type BranchLite,
   type Department,
-  type Division,
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
+import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
@@ -89,6 +91,9 @@ interface LineState {
    * balance, which the server matches on the typed name. Generic-mode lines
    * only; an inventory purchase line has no recipient. */
   payee: string
+  /** The Division picker's value — `branch:<id>` or `department:<id>`,
+   * unpacked into the two ids the API takes on submit. */
+  division: string
   description: string
   amount: string
   taxCode: string
@@ -109,6 +114,7 @@ function emptyLine(): LineState {
   return {
     categoryAccountId: '',
     payee: '',
+    division: '',
     description: '',
     amount: '',
     taxCode: '',
@@ -144,7 +150,7 @@ function emptyPayment(): PaymentState {
 const ITEM_MODE_GRID_COLS =
   'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.6fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -309,9 +315,6 @@ function ExpenseFormFields({
       : '',
     payee: initial?.payee ?? '',
     description: initial?.description ?? '',
-    branchId: initial?.branchId ?? '',
-    departmentId: initial?.departmentId ?? '',
-    divisionId: initial?.divisionId ?? '',
   })
   const [payments, setPayments] = useState<PaymentState[]>(
     initial?.payments && initial.payments.length > 0
@@ -328,6 +331,7 @@ function ExpenseFormFields({
       ? initial.lines.map((l) => ({
           categoryAccountId: l.categoryAccountId ?? '',
           payee: l.payee || (l.employee ? `${l.employee.firstName} ${l.employee.lastName}` : ''),
+          division: divisionValueFor(l),
           description: l.description ?? '',
           amount: String(l.amount ?? ''),
           taxCode: l.taxCode ?? '',
@@ -343,47 +347,57 @@ function ExpenseFormFields({
       : [emptyLine()]
   )
   const [siCandidates, setSiCandidates] = useState<Record<number, APBill[]>>({})
-  // Branch → Department → Division. Department and division are scoped to
-  // the branch, which is what makes the Division dropdown derivable from
-  // branches and departments: pick a branch to get its departments, and a
-  // department to narrow its divisions (branch-wide divisions, which have no
-  // department of their own, stay in the list either way).
+  // A line's Division is one pick from the tenant's branches and departments
+  // listed together — "dropdown came from branches and departments". Loaded
+  // once here and shared by every line.
   const [branches, setBranches] = useState<BranchLite[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [divisions, setDivisions] = useState<Division[]>([])
   useEffect(() => {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+    DepartmentsApi.list().then((r) => setDepartments(r.data?.data ?? []))
   }, [])
-  useEffect(() => {
-    if (!form.branchId) {
-      setDepartments([])
-      return
+  const divisionChoices = useMemo(
+    () => divisionOptions(branches, departments),
+    [branches, departments]
+  )
+
+  // Spreadsheet import. The payroll disbursement sheet runs to hundreds of
+  // rows, so it is read in the browser and dropped straight into the line
+  // table for review — nothing is saved until the user hits Save, and
+  // nothing leaves the page.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  const handleImport = async (file: File) => {
+    setImporting(true)
+    setError(null)
+    try {
+      const result = await importSpreadsheetLines(file, expenseAccounts, divisionChoices)
+      if (result.lines.length === 0) {
+        setError('No lines found in that file — expected Account, Particulars, Debit, Credit.')
+        setImportResult(null)
+        return
+      }
+      setLines(
+        result.lines.map((l) => ({
+          ...emptyLine(),
+          categoryAccountId: l.categoryAccountId,
+          division: l.division,
+          description: l.description,
+          amount: l.amount,
+        }))
+      )
+      setImportResult(result)
+    } catch {
+      setError('Could not read that file. Expected a .xlsx or .csv spreadsheet.')
+      setImportResult(null)
+    } finally {
+      setImporting(false)
+      // Let the same file be re-picked after a correction.
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
-    let cancelled = false
-    DepartmentsApi.list({ branchId: form.branchId }).then((r) => {
-      if (!cancelled) setDepartments(r.data?.data ?? [])
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [form.branchId])
-  useEffect(() => {
-    if (!form.branchId) {
-      setDivisions([])
-      return
-    }
-    let cancelled = false
-    DivisionsApi.list({
-      branchId: form.branchId,
-      departmentId: form.departmentId || undefined,
-    }).then((r) => {
-      if (!cancelled) setDivisions(r.data?.data ?? [])
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [form.branchId, form.departmentId])
-  const selectedDepartment = departments.find((d) => d.id === form.departmentId)
+  }
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -600,8 +614,6 @@ function ExpenseFormFields({
     if (form.payeeType === 'EMPLOYEE' && !form.employeeId) return 'Pick an employee.'
     if (form.payeeType === 'OTHER' && !form.payee.trim())
       return 'Describe what this Other expense is for.'
-    if (form.departmentId && !form.branchId) return 'Pick a branch for that department.'
-    if (form.divisionId && !form.branchId) return 'Pick a branch for that division.'
     if (lines.length === 0) return 'Add at least one line.'
     for (const l of lines) {
       if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
@@ -632,12 +644,6 @@ function ExpenseFormFields({
       clearedDate: form.clearedType === 'LATER_DATE' ? form.clearedDate : undefined,
       payeeType: form.payeeType,
       description: form.description || undefined,
-      // Explicit nulls rather than omitted, so clearing a dimension on an
-      // existing draft actually clears it (PATCH treats undefined as "leave
-      // alone").
-      branchId: form.branchId || null,
-      departmentId: form.departmentId || null,
-      divisionId: form.divisionId || null,
     }
     payload.payments = payments.map((p) => ({
       paymentMethod: p.paymentMethod,
@@ -663,9 +669,12 @@ function ExpenseFormFields({
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
-      // Only generic-mode lines carry a recipient — an inventory purchase
-      // line has none, and its column isn't rendered.
-      if (!isItemMode && l.payee.trim()) line.payee = l.payee.trim()
+      // Only generic-mode lines carry a recipient or a division — an
+      // inventory purchase line has neither, and neither column is rendered.
+      if (!isItemMode) {
+        if (l.payee.trim()) line.payee = l.payee.trim()
+        Object.assign(line, divisionIdsFor(l.division))
+      }
       if (isItemMode && l.itemId) {
         line.itemId = l.itemId
         if (l.qty) line.qty = Number(l.qty)
@@ -939,56 +948,6 @@ function ExpenseFormFields({
           </div>
         )}
 
-        {/* Branch → Department → Division. Any expense can be tagged to where
-            it was incurred; payroll is the flow they were asked for, and the
-            department is what a payroll run's lines read as ("name /
-            department"). All three optional — an untagged expense is still
-            a valid expense. */}
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Branch">
-            <Select
-              compact
-              value={form.branchId}
-              onChange={(branchId) =>
-                // Both are scoped to the branch, so changing it drops them
-                // rather than leaving a stale pair the server would reject.
-                setForm({ ...form, branchId, departmentId: '', divisionId: '' })
-              }
-              options={branches.map((b) => ({ value: b.id, label: b.name }))}
-              placeholder="— None —"
-            />
-          </Field>
-          <Field label="Department">
-            <Select
-              compact
-              value={form.departmentId}
-              onChange={(departmentId) => setForm({ ...form, departmentId, divisionId: '' })}
-              options={departments.map((d) => ({ value: d.id, label: d.name }))}
-              placeholder={form.branchId ? '— None —' : 'Pick a branch first'}
-              disabled={!form.branchId}
-            />
-            {form.branchId && departments.length === 0 && (
-              <p className="mt-1 text-[11px] text-zinc-400">
-                None set up — add them in Settings → Departments.
-              </p>
-            )}
-          </Field>
-          <Field label="Division">
-            <Select
-              compact
-              value={form.divisionId}
-              onChange={(divisionId) => setForm({ ...form, divisionId })}
-              options={divisions.map((d) => ({
-                value: d.id,
-                // A branch-wide division has no department of its own.
-                label: d.department ? `${d.name} — ${d.department.name}` : `${d.name} — all`,
-              }))}
-              placeholder={form.branchId ? '— None —' : 'Pick a branch first'}
-              disabled={!form.branchId}
-            />
-          </Field>
-        </div>
-
         {/* Line items — Scenario 40 Part 6. Supplier is the only payee type
             that can be a real inventory purchase, so it's the only one that
             gets the Item/Qty/Unit Price columns; every other type just
@@ -1014,9 +973,7 @@ function ExpenseFormFields({
                 </>
               ) : (
                 <>
-                  {/* "payee: name / department" — the name varies per line,
-                      the department is the header's and shared by them all. */}
-                  <div>{selectedDepartment ? `Name / ${selectedDepartment.name}` : 'Name'}</div>
+                  <div>Name</div>
                   <div>Description</div>
                 </>
               )}
@@ -1024,6 +981,9 @@ function ExpenseFormFields({
               <div>Tax Code</div>
               <div>Tax Amount</div>
               <div>Total</div>
+              {/* One pick from the branches and departments list — per line,
+                  because a payroll run spans every department it pays. */}
+              {!isItemMode && <div>Division</div>}
               <div />
             </div>
             <div className="divide-y divide-zinc-100">
@@ -1173,6 +1133,18 @@ function ExpenseFormFields({
                     <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
                       {fmtMoney(lineTotal)}
                     </div>
+                    {!isItemMode && (
+                      <Select
+                        compact
+                        value={line.division}
+                        onChange={(division) => setLine(i, { division })}
+                        options={divisionChoices.map((d) => ({
+                          value: d.value,
+                          label: d.label,
+                        }))}
+                        placeholder="— None —"
+                      />
+                    )}
                     <div className="flex justify-end">
                       {lines.length > 1 && (
                         <button
@@ -1188,6 +1160,65 @@ function ExpenseFormFields({
                 )
               })}
             </div>
+            {/* Import sits with Add line: both are ways of getting rows into
+                the table, and the imported rows are ordinary editable lines
+                once they land. */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                aria-label="Import lines from a spreadsheet"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleImport(file)
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+              >
+                {importing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {importing ? 'Reading…' : 'Import from spreadsheet'}
+              </button>
+              <span className="text-[11px] text-zinc-400">
+                Account · Particulars · Debit · Credit — replaces the lines below
+              </span>
+            </div>
+
+            {importResult && (
+              <div className="mt-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50/40 p-2.5 text-[12px] text-zinc-700">
+                <p className="font-medium">
+                  Imported {importResult.lines.length} of {importResult.rowsRead} rows.
+                </p>
+                {importResult.skippedSummaryRows.length > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    Skipped {importResult.skippedSummaryRows.join(', ')} — totals, not transactions.
+                    The payment above covers the cash side.
+                  </p>
+                )}
+                {importResult.unmatchedAccounts.length > 0 && (
+                  <p className="mt-0.5 text-amber-700">
+                    No matching account for {importResult.unmatchedAccounts.join(', ')} — those
+                    lines need an Account picked before saving.
+                  </p>
+                )}
+                {importResult.unmatchedDivisions.length > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    {importResult.unmatchedDivisions.length} value(s) matched no branch or
+                    department and went to Description instead.
+                  </p>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={addLine}

@@ -47,19 +47,27 @@ function payeeLabel(x: BusinessExpense): string {
       return `${x.lines.length} recipients`
     }
   }
-  // Payroll: generic lines that name people, with the department fixed at
-  // the header — "name / department", or a count once there are several.
+  // Payroll: generic lines that name people, each with its own Division —
+  // "name / division", or a count once there are several.
   const named = x.lines.filter((l) => l.payee || l.employee)
   if (named.length > 0) {
-    const suffix = x.department ? ` / ${x.department.name}` : ''
     if (named.length === 1) {
       const l = named[0]
       const who = l.payee || `${l.employee!.firstName} ${l.employee!.lastName}`
-      return `${who}${suffix}`
+      const division = l.divisionDepartment?.name ?? l.divisionBranch?.name
+      return division ? `${who} / ${division}` : who
     }
-    return `${named.length} recipients${suffix}`
+    return `${named.length} recipients`
   }
-  return x.department?.name ?? '—'
+  // Nobody named: fall back to whichever divisions the lines carry.
+  const divisions = new Set(
+    x.lines
+      .map((l) => l.divisionDepartment?.name ?? l.divisionBranch?.name)
+      .filter((n): n is string => Boolean(n))
+  )
+  if (divisions.size === 1) return [...divisions][0]
+  if (divisions.size > 1) return `${divisions.size} divisions`
+  return '—'
 }
 
 // Category is fixed at the header for OTHER (every line shares it), but
@@ -98,8 +106,9 @@ export default function ExpensesList() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  // Payroll dimensions. Department narrows to the chosen branch, the same
-  // cascade the form itself uses.
+  // Division filters — an entry matches when any of its lines carries that
+  // branch or department. Department still narrows to the chosen branch,
+  // which is the only reason Branch appears here at all.
   const [branchFilter, setBranchFilter] = useState('')
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [branches, setBranches] = useState<BranchLite[]>([])
@@ -114,8 +123,8 @@ export default function ExpensesList() {
       search: search || undefined,
       status: statusFilter || undefined,
       categoryAccountId: categoryFilter || undefined,
-      branchId: branchFilter || undefined,
-      departmentId: departmentFilter || undefined,
+      divisionBranchId: branchFilter || undefined,
+      divisionDepartmentId: departmentFilter || undefined,
     })
     setItems(res.data?.items ?? [])
     setLoading(false)

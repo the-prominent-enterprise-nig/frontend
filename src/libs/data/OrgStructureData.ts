@@ -1,15 +1,13 @@
 import { api } from '@/src/libs/api/client'
 
 /**
- * Branches, departments and divisions — the three payroll dimensions the
- * Expense form cascades through, and the branch the CRM customer list
- * filters by.
+ * Branches and departments — "per branch → department" — plus the combined
+ * option list an expense line's Division picker is built from.
  *
- * A department belongs to exactly one branch ("per branch → department"),
- * and a division is defined by the branch/department pair it sits under,
- * which is what makes the Division dropdown derivable from the branch and
- * department already picked. A division with no department of its own is
- * branch-wide and valid under every department in that branch.
+ * There is no Division entity: a line's Division is one pick from the
+ * tenant's branches and departments listed together, which is what "dropdown
+ * came from branches and departments" means. Whichever kind is picked, the
+ * line stores it as divisionBranchId or divisionDepartmentId.
  */
 export interface BranchLite {
   id: string
@@ -21,17 +19,6 @@ export interface Department {
   id: string
   branchId: string
   branch?: BranchLite | null
-  name: string
-  code?: string | null
-  isActive: boolean
-}
-
-export interface Division {
-  id: string
-  branchId: string
-  branch?: BranchLite | null
-  departmentId?: string | null
-  department?: { id: string; name: string; code?: string | null } | null
   name: string
   code?: string | null
   isActive: boolean
@@ -53,16 +40,72 @@ export const DepartmentsApi = {
   remove: (id: string) => api.delete<{ deleted: boolean }>(`/departments/${id}`),
 }
 
-export const DivisionsApi = {
-  // Passing departmentId narrows to that department's divisions plus the
-  // branch-wide ones; passing branchId alone returns every division in it.
-  list: (params?: { branchId?: string; departmentId?: string; includeInactive?: boolean }) =>
-    api.get<Listed<Division>>('/divisions', params),
-  create: (body: { branchId: string; departmentId?: string; name: string; code?: string }) =>
-    api.post<Division>('/divisions', body),
-  update: (
-    id: string,
-    body: { name?: string; code?: string; departmentId?: string | null; isActive?: boolean }
-  ) => api.patch<Division>(`/divisions/${id}`, body),
-  remove: (id: string) => api.delete<{ deleted: boolean }>(`/divisions/${id}`),
+/** One entry in a line's Division picker — a branch or a department. */
+export interface DivisionOption {
+  /** `branch:<id>` or `department:<id>` — the picker's own value. */
+  value: string
+  label: string
+  kind: 'branch' | 'department'
+  id: string
+  /** The bare name, without the branch suffix the label carries. */
+  name: string
+  /** The owning branch's name, for a department. Matching a spreadsheet's
+   * "DEPARTMENT-REGION" cell needs both halves, not just the department. */
+  branchName?: string
+}
+
+/** Builds the Division option list: every branch, then every department
+ * under it, so the list reads the way the org does. */
+export function divisionOptions(
+  branches: BranchLite[],
+  departments: Department[]
+): DivisionOption[] {
+  const byBranch = new Map<string, Department[]>()
+  for (const d of departments) {
+    byBranch.set(d.branchId, [...(byBranch.get(d.branchId) ?? []), d])
+  }
+  const options: DivisionOption[] = []
+  for (const b of branches) {
+    options.push({
+      value: `branch:${b.id}`,
+      label: b.name,
+      kind: 'branch',
+      id: b.id,
+      name: b.name,
+    })
+    for (const d of byBranch.get(b.id) ?? []) {
+      options.push({
+        value: `department:${d.id}`,
+        // Department names repeat across branches, so the branch stays
+        // visible in the label — the sheet's own "…-NEGROS" / "…-PANAY"
+        // suffixes exist for exactly this reason.
+        label: `${d.name} — ${b.name}`,
+        kind: 'department',
+        id: d.id,
+        name: d.name,
+        branchName: b.name,
+      })
+    }
+  }
+  return options
+}
+
+/** The two ids a picked option maps onto, for sending to the API. */
+export function divisionIdsFor(value: string): {
+  divisionBranchId?: string
+  divisionDepartmentId?: string
+} {
+  if (value.startsWith('branch:')) return { divisionBranchId: value.slice(7) }
+  if (value.startsWith('department:')) return { divisionDepartmentId: value.slice(11) }
+  return {}
+}
+
+/** The picker value a stored line reopens with. */
+export function divisionValueFor(line: {
+  divisionBranchId?: string | null
+  divisionDepartmentId?: string | null
+}): string {
+  if (line.divisionDepartmentId) return `department:${line.divisionDepartmentId}`
+  if (line.divisionBranchId) return `branch:${line.divisionBranchId}`
+  return ''
 }
