@@ -79,7 +79,7 @@ const TAX_CODE_OPTIONS = [
  * it back to that person's outstanding balance later.
  */
 const LINE_SPECIAL_ACCOUNTS = [
-  { value: '', label: 'Category' },
+  { value: '', label: '— None —' },
   { value: 'EMPLOYEE_CASH_ADVANCE', label: 'Employee Cash Advance' },
   { value: 'EMPLOYEE_CASH_LOAN', label: 'Employee Cash Loan' },
   { value: 'CASH_LOAN_OTHERS', label: 'Cash Loan – Others' },
@@ -1112,6 +1112,9 @@ function ExpenseFormFields({
                         placeholder="— Select —"
                       />
                     )}
+                    {/* Cash advances and loans are asset accounts and never
+                        appear in the picker above — they are picked here
+                        instead, and the server resolves the account. */}
                     {!isItemMode && (
                       <Select
                         compact
