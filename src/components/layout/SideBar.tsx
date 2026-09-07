@@ -229,6 +229,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
       },
       {
+        section: 'Accounting',
+        label: 'Special Accounts',
+        href: '/accounting/special-accounts',
+        icon: Wallet,
+      },
+      {
         label: 'Unapplied Collections',
         href: '/accounting/unapplied-collections',
         icon: Wallet,

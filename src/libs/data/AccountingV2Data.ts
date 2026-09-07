@@ -1296,6 +1296,20 @@ export interface ExpenseDocument {
     journalEntryId: string | null
   }
 }
+/** One row of the Special Accounts register. */
+export interface SpecialAccountRow {
+  name: string
+  controlAccount: { id: string; number: string; name: string }
+  /** What is still carried against this person under that account. */
+  balance: number
+  entries: number
+  lastActivity: string | null
+}
+export interface SpecialAccountRegister {
+  rows: SpecialAccountRow[]
+  totals: { people: number; balance: number }
+}
+
 export const Expenses = {
   list: (params?: {
     search?: string
@@ -1316,6 +1330,10 @@ export const Expenses = {
   remove: (id: string) => api.delete(`/expenses/${id}`),
   // Scenario 40 Part 2 — outstanding balance for a person/party on a
   // Special Account type, shown before a CA-Liquidation amount is entered.
+  /** The Special Accounts register — every named person a balance is
+   * carried against, under the control account carrying it. */
+  specialAccounts: (params?: { search?: string; accountId?: string }) =>
+    api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
   getSpecialAccountBalance: (params: {
     specialAccountType: LiquidatableType
     employeeId?: string
