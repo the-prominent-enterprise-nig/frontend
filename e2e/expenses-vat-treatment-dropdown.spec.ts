@@ -15,7 +15,7 @@ test.describe('Accounting — Expense line VAT treatment', () => {
     // Other keeps the generic line grid (no Item/Qty columns) and needs
     // only a free-text label.
     await pickFromCustomSelect(page, '— Select —', 'Other')
-    await page.getByLabel('Amount', { exact: true }).first().fill('1000')
+    await page.locator('input[aria-label="Amount"]').first().fill('1000')
 
     // Non-taxable by default — the total is the bare amount, and the totals
     // block carries no VAT row at all.

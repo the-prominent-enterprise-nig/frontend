@@ -418,7 +418,7 @@ function BankLedgerModal({
     async (override?: { startDate: string; endDate: string }) => {
       setLoading(true)
       setError(null)
-      const params = override ?? range
+      const params = override ?? { startDate: '', endDate: '' }
       const res = await BankAccounts.getReconciliationTransactions(reconciliationId, {
         startDate: params.startDate || undefined,
         endDate: params.endDate || undefined,
@@ -436,8 +436,11 @@ function BankLedgerModal({
       }
       setLoading(false)
     },
-    // `range` is read through the override/closure on each call; re-creating
-    // this on every keystroke would re-fire the effect below mid-typing.
+    // Deliberately not keyed on `range`: re-creating this on every keystroke
+    // would re-fire the mount effect below mid-typing. The consequence is
+    // that the `range` closed over here is the one from first render, so
+    // every caller that means "use what the user typed" MUST pass it in
+    // explicitly — reading it from the closure silently sends nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [reconciliationId]
   )
@@ -474,7 +477,8 @@ function BankLedgerModal({
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            load()
+            // Pass the typed range explicitly — see load()'s own comment.
+            load(range)
           }}
           className="flex flex-wrap items-end gap-3 border-b border-gray-200 bg-gray-50 px-5 py-3"
         >

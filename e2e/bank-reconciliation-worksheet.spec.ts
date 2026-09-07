@@ -241,8 +241,9 @@ test.describe('Accounting — Bank Reconciliation discrepancy drill-down', () =>
 
     // The window defaults server-side; the To date echoes back the
     // reconciliation's own statement date when nothing precedes it.
-    const from = page.getByLabel('From')
-    const to = page.getByLabel('To')
+    const modal = page.locator('form').filter({ has: page.getByRole('button', { name: 'Apply' }) })
+    const from = modal.getByLabel('From', { exact: true })
+    const to = modal.getByLabel('To', { exact: true })
     await expect(to).toHaveValue('2026-07-31', { timeout: 10_000 })
 
     // A range the user types wins over the default.
