@@ -18,6 +18,7 @@ import {
   type SupplierDebitMemoFormValues,
 } from '@/src/schema/accounting/supplier-debit-memos'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { purchaseOrdersApi } from '@/src/libs/api/procurement'
 import { getAccounts } from '@/src/libs/data/AccountingData'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
@@ -151,6 +152,8 @@ export default function DebitMemoFormModal({
     control,
     handleSubmit,
     reset,
+    setValue,
+    getValues,
     formState: { errors },
   } = useForm<SupplierDebitMemoFormValues>({
     resolver,
@@ -210,6 +213,13 @@ export default function DebitMemoFormModal({
   const totals = useLineTotals(control)
   const selectedBillId = useWatch({ control, name: 'apBillId' })
   const selectedBill = openBills.find((b) => b.id === selectedBillId)
+  const selectedWarehouseId = useWatch({ control, name: 'warehouseId' })
+  // A line only means anything once it is settled who the goods go back to,
+  // which invoice they come off and where they leave from: until then there
+  // is no PO to price the item from and no stock to check it against. Same
+  // gating the invoice picker already applies to itself while no supplier is
+  // chosen, carried one step further down the form.
+  const contextReady = !!supplierId && !!selectedBillId && !!selectedWarehouseId
   // A posted memo has already taken its amount off its bill, so that amount is
   // added back before the cap is judged — mirroring the server's own
   // `alreadyApplied`. Otherwise raising a ₱500 memo to ₱800 would be refused
@@ -227,6 +237,84 @@ export default function DebitMemoFormModal({
   useEffect(() => {
     outstandingRef.current = outstanding ?? Number.MAX_SAFE_INTEGER
   }, [outstanding])
+
+  // The PO the chosen invoice was raised against, if there is one. Its lines
+  // carry the price already agreed with the supplier, which is what a
+  // returned unit comes off the invoice at — so staff don't retype it. A
+  // bill with no PO (or a user without purchase-order read access) simply
+  // leaves the amounts blank, which is how it behaved before.
+  const purchaseOrderId = selectedBill?.purchaseOrderId ?? null
+  const poQuery = useQuery({
+    queryKey: ['debit-memo-po-prices', purchaseOrderId],
+    queryFn: () => purchaseOrdersApi.get(purchaseOrderId!),
+    enabled: open && !!purchaseOrderId,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+  // itemId → unit price. A zero-priced line (a freebie) prefills nothing:
+  // there is no value to deduct for it.
+  const poPriceByItemId = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const line of poQuery.data?.data?.lines ?? []) {
+      const price = Number(line.unitPrice)
+      if (line.itemId && price > 0) map[line.itemId] = price
+    }
+    return map
+  }, [poQuery.data])
+
+  // Who last set each line's Amount — this form ('auto') or the person
+  // filling it in ('manual') — keyed by the field array's own stable id. An
+  // auto amount is re-resolved whenever the invoice, and so the PO behind
+  // it, changes; a typed one is never overwritten.
+  const amountOwnerRef = useRef<Record<string, 'auto' | 'manual'>>({})
+
+  /** Fills a line's Amount from the PO when the item is on it. Runs on every
+   * pick: the amount showing describes the item that was there before, so it
+   * is replaced — or cleared, when this PO doesn't price the new item. */
+  const applyPoPrice = useCallback(
+    (index: number, itemId: string): void => {
+      const fieldId = fields[index]?.id
+      const price = itemId ? poPriceByItemId[itemId] : undefined
+      if (price != null) {
+        setValue(`lines.${index}.unitPrice`, price)
+        if (fieldId) amountOwnerRef.current[fieldId] = 'auto'
+      } else if (fieldId && amountOwnerRef.current[fieldId] === 'auto') {
+        setValue(`lines.${index}.unitPrice`, 0)
+        delete amountOwnerRef.current[fieldId]
+      }
+    },
+    [fields, poPriceByItemId, setValue]
+  )
+
+  /** The person typed in this line's Amount — leave it alone from here on. */
+  const claimAmount = useCallback(
+    (index: number): void => {
+      const fieldId = fields[index]?.id
+      if (fieldId) amountOwnerRef.current[fieldId] = 'manual'
+    },
+    [fields]
+  )
+
+  // Re-resolve every prefilled amount against the invoice now selected. This
+  // is what keeps an amount honest when the invoice is switched after the
+  // lines were filled in: a price from the old PO would otherwise sit there
+  // looking like it came from this one.
+  useEffect(() => {
+    getValues('lines').forEach((line, index) => {
+      const fieldId = fields[index]?.id
+      const owner = fieldId ? amountOwnerRef.current[fieldId] : undefined
+      if (owner === 'manual') return
+      const price = line.itemId ? poPriceByItemId[line.itemId] : undefined
+      const blank = !(Number(line.unitPrice) > 0)
+      if (price != null && (blank || owner === 'auto')) {
+        setValue(`lines.${index}.unitPrice`, price)
+        if (fieldId) amountOwnerRef.current[fieldId] = 'auto'
+      } else if (price == null && owner === 'auto' && fieldId) {
+        setValue(`lines.${index}.unitPrice`, 0)
+        delete amountOwnerRef.current[fieldId]
+      }
+    })
+  }, [poPriceByItemId, fields, getValues, setValue])
 
   /** Runs after validation. A posted memo asks first — saving it re-posts. */
   function onSubmit(data: SupplierDebitMemoFormValues): void {
@@ -470,6 +558,17 @@ export default function DebitMemoFormModal({
             <div>
               <label className="mb-2 block text-sm font-medium text-zinc-700">
                 Items <span className="text-red-500">*</span>
+                {!contextReady ? (
+                  <span className="ml-2 text-xs font-normal text-zinc-400">
+                    Pick the supplier, invoice and warehouse first
+                  </span>
+                ) : (
+                  selectedBill?.purchaseOrder?.code && (
+                    <span className="ml-2 text-xs font-normal text-zinc-400">
+                      Amounts prefill from {selectedBill.purchaseOrder.code} for items ordered on it
+                    </span>
+                  )
+                )}
               </label>
               {errors.lines && !Array.isArray(errors.lines) && (
                 <p className="mb-2 text-xs text-red-500">{errors.lines.message}</p>
@@ -515,6 +614,9 @@ export default function DebitMemoFormModal({
                       accountOptions={accountOptions}
                       canRemove={fields.length > 1}
                       onRemove={() => remove(index)}
+                      onItemPicked={(itemId) => applyPoPrice(index, itemId)}
+                      onAmountEdited={() => claimAmount(index)}
+                      disabled={!contextReady}
                     />
                   ))}
                 </div>
@@ -523,7 +625,8 @@ export default function DebitMemoFormModal({
               <button
                 type="button"
                 onClick={() => append(emptyLine)}
-                className="mt-2 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+                disabled={!contextReady}
+                className="mt-2 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add Line
@@ -648,12 +751,23 @@ function LineRow({
   accountOptions,
   canRemove,
   onRemove,
+  onItemPicked,
+  onAmountEdited,
+  disabled,
 }: {
   control: Control<SupplierDebitMemoFormValues>
   index: number
   accountOptions: CategorySelectOption[]
   canRemove: boolean
   onRemove: () => void
+  /** Prefills this line's Amount from the invoice's PO. */
+  onItemPicked: (itemId: string) => void
+  /** Hands the Amount over to whoever typed in it, so no later prefill
+   * overwrites their figure. */
+  onAmountEdited: () => void
+  /** Supplier, invoice or warehouse still unpicked — nothing on the line can
+   * be resolved against them yet. */
+  disabled: boolean
 }) {
   return (
     <div className={`${lineGridClass} md:items-center`}>
@@ -663,9 +777,13 @@ function LineRow({
         render={({ field }) => (
           <ItemSearchCombobox
             value={field.value ?? ''}
-            onChange={field.onChange}
+            onChange={(itemId) => {
+              field.onChange(itemId)
+              onItemPicked(itemId)
+            }}
             placeholder="Search item…"
             compact
+            disabled={disabled}
           />
         )}
       />
@@ -681,6 +799,7 @@ function LineRow({
             value={field.value ?? ''}
             type="text"
             placeholder="Description"
+            disabled={disabled}
             className={cellClass}
           />
         )}
@@ -699,6 +818,7 @@ function LineRow({
             placeholder="Inventory (default)"
             aria-label="Account"
             compact
+            disabled={disabled}
           />
         )}
       />
@@ -713,6 +833,7 @@ function LineRow({
             value={Number.isNaN(field.value) ? '' : field.value}
             onChange={(e) => field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)}
             placeholder="1"
+            disabled={disabled}
             className={`${cellClass} text-right`}
           />
         )}
@@ -726,8 +847,12 @@ function LineRow({
             min="0"
             step="0.01"
             value={Number.isNaN(field.value) ? '' : field.value}
-            onChange={(e) => field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)}
+            onChange={(e) => {
+              field.onChange(e.target.value === '' ? NaN : e.target.valueAsNumber)
+              onAmountEdited()
+            }}
             placeholder="0.00"
+            disabled={disabled}
             className={`${cellClass} text-right`}
           />
         )}
@@ -736,7 +861,12 @@ function LineRow({
         name={`lines.${index}.taxCode`}
         control={control}
         render={({ field }) => (
-          <select {...field} value={field.value ?? ''} className={`${cellClass} bg-white`}>
+          <select
+            {...field}
+            value={field.value ?? ''}
+            disabled={disabled}
+            className={`${cellClass} bg-white`}
+          >
             <option value="">Tax code</option>
             <option value="VAT">VAT</option>
             <option value="NON_VAT">Non-VAT</option>
@@ -755,6 +885,7 @@ function LineRow({
             value={field.value === '' || field.value == null ? '' : field.value}
             onChange={(e) => field.onChange(e.target.value === '' ? '' : e.target.valueAsNumber)}
             placeholder="0.00"
+            disabled={disabled}
             className={`${cellClass} text-right`}
           />
         )}
@@ -763,7 +894,8 @@ function LineRow({
         <button
           type="button"
           onClick={onRemove}
-          className="flex h-8 w-8 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
+          disabled={disabled}
+          className="flex h-8 w-8 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Remove line"
         >
           <Trash2 className="h-4 w-4" />

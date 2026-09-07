@@ -18,6 +18,9 @@ type Props = {
   compact?: boolean
   /** Overrides the default, which is too long for a narrow grid column. */
   placeholder?: string
+  /** Greys the box out — for a picker whose surrounding context (supplier,
+   * invoice, warehouse) has to be settled before an item can mean anything. */
+  disabled?: boolean
 }
 
 export function ItemSearchCombobox({
@@ -28,6 +31,7 @@ export function ItemSearchCombobox({
   initialLabel,
   compact,
   placeholder = 'Search item by name or SKU…',
+  disabled,
 }: Props) {
   return (
     <SearchCombobox
@@ -37,6 +41,7 @@ export function ItemSearchCombobox({
       error={error}
       initialLabel={initialLabel}
       compact={compact}
+      disabled={disabled}
       queryKey="items-search"
       placeholder={placeholder}
       typeToSearchMessage="Type to search items…"
