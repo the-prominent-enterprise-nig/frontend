@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, Search } from 'lucide-react'
-import { useOpenUpward } from '@/src/hooks/useOpenUpward'
 
 export type CategorySelectOption = { id: string; name: string; depth: number }
 
@@ -41,7 +41,6 @@ export default function CategorySelect({
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const popupRef = useRef<HTMLDivElement>(null)
-  const openUpward = useOpenUpward(open, containerRef, popupRef)
 
   const selected = options.find((o) => o.id === value)
   const normalizedQuery = query.trim().toLowerCase()
@@ -54,7 +53,11 @@ export default function CategorySelect({
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node
+      // popupRef too, not just containerRef: the popup is portalled to
+      // <body>, so it is no longer a descendant of the trigger. Checking only
+      // the trigger would close the popup on its own search box and options.
+      if (!containerRef.current?.contains(target) && !popupRef.current?.contains(target)) {
         setOpen(false)
       }
     }
@@ -67,6 +70,33 @@ export default function CategorySelect({
     else setQuery('')
   }, [open])
 
+  const [position, setPosition] = useState<{
+    top: number
+    left: number
+    width: number
+  } | null>(null)
+
+  const updatePosition = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+  }, [])
+
+  // Portal the popup to <body> and track the trigger's position — same
+  // approach SearchCombobox takes, and for the same reason: an absolutely
+  // positioned popup is clipped by any scrolling ancestor, which this sits
+  // inside constantly (a line-item grid within a modal).
+  useEffect(() => {
+    if (!open) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    document.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      document.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open, updatePosition])
+
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
@@ -78,7 +108,14 @@ export default function CategorySelect({
           compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
         } ${open ? 'border-prominent-purple-500 ring-1 ring-prominent-purple-500' : ''}`}
       >
-        <span className={`truncate ${selected ? 'text-zinc-900' : 'text-zinc-400'}`}>
+        {/* truncate + min-w-0 so a long account or category name shortens with
+            an ellipsis instead of wrapping — a wrapped label makes the button
+            two lines tall and, in a grid row, drags every sibling with it. The
+            title attribute keeps the full text reachable. */}
+        <span
+          title={selected ? selected.name : undefined}
+          className={`min-w-0 truncate text-left ${selected ? 'text-zinc-900' : 'text-zinc-400'}`}
+        >
           {selected ? selected.name : placeholder}
         </span>
         <ChevronDown
@@ -86,78 +123,80 @@ export default function CategorySelect({
         />
       </button>
 
-      {open && (
-        <div
-          ref={popupRef}
-          className={`absolute left-0 right-0 z-50 max-h-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg ${
-            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-          }`}
-        >
+      {open &&
+        position &&
+        createPortal(
           <div
-            className={`flex items-center gap-2 border-b border-zinc-100 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+            ref={popupRef}
+            style={{ top: position.top, left: position.left, width: position.width }}
+            className="fixed z-100 max-h-72 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg"
           >
-            <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Search ${noun}…`}
-              className={`w-full outline-none placeholder:text-zinc-400 ${compact ? 'text-[13px]' : 'text-sm'}`}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-          <div className="max-h-60 overflow-y-auto py-1">
-            {!normalizedQuery && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(undefined)
-                  setOpen(false)
-                }}
-                className={`flex w-full items-center text-zinc-400 hover:bg-zinc-50 ${
-                  compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
-                }`}
-              >
-                {placeholder}
-              </button>
-            )}
-            {filteredOptions.length === 0 && (
-              <p
-                className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
-              >
-                No {noun} match &ldquo;{query}&rdquo;
-              </p>
-            )}
-            {filteredOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => {
-                  onChange(opt.id)
-                  setOpen(false)
-                }}
-                className={`flex w-full items-center gap-2 transition-colors hover:bg-zinc-50 ${
-                  compact ? 'py-1.5 pr-2.5 text-[13px]' : 'py-2 pr-3 text-sm'
-                } ${
-                  opt.id === value
-                    ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                    : 'text-zinc-800'
-                }`}
-                style={{
-                  paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * (compact ? 14 : 16) + (compact ? 10 : 12)}px`,
-                }}
-              >
-                {!normalizedQuery && opt.depth > 0 && (
-                  <span className="shrink-0 text-zinc-300">{'—'.repeat(opt.depth)}</span>
-                )}
-                <span className="flex-1 text-left">{opt.name}</span>
-                {opt.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+            <div
+              className={`flex items-center gap-2 border-b border-zinc-100 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}
+            >
+              <Search className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${noun}…`}
+                className={`w-full outline-none placeholder:text-zinc-400 ${compact ? 'text-[13px]' : 'text-sm'}`}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="max-h-60 overflow-y-auto py-1">
+              {!normalizedQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(undefined)
+                    setOpen(false)
+                  }}
+                  className={`flex w-full items-center text-zinc-400 hover:bg-zinc-50 ${
+                    compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
+                  }`}
+                >
+                  {placeholder}
+                </button>
+              )}
+              {filteredOptions.length === 0 && (
+                <p
+                  className={`text-zinc-400 ${compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'}`}
+                >
+                  No {noun} match &ldquo;{query}&rdquo;
+                </p>
+              )}
+              {filteredOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.id)
+                    setOpen(false)
+                  }}
+                  className={`flex w-full items-center gap-2 transition-colors hover:bg-zinc-50 ${
+                    compact ? 'py-1.5 pr-2.5 text-[13px]' : 'py-2 pr-3 text-sm'
+                  } ${
+                    opt.id === value
+                      ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                      : 'text-zinc-800'
+                  }`}
+                  style={{
+                    paddingLeft: `${(normalizedQuery ? 0 : opt.depth) * (compact ? 14 : 16) + (compact ? 10 : 12)}px`,
+                  }}
+                >
+                  {!normalizedQuery && opt.depth > 0 && (
+                    <span className="shrink-0 text-zinc-300">{'—'.repeat(opt.depth)}</span>
+                  )}
+                  <span className="flex-1 text-left">{opt.name}</span>
+                  {opt.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

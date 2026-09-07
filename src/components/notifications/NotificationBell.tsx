@@ -104,8 +104,8 @@ export default function NotificationBell() {
 
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="animate-notif-dropdown absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/10">
+          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
+          <div className="animate-notif-dropdown absolute right-0 top-full z-[60] mt-2 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/10">
             <div className="flex items-center justify-between border-b border-zinc-100 px-3.5 py-3">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-semibold text-zinc-900">Notifications</p>

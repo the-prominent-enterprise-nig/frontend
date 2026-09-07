@@ -9,7 +9,7 @@ export default async function Page() {
   requirePermission(session, ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_READ)
   return (
     <div className="min-h-screen bg-gray-50">
-      <CreditMemosList />
+      <CreditMemosList session={session!} />
     </div>
   )
 }

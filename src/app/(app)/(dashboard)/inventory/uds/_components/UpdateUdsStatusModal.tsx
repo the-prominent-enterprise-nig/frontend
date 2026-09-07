@@ -9,6 +9,7 @@ import {
   Check,
   ClipboardList,
   Truck,
+  Wrench,
   PackageCheck,
   CheckCircle2,
   XCircle,
@@ -19,6 +20,7 @@ import {
   type UpdateUdsStatusFormValues,
   UDS_STATUS_LABELS,
   type UdsStatus,
+  type ManualUdsStatus,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
 
@@ -33,10 +35,17 @@ type Props = {
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-const ALLOWED_TRANSITIONS: Record<UdsStatus, UdsStatus[]> = {
+/** Scenario 47 — `at_provider` and `repaired` are absent as *targets* on
+ * purpose: dispatching and taking a unit back capture a DR/RR and an actual
+ * cost, and the server refuses to reach either state through this endpoint.
+ * `at_provider` offers nothing at all, because the unit is physically with the
+ * provider until it is received back through its own form. */
+const ALLOWED_TRANSITIONS: Record<UdsStatus, ManualUdsStatus[]> = {
   issued: ['in_transit', 'cancelled'],
   in_transit: ['received', 'cancelled'],
   received: ['completed', 'cancelled'],
+  at_provider: [],
+  repaired: ['completed'],
   completed: [],
   cancelled: [],
 }
@@ -64,6 +73,18 @@ const STATUS_META: Record<
     description: 'Unit has arrived and been received',
     color: 'bg-purple-100 text-purple-700',
     ring: 'border-purple-500 ring-purple-500',
+  },
+  at_provider: {
+    icon: Wrench,
+    description: 'With the service centre — take it back to move on',
+    color: 'bg-amber-100 text-amber-700',
+    ring: 'border-amber-500 ring-amber-500',
+  },
+  repaired: {
+    icon: PackageCheck,
+    description: 'Back from the service centre and in stock again',
+    color: 'bg-teal-100 text-teal-700',
+    ring: 'border-teal-500 ring-teal-500',
   },
   completed: {
     icon: CheckCircle2,

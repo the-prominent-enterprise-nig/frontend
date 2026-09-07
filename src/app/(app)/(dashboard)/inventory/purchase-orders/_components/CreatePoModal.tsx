@@ -121,6 +121,10 @@ export function CreatePoModal({
   // Supplier field.
   const initialItemLabels = (po ?? pr)?.lines.map((line) => line.item?.name)
   const initialSupplierLabel = (po ?? pr)?.supplier?.name
+  // Location too. A branch's warehouse is named "{branch} Warehouse" while
+  // the picker lists it under the branch name alone — close enough to read
+  // as the same place, and the record doesn't carry the branch itself.
+  const initialWarehouseLabel = (po ?? pr)?.warehouse?.name
 
   const {
     register,
@@ -128,7 +132,6 @@ export function CreatePoModal({
     handleSubmit,
     reset,
     setValue,
-    getValues,
     formState: { errors, isDirty },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
@@ -209,10 +212,9 @@ export function CreatePoModal({
             register={register}
             errors={errors}
             setValue={setValue}
-            getValues={getValues}
-            open={open}
             initialItemLabels={initialItemLabels}
             initialSupplierLabel={initialSupplierLabel}
+            initialWarehouseLabel={initialWarehouseLabel}
           />
         </div>
 

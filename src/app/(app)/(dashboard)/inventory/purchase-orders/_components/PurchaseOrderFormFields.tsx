@@ -2,35 +2,27 @@
 
 import { useEffect } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
-import type {
-  Control,
-  UseFormRegister,
-  UseFormSetValue,
-  UseFormGetValues,
-  FieldErrors,
-} from 'react-hook-form'
-import { useQuery } from '@tanstack/react-query'
+import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
 import { Plus, Trash2, X } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
-import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 
 type Props = {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
   errors: FieldErrors<CreatePoFormValues>
   setValue: UseFormSetValue<CreatePoFormValues>
-  getValues: UseFormGetValues<CreatePoFormValues>
-  open: boolean
   // Edit mode only — the already-selected item's display name per line
   // index, since the form itself only carries itemId. See CreatePoModal.tsx.
   initialItemLabels?: (string | undefined)[]
   initialSupplierLabel?: string
+  initialWarehouseLabel?: string
 }
 
-// The Supplier/Warehouse/Expected Delivery/Delivery Instructions/Notes/Line
-// Items fields rendered by CreatePoModal — the single "+ New Purchase"
+// The Supplier/Location/Delivery Instructions/Notes/Line Items fields
+// rendered by CreatePoModal — the single "+ New Purchase"
 // modal used from both the Purchase Orders and Purchase Requests tabs.
 // Creating always drafts a Purchase Request pending approval; a PO only
 // exists once that's approved and converted. Keeping this as one component
@@ -40,35 +32,10 @@ export function PurchaseOrderFormFields({
   register,
   errors,
   setValue,
-  getValues,
-  open,
   initialItemLabels,
   initialSupplierLabel,
+  initialWarehouseLabel,
 }: Props) {
-  // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
-  // decided once here at creation and carried through unedited to receiving
-  // (see ReceiveAgainstPoModal, which locks the field once this is set).
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 10, status: 'active', standaloneOnly: true }),
-    enabled: open,
-    staleTime: 5 * 60 * 1000,
-  })
-  const warehouses = warehousesQuery.data?.data?.data ?? []
-
-  // Location is a native, uncontrolled <select> (register(), not Controller)
-  // — on edit, reset() sets warehouseId in RHF's internal state as soon as
-  // the modal opens, almost always before this async query resolves. Setting
-  // a <select>'s DOM value to an id with no matching <option> yet doesn't
-  // retroactively apply once the real option appears; RHF's own state is
-  // still correct throughout, only the visible selection is stale. Re-apply
-  // once the options actually exist to force the DOM back in sync.
-  useEffect(() => {
-    if (warehousesQuery.data) {
-      setValue('warehouseId', getValues('warehouseId'))
-    }
-  }, [warehousesQuery.data, setValue, getValues])
-
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
 
   const fmtAmount = (n: number) =>
@@ -98,38 +65,38 @@ export function PurchaseOrderFormFields({
         )}
       </div>
 
-      {/* Location */}
+      {/* Location — the destination is decided once here at creation and
+          carried through unedited to receiving (see ReceiveAgainstPoModal,
+          which locks the field once this is set). Every location is on
+          offer, the standalone warehouses and each branch's own stock
+          location alike, so ordering for another branch doesn't need a
+          separate transfer afterward. */}
       <div>
         <label className="mb-1 block text-sm font-medium text-zinc-700">
           Location <span className="text-red-500">*</span>
         </label>
-        <select
-          {...register('warehouseId')}
-          className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        >
-          <option value="">Select location…</option>
-          {warehouses.map((wh) => (
-            <option key={wh.id} value={wh.id}>
-              {wh.branch?.name ?? wh.name}
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="warehouseId"
+          control={control}
+          render={({ field }) => (
+            <WarehouseSearchCombobox
+              value={field.value}
+              onChange={field.onChange}
+              error={errors.warehouseId?.message}
+              initialLabel={initialWarehouseLabel}
+            />
+          )}
+        />
         {errors.warehouseId && (
           <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
         )}
       </div>
 
-      {/* Expected Delivery Date */}
-      <div>
-        <label className="mb-1 block text-sm font-medium text-zinc-700">
-          Expected Delivery Date
-        </label>
-        <input
-          type="date"
-          {...register('expectedDeliveryDate')}
-          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-        />
-      </div>
+      {/* Expected delivery date isn't asked for at creation — it's still
+          part of the record (optional everywhere, shown in PoDetailModal),
+          just not something the requester is made to guess at up front. On
+          edit, whatever the record already carries rides along untouched in
+          the form's defaults. */}
 
       {/* Delivery Instructions */}
       <div>
