@@ -371,7 +371,7 @@ export default function APBillsList() {
                         title="Received without the supplier's invoice number — still payable"
                         className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
                       >
-                        No SI
+                        Pending SI
                       </span>
                     )}
                     {b.deletionRequestedAt && (

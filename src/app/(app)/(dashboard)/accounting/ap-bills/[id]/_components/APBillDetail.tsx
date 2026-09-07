@@ -277,7 +277,16 @@ export default function APBillDetail({ id }: { id: string }) {
             <MetaPair label="Due date" value={docDate(bill.dueDate)} />
             <MetaPair
               label="SI number"
-              value={bill.billNumber ?? <span className="italic text-gray-400">Pending SI #</span>}
+              value={
+                bill.billNumber ?? (
+                  <span
+                    title="Received without the supplier's invoice number — still payable"
+                    className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                  >
+                    Pending SI
+                  </span>
+                )
+              }
             />
             {bill.purchaseOrder && (
               <MetaPair label="Order number" value={bill.purchaseOrder.code} />

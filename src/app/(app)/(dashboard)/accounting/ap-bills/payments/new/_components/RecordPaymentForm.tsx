@@ -329,7 +329,7 @@ export default function RecordPaymentForm() {
                           <td className="px-3 py-2 font-mono text-xs font-semibold text-prominent-purple-900">
                             {b.billNumber ?? (
                               <span className="rounded-full bg-amber-50 px-2 py-0.5 font-sans text-[11px] font-medium text-amber-700">
-                                No SI
+                                Pending SI
                               </span>
                             )}
                           </td>

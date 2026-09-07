@@ -223,7 +223,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     // Scenario 41 required the SI number to create a bill by hand; Scenario 46
     // relaxes that (client: "allow create w/o SI just add flag/warning") — the
     // goods often arrive days before the invoice, and the bill is flagged
-    // "No SI" in the list until the number is filled in.
+    // "Pending SI" in the list until the number is filled in.
     setSaving(true)
     setError(null)
     const payload = {

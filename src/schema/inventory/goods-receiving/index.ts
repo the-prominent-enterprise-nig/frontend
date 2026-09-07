@@ -207,6 +207,22 @@ const ReceivingReportLineSchema = z.object({
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
   unitCost: z.number().optional().nullable(),
+  // Scenario 46 — the supplier's pricing as stated, not just the resulting
+  // cost, so the DR can show WHY a unit cost is what it is.
+  srp: z.number().optional().nullable(),
+  discounts: z
+    .array(
+      z.object({
+        name: z.string().optional().nullable(),
+        type: z.enum(['percentage', 'amount']),
+        value: z.number(),
+      })
+    )
+    .optional()
+    .nullable(),
+  discountedCost: z.number().optional().nullable(),
+  taxCode: z.string().optional().nullable(),
+  taxAmount: z.number().optional().nullable(),
   qualityHold: z.boolean(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),
