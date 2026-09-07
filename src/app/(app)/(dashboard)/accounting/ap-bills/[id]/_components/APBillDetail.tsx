@@ -3,19 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Download,
-  Inbox,
-  Loader2,
-  Pencil,
-  Trash2,
-  Undo2,
-} from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Download, Inbox, Loader2, Pencil, Trash2 } from 'lucide-react'
 import { APBills, fmtMoney, type APBillDocument } from '@/src/libs/data/AccountingV2Data'
 import { printAPBillDocument } from '@/src/libs/print/printInventoryDocument'
-import SupplierDebitMemoDialog from '../../_components/SupplierDebitMemoDialog'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -64,7 +54,6 @@ export default function APBillDetail({ id }: { id: string }) {
   // (Receive especially, which posts a journal entry) should happen where the
   // bill itself is on screen, not from a row you may not have read.
   const [busy, setBusy] = useState(false)
-  const [debitMemoOpen, setDebitMemoOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -117,15 +106,6 @@ export default function APBillDetail({ id }: { id: string }) {
             label: 'Print / Download',
             icon: Download,
             onClick: () => printAPBillDocument(doc),
-          },
-        ]
-      : []),
-    ...(['RECEIVED', 'PARTIAL', 'OVERDUE'].includes(bill.status)
-      ? [
-          {
-            label: 'Issue debit memo',
-            icon: Undo2,
-            onClick: () => setDebitMemoOpen(true),
           },
         ]
       : []),
@@ -189,6 +169,7 @@ export default function APBillDetail({ id }: { id: string }) {
   const enterprise = doc.enterprise
   const goodsReceipts = bill.goodsReceipts ?? []
   const payments = bill.payments ?? []
+  const debitMemos = bill.debitMemos ?? []
   const withholding = bill.withholdingAmount ?? 0
   const outstanding = bill.totalAmount - bill.amountPaid
 
@@ -383,6 +364,19 @@ export default function APBillDetail({ id }: { id: string }) {
                   <td className={`${TOTAL_VALUE} min-w-[140px]`}>- {fmtMoney(withholding)}</td>
                 </tr>
               )}
+              {/* Debit memos sit with the payments rather than above Total:
+                  like withholding, they never reduced totalAmount — they
+                  reduce what is left to settle. Without them the document
+                  shows a Total and a Balance due that don't reconcile. */}
+              {debitMemos.map((m) => (
+                <tr key={m.id}>
+                  <td className={TOTAL_LABEL}>
+                    Debit memo — {m.memoNumber}
+                    {m.reason ? ` — ${m.reason}` : ''} — {docDate(m.memoDate)}
+                  </td>
+                  <td className={`${TOTAL_VALUE} min-w-[140px]`}>- {fmtMoney(m.amount)}</td>
+                </tr>
+              ))}
               {payments.map((p) => (
                 <tr key={p.id}>
                   <td className={TOTAL_LABEL}>
@@ -407,16 +401,6 @@ export default function APBillDetail({ id }: { id: string }) {
           </table>
         </div>
       </div>
-      {debitMemoOpen && (
-        <SupplierDebitMemoDialog
-          bill={bill}
-          onClose={() => setDebitMemoOpen(false)}
-          onSaved={() => {
-            setDebitMemoOpen(false)
-            reload()
-          }}
-        />
-      )}
     </div>
   )
 }

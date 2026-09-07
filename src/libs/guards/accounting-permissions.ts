@@ -140,6 +140,9 @@ export const ACCOUNTING_PERMISSIONS = {
 
   SUPPLIER_DEBIT_MEMOS_READ: 'accounting:supplier-debit-memos:read',
   SUPPLIER_DEBIT_MEMOS_CREATE: 'accounting:supplier-debit-memos:create',
+  SUPPLIER_DEBIT_MEMOS_UPDATE: 'accounting:supplier-debit-memos:update',
+  SUPPLIER_DEBIT_MEMOS_APPROVE: 'accounting:supplier-debit-memos:approve',
+  SUPPLIER_DEBIT_MEMOS_FINALIZE: 'accounting:supplier-debit-memos:finalize',
   SUPPLIER_DEBIT_MEMOS_VOID: 'accounting:supplier-debit-memos:void',
 
   WILDCARD: 'accounting:*',
@@ -260,7 +263,11 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:recurring-entries:run': 'Manually run a recurring journal entry template now',
   'accounting:supplier-debit-memos:read': 'View supplier debit memos',
   'accounting:supplier-debit-memos:create':
-    'Issue a supplier debit memo (goods returned to supplier)',
+    'Raise a draft supplier debit memo (goods returned to supplier)',
+  'accounting:supplier-debit-memos:update': 'Edit a draft supplier debit memo',
+  'accounting:supplier-debit-memos:approve': 'Approve a draft supplier debit memo for finalization',
+  'accounting:supplier-debit-memos:finalize':
+    'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
   'accounting:supplier-debit-memos:void': 'Void a supplier debit memo',
   'accounting:*': 'Wildcard full accounting access',
 }

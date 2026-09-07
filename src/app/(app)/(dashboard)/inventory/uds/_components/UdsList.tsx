@@ -24,6 +24,9 @@ import UdsDetailModal from './UdsDetailModal'
 import AssessUdsModal from './AssessUdsModal'
 import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
+import DispatchToProviderModal from './DispatchToProviderModal'
+import ReceiveFromProviderModal from './ReceiveFromProviderModal'
+import ReleaseToCustomerModal from './ReleaseToCustomerModal'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import {
   UDS_REASON_LABELS,
@@ -39,6 +42,9 @@ import {
 import type {
   UpdateUdsStatusFormValues,
   AssessUdsFormValues,
+  DispatchToProviderFormValues,
+  ReceiveFromProviderFormValues,
+  ReleaseToCustomerFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
@@ -50,6 +56,8 @@ const STATUS_CONFIG: Record<UdsStatus, { color: string; icon: React.ElementType 
   issued: { color: 'bg-blue-100 text-blue-700', icon: Clock },
   in_transit: { color: 'bg-yellow-100 text-yellow-700', icon: Truck },
   received: { color: 'bg-purple-100 text-purple-700', icon: PackageCheck },
+  at_provider: { color: 'bg-amber-100 text-amber-700', icon: Wrench },
+  repaired: { color: 'bg-teal-100 text-teal-700', icon: PackageCheck },
   completed: { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
   cancelled: { color: 'bg-zinc-100 text-zinc-500', icon: XCircle },
 }
@@ -100,6 +108,12 @@ export default function UdsList({ session }: { session: SessionUser }) {
     isUpdatingStatus,
     assessUds,
     isAssessing,
+    dispatchToProvider,
+    isDispatching,
+    receiveFromProvider,
+    isReceivingFromProvider,
+    releaseToCustomer,
+    isReleasing,
     setRepairProvider,
     isSettingRepairProvider,
     writeOffUds,
@@ -112,6 +126,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
   const [assessingUds, setAssessingUds] = useState<Uds | null>(null)
   const [settingProviderUds, setSettingProviderUds] = useState<Uds | null>(null)
   const [writingOffUds, setWritingOffUds] = useState<Uds | null>(null)
+  const [dispatchingUds, setDispatchingUds] = useState<Uds | null>(null)
+  const [receivingUds, setReceivingUds] = useState<Uds | null>(null)
+  const [releasingUds, setReleasingUds] = useState<Uds | null>(null)
 
   const hasFilters = !!statusFilter || !!reasonFilter
 
@@ -133,6 +150,21 @@ export default function UdsList({ session }: { session: SessionUser }) {
   async function handleWriteOff(data: WriteOffUdsFormValues) {
     if (!writingOffUds) return { success: false, error: 'No UDS selected', message: '' }
     return writeOffUds(writingOffUds.id, data)
+  }
+
+  async function handleDispatch(data: DispatchToProviderFormValues) {
+    if (!dispatchingUds) return { success: false, error: 'No UDS selected', message: '' }
+    return dispatchToProvider(dispatchingUds.id, data)
+  }
+
+  async function handleReceiveFromProvider(data: ReceiveFromProviderFormValues) {
+    if (!receivingUds) return { success: false, error: 'No UDS selected', message: '' }
+    return receiveFromProvider(receivingUds.id, data)
+  }
+
+  async function handleRelease(data: ReleaseToCustomerFormValues) {
+    if (!releasingUds) return { success: false, error: 'No UDS selected', message: '' }
+    return releaseToCustomer(releasingUds.id, data)
   }
 
   return (
@@ -358,6 +390,42 @@ export default function UdsList({ session }: { session: SessionUser }) {
                                   Assess
                                 </button>
                               )}
+                            {uds.assessment === 'repairable' && uds.status === 'received' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setDispatchingUds(uds)
+                                }}
+                                className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                              >
+                                Send to Service Centre
+                              </button>
+                            )}
+                            {uds.status === 'at_provider' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setReceivingUds(uds)
+                                }}
+                                className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100"
+                              >
+                                Receive Back
+                              </button>
+                            )}
+                            {uds.customerId &&
+                              (uds.status === 'repaired' || uds.assessment === 'unrepairable') &&
+                              uds.status !== 'completed' &&
+                              uds.status !== 'cancelled' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setReleasingUds(uds)
+                                  }}
+                                  className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                                >
+                                  Release to Customer
+                                </button>
+                              )}
                             {uds.assessment === 'unrepairable' && !uds.writeOffAdjustmentId && (
                               <button
                                 onClick={(e) => {
@@ -475,6 +543,30 @@ export default function UdsList({ session }: { session: SessionUser }) {
         onClose={() => setWritingOffUds(null)}
         onSubmit={handleWriteOff}
         isSubmitting={isWritingOff}
+      />
+
+      <DispatchToProviderModal
+        uds={dispatchingUds}
+        isOpen={!!dispatchingUds}
+        onClose={() => setDispatchingUds(null)}
+        onSubmit={handleDispatch}
+        isSubmitting={isDispatching}
+      />
+
+      <ReceiveFromProviderModal
+        uds={receivingUds}
+        isOpen={!!receivingUds}
+        onClose={() => setReceivingUds(null)}
+        onSubmit={handleReceiveFromProvider}
+        isSubmitting={isReceivingFromProvider}
+      />
+
+      <ReleaseToCustomerModal
+        uds={releasingUds}
+        isOpen={!!releasingUds}
+        onClose={() => setReleasingUds(null)}
+        onSubmit={handleRelease}
+        isSubmitting={isReleasing}
       />
     </div>
   )

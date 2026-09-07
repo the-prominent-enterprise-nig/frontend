@@ -295,7 +295,11 @@ export default function APBillsList() {
               <th className="px-3 py-2 text-left">Bill Date</th>
               <th className="px-3 py-2 text-left">Due Date</th>
               <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2 text-right">Paid</th>
+              {/* "Settled", not "Paid": amountPaid also absorbs withholding tax
+                  redirected to the BIR and posted debit memos, neither of
+                  which is money paid to the supplier. Open the bill for the
+                  breakdown. */}
+              <th className="px-3 py-2 text-right">Settled</th>
               <th className="px-3 py-2 text-right">Outstanding</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="w-10 px-3 py-2" />
