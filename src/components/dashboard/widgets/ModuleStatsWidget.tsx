@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { ShoppingCart, Package, Receipt, Users } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
+import { CARD_SHADOW_RESTING, CARD_SHADOW_HOVER } from '../DashboardWidgetWrapper'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import {
@@ -26,13 +28,6 @@ function formatCurrency(n: number): string {
     currency: 'PHP',
     maximumFractionDigits: 2,
   }).format(n)
-}
-
-function todayRange(): { dateFrom: string; dateTo: string } {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-  return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
 }
 
 const PENDING_VOUCHER_STATUSES = new Set(['pending_online_approval', 'pending_onsite_approval'])
@@ -71,36 +66,23 @@ export default function ModuleStatsWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs' || variant === 'sm'
 
-  const [posStats, setPosStats] = useState<ModuleStat[]>([
-    { label: "Today's Sales", value: '—' },
-    { label: 'Transactions', value: '—' },
-    { label: 'Voids', value: '—' },
-  ])
-  const [inventoryStats, setInventoryStats] = useState<ModuleStat[]>([
-    { label: 'Active SKUs', value: '—' },
-    { label: 'Low Stock', value: '—' },
-    { label: 'Out of Stock', value: '—' },
-  ])
-  const [accountingStats, setAccountingStats] = useState<ModuleStat[]>([
-    { label: 'AR Outstanding', value: '—' },
-    { label: 'Overdue', value: '—' },
-    { label: 'Pending Approval', value: '—' },
-  ])
-  const [crmStats, setCrmStats] = useState<ModuleStat[]>([
-    { label: 'Customers', value: '—' },
-    { label: 'New This Month', value: '—' },
-    { label: 'Active Leads', value: '—' },
-  ])
+  const [posStats, setPosStats] = useState<ModuleStat[] | null>(null)
+  const [inventoryStats, setInventoryStats] = useState<ModuleStat[] | null>(null)
+  const [accountingStats, setAccountingStats] = useState<ModuleStat[] | null>(null)
+  const [crmStats, setCrmStats] = useState<ModuleStat[] | null>(null)
 
   const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const { dateFrom, dateTo } = todayRange()
+      // All-time rather than "today" — matches the other three cards, which
+      // are all current-state/cumulative, not day-scoped. A literal "today"
+      // filter reads as broken (0) against demo or early-stage real data
+      // whose transactions aren't dated today.
       const [txRes, inventoryAlerts, itemsRes, arRes, apRes, customersRes, leadsRes] =
         await Promise.all([
-          getTransactions({ dateFrom, dateTo, branchId: branchId ?? undefined }),
+          getTransactions({ branchId: branchId ?? undefined }),
           loadInventoryAlerts(branchId),
           api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
           ARInvoices.list(),
@@ -111,15 +93,13 @@ export default function ModuleStatsWidget() {
       if (cancelled) return
 
       // POS
-      const todayTxns = txRes.data ?? []
-      const saleTxns = todayTxns.filter(
-        (t) => t.transactionType === 'sale' && t.status !== 'voided'
-      )
+      const allTxns = txRes.data ?? []
+      const saleTxns = allTxns.filter((t) => t.transactionType === 'sale' && t.status !== 'voided')
       const totalSales = saleTxns.reduce((sum, t) => sum + Number(t.totalAmount ?? 0), 0)
-      const txCount = todayTxns.filter((t) => t.status !== 'voided').length
-      const voidCount = todayTxns.filter((t) => t.status === 'voided').length
+      const txCount = allTxns.filter((t) => t.status !== 'voided').length
+      const voidCount = allTxns.filter((t) => t.status === 'voided').length
       setPosStats([
-        { label: "Today's Sales", value: formatCurrency(totalSales) },
+        { label: 'Total Sales', value: formatCurrency(totalSales) },
         { label: 'Transactions', value: txCount },
         { label: 'Voids', value: voidCount },
       ])
@@ -173,42 +153,67 @@ export default function ModuleStatsWidget() {
     }
   }, [branchId])
 
+  if (!posStats || !inventoryStats || !accountingStats || !crmStats) {
+    return (
+      <div className={`grid gap-3 ${isCompact ? 'grid-cols-2' : 'grid-cols-4'}`}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-[150px] rounded-xl bg-zinc-100 animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+
   const MODULES = [
     {
       id: 'pos',
       label: 'Point of Sale',
+      href: '/pos',
       icon: ShoppingCart,
       color: 'text-blue-600',
       bg: 'bg-blue-50',
       accent: 'border-blue-100',
       stats: posStats,
+      links: [{ label: 'Transactions', href: '/pos/transactions' }],
     },
     {
       id: 'inventory',
       label: 'Inventory',
+      href: '/inventory',
       icon: Package,
       color: 'text-amber-600',
       bg: 'bg-amber-50',
       accent: 'border-amber-100',
       stats: inventoryStats,
+      links: [{ label: 'Purchase Orders', href: '/inventory/purchase-orders' }],
     },
     {
       id: 'accounting',
       label: 'Accounting',
+      href: '/accounting',
       icon: Receipt,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50',
       accent: 'border-emerald-100',
       stats: accountingStats,
+      links: [
+        { label: 'AR Invoices', href: '/accounting/ar-invoices' },
+        { label: 'AP Bills', href: '/accounting/ap-bills' },
+        { label: 'Reports', href: '/accounting/reports' },
+      ],
     },
     {
       id: 'crm',
       label: 'CRM',
+      href: '/crm',
       icon: Users,
       color: 'text-purple-600',
       bg: 'bg-purple-50',
       accent: 'border-purple-100',
       stats: crmStats,
+      links: [
+        { label: 'Leads', href: '/crm/leads' },
+        { label: 'Customers', href: '/crm/customers' },
+      ],
     },
   ]
 
@@ -219,22 +224,39 @@ export default function ModuleStatsWidget() {
         return (
           <div
             key={mod.id}
-            className={`rounded-xl border ${mod.accent} bg-white p-3 shadow-sm space-y-2.5`}
+            className={`rounded-xl border ${mod.accent} bg-white p-2.5 transition-all duration-300 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER} hover:-translate-y-0.5`}
           >
-            <div className="flex items-center gap-2">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${mod.bg}`}>
-                <Icon className={`h-3.5 w-3.5 ${mod.color}`} />
-              </div>
-              <p className="text-xs font-semibold text-zinc-700">{mod.label}</p>
-            </div>
-            <div className="space-y-1.5">
-              {mod.stats.map((stat) => (
-                <div key={stat.label} className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] text-zinc-400">{stat.label}</p>
-                  <p className="text-xs font-bold text-zinc-900">{stat.value}</p>
+            <Link href={mod.href} className="block space-y-2">
+              <div className="flex items-center gap-2">
+                <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${mod.bg}`}>
+                  <Icon className={`h-3.5 w-3.5 ${mod.color}`} />
                 </div>
-              ))}
-            </div>
+                <p className="text-xs font-semibold text-zinc-700">{mod.label}</p>
+              </div>
+              <div className="space-y-1">
+                {mod.stats.map((stat) => (
+                  <div key={stat.label} className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-zinc-400">{stat.label}</p>
+                    <p className="text-xs font-bold text-zinc-900">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            </Link>
+            {!isCompact && mod.links.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-zinc-100 pt-1.5">
+                {mod.links.map((link, i) => (
+                  <span key={link.href} className="flex items-center gap-1.5">
+                    {i > 0 && <span className="text-zinc-300">·</span>}
+                    <Link
+                      href={link.href}
+                      className="text-[10px] font-medium text-zinc-500 transition-colors hover:text-purple-600"
+                    >
+                      {link.label}
+                    </Link>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )
       })}

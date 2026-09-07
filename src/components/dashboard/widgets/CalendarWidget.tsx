@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays, List, Clock, Cake } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import DayPopover from './DayPopover'
@@ -10,6 +10,17 @@ import {
   createCalendarEvent,
 } from '@/src/app/(app)/(dashboard)/_actions/calendar-events-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { GRID_ROW_HEIGHT, GRID_MARGIN_Y } from '@/src/libs/dashboardWidgets'
+
+// Must match the `h` set for the 'calendar' widget in every role's
+// defaultLayoutsByRole (dashboardWidgets.ts) — Calendar opts out of
+// auto-fit-to-content (noAutoFit) so both its views can share one fixed
+// total height without reflowing whatever's below it when you switch
+// views. This is that same total, computed the same way fitHeightToContent
+// derives pixels from grid row units.
+const CALENDAR_WIDGET_H = 5
+const CALENDAR_FIXED_HEIGHT_PX =
+  CALENDAR_WIDGET_H * (GRID_ROW_HEIGHT + GRID_MARGIN_Y) - GRID_MARGIN_Y
 
 type EmployeeBirthday = {
   id: string
@@ -72,6 +83,24 @@ export default function CalendarWidget() {
   const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
   const branchId = usePosBranchContext((s) => s.branchId)
 
+  // Measures the nav row's real rendered height so the content area below
+  // it (day-grid or event list) can be given the exact remaining space —
+  // both views then fill the same fixed total, whole, no leftover gap and
+  // no need to guess the nav row's height up front.
+  const navRowRef = useRef<HTMLDivElement>(null)
+  const [navHeight, setNavHeight] = useState(0)
+  useLayoutEffect(() => {
+    const el = navRowRef.current
+    if (!el) return
+    const update = () => setNavHeight(el.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const CONTENT_GAP_PX = 8 // matches the outer wrapper's gap-2
+  const contentAreaHeightPx = Math.max(CALENDAR_FIXED_HEIGHT_PX - navHeight - CONTENT_GAP_PX, 120)
+
   useEffect(() => {
     api.get<EmployeeBirthday[]>('/users/birthdays').then((res) => {
       if (res.success && res.data) setEmployeeBirthdays(res.data)
@@ -129,6 +158,13 @@ export default function CalendarWidget() {
     ])
   ).sort()
   const monthEvents = allKeys.flatMap((key) => allEventsForDate(key))
+
+  // Grouped by date for the list/events view.
+  const eventsByDate: Record<string, CalendarEvent[]> = {}
+  for (const ev of monthEvents) {
+    eventsByDate[ev.date] = [...(eventsByDate[ev.date] ?? []), ev]
+  }
+  const sortedDateEntries = Object.entries(eventsByDate).sort(([a], [b]) => a.localeCompare(b))
 
   function handleCellClick(day: number, e: React.MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -239,135 +275,155 @@ export default function CalendarWidget() {
     </div>
   )
 
+  const numGridRows = cells.length / 7
+
   return (
     <div className="flex flex-col gap-2">
-      {/* Nav bar and grid as two separate cards, matching CRM exactly */}
-      {view === 'calendar' && (
-        <>
-          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">{navRow}</div>
-          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-            <div className="grid grid-cols-7 border-b border-zinc-200 bg-zinc-50">
-              {DAYS.map((d) => (
-                <div
-                  key={d}
-                  className="border-r border-zinc-200 py-2 text-center text-[11px] font-semibold text-zinc-400 last:border-r-0"
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {cells.map((day, i) => {
-                const isToday = isCurrentMonth && day === today
-                const key = day !== null ? dateKey(year, month, day) : null
-                const hasOwnEvent = key !== null && (events[key] ?? []).length > 0
-                const hasBirthday = key !== null && (birthdayEvents[key] ?? []).length > 0
-                const isSelected = key !== null && key === selectedDate
-                return (
-                  <div
-                    key={i}
-                    onClick={day !== null ? (e) => handleCellClick(day, e) : undefined}
-                    className={`flex min-h-[64px] flex-col items-center gap-1 border-b border-r border-zinc-100 py-2 last:border-r-0 ${
-                      day === null
-                        ? 'bg-zinc-50/60'
-                        : `cursor-pointer ${isSelected ? 'bg-purple-50' : 'hover:bg-zinc-50'}`
-                    }`}
-                  >
-                    {day !== null && (
-                      <>
-                        <span
-                          className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium ${
-                            isToday
-                              ? 'bg-prominent-purple-700 font-bold text-white'
-                              : isSelected
-                                ? 'bg-purple-100 text-prominent-purple-700'
-                                : 'text-zinc-700'
-                          }`}
-                        >
-                          {day}
-                        </span>
-                        <span className="flex items-center gap-0.5">
-                          {hasOwnEvent && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-prominent-purple-500" />
-                          )}
-                          {hasBirthday && <span className="h-1.5 w-1.5 rounded-full bg-pink-500" />}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </>
-      )}
+      {/* Nav bar rendered once and shared by both views — its measured
+          height (navRowRef) is what the content area below sizes itself
+          against, so switching views can't leave this out of sync. */}
+      <div ref={navRowRef} className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+        {navRow}
+      </div>
 
-      {/* Schedule list — nav bar as its own card, matching the calendar view */}
-      {view === 'events' && (
-        <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">{navRow}</div>
-          {monthEvents.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-300 bg-white py-8 text-center shadow-sm">
-              <p className="text-xs font-medium text-zinc-500">No events this month.</p>
-            </div>
-          ) : (
-            (() => {
-              // Group by date
-              const grouped: Record<string, CalendarEvent[]> = {}
-              for (const ev of monthEvents) {
-                grouped[ev.date] = [...(grouped[ev.date] ?? []), ev]
-              }
-              const sortedEntries = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
-              return sortedEntries.map(([key, dayEvents]) => {
-                const dayNum = Number(key.split('-')[2])
-                const isToday = isCurrentMonth && dayNum === today
-                const d = new Date(key + 'T00:00:00')
-                const weekday = d.toLocaleDateString('default', { weekday: 'short' })
-                const dateLabel = isToday
-                  ? `Today, ${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
-                  : `${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
-                return (
-                  <div
-                    key={key}
-                    className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-                  >
-                    <p
-                      className={`mb-1 text-[12px] font-bold ${isToday ? 'text-zinc-900' : 'text-zinc-500'}`}
-                    >
-                      {dateLabel}
-                    </p>
-                    <div className="flex flex-col divide-y divide-zinc-100">
-                      {dayEvents.map((ev) => {
-                        const isBirthday = ev.id.startsWith('birthday-')
-                        const Icon = isBirthday ? Cake : ev.startTime ? Clock : CalendarDays
-                        return (
-                          <div key={ev.id} className="flex items-start gap-2.5 py-1.5">
-                            <span
-                              className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-                                isBirthday ? 'bg-pink-50' : 'bg-purple-50'
-                              }`}
-                            >
-                              <Icon
-                                className={`h-3.5 w-3.5 ${isBirthday ? 'text-pink-600' : 'text-prominent-purple-700'}`}
-                              />
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-medium text-zinc-900">
-                                {ev.title}
-                              </p>
-                              <p className="text-[10px] text-zinc-400">{formatEventTime(ev)}</p>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })
-            })()
-          )}
+      {view === 'calendar' && (
+        <div
+          className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm"
+          style={{ height: contentAreaHeightPx }}
+        >
+          <div className="grid shrink-0 grid-cols-7 border-b border-zinc-200 bg-zinc-50">
+            {DAYS.map((d) => (
+              <div
+                key={d}
+                className="border-r border-zinc-200 py-2 text-center text-[11px] font-semibold text-zinc-400 last:border-r-0"
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+          {/* Rows stretch to fill whatever's left (minmax(0,1fr) each) instead
+              of a fixed per-row height — a 5-week month's rows end up a bit
+              taller than a 6-week month's, but the grid always fills the
+              card instead of leaving dead space below a shorter month. */}
+          <div
+            className="grid flex-1 grid-cols-7"
+            style={{ gridTemplateRows: `repeat(${numGridRows}, minmax(0, 1fr))` }}
+          >
+            {cells.map((day, i) => {
+              const isToday = isCurrentMonth && day === today
+              const key = day !== null ? dateKey(year, month, day) : null
+              const hasOwnEvent = key !== null && (events[key] ?? []).length > 0
+              const hasBirthday = key !== null && (birthdayEvents[key] ?? []).length > 0
+              const isSelected = key !== null && key === selectedDate
+              return (
+                <div
+                  key={i}
+                  onClick={day !== null ? (e) => handleCellClick(day, e) : undefined}
+                  className={`flex flex-col items-center justify-center gap-1 border-b border-r border-zinc-100 last:border-r-0 ${
+                    day === null
+                      ? 'bg-zinc-50/60'
+                      : `cursor-pointer ${isSelected ? 'bg-purple-50' : 'hover:bg-zinc-50'}`
+                  }`}
+                >
+                  {day !== null && (
+                    <>
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium ${
+                          isToday
+                            ? 'bg-prominent-purple-700 font-bold text-white'
+                            : isSelected
+                              ? 'bg-purple-100 text-prominent-purple-700'
+                              : 'text-zinc-700'
+                        }`}
+                      >
+                        {day}
+                      </span>
+                      <span className="flex items-center gap-0.5">
+                        {hasOwnEvent && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-prominent-purple-500" />
+                        )}
+                        {hasBirthday && <span className="h-1.5 w-1.5 rounded-full bg-pink-500" />}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
+
+      {view === 'events' &&
+        (monthEvents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-white py-8 text-center shadow-sm">
+            <p className="text-xs font-medium text-zinc-500">No events this month.</p>
+          </div>
+        ) : (
+          // Scrollable rather than growing to fit every event in the month
+          // — otherwise a busy month would push the whole widget taller
+          // without bound (Calendar has a fixed height; see noAutoFit).
+          // scroll-snap-type + each card's scroll-snap-align means any
+          // scroll gesture always settles on a clean card boundary, never
+          // stuck mid-card — the fade only has to soften the very first,
+          // unscrolled frame, where the fixed viewport's bottom edge can
+          // still land mid-card before the user has scrolled at all.
+          <div
+            className="flex flex-col gap-3 overflow-y-auto pr-1"
+            style={{
+              height: contentAreaHeightPx,
+              scrollSnapType: 'y mandatory',
+              maskImage: 'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+              WebkitMaskImage:
+                'linear-gradient(to bottom, black calc(100% - 24px), transparent 100%)',
+            }}
+          >
+            {sortedDateEntries.map(([key, dayEvents]) => {
+              const dayNum = Number(key.split('-')[2])
+              const isToday = isCurrentMonth && dayNum === today
+              const d = new Date(key + 'T00:00:00')
+              const weekday = d.toLocaleDateString('default', { weekday: 'short' })
+              const dateLabel = isToday
+                ? `Today, ${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
+                : `${weekday}, ${d.getDate()} ${monthName.slice(0, 3)}`
+              return (
+                <div
+                  key={key}
+                  className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                  style={{ scrollSnapAlign: 'start' }}
+                >
+                  <p
+                    className={`mb-1 text-[12px] font-bold ${isToday ? 'text-zinc-900' : 'text-zinc-500'}`}
+                  >
+                    {dateLabel}
+                  </p>
+                  <div className="flex flex-col divide-y divide-zinc-100">
+                    {dayEvents.map((ev) => {
+                      const isBirthday = ev.id.startsWith('birthday-')
+                      const Icon = isBirthday ? Cake : ev.startTime ? Clock : CalendarDays
+                      return (
+                        <div key={ev.id} className="flex items-start gap-2.5 py-1.5">
+                          <span
+                            className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
+                              isBirthday ? 'bg-pink-50' : 'bg-purple-50'
+                            }`}
+                          >
+                            <Icon
+                              className={`h-3.5 w-3.5 ${isBirthday ? 'text-pink-600' : 'text-prominent-purple-700'}`}
+                            />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-medium text-zinc-900">{ev.title}</p>
+                            <p className="text-[10px] text-zinc-400">{formatEventTime(ev)}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
 
       {/* Day popover */}
       {selectedDate && popoverAnchor && (

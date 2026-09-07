@@ -14,6 +14,10 @@ export default async function DashboardPage() {
       userName={session.firstName ?? session.fullName ?? session.email ?? 'User'}
       roles={session.roles ?? []}
       primaryRole={session.primaryRole}
+      companyName={
+        session.enterpriseOwner?.companyTradingName ?? session.enterpriseOwnerName ?? null
+      }
+      branchName={session.branchName ?? null}
     />
   )
 }
