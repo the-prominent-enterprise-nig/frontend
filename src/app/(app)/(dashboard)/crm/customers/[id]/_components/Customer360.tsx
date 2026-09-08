@@ -6,7 +6,6 @@ import Link from 'next/link'
 import {
   ArrowLeft,
   BellPlus,
-  ChevronRight,
   Download,
   GitMerge,
   Paperclip,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
@@ -31,6 +31,20 @@ const txTypeColor: Record<string, string> = {
   refund: 'bg-orange-100 text-orange-700',
   exchange: 'bg-purple-100 text-purple-700',
 }
+/** How the sale was paid for — the thing that used to be answerable only by
+ * whether a row appeared under "Installment Plans". Now that every purchase
+ * lives in one list, each row has to say which kind it is on its own.
+ * 'mixed' is a real value: one cart can carry cash and installment lines. */
+const invoiceTypeStyle: Record<string, { label: string; className: string }> = {
+  cash: { label: 'Cash', className: 'bg-emerald-100 text-emerald-700' },
+  charge: { label: 'Charge', className: 'bg-amber-100 text-amber-700' },
+  installment: { label: 'Installment', className: 'bg-indigo-100 text-indigo-700' },
+  mixed: { label: 'Mixed', className: 'bg-slate-100 text-slate-700' },
+}
+
+/** Server-side page size for the customer's transaction history. */
+const HISTORY_PAGE_SIZE = 20
+
 const txStatusColor: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   voided: 'bg-red-100 text-red-700',
@@ -89,6 +103,12 @@ export default function Customer360({
   // — covers cash/full-payment sales too, unlike Installment Plans above,
   // merged with installment-due payments collected later via Collections.
   const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyMeta, setHistoryMeta] = useState<{
+    page: number
+    total: number
+    pageCount: number
+  } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   // TransactionDetail (the same receipt modal POS's own pages use) requires
@@ -151,12 +171,15 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    getCustomerHistoryWithPayments(id).then((res) => {
-      if (res.success && res.data) setTransactionHistory(res.data)
-      else setHistoryError(res.error ?? 'Failed to load transaction history')
+    setHistoryLoading(true)
+    getCustomerHistoryWithPayments(id, historyPage, HISTORY_PAGE_SIZE).then((res) => {
+      if (res.success && res.data) {
+        setTransactionHistory(res.data.items)
+        setHistoryMeta(res.data.meta)
+      } else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
     })
-  }, [id])
+  }, [id, historyPage])
 
   if (loading) {
     return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
@@ -303,39 +326,113 @@ export default function Customer360({
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
-          {installmentLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
-          ) : installmentError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{installmentError}</p>
-          ) : installmentSchedules.length === 0 ? (
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
+          {historyLoading ? (
             <p className="py-4 text-center text-[13px] text-gray-400">
-              No installment plans for this customer.
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : transactionHistory.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No transactions for this customer.
             </p>
           ) : (
-            <div className="space-y-2">
-              {installmentSchedules.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setScheduleDetailTarget(s)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-100 p-3 text-left text-[13px] transition-colors hover:bg-gray-50"
-                >
-                  <div>
-                    <p className="text-gray-800">{productLabel(s.posTransactionLines)}</p>
-                    <p className="mt-0.5 text-[12px] text-gray-500">
-                      {s.termMonths} months · Total {formatPeso(s.totalPayable)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {s.installmentAccount && (
-                      <InstallmentPlanStatusBadge status={s.installmentAccount.status} />
-                    )}
-                    <ChevronRight size={16} className="text-gray-300" />
-                  </div>
-                </button>
-              ))}
-            </div>
+            <>
+              <ul className="divide-y divide-gray-100">
+                {transactionHistory.map((tx) =>
+                  tx.kind === 'PAYMENT' ? (
+                    <li
+                      key={tx.id}
+                      className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          Payment received
+                          {tx.reference ? ` — ${tx.reference}` : ''}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.paymentDate).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.invoiceNumbers.length > 0 && (
+                            <span className="truncate">{tx.invoiceNumbers.join(', ')}</span>
+                          )}
+                          {tx.cancelledAt && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                              cancelled
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-green-700">
+                        {formatPeso(tx.amount)}
+                      </span>
+                    </li>
+                  ) : (
+                    <li
+                      key={tx.id}
+                      onClick={() => setSelectedTransaction(tx)}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-800">
+                          {summarizeTransactionItems(tx)}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
+                          <span>
+                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                          {tx.invoiceType && invoiceTypeStyle[tx.invoiceType] && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${invoiceTypeStyle[tx.invoiceType].className}`}
+                            >
+                              {invoiceTypeStyle[tx.invoiceType].label}
+                            </span>
+                          )}
+                          {tx.transactionType !== 'sale' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.transactionType}
+                            </span>
+                          )}
+                          {tx.status !== 'completed' && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tx.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-gray-800">
+                        {formatPeso(tx.totalAmount)}
+                      </span>
+                    </li>
+                  )
+                )}
+              </ul>
+              {historyMeta && historyMeta.total > 0 && (
+                <TablePagination
+                  page={historyMeta.page}
+                  pageCount={historyMeta.pageCount}
+                  onPageChange={setHistoryPage}
+                  pageStart={(historyMeta.page - 1) * HISTORY_PAGE_SIZE}
+                  pageSize={transactionHistory.length}
+                  totalItems={historyMeta.total}
+                  noun="transaction"
+                />
+              )}
+            </>
           )}
         </section>
       </div>
@@ -591,106 +688,6 @@ export default function Customer360({
         </section>
       </div>
 
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
-          {historyLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              Loading transaction history…
-            </p>
-          ) : historyError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : transactionHistory.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No transactions for this customer.
-            </p>
-          ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) =>
-                  tx.kind === 'PAYMENT' ? (
-                    <li
-                      key={tx.id}
-                      className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-800">
-                          Payment received
-                          {tx.reference ? ` — ${tx.reference}` : ''}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-                          <span>
-                            {new Date(tx.paymentDate).toLocaleDateString('en-PH', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          {tx.invoiceNumbers.length > 0 && (
-                            <span className="truncate">{tx.invoiceNumbers.join(', ')}</span>
-                          )}
-                          {tx.cancelledAt && (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
-                              cancelled
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-medium text-green-700">
-                        {formatPeso(tx.amount)}
-                      </span>
-                    </li>
-                  ) : (
-                    <li
-                      key={tx.id}
-                      onClick={() => setSelectedTransaction(tx)}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-800">
-                          {summarizeTransactionItems(tx)}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-                          <span>
-                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          {tx.transactionType !== 'sale' && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                            >
-                              {tx.transactionType}
-                            </span>
-                          )}
-                          {tx.status !== 'completed' && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                            >
-                              {tx.status}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-medium text-gray-800">
-                        {formatPeso(tx.totalAmount)}
-                      </span>
-                    </li>
-                  )
-                )}
-              </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
-              )}
-            </>
-          )}
-        </section>
-      </div>
-
       {canDelete && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
           <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
@@ -857,29 +854,6 @@ const STATUS_LABELS: Record<string, string> = {
 // status. closed/early_closed/written_off all mean "no longer active", just
 // via different paths (paid off on schedule, paid off early, or written off
 // as uncollectible).
-const INSTALLMENT_PLAN_STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  closed: 'Closed',
-  early_closed: 'Paid Off Early',
-  written_off: 'Written Off',
-}
-
-function InstallmentPlanStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    active: 'bg-blue-100 text-blue-700',
-    closed: 'bg-green-100 text-green-700',
-    early_closed: 'bg-green-100 text-green-700',
-    written_off: 'bg-red-100 text-red-700',
-  }
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
-    >
-      {INSTALLMENT_PLAN_STATUS_LABELS[status] ?? status}
-    </span>
-  )
-}
-
 function InstallmentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PAID: 'bg-green-100 text-green-700',

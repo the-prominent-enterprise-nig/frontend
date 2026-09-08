@@ -234,6 +234,54 @@ export const Reports = {
       ...(startDate && { startDate }),
       ...(endDate && { endDate }),
     }),
+  // Scenario 47 — expenses grouped branch x expense category. Unlike
+  // costCenter above (free-text tag), this joins the real Branch table.
+  expensesByBranch: (params: {
+    startDate?: string
+    endDate?: string
+    branchId?: string
+    includeDrafts?: boolean
+  }) =>
+    api.get<ExpensesByBranchResponse>('/reports/expenses-by-branch', {
+      ...(params.startDate && { startDate: params.startDate }),
+      ...(params.endDate && { endDate: params.endDate }),
+      ...(params.branchId && { branchId: params.branchId }),
+      ...(params.includeDrafts && { includeDrafts: 'true' }),
+    }),
+}
+
+/** Scenario 47 — shape returned by /reports/expenses-by-branch. */
+export interface ExpensesByBranchResponse {
+  summary: {
+    branchName: string
+    categoryAccount: string
+    entryCount: number
+    amount: number
+    taxAmount: number
+    total: number
+  }[]
+  rows: {
+    date: string
+    expenseNumber: string
+    branchId: string | null
+    branchName: string
+    categoryAccount: string
+    categoryNumber: string
+    payee: string
+    description: string
+    costCenter: string
+    amount: number
+    taxAmount: number
+    total: number
+    status: string
+  }[]
+  meta: {
+    startDate: string | null
+    endDate: string | null
+    rowCount: number
+    unassignedTotal: number
+    totals: { amount: number; taxAmount: number; total: number }
+  }
 }
 
 // ============ GL Reconciliation (Scenario 29 ACC-07) ============
@@ -1522,6 +1570,10 @@ export interface BusinessExpense {
   totalAmount: number
   payments: BusinessExpensePayment[]
   costCenter?: string | null
+  /** Scenario 47 — set server-side from the creating user's branch; null on
+   * pre-Scenario-47 rows, which report as "Unassigned". */
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
 }

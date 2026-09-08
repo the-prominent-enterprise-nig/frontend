@@ -410,6 +410,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:collections:manage',
       },
       {
+        // Scenario 47 — sidebar gate matches the page's own guard
+        // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
+        // 'pos:transactions:read': these reports expose unit cost and
+        // margin, so a Cashier must not even see the link.
+        label: 'Sales Reports',
+        href: '/pos/reports',
+        icon: BarChart3,
+        requiredPermission: 'pos:reports:read',
+      },
+      {
         label: 'Credit Applications',
         href: '/pos/credit-applications',
         icon: CreditCard,
@@ -532,12 +542,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: House,
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
       },
-      {
-        label: 'Leads',
-        href: '/crm/leads',
-        icon: UsersRound,
-        requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
+      // Leads is hidden from the sidebar for now — the routes under /crm/leads
+      // still work, they're just not linked here.
+      // {
+      //   label: 'Leads',
+      //   href: '/crm/leads',
+      //   icon: UsersRound,
+      //   requiredPermission: CRM_PERMISSIONS.LEADS_READ,
+      // },
       {
         label: 'Collectors',
         href: '/crm/collectors',
