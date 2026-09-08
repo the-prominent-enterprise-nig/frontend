@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
@@ -40,6 +41,9 @@ const invoiceTypeStyle: Record<string, { label: string; className: string }> = {
   installment: { label: 'Installment', className: 'bg-indigo-100 text-indigo-700' },
   mixed: { label: 'Mixed', className: 'bg-slate-100 text-slate-700' },
 }
+
+/** Server-side page size for the customer's transaction history. */
+const HISTORY_PAGE_SIZE = 20
 
 const txStatusColor: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
@@ -99,6 +103,12 @@ export default function Customer360({
   // — covers cash/full-payment sales too, unlike Installment Plans above,
   // merged with installment-due payments collected later via Collections.
   const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyMeta, setHistoryMeta] = useState<{
+    page: number
+    total: number
+    pageCount: number
+  } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   // TransactionDetail (the same receipt modal POS's own pages use) requires
@@ -161,12 +171,15 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    getCustomerHistoryWithPayments(id).then((res) => {
-      if (res.success && res.data) setTransactionHistory(res.data)
-      else setHistoryError(res.error ?? 'Failed to load transaction history')
+    setHistoryLoading(true)
+    getCustomerHistoryWithPayments(id, historyPage, HISTORY_PAGE_SIZE).then((res) => {
+      if (res.success && res.data) {
+        setTransactionHistory(res.data.items)
+        setHistoryMeta(res.data.meta)
+      } else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
     })
-  }, [id])
+  }, [id, historyPage])
 
   if (loading) {
     return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
@@ -408,10 +421,16 @@ export default function Customer360({
                   )
                 )}
               </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
+              {historyMeta && historyMeta.total > 0 && (
+                <TablePagination
+                  page={historyMeta.page}
+                  pageCount={historyMeta.pageCount}
+                  onPageChange={setHistoryPage}
+                  pageStart={(historyMeta.page - 1) * HISTORY_PAGE_SIZE}
+                  pageSize={transactionHistory.length}
+                  totalItems={historyMeta.total}
+                  noun="transaction"
+                />
               )}
             </>
           )}
