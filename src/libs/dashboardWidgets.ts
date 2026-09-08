@@ -10,6 +10,8 @@ import {
   Activity,
   Zap,
   AlertTriangle,
+  AlertCircle,
+  Gauge,
   Calendar,
   ShoppingCart,
   TrendingUp,
@@ -18,7 +20,6 @@ import {
   FileWarning,
   Bookmark,
   Store,
-  Building,
   Layers,
   ClipboardList,
   Calculator,
@@ -41,6 +42,13 @@ export type WidgetDef = {
    * widget's own content supplies all chrome. Still shown while editing
    * so the widget stays draggable/removable/configurable. */
   noChrome?: boolean
+  /** Opt out of auto-fit-to-content sizing — the widget keeps whatever `h`
+   * is in the layout (default or user-dragged) instead of being resized to
+   * match its currently-measured natural height. For a widget with more
+   * than one internal view whose natural heights differ (e.g. Calendar's
+   * grid vs. list view), auto-fitting means switching views reflows every
+   * widget below it, which reads as the page jumping around. */
+  noAutoFit?: boolean
 }
 
 // Grid layout item — compatible with react-grid-layout's Layout type.
@@ -92,6 +100,23 @@ export const CONFIGURABLE_WIDGET_IDS: ReadonlySet<string> = new Set(['quick-acti
 
 export const ALL_WIDGETS: WidgetDef[] = [
   {
+    id: 'kpi-strip',
+    label: 'Overview',
+    icon: Gauge,
+    description:
+      'Top-line KPIs at a glance: revenue, outstanding AR, needs-attention count, customers, employees, and system users',
+    defaultW: 12,
+    defaultH: 3,
+    minW: 6,
+    minH: 2,
+    roles: ['admin'],
+    // noChrome: the widget renders its own unboxed heading (see
+    // HeroKpiStripWidget) — the standard wrapper card would put a bordered
+    // background around content that's already 4 individually-bordered
+    // tiles, reading as boxes nested in a box.
+    noChrome: true,
+  },
+  {
     id: 'stats',
     label: 'Stats Overview',
     icon: BarChart2,
@@ -99,8 +124,11 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 12,
     defaultH: 3,
     minW: 4,
-    minH: 3,
-    roles: ['admin', 'hr', 'accounting', 'inventory'],
+    minH: 3.5,
+    // 'admin' deliberately excluded — superseded by kpi-strip (Overview),
+    // which covers the same "top KPI strip" role for the Business Owner
+    // dashboard; having both would just be two competing summaries.
+    roles: ['hr', 'accounting', 'inventory'],
   },
   {
     id: 'modules',
@@ -110,8 +138,10 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 12,
     defaultH: 3,
     minW: 5,
-    minH: 3,
-    roles: ['admin'],
+    minH: 3.5,
+    // 'admin' deliberately excluded — duplicates the sidebar nav and
+    // module-stats; a leftover from before module-stats existed.
+    roles: [],
   },
   // Not registered: Leave/Overtime counts call the same dead HR endpoints
   // (/leave-management/summary, /attendance/overtime-requests) as the HR
@@ -130,7 +160,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 4,
   //   defaultH: 3,
   //   minW: 3,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr', 'accounting', 'inventory'],
   // },
   {
@@ -138,10 +168,10 @@ export const ALL_WIDGETS: WidgetDef[] = [
     label: 'Reminders',
     icon: Bell,
     description: 'Your upcoming reminders',
-    defaultW: 3,
+    defaultW: 4,
     defaultH: 3,
-    minW: 2,
-    minH: 3,
+    minW: 3,
+    minH: 3.5,
     roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
   },
   {
@@ -152,7 +182,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 4,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'accounting', 'inventory', 'default'],
   },
   {
@@ -163,7 +193,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'hr', 'accounting', 'inventory'],
   },
   {
@@ -174,8 +204,11 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 3,
     defaultH: 3,
     minW: 2,
-    minH: 3,
-    roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
+    minH: 3.5,
+    // 'admin' deliberately excluded — these are cashier/staff shortcuts
+    // (new sale, stock receive), not something a Business Owner adds to a
+    // strategic overview dashboard.
+    roles: ['hr', 'accounting', 'inventory', 'default'],
   },
   {
     id: 'system-alerts',
@@ -185,7 +218,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 4,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin'],
   },
   // Not registered: no Task concept exists anywhere in the backend (no
@@ -202,7 +235,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 6,
   //   defaultH: 3,
   //   minW: 4,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr', 'accounting', 'inventory'],
   // },
   {
@@ -211,11 +244,12 @@ export const ALL_WIDGETS: WidgetDef[] = [
     icon: Calendar,
     description: 'Monthly calendar view',
     defaultW: 6,
-    defaultH: 5,
+    defaultH: 7,
     minW: 4,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'hr', 'accounting', 'inventory', 'default'],
     noChrome: true,
+    noAutoFit: true,
   },
   // ── Sales & Orders widgets ──────────────────────────────────────────────────
   {
@@ -226,8 +260,10 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 12,
     defaultH: 3,
     minW: 4,
-    minH: 3,
-    roles: ['admin', 'sales'],
+    minH: 3.5,
+    // 'admin' deliberately excluded — re-summarizes numbers already covered
+    // by kpi-strip + module-stats for that role.
+    roles: ['sales'],
   },
   {
     id: 'sales-trend',
@@ -237,7 +273,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 4,
     minW: 4,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
   },
   {
@@ -248,7 +284,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 4,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
   },
   {
@@ -259,7 +295,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 4,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
   },
   {
@@ -270,7 +306,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales', 'accounting'],
   },
   {
@@ -281,7 +317,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
   },
   {
@@ -292,29 +328,37 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
-  },
-  {
-    id: 'enterprise-summary',
-    label: 'Enterprise Summary',
-    icon: Building,
-    description: 'Employee and user counts',
-    defaultW: 12,
-    defaultH: 3,
-    minW: 6,
-    minH: 2,
-    roles: ['admin'],
   },
   {
     id: 'module-stats',
     label: 'Module Stats',
     icon: Layers,
-    description: 'Key metrics across POS, Inventory, Accounting, and CRM',
+    description:
+      'Key metrics across POS, Inventory, Accounting, and CRM, with quick links to each module’s key sub-pages',
     defaultW: 12,
     defaultH: 4,
     minW: 6,
+    // Lower than the shared 3.5 floor used elsewhere — that floor exists so
+    // widgets sitting side-by-side in a row (Reminders, Employee Birthdays,
+    // System Alerts, etc.) match heights. Module Stats is full-width with
+    // nothing beside it to match, and its own natural content comfortably
+    // fits at 3 rows — flooring it to 3.5 just adds empty space under the
+    // four cards for no visual benefit.
     minH: 3,
+    roles: ['admin'],
+  },
+  {
+    id: 'needs-attention',
+    label: 'Needs Attention',
+    icon: AlertCircle,
+    description:
+      'Pending approvals, overdue invoices, and COGS posting gaps merged into one prioritized feed',
+    defaultW: 12,
+    defaultH: 5,
+    minW: 4,
+    minH: 3.5,
     roles: ['admin'],
   },
   {
@@ -325,7 +369,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 4,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin'],
   },
   {
@@ -336,7 +380,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 3,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'accounting'],
   },
   {
@@ -347,7 +391,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
     defaultW: 6,
     defaultH: 4,
     minW: 3,
-    minH: 3,
+    minH: 3.5,
     roles: ['admin', 'sales'],
   },
   // ── HR widgets ───────────────────────────────────────────────────────────────
@@ -364,7 +408,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 6,
   //   defaultH: 3,
   //   minW: 3,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr'],
   // },
   // {
@@ -375,7 +419,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 6,
   //   defaultH: 4,
   //   minW: 3,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr'],
   // },
   // {
@@ -386,7 +430,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 4,
   //   defaultH: 4,
   //   minW: 3,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr'],
   // },
   // {
@@ -397,7 +441,7 @@ export const ALL_WIDGETS: WidgetDef[] = [
   //   defaultW: 4,
   //   defaultH: 4,
   //   minW: 3,
-  //   minH: 3,
+  //   minH: 3.5,
   //   roles: ['admin', 'hr'],
   // },
   // {
@@ -431,7 +475,10 @@ export const widgetById: Record<string, WidgetDef> = Object.fromEntries(
 // ── Grid layout constants ─────────────────────────────────────────────────────
 
 export const GRID_ROW_HEIGHT = 64
-export const GRID_MARGIN_Y = 12
+// 16 rather than 12 — a touch more breathing room between cards reads
+// calmer/more considered. Must match EditableDashboard's GridLayout
+// `margin` prop exactly, since this feeds the auto-fit height math below.
+export const GRID_MARGIN_Y = 16
 
 /**
  * Converts a measured natural content-area height (px) into a grid row count.
@@ -459,12 +506,23 @@ export function fitHeightToContent(
 /**
  * Returns a new layout where each item's `h` is auto-fitted to its measured
  * content height. Items without a measurement are left unchanged.
+ *
+ * The floor is each widget's own `minH` (usually 3, ~224px), not a fixed
+ * tiny constant — a deliberate choice for visual consistency: several
+ * small widgets (Reminders, System Alerts, Recent Activity, Employee
+ * Birthdays, Sales by Branch) commonly sit side by side, and letting each
+ * one shrink all the way down to its own bare-minimum content (a single
+ * empty-state line can be under 100px) made them look like mismatched
+ * scraps next to each other rather than a set of cards. Flooring at `minH`
+ * gives them a shared baseline size when sparse, while still letting any
+ * of them grow taller when they genuinely have more to show.
  */
 export function fitLayoutToContent(
   layout: LayoutItem[],
   naturalHeights: Record<string, number>
 ): LayoutItem[] {
   return layout.map((item) => {
+    if (widgetById[item.i]?.noAutoFit) return item
     const contentPx = naturalHeights[item.i]
     if (contentPx == null) return item
     const overheadPx = widgetById[item.i]?.noChrome ? NO_CHROME_OVERHEAD_PX : WIDGET_OVERHEAD_PX
@@ -474,32 +532,46 @@ export function fitLayoutToContent(
 }
 
 /**
- * Vertically compacts a layout so there are no empty row gaps between items.
- * Each item is pushed up to the lowest y position where it doesn't collide
- * with already-placed items. Call this after fitLayoutToContent to ensure
- * reduced `h` values don't leave dead space between rows.
+ * Vertically compacts a layout using a skyline/masonry packer, not just
+ * collision avoidance — each item settles at the max of the "occupied
+ * height so far" across only the columns it actually spans, so a narrow
+ * item can slot into a gap beside a taller neighbor instead of being
+ * pushed down to clear its neighbor's full height. The previous version
+ * only checked "does this exact box collide with any placed box," which
+ * kept short widgets pinned to a taller row-mate's bottom edge even when
+ * their own column was free much higher up — e.g. a one-line "Reminders"
+ * card next to a 5-row "Employee Birthdays" card would sit at Birthdays'
+ * height instead of the shorter height it actually needed. Call this
+ * after fitLayoutToContent so reduced `h` values open up real gaps for
+ * later items to fill.
  */
 export function compactLayoutVertically(layout: LayoutItem[]): LayoutItem[] {
-  // Sort by y first, then x for a deterministic top-to-bottom, left-to-right order.
+  // Sort by y first, then x — this is the "reading order" that decides
+  // priority when two items could both fit the same slot; it does not by
+  // itself prevent later, narrower items from settling higher than an
+  // earlier, wider one wherever their column spans don't overlap.
   const sorted = [...layout].sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x))
 
+  // skyline[col] = the lowest free y at that column, across the 12-col grid.
+  const skyline = new Array<number>(GRID_COLS).fill(0)
   const placed: LayoutItem[] = []
 
   for (const item of sorted) {
+    const colStart = Math.max(0, Math.round(item.x))
+    const colEnd = Math.min(GRID_COLS, Math.round(item.x + item.w))
     let y = 0
-    while (placed.some((p) => layoutItemsOverlap(p, { ...item, y }))) {
-      y++
+    for (let col = colStart; col < colEnd; col++) {
+      y = Math.max(y, skyline[col] ?? 0)
     }
     placed.push({ ...item, y })
+    for (let col = colStart; col < colEnd; col++) {
+      skyline[col] = y + item.h
+    }
   }
 
   // Return in original order so callers don't need to re-sort.
   const resultMap = new Map(placed.map((item) => [item.i, item]))
   return layout.map((item) => resultMap.get(item.i) ?? item)
-}
-
-function layoutItemsOverlap(a: LayoutItem, b: LayoutItem): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 }
 
 export const widgetsByRole: Record<DashboardRole, WidgetDef[]> = {
@@ -515,11 +587,10 @@ export const widgetsByRole: Record<DashboardRole, WidgetDef[]> = {
 
 export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
   admin: [
+    'kpi-strip',
     'calendar',
     'module-stats',
-    'cogs-gaps',
-    'pending-approvals',
-    'outstanding-invoices',
+    'needs-attention',
     'recent-activity',
     'sales-by-branch',
   ],
@@ -541,72 +612,109 @@ export const defaultWidgetsByRole: Record<DashboardRole, string[]> = {
 
 export const defaultLayoutsByRole: Record<DashboardRole, LayoutItem[]> = {
   admin: [
-    { i: 'calendar', x: 0, y: 0, w: 12, h: 5, minW: 4, minH: 3 },
-    { i: 'module-stats', x: 0, y: 7, w: 12, h: 4, minW: 6, minH: 3 },
-    { i: 'cogs-gaps', x: 0, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'pending-approvals', x: 6, y: 11, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'outstanding-invoices', x: 0, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'recent-activity', x: 6, y: 15, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'sales-by-branch', x: 0, y: 19, w: 6, h: 3, minW: 3, minH: 3 },
+    // Numbers first (KPI strip, Calendar, Module Stats — each module card
+    // already click-through to its own module home, plus a quick-links row
+    // to that module's key sub-pages), then the actionable feed, then
+    // reference tools at the bottom.
+    { i: 'kpi-strip', x: 0, y: 0, w: 12, h: 3, minW: 6, minH: 2 },
+    // h fixed (not auto-fitted, see noAutoFit) — both the day-grid and list
+    // views size their content area to this same fixed height (see
+    // CALENDAR_WIDGET_H in CalendarWidget.tsx, which must match), so
+    // toggling between them never reflows anything below it.
+    // h is 0.5 more than CALENDAR_WIDGET_H (CalendarWidget.tsx) on purpose —
+    // the widget only fills 5 units of content, leaving half a unit of
+    // legitimate blank space at the bottom of its own footprint as breathing
+    // room before Module Stats. A plain y-offset doesn't survive: the
+    // auto-fit sweep's compactLayoutVertically treats any gap between items
+    // as empty space to remove, so the extra room has to belong to
+    // calendar's own allocated height instead.
+    { i: 'calendar', x: 0, y: 3, w: 12, h: 5.5, minW: 4, minH: 3.5 },
+    { i: 'module-stats', x: 0, y: 8.5, w: 12, h: 4, minW: 6, minH: 3 },
+    { i: 'needs-attention', x: 0, y: 12.5, w: 12, h: 5, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 0, y: 17.5, w: 6, h: 4, minW: 3, minH: 3.5 },
+    { i: 'sales-by-branch', x: 6, y: 17.5, w: 6, h: 4, minW: 3, minH: 3.5 },
   ],
   hr: [
-    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'recent-activity', x: 0, y: 3, w: 12, h: 3, minW: 3, minH: 3 },
-    { i: 'employee-birthdays', x: 0, y: 6, w: 4, h: 3, minW: 3, minH: 3 },
-    { i: 'calendar', x: 4, y: 6, w: 8, h: 5, minW: 4, minH: 3 },
+    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 0, y: 3, w: 12, h: 3, minW: 3, minH: 3.5 },
+    { i: 'employee-birthdays', x: 0, y: 6, w: 4, h: 3, minW: 3, minH: 3.5 },
+    { i: 'calendar', x: 4, y: 6, w: 8, h: 5, minW: 4, minH: 3.5 },
   ],
   accounting: [
-    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'outstanding-invoices', x: 0, y: 3, w: 6, h: 3, minW: 4, minH: 3 },
-    { i: 'pending-approvals', x: 6, y: 3, w: 6, h: 3, minW: 4, minH: 3 },
-    { i: 'recent-activity', x: 0, y: 6, w: 12, h: 3, minW: 3, minH: 3 },
+    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3.5 },
+    { i: 'outstanding-invoices', x: 0, y: 3, w: 6, h: 3, minW: 4, minH: 3.5 },
+    { i: 'pending-approvals', x: 6, y: 3, w: 6, h: 3, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 0, y: 6, w: 12, h: 3, minW: 3, minH: 3.5 },
   ],
   inventory: [
-    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'recent-activity', x: 0, y: 3, w: 6, h: 3, minW: 3, minH: 3 },
-    { i: 'quick-actions', x: 6, y: 3, w: 3, h: 3, minW: 2, minH: 3 },
-    { i: 'system-alerts', x: 9, y: 3, w: 3, h: 3, minW: 3, minH: 3 },
+    { i: 'stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 0, y: 3, w: 6, h: 3, minW: 3, minH: 3.5 },
+    { i: 'quick-actions', x: 6, y: 3, w: 3, h: 3, minW: 2, minH: 3.5 },
+    { i: 'system-alerts', x: 9, y: 3, w: 3, h: 3, minW: 3, minH: 3.5 },
   ],
   default: [
-    { i: 'reminders', x: 0, y: 0, w: 6, h: 3, minW: 2, minH: 3 },
-    { i: 'calendar', x: 0, y: 3, w: 8, h: 5, minW: 4, minH: 3 },
-    { i: 'recent-activity', x: 8, y: 3, w: 4, h: 3, minW: 3, minH: 3 },
+    { i: 'reminders', x: 0, y: 0, w: 6, h: 3, minW: 2, minH: 3.5 },
+    { i: 'calendar', x: 0, y: 3, w: 8, h: 5, minW: 4, minH: 3.5 },
+    { i: 'recent-activity', x: 8, y: 3, w: 4, h: 3, minW: 3, minH: 3.5 },
   ],
   sales: [
-    { i: 'sales-stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3 },
-    { i: 'sales-trend', x: 0, y: 3, w: 6, h: 4, minW: 4, minH: 3 },
-    { i: 'top-customers', x: 6, y: 3, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'recent-orders', x: 0, y: 7, w: 7, h: 4, minW: 3, minH: 3 },
-    { i: 'outstanding-invoices', x: 7, y: 7, w: 5, h: 3, minW: 3, minH: 3 },
-    { i: 'pending-deliveries', x: 7, y: 10, w: 5, h: 3, minW: 3, minH: 3 },
+    { i: 'sales-stats', x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 3.5 },
+    { i: 'sales-trend', x: 0, y: 3, w: 6, h: 4, minW: 4, minH: 3.5 },
+    { i: 'top-customers', x: 6, y: 3, w: 6, h: 4, minW: 3, minH: 3.5 },
+    { i: 'recent-orders', x: 0, y: 7, w: 7, h: 4, minW: 3, minH: 3.5 },
+    { i: 'outstanding-invoices', x: 7, y: 7, w: 5, h: 3, minW: 3, minH: 3.5 },
+    { i: 'pending-deliveries', x: 7, y: 10, w: 5, h: 3, minW: 3, minH: 3.5 },
   ],
 }
 
+const GRID_COLS = 12
+
+/**
+ * Places extra (non-default) widgets in row-filling shelves left to right —
+ * e.g. two 6-wide widgets share a row, four 3-wide widgets share a row —
+ * instead of one per row at x:0. Without this, clicking "Select All" (or
+ * toggling any optional widget on) stacks every extra widget in a single
+ * narrow left column, leaving most of each row's width empty.
+ */
+function packExtraWidgets(widgets: WidgetDef[], startY: number): LayoutItem[] {
+  const placed: LayoutItem[] = []
+  let cursorX = 0
+  let cursorY = startY
+  let rowHeight = 0
+
+  for (const w of widgets) {
+    const width = Math.min(w.defaultW, GRID_COLS)
+    if (cursorX + width > GRID_COLS) {
+      cursorX = 0
+      cursorY += rowHeight
+      rowHeight = 0
+    }
+    placed.push({
+      i: w.id,
+      x: cursorX,
+      y: cursorY,
+      w: width,
+      h: w.defaultH,
+      minW: w.minW,
+      minH: w.minH,
+    })
+    cursorX += width
+    rowHeight = Math.max(rowHeight, w.defaultH)
+  }
+
+  return placed
+}
+
 // Build a full layout for a role (all available widgets, with defaults for
-// visible ones and stacked positions for the rest).
+// visible ones and packed shelf positions for the rest).
 export function buildFullLayout(role: DashboardRole): LayoutItem[] {
   const defaults = defaultLayoutsByRole[role]
   const defaultMap = new Map(defaults.map((item) => [item.i, item]))
   const roleWidgets = widgetsByRole[role]
 
-  // Start with default items, then append remaining role widgets below.
-  let maxY = defaults.reduce((acc, item) => Math.max(acc, item.y + item.h), 0)
-  const extra: LayoutItem[] = []
-
-  for (const w of roleWidgets) {
-    if (!defaultMap.has(w.id)) {
-      extra.push({
-        i: w.id,
-        x: 0,
-        y: maxY,
-        w: w.defaultW,
-        h: w.defaultH,
-        minW: w.minW,
-        minH: w.minH,
-      })
-      maxY += w.defaultH
-    }
-  }
+  const maxY = defaults.reduce((acc, item) => Math.max(acc, item.y + item.h), 0)
+  const extraWidgets = roleWidgets.filter((w) => !defaultMap.has(w.id))
+  const extra = packExtraWidgets(extraWidgets, maxY)
 
   return [...defaults, ...extra]
 }

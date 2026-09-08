@@ -1,35 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Cake } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type EmployeeBirthday = {
-  id: string
-  firstName: string
-  lastName: string
-  dateOfBirth: string // YYYY-MM-DD
-}
+import { useEmployeeBirthdays } from './dashboardQueries'
 
 export default function EmployeeBirthdaysWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs'
 
-  const [employees, setEmployees] = useState<EmployeeBirthday[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let active = true
-    api.get<EmployeeBirthday[]>('/users/birthdays').then((res) => {
-      if (!active) return
-      setEmployees(res.data ?? [])
-      setLoading(false)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
+  const { data: employees = [], isLoading: loading } = useEmployeeBirthdays()
 
   const now = new Date()
   const month = now.getMonth()
@@ -70,7 +49,14 @@ export default function EmployeeBirthdaysWidget() {
     )
   }
 
-  const limit = isCompact ? 3 : 5
+  // Capped at 3 regardless of size — this widget sits beside others whose
+  // empty/near-empty states are only 1-2 lines tall (Reminders, System
+  // Alerts); showing all 5 made it tower over its row-mates and, since
+  // grid widgets don't reflow to fill a taller neighbor's leftover space,
+  // that height difference was the actual dominant thing making that row
+  // look unbalanced, not just position — "+N more" says the rest exist
+  // without needing to render them.
+  const limit = 3
 
   return (
     <div className="flex flex-col gap-1">
@@ -95,6 +81,9 @@ export default function EmployeeBirthdaysWidget() {
           </p>
         </div>
       ))}
+      {birthdays.length > limit && (
+        <p className="px-2 text-[10px] text-zinc-400">+{birthdays.length - limit} more</p>
+      )}
     </div>
   )
 }

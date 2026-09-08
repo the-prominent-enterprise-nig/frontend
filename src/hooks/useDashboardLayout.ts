@@ -11,8 +11,17 @@ import {
   type SavedDashboardState,
 } from '@/src/libs/dashboardWidgets'
 
+// Bumped each time the admin defaults/layout algorithm change materially
+// (most recently v19: the shared minH floor across every widget/layout
+// entry bumped 3 → 3.5, so the uniform "sparse content" card baseline
+// (previously 224px) got a bit taller across the board) — a stale save
+// would otherwise keep showing the old arrangement indefinitely, since
+// loading trusts a saved item's (x, y, h, minH) as-is and never
+// re-derives it — merging on load only fills in positions for
+// newly-introduced default *widgets*, not a changed floor for existing
+// ones, for an account that already has a save.
 function storageKey(role: DashboardRole): string {
-  return `prominent-dashboard-v3-${role}`
+  return `prominent-dashboard-v19-${role}`
 }
 
 export type DashboardLayoutState = {

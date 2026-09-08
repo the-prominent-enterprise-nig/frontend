@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import {
   ShoppingCart,
   CheckCircle,
@@ -11,11 +10,9 @@ import {
   Gift,
 } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import {
-  getRecentActivity,
-  type ActivityEntry,
-} from '@/src/app/(app)/(dashboard)/_actions/activity-actions'
+import type { ActivityEntry } from '@/src/app/(app)/(dashboard)/_actions/activity-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { useDashboardRecentActivity } from './dashboardQueries'
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -125,21 +122,11 @@ export default function RecentActivityWidget() {
   const isCompact = variant === 'xs'
   const limit = isCompact ? 3 : 5
 
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
-  const [loading, setLoading] = useState(true)
   const branchId = usePosBranchContext((s) => s.branchId)
-
-  useEffect(() => {
-    let cancelled = false
-    getRecentActivity({ limit, branchId: branchId ?? undefined }).then((res) => {
-      if (cancelled) return
-      if (res.success && res.data) setActivity(res.data)
-      setLoading(false)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [limit, branchId])
+  const { data: activity = [], isLoading: loading } = useDashboardRecentActivity(
+    limit,
+    branchId ?? undefined
+  )
 
   if (loading) {
     return (
