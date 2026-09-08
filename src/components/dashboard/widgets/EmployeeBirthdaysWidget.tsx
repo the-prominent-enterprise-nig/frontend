@@ -1,35 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Cake } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
-import { api } from '@/src/libs/api/client'
-
-type EmployeeBirthday = {
-  id: string
-  firstName: string
-  lastName: string
-  dateOfBirth: string // YYYY-MM-DD
-}
+import { useEmployeeBirthdays } from './dashboardQueries'
 
 export default function EmployeeBirthdaysWidget() {
   const { variant } = useWidgetSize()
   const isCompact = variant === 'xs'
 
-  const [employees, setEmployees] = useState<EmployeeBirthday[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let active = true
-    api.get<EmployeeBirthday[]>('/users/birthdays').then((res) => {
-      if (!active) return
-      setEmployees(res.data ?? [])
-      setLoading(false)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
+  const { data: employees = [], isLoading: loading } = useEmployeeBirthdays()
 
   const now = new Date()
   const month = now.getMonth()

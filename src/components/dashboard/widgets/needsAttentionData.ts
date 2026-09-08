@@ -1,5 +1,6 @@
 import { ShoppingBag, RotateCcw, XCircle, ArrowLeftRight, Receipt, Calculator } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { QueryClient } from '@tanstack/react-query'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import {
@@ -7,6 +8,7 @@ import {
   getMissingCogsReport,
 } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
+import { arInvoicesKey } from './dashboardQueryKeys'
 
 export type AttentionItem = {
   id: string
@@ -35,15 +37,26 @@ function fmtMoney(n: number): string {
  * owner cares about "what needs a decision from me," not which module it
  * happens to live in. Shared between the Needs Attention widget (full list)
  * and the KPI strip (just the count), so both agree on what counts.
+ *
+ * `queryClient`, when passed (see `useNeedsAttentionItems`), routes the AR
+ * invoices fetch through the same cache key the KPI strip's own "Outstanding
+ * AR" tile uses (`arInvoicesKey`) — whichever widget asks first, the other
+ * reuses that in-flight/cached request instead of firing a second one.
  */
-export async function getNeedsAttentionItems(branchId?: string): Promise<AttentionItem[]> {
+export async function getNeedsAttentionItems(
+  branchId?: string,
+  queryClient?: QueryClient
+): Promise<AttentionItem[]> {
+  const fetchArInvoices = () => ARInvoices.list({ branchId })
   const [poRes, returnRes, mgrTransfers, hqTransfers, cogsRes, arRes] = await Promise.all([
     getPurchaseOrders({ status: 'draft', limit: 20, branchId }),
     getPendingReturnRefundRequests(branchId),
     getTransfers({ status: 'pending_manager_approval', limit: 20, branchId }),
     getTransfers({ status: 'pending_hq_approval', limit: 20, branchId }),
     getMissingCogsReport(branchId),
-    ARInvoices.list({ branchId }),
+    queryClient
+      ? queryClient.fetchQuery({ queryKey: arInvoicesKey(branchId), queryFn: fetchArInvoices })
+      : fetchArInvoices(),
   ])
 
   const items: AttentionItem[] = []

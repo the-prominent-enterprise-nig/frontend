@@ -1,12 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useWidgetSize } from '../WidgetSizeContext'
-import {
-  getSalesByBranch,
-  type SalesByBranch,
-} from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import { useDashboardSalesByBranch } from './dashboardQueries'
 
 function fmtMoney(n: number): string {
   if (!Number.isFinite(n)) return '—'
@@ -44,27 +41,13 @@ export default function SalesByBranchWidget() {
   const limit = isCompact ? 4 : 6
 
   const [period, setPeriod] = useState<Period>('all')
-  const [branches, setBranches] = useState<SalesByBranch[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    // No setLoading(true) reset here — switching periods quietly refetches
-    // in place rather than flashing the skeleton over the previous bars,
-    // the same anti-flicker pattern used elsewhere on this dashboard.
-    getSalesByBranch({ dateFrom: dateFromFor(period) })
-      .then((res) => {
-        if (cancelled) return
-        setBranches(res.data ?? [])
-        setLoading(false)
-      })
-      .catch(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [period])
+  // 'all' (the default) uses the same query key as the KPI strip's Total
+  // Revenue tile, so on first load they share one fetch instead of firing
+  // two identical requests. Switching to a narrower period is its own key —
+  // React Query keeps the previous data on screen while it loads (no
+  // setLoading(true) reset), the same anti-flicker pattern used elsewhere on
+  // this dashboard.
+  const { data: branches = [], isLoading: loading } = useDashboardSalesByBranch(dateFromFor(period))
 
   const periodToggle = (
     <div className="flex items-center gap-0.5 rounded-lg bg-zinc-100 p-0.5">

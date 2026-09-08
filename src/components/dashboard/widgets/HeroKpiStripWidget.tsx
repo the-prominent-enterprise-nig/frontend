@@ -1,7 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import {
   Gauge,
   TrendingUp,
@@ -12,14 +10,17 @@ import {
   UserCog,
   type LucideIcon,
 } from 'lucide-react'
-import { getSalesByBranch } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
-import { customersApi } from '@/src/libs/api/crm'
-import { getEnterpriseSummary } from '@/src/libs/actions/enterprise.actions'
+import Link from 'next/link'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { CARD_SHADOW_RESTING, CARD_SHADOW_HOVER } from '../DashboardWidgetWrapper'
-import { getNeedsAttentionItems } from './needsAttentionData'
+import {
+  useDashboardArInvoices,
+  useDashboardSalesByBranch,
+  useDashboardCustomersTotal,
+  useDashboardEnterpriseSummary,
+  useNeedsAttentionItems,
+} from './dashboardQueries'
 
 type Tone = 'default' | 'warn' | 'good'
 
@@ -84,100 +85,97 @@ export default function HeroKpiStripWidget() {
   // "Needs Attention") are longer than Module Stats' short module names, so
   // they need more room per tile before 4-across stops wrapping mid-word.
   const isCompact = variant !== 'lg'
-  const [kpis, setKpis] = useState<Kpi[] | null>(null)
-  const [secondaryStats, setSecondaryStats] = useState<SecondaryStat[] | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const [salesRes, arRes, customersRes, attentionItems, enterpriseRes] = await Promise.all([
-        getSalesByBranch(),
-        ARInvoices.list({ branchId: branchId ?? undefined }),
-        customersApi.list({ limit: 1 }),
-        getNeedsAttentionItems(branchId ?? undefined),
-        getEnterpriseSummary(),
-      ])
-      if (cancelled) return
+  // Each of these hooks shares its cache (by query key) with whichever other
+  // widget needs the same data — see dashboardQueries.ts. React Query fires
+  // the underlying request once per unique key, however many widgets ask.
+  const salesQuery = useDashboardSalesByBranch(undefined)
+  const arInvoicesQuery = useDashboardArInvoices(branchId ?? undefined)
+  const customersQuery = useDashboardCustomersTotal(1)
+  const attentionQuery = useNeedsAttentionItems(branchId ?? undefined)
+  const enterpriseQuery = useDashboardEnterpriseSummary()
 
-      const branches = salesRes.data ?? []
-      const totalRevenue = branches.reduce((s, b) => s + b.totalSales, 0)
-      const totalTxns = branches.reduce((s, b) => s + b.transactionCount, 0)
+  const loaded =
+    salesQuery.data !== undefined &&
+    arInvoicesQuery.data !== undefined &&
+    customersQuery.data !== undefined &&
+    attentionQuery.data !== undefined
 
-      const invoices = arRes.data?.items ?? []
-      const outstanding = invoices.reduce(
-        (s, i) => s + Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)),
-        0
-      )
-      const now = Date.now()
-      const overdueCount = invoices.filter((i) => {
-        const paid = (i.amountPaid ?? 0) >= (i.totalAmount ?? 0) && (i.totalAmount ?? 0) > 0
-        if (paid) return false
-        if (i.status === 'OVERDUE') return true
-        return i.dueDate ? new Date(i.dueDate).getTime() < now : false
-      }).length
+  function buildKpis(): Kpi[] {
+    const branches = salesQuery.data ?? []
+    const totalRevenue = branches.reduce((s, b) => s + b.totalSales, 0)
+    const totalTxns = branches.reduce((s, b) => s + b.transactionCount, 0)
 
-      const totalCustomers = customersRes.data?.meta?.total ?? 0
-      const urgentCount = attentionItems.filter((a) => a.tier === 1).length
+    const invoices = arInvoicesQuery.data ?? []
+    const outstanding = invoices.reduce(
+      (s, i) => s + Math.max(0, (i.totalAmount ?? 0) - (i.amountPaid ?? 0)),
+      0
+    )
+    const overdueCount = invoices.filter((i) => i.isOverdue).length
 
-      setKpis([
-        {
-          label: 'Total Revenue',
-          value: fmtMoney(totalRevenue),
-          sub: `${totalTxns} transaction${totalTxns === 1 ? '' : 's'}`,
-          icon: TrendingUp,
-          tone: 'default',
-          href: '/pos/transactions',
-        },
-        {
-          label: 'Outstanding AR',
-          value: fmtMoney(outstanding),
-          sub: overdueCount > 0 ? `${overdueCount} overdue` : 'None overdue',
-          icon: FileWarning,
-          tone: overdueCount > 0 ? 'warn' : 'good',
-          href: '/accounting/ar-invoices',
-        },
-        {
-          label: 'Needs Attention',
-          value: String(attentionItems.length),
-          sub:
-            urgentCount > 0
-              ? `${urgentCount} urgent`
-              : attentionItems.length > 0
-                ? 'All routine'
-                : 'All caught up',
-          icon: AlertCircle,
-          tone: attentionItems.length === 0 ? 'good' : urgentCount > 0 ? 'warn' : 'default',
-          onClick: scrollToNeedsAttention,
-        },
-        {
-          label: 'Customers',
-          value: String(totalCustomers),
-          sub: 'Across all branches',
-          icon: Users,
-          tone: 'default',
-          href: '/crm',
-        },
-      ])
+    const totalCustomers = customersQuery.data ?? 0
+    const attentionItems = attentionQuery.data ?? []
+    const urgentCount = attentionItems.filter((a) => a.tier === 1).length
 
-      setSecondaryStats([
+    return [
+      {
+        label: 'Total Revenue',
+        value: fmtMoney(totalRevenue),
+        sub: `${totalTxns} transaction${totalTxns === 1 ? '' : 's'}`,
+        icon: TrendingUp,
+        tone: 'default',
+        href: '/pos/transactions',
+      },
+      {
+        label: 'Outstanding AR',
+        value: fmtMoney(outstanding),
+        sub: overdueCount > 0 ? `${overdueCount} overdue` : 'None overdue',
+        icon: FileWarning,
+        tone: overdueCount > 0 ? 'warn' : 'good',
+        href: '/accounting/ar-invoices',
+      },
+      {
+        label: 'Needs Attention',
+        value: String(attentionItems.length),
+        sub:
+          urgentCount > 0
+            ? `${urgentCount} urgent`
+            : attentionItems.length > 0
+              ? 'All routine'
+              : 'All caught up',
+        icon: AlertCircle,
+        tone: attentionItems.length === 0 ? 'good' : urgentCount > 0 ? 'warn' : 'default',
+        onClick: scrollToNeedsAttention,
+      },
+      {
+        label: 'Customers',
+        value: String(totalCustomers),
+        sub: 'Across all branches',
+        icon: Users,
+        tone: 'default',
+        href: '/crm',
+      },
+    ]
+  }
+
+  const kpis: Kpi[] | null = loaded ? buildKpis() : null
+
+  const secondaryStats: SecondaryStat[] | null = enterpriseQuery.data
+    ? [
         {
           label: 'Employees',
-          value: String(enterpriseRes.data?.employeeCount ?? 0),
+          value: String(enterpriseQuery.data.employeeCount ?? 0),
           icon: Briefcase,
           href: '/settings',
         },
         {
           label: 'System Users',
-          value: String(enterpriseRes.data?.userCount ?? 0),
+          value: String(enterpriseQuery.data.userCount ?? 0),
           icon: UserCog,
           href: '/settings',
         },
-      ])
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [branchId])
+      ]
+    : null
 
   const heading = (
     <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">

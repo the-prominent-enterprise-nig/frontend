@@ -4,13 +4,13 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { ChevronLeft, ChevronRight, CalendarDays, List, Clock, Cake } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import DayPopover from './DayPopover'
-import { api } from '@/src/libs/api/client'
 import {
   getCalendarEvents,
   createCalendarEvent,
 } from '@/src/app/(app)/(dashboard)/_actions/calendar-events-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { GRID_ROW_HEIGHT, GRID_MARGIN_Y } from '@/src/libs/dashboardWidgets'
+import { useEmployeeBirthdays } from './dashboardQueries'
 
 // Must match the `h` set for the 'calendar' widget in every role's
 // defaultLayoutsByRole (dashboardWidgets.ts) — Calendar opts out of
@@ -21,13 +21,6 @@ import { GRID_ROW_HEIGHT, GRID_MARGIN_Y } from '@/src/libs/dashboardWidgets'
 const CALENDAR_WIDGET_H = 5
 const CALENDAR_FIXED_HEIGHT_PX =
   CALENDAR_WIDGET_H * (GRID_ROW_HEIGHT + GRID_MARGIN_Y) - GRID_MARGIN_Y
-
-type EmployeeBirthday = {
-  id: string
-  firstName: string
-  lastName: string
-  dateOfBirth: string // YYYY-MM-DD
-}
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
@@ -77,7 +70,7 @@ export default function CalendarWidget() {
   const [events, setEvents] = useState<Record<string, CalendarEvent[]>>({})
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null)
-  const [employeeBirthdays, setEmployeeBirthdays] = useState<EmployeeBirthday[]>([])
+  const { data: employeeBirthdays = [] } = useEmployeeBirthdays()
 
   const today = now.getDate()
   const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
@@ -100,12 +93,6 @@ export default function CalendarWidget() {
   }, [])
   const CONTENT_GAP_PX = 8 // matches the outer wrapper's gap-2
   const contentAreaHeightPx = Math.max(CALENDAR_FIXED_HEIGHT_PX - navHeight - CONTENT_GAP_PX, 120)
-
-  useEffect(() => {
-    api.get<EmployeeBirthday[]>('/users/birthdays').then((res) => {
-      if (res.success && res.data) setEmployeeBirthdays(res.data)
-    })
-  }, [])
 
   // Re-fetch real calendar events whenever the displayed month/year changes,
   // or the dashboard's branch filter changes — branch-scoped events only

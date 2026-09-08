@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
-import { getNeedsAttentionItems, type AttentionItem } from './needsAttentionData'
+import { useNeedsAttentionItems } from './dashboardQueries'
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -29,20 +28,10 @@ export default function NeedsAttentionWidget() {
   const isCompact = variant === 'xs' || variant === 'sm'
   const limit = isCompact ? 4 : 8
 
-  const [items, setItems] = useState<AttentionItem[] | null>(null)
   const branchId = usePosBranchContext((s) => s.branchId)
+  const { data: items } = useNeedsAttentionItems(branchId ?? undefined)
 
-  useEffect(() => {
-    let cancelled = false
-    getNeedsAttentionItems(branchId ?? undefined).then((result) => {
-      if (!cancelled) setItems(result)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [branchId])
-
-  if (items === null) {
+  if (items === undefined) {
     return (
       <div className="flex flex-col gap-1.5">
         {Array.from({ length: 3 }).map((_, i) => (
