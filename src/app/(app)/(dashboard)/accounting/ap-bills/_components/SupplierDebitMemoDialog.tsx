@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import { SupplierDebitMemos, type APBill, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import {
+  SupplierDebitMemos,
+  type APBill,
+  apOutstanding,
+  fmtMoney,
+} from '@/src/libs/data/AccountingV2Data'
 import { ItemSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_components/ItemSearchCombobox'
 import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
 
@@ -19,7 +24,9 @@ export default function SupplierDebitMemoDialog({
   onClose: () => void
   onSaved: () => void
 }) {
-  const outstanding = bill.totalAmount - bill.amountPaid
+  // Net of withholding — the credit can only wipe out what the supplier is
+  // still owed, and the withheld slice is owed to the BIR instead.
+  const outstanding = apOutstanding(bill)
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([])
   const [form, setForm] = useState({
     itemId: '',

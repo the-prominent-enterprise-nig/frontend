@@ -30,6 +30,8 @@ import {
   FixedAssetsV2,
   FiscalPeriods,
   Budgets,
+  // Aliased: this file already has a local `apOutstanding` total for the KPI.
+  apOutstanding as apBillOutstanding,
 } from '@/src/libs/data/AccountingV2Data'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -399,10 +401,9 @@ export default function AccountingPage() {
       .filter(
         (bill) => bill.status?.toUpperCase() !== 'PAID' && bill.status?.toUpperCase() !== 'VOID'
       )
-      .reduce(
-        (sum, bill) => sum + ((Number(bill.totalAmount) || 0) - (Number(bill.amountPaid) || 0)),
-        0
-      )
+      // Net of withholding — that slice left AP for WHT Payable at receive()
+      // and is owed to the BIR, not to the supplier.
+      .reduce((sum, bill) => sum + apBillOutstanding(bill), 0)
     const apOutstanding = apFromBI || apFromBills
 
     // ── Bank Accounts ─────────────────────────────────────────────────────────
@@ -1051,7 +1052,7 @@ export default function AccountingPage() {
                       </p>
                       <div className="flex items-center justify-between mt-1">
                         <span className="text-xs font-bold text-gray-900">
-                          {fmtMoney(Number(bill.totalAmount) - Number(bill.amountPaid))}
+                          {fmtMoney(apBillOutstanding(bill))}
                         </span>
                         <span className="text-[10px] text-rose-600 font-medium">
                           {days}d overdue
