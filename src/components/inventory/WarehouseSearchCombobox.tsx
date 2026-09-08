@@ -53,11 +53,21 @@ export function WarehouseSearchCombobox({ value, onChange, error, initialLabel }
             // Each branch has exactly one warehouse, named "{branch}
             // Warehouse" — show the branch itself, as every other location
             // picker does.
+            //
+            // No `secondary`: SearchCombobox renders that as "{primary}
+            // ({secondary})", which turned every branch into "Bago (WH-01)" —
+            // labelling a branch with the code of the warehouse behind it,
+            // an implementation detail nobody ordering stock thinks in. The
+            // two standalone warehouses carry their own name ("Negros
+            // Warehouse"), so all 41 options stay distinct without it.
             id: wh.id,
             primary: wh.branch?.name ?? wh.name,
-            secondary: wh.code,
+            // Still matched on, just not displayed — someone who knows the
+            // code can keep typing it, which is what the placeholder offers.
+            code: wh.code,
           }))
-          .filter((o) => !q || `${o.primary} ${o.secondary}`.toLowerCase().includes(q))
+          .filter((o) => !q || `${o.primary} ${o.code}`.toLowerCase().includes(q))
+          .map(({ id, primary }) => ({ id, primary }))
       }}
     />
   )

@@ -18,6 +18,7 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CreateReturnModal from './CreateReturnModal'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 const CONDITION_CONFIG = {
   sellable: {
@@ -82,7 +83,7 @@ function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
           </DetailField>
 
           <DetailField label="Warehouse">
-            {ret.warehouse?.name ?? '—'}
+            {locationLabel(ret.warehouse)}
             {ret.warehouse?.branch?.name && (
               <span className="ml-1 text-xs text-zinc-400">({ret.warehouse.branch.name})</span>
             )}

@@ -28,6 +28,7 @@ import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearc
 import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import WaybillPanel, { uploadStagedWaybills } from './WaybillPanel'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   open: boolean
@@ -552,7 +553,7 @@ export default function DebitMemoFormModal({
                       value={field.value}
                       onChange={field.onChange}
                       error={errors.warehouseId?.message}
-                      initialLabel={memo?.warehouse?.name}
+                      initialLabel={memo?.warehouse ? locationLabel(memo.warehouse) : undefined}
                     />
                   )}
                 />

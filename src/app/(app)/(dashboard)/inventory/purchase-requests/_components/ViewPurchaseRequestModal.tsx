@@ -2,6 +2,7 @@
 
 import { X, ClipboardList } from 'lucide-react'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   open: boolean
@@ -75,7 +76,7 @@ export function ViewPurchaseRequestModal({ open, onClose, pr }: Props) {
             </div>
             <div>
               <p className="text-xs text-zinc-500">Location</p>
-              <p className="text-zinc-900">{pr.warehouse?.name ?? '—'}</p>
+              <p className="text-zinc-900">{locationLabel(pr.warehouse)}</p>
             </div>
             <div>
               <p className="text-xs text-zinc-500">Branch</p>

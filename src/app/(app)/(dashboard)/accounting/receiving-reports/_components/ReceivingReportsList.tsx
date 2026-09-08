@@ -5,6 +5,7 @@ import { ChevronRight, Loader2, Printer, RefreshCw, X } from 'lucide-react'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import ReceivingReportSheet, { type ReceivingReportDocument } from './ReceivingReportSheet'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 interface ReceivingReportRow {
   id: string
@@ -59,7 +60,9 @@ export default function ReceivingReportsList() {
     return (
       r.code?.toLowerCase().includes(q) ||
       r.supplier?.name?.toLowerCase().includes(q) ||
-      r.warehouse?.name?.toLowerCase().includes(q)
+      // Match what the Location column actually shows, not the raw
+      // warehouse name behind it.
+      locationLabel(r.warehouse, '').toLowerCase().includes(q)
     )
   })
 
@@ -123,7 +126,7 @@ export default function ReceivingReportsList() {
                 >
                   <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
                   <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
-                  <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
+                  <td className="px-3 py-2 text-xs">{locationLabel(r.warehouse)}</td>
                   <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(r.total)}</td>
                   <td className="px-3 py-2 text-center">
@@ -183,7 +186,7 @@ export default function ReceivingReportsList() {
                 >
                   {preview.row.journalEntryId ? 'GL POSTED' : 'NOT POSTED'}
                 </span>
-                <span>Warehouse {preview.row.warehouse?.name ?? '—'}</span>
+                <span>Location {locationLabel(preview.row.warehouse)}</span>
                 <span>
                   {preview.row.matchedBill
                     ? `Matched bill ${preview.row.matchedBill.billNumber} · ${preview.row.matchedBill.status}`

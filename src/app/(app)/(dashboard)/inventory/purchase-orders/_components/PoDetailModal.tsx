@@ -5,6 +5,7 @@ import { X, ShoppingCart, FileText, CheckCircle, Ban } from 'lucide-react'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -135,7 +136,7 @@ export function PoDetailModal({ po, onClose, canApprove, canCancel, onApprove, o
             <InfoRow label="Requested By" value={po.branch?.name ?? 'Tenant-wide'} />
             <div>
               <p className="text-xs font-medium text-zinc-400">Destination Location</p>
-              <p className="mt-0.5 text-sm text-zinc-800">{po.warehouse?.name ?? '—'}</p>
+              <p className="mt-0.5 text-sm text-zinc-800">{locationLabel(po.warehouse)}</p>
               {po.warehouse?.address && (
                 <p className="mt-0.5 text-xs text-zinc-500">{po.warehouse.address}</p>
               )}

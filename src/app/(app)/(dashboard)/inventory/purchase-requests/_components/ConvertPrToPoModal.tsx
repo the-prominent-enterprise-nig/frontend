@@ -13,6 +13,7 @@ import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-req
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   open: boolean
@@ -161,7 +162,7 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     error={errors.warehouseId?.message}
-                    initialLabel={pr?.warehouse?.name ?? undefined}
+                    initialLabel={pr?.warehouse ? locationLabel(pr.warehouse) : undefined}
                   />
                 )}
               />

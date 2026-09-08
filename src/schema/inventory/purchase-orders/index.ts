@@ -117,22 +117,9 @@ const PoWarehouseSchema = z.object({
   name: z.string(),
   address: z.string().optional().nullable(),
   // Set on a branch's own stock location, null on a standalone warehouse.
-  // Only used to decide how to label it — see poLocationLabel().
+  // Only used to decide how to label it — see locationLabel().
   branchId: z.string().optional().nullable(),
 })
-
-/** How a PO's destination reads on screen. A branch's own location is named
- * "{branch} Warehouse" in the data, but every location picker in the app
- * shows just the branch — so trim the suffix rather than showing "Alimodian
- * Warehouse" where the rest of the app says "Alimodian". A standalone
- * warehouse keeps its own name, which is what it is actually called. */
-export function poLocationLabel(
-  warehouse?: { name: string; branchId?: string | null } | null
-): string {
-  if (!warehouse) return '—'
-  if (!warehouse.branchId) return warehouse.name
-  return warehouse.name.replace(/\s+Warehouse$/i, '')
-}
 
 const PoItemSchema = z.object({
   id: z.string(),

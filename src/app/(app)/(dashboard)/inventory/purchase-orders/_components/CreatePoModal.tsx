@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, ShoppingCart } from 'lucide-react'
 import { CreatePoFormSchema, type CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields'
@@ -121,10 +122,16 @@ export function CreatePoModal({
   // Supplier field.
   const initialItemLabels = (po ?? pr)?.lines.map((line) => line.item?.name)
   const initialSupplierLabel = (po ?? pr)?.supplier?.name
-  // Location too. A branch's warehouse is named "{branch} Warehouse" while
-  // the picker lists it under the branch name alone — close enough to read
-  // as the same place, and the record doesn't carry the branch itself.
-  const initialWarehouseLabel = (po ?? pr)?.warehouse?.name
+  // Location too, through the same helper the rest of the app labels a
+  // destination with: a branch's location is stored as "{branch} Warehouse"
+  // but reads as just the branch everywhere it is shown, while a standalone
+  // warehouse keeps its own name. Using the raw name here made an existing
+  // PO open on "Bago Warehouse" where the picker itself says "Bago".
+  // Only when there IS one: locationLabel falls back to an em dash, and
+  // handing that to the combobox as a confirmed label hides its "Search
+  // location by branch or code…" placeholder on a brand-new PO.
+  const poWarehouse = (po ?? pr)?.warehouse
+  const initialWarehouseLabel = poWarehouse ? locationLabel(poWarehouse) : undefined
 
   const {
     register,

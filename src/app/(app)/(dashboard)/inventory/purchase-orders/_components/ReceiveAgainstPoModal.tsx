@@ -19,7 +19,8 @@ import {
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { showToast } from '@/src/components/ui/toast'
-import { poLocationLabel, type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -493,7 +494,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
               {po.warehouseId ? (
                 <>
                   <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-                    {poLocationLabel(po.warehouse)}
+                    {locationLabel(po.warehouse)}
                   </div>
                   <p className="mt-0.5 text-[11px] text-zinc-400">
                     Set when this PO was created — stock always lands where it was ordered for.

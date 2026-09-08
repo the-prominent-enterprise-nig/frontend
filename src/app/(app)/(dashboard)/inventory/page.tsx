@@ -38,6 +38,7 @@ import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actio
 import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
 import { getAdjustments } from '@/src/app/(app)/(dashboard)/inventory/adjustments/_actions/get-adjustments'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -1247,7 +1248,7 @@ export default function InventoryPage() {
                             {a.adjustmentNumber ?? 'Unknown'}
                           </p>
                           <p className="text-[11px] text-gray-500 truncate">
-                            {a.warehouse?.name ?? '—'} ·{' '}
+                            {locationLabel(a.warehouse)} ·{' '}
                             {String(a.reasonCode ?? '').replace('_', ' ')}
                           </p>
                         </div>

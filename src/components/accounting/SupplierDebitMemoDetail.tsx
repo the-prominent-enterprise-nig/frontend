@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { fmtMoney, type SupplierDebitMemo } from '@/src/libs/data/AccountingV2Data'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 /**
  * What one supplier debit memo actually says, under its row: where the goods
@@ -22,7 +23,7 @@ export function SupplierDebitMemoDetail({
   return (
     <>
       <dl className="mb-3 grid gap-x-8 gap-y-1 text-xs sm:grid-cols-4">
-        <Fact label="Returned from" value={memo.warehouse?.name ?? '—'} />
+        <Fact label="Returned from" value={locationLabel(memo.warehouse)} />
         <Fact label="DR No." value={memo.deliveryReceiptNumber ?? '—'} />
         <Fact label="Journal entry" value={memo.journalEntryId ? 'Posted' : 'Not posted'} />
         <Fact label="Reason" value={memo.reason ?? '—'} />

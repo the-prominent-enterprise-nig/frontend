@@ -16,6 +16,7 @@ import {
 import ExportButton from '@/src/components/common/ExportButton'
 import GlReconciliationView from './GlReconciliationView'
 import AgingReportView from '@/src/app/(app)/(dashboard)/crm/installment-accounts/aging-report/_components/AgingReportView'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Tab =
   | 'trial-balance'
@@ -638,7 +639,7 @@ function GrniView({ data }: { data: any }) {
         <tr key={r.id}>
           <td className="px-3 py-2 font-mono text-xs">{r.code}</td>
           <td className="px-3 py-2">{r.supplier?.name ?? '—'}</td>
-          <td className="px-3 py-2 text-xs">{r.warehouse?.name ?? '—'}</td>
+          <td className="px-3 py-2 text-xs">{locationLabel(r.warehouse)}</td>
           <td className="px-3 py-2 text-xs">{fmtDate(r.receivedAt)}</td>
           <td className="px-3 py-2 text-xs">{r.deliveryReceiptNumber ?? '—'}</td>
           <td className="px-3 py-2 text-xs">{r.supplierInvoiceNumber ?? '—'}</td>

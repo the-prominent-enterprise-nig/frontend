@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { getPurchaseOrderReceipts, type PoReceipt } from '../_actions/get-purchase-order-receipts'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -126,7 +127,7 @@ function GrnCard({ grn, index }: { grn: PoReceipt; index: number }) {
               {grn.warehouse && (
                 <span className="flex items-center gap-1">
                   <Warehouse className="h-3 w-3" />
-                  {grn.warehouse.name}
+                  {locationLabel(grn.warehouse)}
                 </span>
               )}
               <span className="flex items-center gap-1">
