@@ -29,6 +29,7 @@ import {
   House,
   IdCard,
   Key,
+  Landmark,
   Layers,
   Library,
   Monitor,
@@ -381,6 +382,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
+      // Its own entry, not a button on Bank Reconciliation: moving money
+      // between two fund accounts is a disbursement, not part of agreeing a
+      // statement to the books.
+      {
+        label: 'Fund Transfer',
+        href: '/accounting/fund-transfers',
+        icon: Landmark,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+      },
     ],
     bottom: [],
   },
@@ -408,6 +418,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/collections',
         icon: Coins,
         requiredPermission: 'pos:collections:manage',
+      },
+      {
+        // Scenario 47 — sidebar gate matches the page's own guard
+        // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
+        // 'pos:transactions:read': these reports expose unit cost and
+        // margin, so a Cashier must not even see the link.
+        label: 'Sales Reports',
+        href: '/pos/reports',
+        icon: BarChart3,
+        requiredPermission: 'pos:reports:read',
       },
       {
         label: 'Credit Applications',

@@ -11,6 +11,15 @@ import {
 } from './WidgetSizeContext'
 import WidgetSettingsPanel from './WidgetSettingsPanel'
 
+// Shared card shadow recipe — a soft layered shadow (tight+diffuse) reads
+// more crafted than a single flat `shadow-sm`, without going as heavy as
+// `shadow-md`/`shadow-lg`. Reused by the KPI tiles and Module Stats cards
+// too, so the whole dashboard shares one consistent depth language.
+export const CARD_SHADOW_RESTING =
+  'shadow-[0_1px_2px_rgba(15,23,42,0.04),0_2px_10px_-2px_rgba(15,23,42,0.06)]'
+export const CARD_SHADOW_HOVER =
+  'hover:shadow-[0_2px_4px_rgba(15,23,42,0.05),0_8px_24px_-4px_rgba(15,23,42,0.1)]'
+
 type Props = {
   id: string
   isEditing: boolean
@@ -93,16 +102,16 @@ export default function DashboardWidgetWrapper({
   const showChrome = !widget?.noChrome || isEditing
 
   const chromeClasses = showChrome
-    ? `rounded-2xl bg-white shadow-sm ring-1 ${
+    ? `rounded-2xl bg-white ring-1 transition-all duration-300 ${
         isEditing
-          ? 'ring-purple-300 shadow-md shadow-purple-100'
-          : 'ring-zinc-200 hover:ring-zinc-300'
+          ? 'ring-purple-300 shadow-lg shadow-purple-200/50'
+          : `ring-zinc-200/70 hover:ring-zinc-300/80 ${CARD_SHADOW_RESTING} ${CARD_SHADOW_HOVER}`
       }`
     : ''
 
   return (
     <div
-      className={`flex flex-col overflow-hidden transition ${chromeClasses}
+      className={`flex flex-col overflow-hidden ${chromeClasses}
         ${isEditing ? 'h-full min-h-0 min-w-36' : 'h-full min-w-0'}`}
     >
       {/* Widget header — always shrink-0 so it never gets clipped */}

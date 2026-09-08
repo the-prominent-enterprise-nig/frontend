@@ -554,7 +554,27 @@ export interface AgingReportRow {
   lastOrLastnum: string | null
   lastOrAmt: number | null
   over: number | null
+  /** Scenario 47 — which kind of receivable this row is. */
+  source: 'installment' | 'invoice'
+  /** Scenario 47 — days past due as of the report date, and its bucket.
+   * Null means no due date on record: reported as unknown, never as current. */
+  daysOverdue: number | null
+  bucket: AgingBucket | null
 }
+
+export const AGING_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const
+export type AgingBucket = (typeof AGING_BUCKETS)[number]
+
+export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
+  current: 'Current',
+  '1_30': '1-30 days',
+  '31_60': '31-60 days',
+  '61_90': '61-90 days',
+  '90_plus': '90+ days',
+}
+
+/** Outstanding split by bucket, present at every subtotal level. */
+export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number }
 
 export interface AgingReportSubtotal {
   count: number
@@ -565,6 +585,8 @@ export interface AgingReportSubtotal {
   totalPayt: number
   totalPrice: number
   lcp: number
+  /** Scenario 47 — the branch x bucket matrix, at every subtotal level. */
+  buckets: AgingBucketTotals
 }
 
 export interface AgingReportCollectorGroup {

@@ -252,6 +252,31 @@ const REF_METHODS: PosPaymentMethod[] = [
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
+/** One line of "what was on this sale" for the past-purchases list.
+ *
+ * Quantities are only shown when >1 — "2x Kolin Aircon" is worth saying,
+ * "1x" on every other row is noise. Beyond two items it degrades to a
+ * "+N more" count rather than overflowing the row; the full detail lives on
+ * the transaction itself.
+ *
+ * itemName is resolved server-side (PosTransactionLine has no name column);
+ * a line whose item has since been deleted falls back to "Item" rather than
+ * rendering an empty row. */
+function summariseItems(
+  lines: { itemName?: string | null; quantity: number }[] | undefined
+): string {
+  if (!lines?.length) return 'No items'
+
+  const label = (l: { itemName?: string | null; quantity: number }): string => {
+    const name = l.itemName?.trim() || 'Item'
+    return Number(l.quantity) > 1 ? `${Number(l.quantity)}x ${name}` : name
+  }
+
+  const shown = lines.slice(0, 2).map(label).join(', ')
+  const rest = lines.length - 2
+  return rest > 0 ? `${shown} +${rest} more` : shown
+}
+
 /** Brand / Group / Model instead of the long free-text name, wherever all
  * three are populated on the item — falls back to the name when any of
  * them is missing, since not every catalog item has brand/category/model
@@ -3076,8 +3101,17 @@ export default function CheckoutPage() {
                         key={tx.id}
                         className="flex items-center justify-between px-3 py-1.5 text-xs"
                       >
-                        <span className="font-mono text-gray-700">{tx.transactionNumber}</span>
-                        <div className="flex items-center gap-2">
+                        {/* What they bought, not the receipt id — a cashier
+                            recognises "Kolin 1.5HP Split Type" instantly and
+                            can never recognise POS-1788852307273-E863R. The
+                            number is kept on the title for lookups. */}
+                        <span
+                          className="min-w-0 flex-1 truncate pr-2 text-gray-700"
+                          title={tx.transactionNumber}
+                        >
+                          {summariseItems(tx.lines)}
+                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
                           <span className="text-gray-700">
                             {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
                               month: 'short',
