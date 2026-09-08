@@ -204,10 +204,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     (po?.lines ?? []).map((l) => {
       const alreadyReceived = Number(l.receivedQuantity ?? 0)
       const remaining = Math.max(Number(l.quantity) - alreadyReceived, 0)
+      const toReceive = remaining > 0 ? remaining : Number(l.quantity)
       return {
         purchaseOrderLineId: l.id,
         itemId: l.itemId,
-        quantityReceived: remaining > 0 ? remaining : Number(l.quantity),
+        quantityReceived: toReceive,
         unitCost: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : undefined,
         // Prefilled from what was ordered; editable, because the delivery can
         // be priced differently from the PO — which is exactly the variance
@@ -221,6 +222,21 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
         notes: '',
         selected: defaultLineSelected(l),
         isSerialTracked: !!l.item?.isSerialTracked,
+        // One blank box per unit, explicitly — not left off the object.
+        // react-hook-form only writes a value into an input on reset when the
+        // reset payload actually carries one for that field; where it finds
+        // nothing it adopts whatever the box already holds instead. This modal
+        // is never unmounted (it renders null between POs) and shouldUnregister
+        // is off, so leaving serialNumbers out meant the serials typed for the
+        // last PO were still sitting in the boxes when the next PO opened, and
+        // reset had nothing to overwrite them with — every other line field
+        // ('' for batchNumber/notes) was already clearing for exactly this
+        // reason. Only serial-tracked lines get the array: handleFormSubmit
+        // forwards serialNumbers whenever it is non-empty, so a plain line
+        // must keep sending undefined.
+        serialNumbers: l.item?.isSerialTracked
+          ? Array.from({ length: Math.max(0, Math.floor(toReceive)) }, () => '')
+          : undefined,
       }
     })
 
@@ -1329,6 +1345,16 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
                                               `lines.${idx}.serialNumbers.${unitIdx}` as `lines.${number}.serialNumbers.${number}`
                                             )}
                                             type="text"
+                                            // Every PO renders this box under
+                                            // the same field name, so the
+                                            // browser's own saved-value
+                                            // autofill offers the last serial
+                                            // submitted as a suggestion for
+                                            // the next delivery's box. A
+                                            // serial is unique per unit and
+                                            // never repeats — there is nothing
+                                            // useful to suggest.
+                                            autoComplete="off"
                                             placeholder={`SN-00${unitIdx + 1}`}
                                             className={`${cellInputClass} font-mono text-xs ${
                                               unitError ? 'border-red-400 ring-1 ring-red-400' : ''
