@@ -16,6 +16,7 @@ import {
 import {
   buildSupplierDebitMemoFormSchema,
   type SupplierDebitMemoFormValues,
+  type SupplierDebitMemoLineValues,
 } from '@/src/schema/accounting/supplier-debit-memos'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { purchaseOrdersApi } from '@/src/libs/api/procurement'
@@ -42,18 +43,44 @@ const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 // Shared by the column headings and every line row — one definition so the
 // two can never drift out of alignment.
-// Item · Description · Account · Qty · Amount · Tax Code · Tax Amount · remove.
+// Item · Description · Account · Qty · Unit Price · Tax Code · Tax Amount ·
+// Total · remove. Total is a read-only mirror of the server's own arithmetic,
+// so a line's figure is never typed twice. There is deliberately no second,
+// pre-tax total column: with tax standing in its own column, it would only
+// restate the two cells beside it.
 // The wrapper scrolls horizontally rather than squashing the columns when the
 // window is narrow.
 // Tax Code is a select, so it needs room for its widest option plus the
 // chevron — a numeric-width column clipped "Non-VAT".
 const lineGridClass =
-  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(190px,1.3fr)_minmax(150px,1fr)_minmax(190px,1.3fr)_64px_110px_120px_110px_36px]'
+  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(185px,1.25fr)_minmax(145px,1fr)_minmax(185px,1.25fr)_64px_104px_116px_104px_116px_36px]'
 // Every control on a line row shares this padding and font size so they come
 // out the same height — the two comboboxes reach it via their `compact` prop,
 // which uses exactly these values.
 const cellClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none'
+
+// The computed Total column. Not an input, so it carries no border — a box
+// the user cannot type in reads as a disabled field.
+const readOnlyCellClass =
+  'flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-right text-[13px] tabular-nums text-zinc-600 md:justify-end'
+
+/** A line's own figures, read back off the form. The read-only cells and the
+ * footer both go through these, so a row can never disagree with the total
+ * under it.
+ *
+ * Quantity only multiplies a goods line; a concession (no item) is a flat
+ * negotiated sum, so its amount stands as typed. Mirrors lineValue() on the
+ * server. */
+function lineNet(line: Partial<SupplierDebitMemoLineValues> | undefined): number {
+  const unitPrice = Number(line?.unitPrice) || 0
+  return line?.itemId ? (Number(line?.quantity) || 0) * unitPrice : unitPrice
+}
+
+/** Net plus tax — what the server stores as the line's `lineTotal`. */
+function lineGross(line: Partial<SupplierDebitMemoLineValues> | undefined): number {
+  return lineNet(line) + (Number(line?.taxAmount) || 0)
+}
 
 /** The subset of an Account this picker needs. */
 type AccountOption = { id: string; number: string; name: string; type?: string | null }
@@ -80,14 +107,7 @@ function useLineTotals(control: Control<SupplierDebitMemoFormValues>) {
   const lines = useWatch({ control, name: 'lines' })
   return useMemo(() => {
     const rows = lines ?? []
-    const subtotal = rows.reduce(
-      (sum, l) =>
-        sum +
-        (l?.itemId
-          ? (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0)
-          : Number(l?.unitPrice) || 0),
-      0
-    )
+    const subtotal = rows.reduce((sum, l) => sum + lineNet(l), 0)
     const tax = rows.reduce((sum, l) => sum + (Number(l?.taxAmount) || 0), 0)
     return { subtotal, tax, total: subtotal + tax }
   }, [lines])
@@ -262,13 +282,13 @@ export default function DebitMemoFormModal({
     return map
   }, [poQuery.data])
 
-  // Who last set each line's Amount — this form ('auto') or the person
+  // Who last set each line's Unit Price — this form ('auto') or the person
   // filling it in ('manual') — keyed by the field array's own stable id. An
   // auto amount is re-resolved whenever the invoice, and so the PO behind
   // it, changes; a typed one is never overwritten.
   const amountOwnerRef = useRef<Record<string, 'auto' | 'manual'>>({})
 
-  /** Fills a line's Amount from the PO when the item is on it. Runs on every
+  /** Fills a line's Unit Price from the PO when the item is on it. Runs on every
    * pick: the amount showing describes the item that was there before, so it
    * is replaced — or cleared, when this PO doesn't price the new item. */
   const applyPoPrice = useCallback(
@@ -286,7 +306,7 @@ export default function DebitMemoFormModal({
     [fields, poPriceByItemId, setValue]
   )
 
-  /** The person typed in this line's Amount — leave it alone from here on. */
+  /** The person typed in this line's Unit Price — leave it alone from here on. */
   const claimAmount = useCallback(
     (index: number): void => {
       const fieldId = fields[index]?.id
@@ -565,7 +585,8 @@ export default function DebitMemoFormModal({
                 ) : (
                   selectedBill?.purchaseOrder?.code && (
                     <span className="ml-2 text-xs font-normal text-zinc-400">
-                      Amounts prefill from {selectedBill.purchaseOrder.code} for items ordered on it
+                      Unit prices prefill from {selectedBill.purchaseOrder.code} for items ordered
+                      on it
                     </span>
                   )
                 )}
@@ -594,13 +615,16 @@ export default function DebitMemoFormModal({
                     Qty
                   </span>
                   <span className="text-right text-[11px] font-medium uppercase tracking-wide text-zinc-400">
-                    Amount
+                    Unit Price
                   </span>
                   <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
                     Tax Code
                   </span>
                   <span className="text-right text-[11px] font-medium uppercase tracking-wide text-zinc-400">
                     Tax Amount
+                  </span>
+                  <span className="text-right text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+                    Total
                   </span>
                   <span />
                 </div>
@@ -760,15 +784,17 @@ function LineRow({
   accountOptions: CategorySelectOption[]
   canRemove: boolean
   onRemove: () => void
-  /** Prefills this line's Amount from the invoice's PO. */
+  /** Prefills this line's Unit Price from the invoice's PO. */
   onItemPicked: (itemId: string) => void
-  /** Hands the Amount over to whoever typed in it, so no later prefill
+  /** Hands the Unit Price over to whoever typed in it, so no later prefill
    * overwrites their figure. */
   onAmountEdited: () => void
   /** Supplier, invoice or warehouse still unpicked — nothing on the line can
    * be resolved against them yet. */
   disabled: boolean
 }) {
+  // Scoped to this line, so typing in one row re-renders only that row.
+  const line = useWatch({ control, name: `lines.${index}` })
   return (
     <div className={`${lineGridClass} md:items-center`}>
       <Controller
@@ -890,6 +916,16 @@ function LineRow({
           />
         )}
       />
+      {/* Quantity × unit price, plus tax — the figure this line contributes
+            to the deduction, and what the memo stores as the line's total. */}
+      <span className={`${readOnlyCellClass} font-medium text-zinc-800`}>
+        {/* Below md the row stacks and the headings are hidden, so the cell
+              names itself the way the inputs' placeholders do. */}
+        <span className="text-[11px] font-normal uppercase tracking-wide text-zinc-400 md:hidden">
+          Total
+        </span>
+        <span>{fmtMoney(lineGross(line))}</span>
+      </span>
       {canRemove ? (
         <button
           type="button"

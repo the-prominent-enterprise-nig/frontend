@@ -403,6 +403,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: 'pos:collections:manage',
       },
       {
+        // Scenario 47 — sidebar gate matches the page's own guard
+        // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
+        // 'pos:transactions:read': these reports expose unit cost and
+        // margin, so a Cashier must not even see the link.
+        label: 'Sales Reports',
+        href: '/pos/reports',
+        icon: BarChart3,
+        requiredPermission: 'pos:reports:read',
+      },
+      {
         label: 'Credit Applications',
         href: '/pos/credit-applications',
         icon: CreditCard,
