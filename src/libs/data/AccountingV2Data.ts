@@ -334,6 +334,10 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
+  /** Which installment due this collection settled, when the invoice is a
+   * plan. Null for a charge invoice and for a down payment, which credits the
+   * contract rather than paying any single due. */
+  installmentScheduleLineId?: string | null
   /** The wider payment this one is a slice of, present only when that
    * payment settled dues other than this invoice (findOne populates it).
    * `amount` is the live total across the receipt's still-active
@@ -414,6 +418,17 @@ export interface ARInvoiceInstallmentItem {
   secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
+/** One due date on the plan. The invoice holds the whole receivable; these
+ * are what it is billed across, and each carries its own settlement state. */
+export interface ARInvoiceScheduleLine {
+  id: string
+  lineNumber: number
+  dueDate: string
+  amount: number
+  paidAmount: number
+  settledAt: string | null
+}
+
 export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
@@ -457,6 +472,13 @@ export interface ARInvoice {
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
   installmentDetail?: ARInvoiceInstallmentDetail | null
+  /** Every due date of this plan, ordered. Empty/absent for a charge invoice. */
+  scheduleLines?: ARInvoiceScheduleLine[]
+  /** What the earliest UNSETTLED due still needs — list-view only. Null once
+   * every due is settled, or on a charge invoice with no schedule. */
+  nextDueAmount?: number | null
+  /** How many dues on this plan are already past their date and unsettled. */
+  overdueLineCount?: number
   posTransaction?: {
     id: string
     transactionNumber: string

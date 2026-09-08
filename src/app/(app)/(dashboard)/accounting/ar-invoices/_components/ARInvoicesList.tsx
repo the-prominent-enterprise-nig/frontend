@@ -66,14 +66,6 @@ import Tooltip from '@/src/components/ui/Tooltip'
  * list and the Receipts rows in this file already follow. */
 const invoiceLabel = (i: ARInvoice) => i.posTransaction?.salesInvoiceNumber || i.invoiceNumber
 
-const INVOICE_STATUS_BADGE: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-600',
-  SENT: 'bg-blue-50 text-blue-700',
-  PARTIAL: 'bg-amber-50 text-amber-700',
-  OVERDUE: 'bg-red-50 text-red-700',
-  PAID: 'bg-emerald-50 text-emerald-700',
-}
-
 export default function ARInvoicesList({
   initialCustomerId,
   dedicatedCustomer = false,
@@ -481,7 +473,7 @@ export default function ARInvoicesList({
               <th className="px-3 py-2 text-left">Invoice #</th>
               <th className="px-3 py-2 text-left">Customer</th>
               <th className="px-3 py-2 text-left">Invoice Date</th>
-              <th className="px-3 py-2 text-left">Due Date</th>
+              <th className="px-3 py-2 text-left">Next due</th>
               <th className="px-3 py-2 text-right">Terms</th>
               <th className="px-3 py-2 text-right">Total</th>
               <th className="px-3 py-2 text-right">Paid</th>
@@ -676,6 +668,33 @@ function InvoiceRow({
   onVoid: () => void
   onDelete: () => void
 }) {
+  const outstanding = i.totalAmount - i.amountPaid
+  // A plan is late if any of its dues is; a charge invoice has no dues, so
+  // its server-resolved status is the only signal. Deliberately no clock of
+  // its own here — a client clock can disagree with the server's on the
+  // boundary day, and `status` already carries that judgement.
+  const planOverdue =
+    outstanding > 0.01 && ((i.overdueLineCount ?? 0) > 0 || i.status === 'OVERDUE')
+  // "SENT" says nothing about a 12-month plan that is three dues behind.
+  const planLabel =
+    outstanding <= 0.01
+      ? 'Paid'
+      : (i.overdueLineCount ?? 0) > 0
+        ? `Overdue (${i.overdueLineCount})`
+        : planOverdue
+          ? 'Due now'
+          : i.status === 'DRAFT'
+            ? 'Draft'
+            : 'On track'
+  const planBadge =
+    planLabel === 'Paid'
+      ? 'bg-emerald-50 text-emerald-700'
+      : planOverdue
+        ? 'bg-red-50 text-red-700'
+        : planLabel === 'Draft'
+          ? 'bg-gray-100 text-gray-600'
+          : 'bg-prominent-purple-50 text-prominent-purple-700'
+
   return (
     <tr onClick={onOpen} className="cursor-pointer hover:bg-gray-50">
       <td className="px-3 py-2 max-w-40">
@@ -705,7 +724,17 @@ function InvoiceRow({
         </span>
       </td>
       <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
+      {/* ARInvoice.dueDate is re-pointed at the earliest UNSETTLED due as
+          collections land, so this column is the next thing to collect —
+          shown with what that due still needs, not the plan total. */}
+      <td className="px-3 py-2 text-xs whitespace-nowrap">
+        <span className={planOverdue ? 'font-medium text-red-600' : undefined}>
+          {fmtDate(i.dueDate)}
+        </span>
+        {i.nextDueAmount != null && i.nextDueAmount > 0 && (
+          <span className="block text-[10px] text-gray-400">{fmtMoney(i.nextDueAmount)}</span>
+        )}
+      </td>
       {/* The financing term this due line was sold on, same "Term" the AR
           Aging sheet reports. Charge-mode invoices carry no schedule and so
           no term. */}
@@ -717,11 +746,11 @@ function InvoiceRow({
       <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
       <td className="px-3 py-2">
         <span
-          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${planBadge}`}
         >
-          {i.status}
+          {planLabel}
         </span>
-        {i.status === 'OVERDUE' && (
+        {planOverdue && (
           <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
             {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days overdue
           </span>

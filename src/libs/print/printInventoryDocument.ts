@@ -1305,7 +1305,6 @@ export function buildARInvoiceHtml(data: unknown): string {
 
   const totalAmount = Number(inv.totalAmount ?? 0)
   const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(inv.invoiceNumber)} — ${fmtDate(inv.dueDate)}`
-
   const posTx = inv.posTransaction as
     | { transactionNumber?: string; salesInvoiceNumber?: string | null }
     | null
@@ -1336,7 +1335,9 @@ export function buildARInvoiceHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Collection Receipt</h1>
+      <!-- It is the invoice. The receipt heading printed a receipt for the
+           full balance on an invoice with nothing collected against it. -->
+      <h1>AR Invoice</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
