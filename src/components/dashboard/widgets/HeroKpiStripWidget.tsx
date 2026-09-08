@@ -17,7 +17,7 @@ import { CARD_SHADOW_RESTING, CARD_SHADOW_HOVER } from '../DashboardWidgetWrappe
 import {
   useDashboardArInvoices,
   useDashboardSalesByBranch,
-  useDashboardCustomersTotal,
+  useDashboardCustomersCount,
   useDashboardEnterpriseSummary,
   useNeedsAttentionItems,
 } from './dashboardQueries'
@@ -91,7 +91,7 @@ export default function HeroKpiStripWidget() {
   // the underlying request once per unique key, however many widgets ask.
   const salesQuery = useDashboardSalesByBranch(undefined)
   const arInvoicesQuery = useDashboardArInvoices(branchId ?? undefined)
-  const customersQuery = useDashboardCustomersTotal(1)
+  const customersQuery = useDashboardCustomersCount(branchId ?? undefined)
   const attentionQuery = useNeedsAttentionItems(branchId ?? undefined)
   const enterpriseQuery = useDashboardEnterpriseSummary()
 
@@ -102,7 +102,13 @@ export default function HeroKpiStripWidget() {
     attentionQuery.data !== undefined
 
   function buildKpis(): Kpi[] {
-    const branches = salesQuery.data ?? []
+    // getSalesByBranch() has no server-side branch filter — it always
+    // returns every branch's breakdown (that's what Sales by Branch below
+    // needs to compare them). Total Revenue narrows to just the selected
+    // branch's row itself, so switching branches actually changes this
+    // number instead of always showing the enterprise-wide total.
+    const allBranches = salesQuery.data ?? []
+    const branches = branchId ? allBranches.filter((b) => b.branchId === branchId) : allBranches
     const totalRevenue = branches.reduce((s, b) => s + b.totalSales, 0)
     const totalTxns = branches.reduce((s, b) => s + b.transactionCount, 0)
 
@@ -150,7 +156,7 @@ export default function HeroKpiStripWidget() {
       {
         label: 'Customers',
         value: String(totalCustomers),
-        sub: 'Across all branches',
+        sub: branchId ? 'At this branch' : 'Across all branches',
         icon: Users,
         tone: 'default',
         href: '/crm',

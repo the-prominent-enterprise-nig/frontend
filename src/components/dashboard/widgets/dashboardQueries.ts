@@ -76,11 +76,40 @@ export function useDashboardSalesByBranch(dateFrom?: string) {
   })
 }
 
-export function useDashboardCustomersTotal(limit: number) {
+/**
+ * The `Customer` model has no branch column of its own (a customer isn't
+ * "owned" by one branch), so "this branch's customers" is derived: anyone
+ * who has a POS sale or an AR invoice recorded at that branch. "All
+ * Branches" skips all that and just asks for the cheap enterprise-wide
+ * total directly.
+ */
+export function useDashboardCustomersCount(branchId?: string) {
   return useQuery({
-    queryKey: ['dashboard', 'customers', limit] as const,
-    queryFn: async () => (await customersApi.list({ limit })).data?.meta?.total ?? 0,
+    queryKey: ['dashboard', 'customers-count', branchId ?? 'all'] as const,
+    queryFn: async () => {
+      if (!branchId) {
+        return (await customersApi.list({ limit: 1 })).data?.meta?.total ?? 0
+      }
+      const [txRes, arRes] = await Promise.all([
+        getTransactions({ branchId }),
+        ARInvoices.list({ branchId }),
+      ])
+      return branchCustomerIds(txRes.data ?? [], arRes.data?.items ?? []).size
+    },
   })
+}
+
+/** Distinct customer IDs present in this branch's transactions/invoices —
+ * shared by useDashboardCustomersCount and useModuleStats so both agree on
+ * what counts as "this branch's customers" without re-fetching anything. */
+function branchCustomerIds(
+  transactions: { customerId?: string | null }[],
+  invoices: { customerId: string }[]
+): Set<string> {
+  const ids = new Set<string>()
+  for (const t of transactions) if (t.customerId) ids.add(t.customerId)
+  for (const inv of invoices) if (inv.customerId) ids.add(inv.customerId)
+  return ids
 }
 
 export function useDashboardEnterpriseSummary() {
@@ -151,10 +180,15 @@ export function useModuleStats(branchId: string | null) {
           getTransactions({ branchId: branchId ?? undefined }),
           loadInventoryAlerts(branchId),
           api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
-          ARInvoices.list(),
+          // AR invoices and leads both carry a real branchId in the data
+          // model, so they're filtered like everywhere else on this
+          // dashboard. AP bills and customers have no branch concept at
+          // all (purchasing is enterprise-wide; a customer isn't "owned" by
+          // one branch) — those two stay unfiltered on purpose.
+          ARInvoices.list({ branchId: branchId ?? undefined }),
           APBills.list(),
           customersApi.list({ limit: 200 }),
-          leadsApi.list({ limit: 200 }),
+          leadsApi.list({ limit: 200, branchId: branchId ?? undefined }),
         ])
 
       const allTxns = txRes.data ?? []
@@ -184,10 +218,15 @@ export function useModuleStats(branchId: string | null) {
           ['pending_online_approval', 'pending_onsite_approval'].includes(b.voucherApprovalStatus)
       ).length
 
-      const totalCustomers = customersRes.data?.meta?.total ?? 0
+      // Same branch-derived customer set useDashboardCustomersCount uses —
+      // reuses txRes/arRes already fetched above instead of asking again.
+      const branchIds = branchId ? branchCustomerIds(allTxns, invoices) : null
+      const totalCustomers = branchIds ? branchIds.size : (customersRes.data?.meta?.total ?? 0)
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       const newThisMonth = (customersRes.data?.data ?? []).filter(
-        (c) => new Date(c.createdAt).getTime() >= monthStart.getTime()
+        (c) =>
+          new Date(c.createdAt).getTime() >= monthStart.getTime() &&
+          (!branchIds || branchIds.has(c.id))
       ).length
       const activeLeads = (leadsRes.data?.data ?? []).filter((l) => l.status === 'active').length
 
