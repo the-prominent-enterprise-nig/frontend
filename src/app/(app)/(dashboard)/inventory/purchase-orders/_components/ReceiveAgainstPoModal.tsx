@@ -124,11 +124,6 @@ const ReceivePoFormSchema = z.object({
     .string()
     .min(1, "Delivery receipt number is required — it's on the paper that came with the goods"),
   supplierInvoiceNumber: z.string().optional(),
-  // Tax as printed on the supplier's invoice, typed off the SI rather than
-  // picked from a rule — the BIR cares about the supplier's numbers, not
-  // ours. Blank = let the server derive it at the flat rate.
-  vatAmount: z.number().min(0).optional(),
-  withheldAmount: z.number().min(0).optional(),
   lines: z.array(ReceivePoLineSchema).min(1),
 })
 
@@ -138,6 +133,10 @@ type ReceivePoFormValues = z.infer<typeof ReceivePoFormSchema>
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+// Derived figures are shown, not typed — flat and un-focusable so they don't
+// read as an empty box waiting for input.
+const readonlyFieldClass =
+  'block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-right text-sm font-medium tabular-nums text-zinc-700'
 // Mirrors FLAT_VAT_RATE_PERCENT and the 1% withholding rate the server
 // applies (tax.constants.ts / StockService.receiveStock) — preview only.
 const INPUT_VAT_RATE = 0.12
@@ -369,8 +368,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
     ? round2(grossSelected - grossSelected / (1 + INPUT_VAT_RATE))
     : 0
   const netTotal = round2(grossSelected - effectiveVat)
-  const withheldAmountValue =
-    po?.supplier?.defaultWithholding === 'pct_1' ? round2(netTotal * WITHHOLDING_RATE) : 0
+  const withholdsTax = po?.supplier?.defaultWithholding === 'pct_1'
+  const withheldAmountValue = withholdsTax ? round2(netTotal * WITHHOLDING_RATE) : 0
   const invoiceTotal = grossSelected
 
   useEffect(() => {
@@ -611,69 +610,41 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
             {/* Tax off the supplier's invoice. Two different taxes moving in
                 opposite directions: VAT is charged BY the supplier and grows
                 what the invoice totals; withholding is held back FROM them and
-                remitted to the BIR, shrinking only what's paid out. */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Input VAT amount
-                <span className="ml-1 text-xs font-normal text-zinc-400">₱, from the SI</span>
-              </label>
-              <Controller
-                name="vatAmount"
-                control={control}
-                render={({ field }) => (
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-                      ₱
+                remitted to the BIR, shrinking only what's paid out.
+
+                Both are DERIVED from the supplier's own profile, never typed.
+                The server recomputes them the same way when it posts
+                (StockService.receiveStock / APBillsService.computeWithholding)
+                and ignores anything sent from here, so an editable box could
+                only ever disagree with what actually lands. Shown read-only
+                rather than dropped: whoever is checking the 2307 against the
+                paperwork still needs to see the figure. */}
+            {canViewCost && (
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Input VAT
+                    <span className="ml-1 text-xs font-normal text-zinc-400">
+                      {chargesInputVat ? '₱, 12% of the invoice' : 'supplier not VAT-registered'}
                     </span>
-                    <input
-                      value={field.value == null || isNaN(field.value) ? '' : field.value}
-                      onChange={(e) =>
-                        field.onChange(
-                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
-                        )
-                      }
-                      onBlur={field.onBlur}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      className={`${fieldClass} pl-7 text-right`}
-                    />
-                  </div>
-                )}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Withholding tax amount
-                <span className="ml-1 text-xs font-normal text-zinc-400">₱, BIR 2307</span>
-              </label>
-              <Controller
-                name="withheldAmount"
-                control={control}
-                render={({ field }) => (
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-                      ₱
+                  </label>
+                  <output className={readonlyFieldClass}>
+                    {chargesInputVat ? fmtPeso(effectiveVat) : '—'}
+                  </output>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-zinc-700">
+                    Withholding tax
+                    <span className="ml-1 text-xs font-normal text-zinc-400">
+                      {withholdsTax ? '₱, 1% — BIR 2307' : 'none for this supplier'}
                     </span>
-                    <input
-                      value={field.value == null || isNaN(field.value) ? '' : field.value}
-                      onChange={(e) =>
-                        field.onChange(
-                          isNaN(e.target.valueAsNumber) ? undefined : e.target.valueAsNumber
-                        )
-                      }
-                      onBlur={field.onBlur}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      className={`${fieldClass} pl-7 text-right`}
-                    />
-                  </div>
-                )}
-              />
-            </div>
+                  </label>
+                  <output className={readonlyFieldClass}>
+                    {withholdsTax ? fmtPeso(withheldAmountValue) : '—'}
+                  </output>
+                </div>
+              </>
+            )}
           </div>
 
           {/* What the two numbers above actually add up to, so it can be
