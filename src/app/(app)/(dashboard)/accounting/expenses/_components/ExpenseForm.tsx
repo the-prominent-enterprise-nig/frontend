@@ -40,6 +40,10 @@ import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
+// Ties the sticky header's Save to the <form> further down, which it sits
+// outside of.
+const FORM_ID = 'expense-form'
+
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
 
 const PAYEE_OPTIONS: { value: PayeeType; label: string }[] = [
@@ -847,22 +851,51 @@ function ExpenseFormFields({
 
   return (
     <div className="px-6 py-5 lg:px-10">
-      <Link
-        href="/accounting/expenses"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to expenses
-      </Link>
+      {/* The header sticks, and carries its own Save. A payroll entry runs to
+          one line per division — the client's own disbursement sheet has 58 —
+          so the actions at the foot of the form sat several screens below the
+          field being edited, and saving meant scrolling the whole list. The
+          button is bound by `form=` rather than nesting: the heading block
+          sits outside the <form> it submits. */}
+      <div className="sticky top-0 z-20 -mx-6 -mt-5 mb-4 border-b border-zinc-200 bg-zinc-50/95 px-6 pb-3 pt-5 backdrop-blur lg:-mx-10 lg:px-10">
+        <Link
+          href="/accounting/expenses"
+          className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to expenses
+        </Link>
 
-      <h1 className="text-2xl font-semibold text-prominent-purple-900">
-        {initial ? 'Edit Expense' : 'New Expense'}
-      </h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Record and categorize a business expense. Recording posts a journal entry to the GL.
-      </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-prominent-purple-900">
+              {initial ? 'Edit Expense' : 'New Expense'}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Record and categorize a business expense. Recording posts a journal entry to the GL.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 pt-1">
+            <Link
+              href="/accounting/expenses"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              form={FORM_ID}
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
 
-      <form onSubmit={submit} className="mt-4 space-y-2">
+      <form id={FORM_ID} onSubmit={submit} className="mt-4 space-y-2">
         <div
           className={`grid gap-3 ${form.clearedType === 'LATER_DATE' ? 'grid-cols-3 max-w-2xl' : 'grid-cols-2 max-w-md'}`}
         >
@@ -1525,22 +1558,6 @@ function ExpenseFormFields({
             {error}
           </div>
         )}
-        <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200">
-          <Link
-            href="/accounting/expenses"
-            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
-          >
-            Cancel
-          </Link>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
       </form>
     </div>
   )
