@@ -15,14 +15,14 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
+import { customersApi } from '@/src/libs/api/crm'
 import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
-import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
+import type { Customer, Lead, Reminder } from '@/src/schema/crm/types'
 import type {
   InstallmentSchedule,
   CustomerHistoryItem,
@@ -161,10 +161,6 @@ export default function Customer360({
   // transactions (TransactionsList.tsx's TransactionDetail).
   const [scheduleDetailTarget, setScheduleDetailTarget] = useState<InstallmentSchedule | null>(null)
 
-  const [installmentAccounts, setInstallmentAccounts] = useState<InstallmentAccount[]>([])
-  const [accountsLoading, setAccountsLoading] = useState(true)
-  const [accountsError, setAccountsError] = useState<string | null>(null)
-
   // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId/history-with-payments)
   // — covers cash/full-payment sales too, unlike Installment Plans above.
   // The endpoint still merges in Collections payments; this page now shows
@@ -231,14 +227,6 @@ export default function Customer360({
       if (res.success && res.data) setInstallmentSchedules(res.data)
       else setInstallmentError(res.error ?? 'Failed to load installment plans')
       setInstallmentLoading(false)
-    })
-  }, [id])
-
-  useEffect(() => {
-    installmentAccountsApi.list({ customerId: id, limit: 50 }).then((res) => {
-      if (res.success && res.data) setInstallmentAccounts(res.data.data)
-      else setAccountsError(res.error ?? 'Failed to load CRM accounts')
-      setAccountsLoading(false)
     })
   }, [id])
 
@@ -629,14 +617,6 @@ export default function Customer360({
               )}
             </>
           )}
-          {!accountsLoading && installmentAccounts.length > 0 && (
-            <p className="mt-3 border-t border-gray-100 pt-3 text-[12px] text-gray-400">
-              This list only includes itemized due dates from POS-originated installment plans. This
-              customer also has {installmentAccounts.length} CRM collections account
-              {installmentAccounts.length !== 1 ? 's' : ''} on file — see aggregate balances in CRM
-              Collections Accounts below.
-            </p>
-          )}
         </section>
       </div>
 
@@ -648,43 +628,6 @@ export default function Customer360({
           onClose={() => setScheduleDetailTarget(null)}
         />
       )}
-
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">CRM Collections Accounts</h2>
-          {accountsLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">Loading accounts…</p>
-          ) : accountsError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{accountsError}</p>
-          ) : installmentAccounts.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No CRM collections accounts for this customer.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {installmentAccounts.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 py-2.5 text-[13px]"
-                >
-                  <Link
-                    href={`/crm/installment-accounts/${a.id}`}
-                    className="font-mono font-medium text-prominent-orange-700 hover:underline"
-                  >
-                    {a.accountNumber}
-                  </Link>
-                  <span className="flex items-center gap-2 text-gray-600">
-                    {a.collector ? `${a.collector.stubNumber} — ${a.collector.name}` : 'Unassigned'}
-                    <span className="font-medium text-gray-800">
-                      {formatPeso(Number(a.currentBalance))}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
