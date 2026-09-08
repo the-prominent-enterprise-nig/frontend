@@ -3598,6 +3598,64 @@ export default function CheckoutPage() {
                 A customer must be selected — this cart has an installment item.
               </p>
             )}
+            {saleMode === 'sale' && hasChargeOrInstallmentLine && (
+              <div className="mt-2.5 space-y-2">
+                {inhouseInstallmentCartLines.length > 0 && (
+                  <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
+                    <p className="text-xs font-medium text-prominent-purple-700">
+                      {inhouseInstallmentCartLines.length} item
+                      {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
+                    </p>
+                    <p className="mt-1 text-[13px] text-prominent-purple-500">
+                      Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
+                      financed into each item&apos;s own AR schedule.
+                    </p>
+                    {selectedCustomer && (
+                      <div className="mt-2.5">
+                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
+                          Approved Credit Application
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={creditApplicationId}
+                            onChange={(e) => setCreditApplicationId(e.target.value)}
+                            disabled={creditApplicationsLoading}
+                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
+                          >
+                            <option value="">
+                              {creditApplicationsLoading
+                                ? 'Loading…'
+                                : approvedCreditApplications.length === 0
+                                  ? 'No approved application on file'
+                                  : 'Select an approved application…'}
+                            </option>
+                            {approvedCreditApplications.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
+                                · ₱
+                                {a.requestedAmount.toLocaleString('en-PH', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={12}
+                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
+                          />
+                        </div>
+                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
+                          <p className="mt-1 text-[13px] text-amber-700">
+                            Every installment sale requires an approved credit application — open
+                            one in Credit Applications first.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
@@ -4120,65 +4178,6 @@ export default function CheckoutPage() {
                 >
                   <Plus size={11} /> Add
                 </button>
-              </div>
-            )}
-
-            {saleMode === 'sale' && hasChargeOrInstallmentLine && (
-              <div className="mb-3 space-y-2">
-                {inhouseInstallmentCartLines.length > 0 && (
-                  <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
-                    <p className="text-xs font-medium text-prominent-purple-700">
-                      {inhouseInstallmentCartLines.length} item
-                      {inhouseInstallmentCartLines.length !== 1 ? 's' : ''} on inhouse installment
-                    </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      Down payment {fmt(installmentDownPaymentsTotal)} collected now; the rest is
-                      financed into each item&apos;s own AR schedule.
-                    </p>
-                    {selectedCustomer && (
-                      <div className="mt-2.5">
-                        <label className="mb-1 block text-[13px] text-prominent-purple-700">
-                          Approved Credit Application
-                        </label>
-                        <div className="relative">
-                          <select
-                            value={creditApplicationId}
-                            onChange={(e) => setCreditApplicationId(e.target.value)}
-                            disabled={creditApplicationsLoading}
-                            className="w-full appearance-none rounded-lg border border-prominent-purple-200 bg-white px-2 py-1.5 pr-6 text-xs text-gray-800 outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:opacity-50"
-                          >
-                            <option value="">
-                              {creditApplicationsLoading
-                                ? 'Loading…'
-                                : approvedCreditApplications.length === 0
-                                  ? 'No approved application on file'
-                                  : 'Select an approved application…'}
-                            </option>
-                            {approvedCreditApplications.map((a) => (
-                              <option key={a.id} value={a.id}>
-                                {a.applicationNumber} · {a.items.map((i) => i.itemName).join(', ')}{' '}
-                                · ₱
-                                {a.requestedAmount.toLocaleString('en-PH', {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-prominent-purple-700"
-                          />
-                        </div>
-                        {!creditApplicationsLoading && approvedCreditApplications.length === 0 && (
-                          <p className="mt-1 text-[13px] text-amber-700">
-                            Every installment sale requires an approved credit application — open
-                            one in Credit Applications first.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
 

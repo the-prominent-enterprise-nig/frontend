@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2, Printer } from 'lucide-react'
 import {
   ARInvoices,
   fmtMoney,
@@ -105,8 +105,8 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           onClick={() => printARInvoiceDocument(doc)}
           className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
         >
-          <Download className="h-4 w-4" />
-          Print / Download
+          <Printer className="h-4 w-4" />
+          Print
         </button>
       </div>
 
@@ -153,7 +153,10 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           customer={invoice.customer}
           enterprise={enterprise}
           date={invoice.invoiceDate}
-          reference={invoice.invoiceNumber}
+          // The number off the physical SI booklet the customer was
+          // handed. Falls back to the generated invoice number for records
+          // that predate the Sales Invoice No. requirement.
+          reference={invoice.posTransaction?.salesInvoiceNumber || invoice.invoiceNumber}
           description={invoice.description}
           rows={[
             {
@@ -174,9 +177,8 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
             Financed items — full plan
           </h2>
           <p className="mb-3 text-[12px] text-gray-500">
-            Full price of everything on this {detail.termMonths ?? '—'}-month plan — this invoice
-            only covers 1 of {detail.termMonths ?? '—'} monthly payments, not the full amount shown
-            below.
+            Everything financed on this {detail.termMonths ?? '—'}-month plan. This invoice is the
+            whole plan — all {detail.termMonths ?? '—'} monthly payments — not a single due.
           </p>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100 text-[13px]">
