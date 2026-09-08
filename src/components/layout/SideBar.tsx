@@ -55,6 +55,7 @@ import {
   UserPlus,
   Wallet,
   Warehouse,
+  Network,
   Wrench,
   X,
   type LucideIcon,
@@ -233,6 +234,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/expenses',
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
+      },
+      {
+        section: 'Accounting',
+        label: 'Special Accounts',
+        href: '/accounting/special-accounts',
+        icon: Wallet,
       },
       {
         label: 'Unapplied Collections',
@@ -826,6 +833,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Departments',
+    href: '/settings/departments',
+    icon: Network,
+  },
   {
     section: 'My Workspace',
     label: 'Business Policies',

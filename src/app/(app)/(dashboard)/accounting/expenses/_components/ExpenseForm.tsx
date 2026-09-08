@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -21,10 +21,22 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import CustomerPicker from '@/src/components/crm/CustomerPicker'
+import { customersApi } from '@/src/libs/api/crm'
 import EmployeePicker from '@/src/components/accounting/EmployeePicker'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Select } from '@/src/components/ui/Select'
+import {
+  BranchesApi,
+  DepartmentsApi,
+  divisionIdsFor,
+  divisionOptions,
+  divisionValueFor,
+  type BranchLite,
+  type Department,
+} from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
+import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
+import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
 const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHECK', 'CARD', 'E_WALLET']
@@ -47,6 +59,10 @@ const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
 // the code that way and so do we now, but the column keeps its 'VAT' value so
 // existing rows stay valid. Its counterpart, Output VAT, is a sales-side
 // liability and is deliberately absent — it can never apply to an expense.
+/** Mirrors the backend's FLAT_VAT_RATE_PERCENT — the single rate left after
+ * the configurable TaxRate table was removed. */
+const VAT_RATE_PERCENT = 12
+
 const TAX_CODE_OPTIONS = [
   { value: '', label: 'No Tax' },
   { value: 'VAT', label: 'Input VAT' },
@@ -54,15 +70,54 @@ const TAX_CODE_OPTIONS = [
   { value: 'EXEMPT', label: 'Exempt' },
 ]
 
+/**
+ * Whether a line is carried against a named person — an advance, a loan, a
+ * receivable. Which account it sits under is whatever the Account picker
+ * chose: that account IS the person's control account. It used to be a
+ * list of types, which offered a different set of accounts than the picker
+ * beside it and would silently override the picked one.
+ */
+const SPECIAL_ACCOUNT_CHOICES = [
+  { value: '', label: 'No' },
+  { value: 'yes', label: 'Yes' },
+] as const
+
 /** The one code that carries a claimable tax amount — everything else is,
  * by definition, a line with no VAT on it. */
 const TAXABLE_CODE = 'VAT'
 
+/** VAT a line attracts, derived from its code rather than typed. The server
+ * computes the same figure from the same code and ignores any amount sent
+ * with it, so a hand-typed VAT could only ever disagree with what actually
+ * posts. A deduction (negative amount) is not a purchase and never carries
+ * input VAT. */
+function vatFor(line: { taxCode: string; amount: string }): number {
+  const amount = Number(line.amount) || 0
+  if (line.taxCode !== TAXABLE_CODE || amount < 0) return 0
+  return Math.round(amount * (VAT_RATE_PERCENT / 100) * 100) / 100
+}
+
 interface LineState {
   categoryAccountId: string
+  /** Who this line is for, by name. Payroll reads "name / department" — the
+   * name per line, the department fixed at the header — and it is also what
+   * ties an advance or loan recovery back to the person's outstanding
+   * balance, which the server matches on the typed name. Generic-mode lines
+   * only; an inventory purchase line has no recipient. */
+  payee: string
+  /** The Division picker's value — `branch:<id>` or `department:<id>`,
+   * unpacked into the two ids the API takes on submit. */
+  division: string
+  /** Carried against a named person. The Account picker says under which
+   * control account; `payee` is who. */
+  isSpecialAccount: boolean
+  /** Which customer this line collects from, when it is a payroll
+   * deduction of their monthly instalment. Recording the expense settles
+   * their instalment dues; blank means it settles nobody's. */
+  collectFromId: string
+  collectFromLabel: string
   description: string
   amount: string
-  vatAmount: string
   taxCode: string
   // SUPPLIER-only — picking an item prefills categoryAccountId + unitPrice
   // and computes amount as qty * unitPrice (see setLine).
@@ -80,9 +135,13 @@ interface LineState {
 function emptyLine(): LineState {
   return {
     categoryAccountId: '',
+    payee: '',
+    division: '',
+    isSpecialAccount: false,
+    collectFromId: '',
+    collectFromLabel: '',
     description: '',
     amount: '',
-    vatAmount: '',
     taxCode: '',
     itemId: '',
     itemLabel: '',
@@ -105,10 +164,6 @@ function emptyPayment(): PaymentState {
   return { paymentMethod: 'CASH', bankAccountId: '', reference: '', amount: '' }
 }
 
-/** Mirrors the backend's FLAT_VAT_RATE_PERCENT — the single rate left after
- * the configurable TaxRate table was removed. */
-const VAT_RATE_PERCENT = 12
-
 // Line-item table's column templates — one source of truth so the header row
 // and every line row always agree. `minmax(0,Nfr)` rather than bare `Nfr`
 // (shorthand for `minmax(auto,Nfr)`) is deliberate: a bare `fr` track still
@@ -120,7 +175,7 @@ const VAT_RATE_PERCENT = 12
 const ITEM_MODE_GRID_COLS =
   'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -173,7 +228,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [ready, setReady] = useState(!expenseId)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<APBillSupplierOption[]>([])
-  const [expenseAccounts, setExpenseAccounts] = useState<Account[]>([])
+  const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
   const [inventoryAccounts, setInventoryAccounts] = useState<Account[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
   const [mappings, setMappings] = useState<AccountMapping[]>([])
@@ -181,7 +236,21 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   useEffect(() => {
     getAccounts({ limit: 500 }).then((r) => {
       const list = ((r.data as any)?.items ?? r.data ?? []) as Account[]
-      setExpenseAccounts(list.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE'))
+      // Not expenses only. A payroll run credits assets and liabilities as
+      // well as debiting expense — the client's own disbursement sheet
+      // posts to Accounts receivable - MI (asset), Pag-IBIG Premium
+      // Payable and Withholding Tax Payable Wages (liabilities), and their
+      // reference tool lets those be picked here directly. Restricting the
+      // picker to EXPENSE made every one of them unreachable.
+      //
+      // Header rows aren't postable, so they stay out. Equity is excluded
+      // too: nothing an expense entry does belongs there.
+      const postable = list.filter((a) => {
+        const type = (a.type ?? '').toUpperCase()
+        const isHeader = (a.number ?? '').endsWith('-000')
+        return !isHeader && type !== 'EQUITY'
+      })
+      setPostableAccounts(postable)
       // A Supplier line can be a real inventory purchase (an Asset, not an
       // Expense) — "1-04-*" is the Inventory account family (Inventory
       // itself, 1-04-000, plus its Appliances/Furniture/Aircon/IT Products
@@ -239,7 +308,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     <ExpenseFormFields
       initial={initial}
       suppliers={suppliers}
-      expenseAccounts={expenseAccounts}
+      postableAccounts={postableAccounts}
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
       mappings={mappings}
@@ -251,7 +320,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
 function ExpenseFormFields({
   initial,
   suppliers,
-  expenseAccounts,
+  postableAccounts,
   inventoryAccounts,
   bankAccounts,
   mappings,
@@ -259,7 +328,7 @@ function ExpenseFormFields({
 }: {
   initial: BusinessExpense | null
   suppliers: APBillSupplierOption[]
-  expenseAccounts: Account[]
+  postableAccounts: Account[]
   inventoryAccounts: Account[]
   bankAccounts: BankAccount[]
   mappings: AccountMapping[]
@@ -300,9 +369,13 @@ function ExpenseFormFields({
     initial?.lines && initial.lines.length > 0
       ? initial.lines.map((l) => ({
           categoryAccountId: l.categoryAccountId ?? '',
+          payee: l.payee || (l.employee ? `${l.employee.firstName} ${l.employee.lastName}` : ''),
+          division: divisionValueFor(l),
+          isSpecialAccount: Boolean((l as any).isSpecialAccount),
+          collectFromId: (l as any).customerId ?? '',
+          collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
           amount: String(l.amount ?? ''),
-          vatAmount: l.taxAmount ? String(l.taxAmount) : '',
           taxCode: l.taxCode ?? '',
           itemId: l.itemId ?? '',
           itemLabel: '',
@@ -316,18 +389,85 @@ function ExpenseFormFields({
       : [emptyLine()]
   )
   const [siCandidates, setSiCandidates] = useState<Record<number, APBill[]>>({})
+  // A line's Division is one pick from the tenant's branches and departments
+  // listed together — "dropdown came from branches and departments". Loaded
+  // once here and shared by every line.
+  const [branches, setBranches] = useState<BranchLite[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+    DepartmentsApi.list().then((r) => setDepartments(r.data?.data ?? []))
+    // Only used to pre-fill "collect from" on import — the picker itself
+    // searches server-side, so this list never has to be complete.
+    customersApi
+      .list({ limit: 1000 })
+      .then((r) => setCustomers((r.data?.data ?? []).map((c) => ({ id: c.id, name: c.name }))))
+  }, [])
+  const divisionChoices = useMemo(
+    () => divisionOptions(branches, departments),
+    [branches, departments]
+  )
+
+  // Spreadsheet import. The payroll disbursement sheet runs to hundreds of
+  // rows, so it is read in the browser and dropped straight into the line
+  // table for review — nothing is saved until the user hits Save, and
+  // nothing leaves the page.
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+
+  const handleImport = async (file: File) => {
+    setImporting(true)
+    setError(null)
+    try {
+      const result = await importSpreadsheetLines(
+        file,
+        postableAccounts,
+        divisionChoices,
+        customers
+      )
+      if (result.lines.length === 0) {
+        setError('No lines found in that file — expected Account, Particulars, Debit, Credit.')
+        setImportResult(null)
+        return
+      }
+      setLines(
+        result.lines.map((l) => ({
+          ...emptyLine(),
+          categoryAccountId: l.categoryAccountId,
+          isSpecialAccount: Boolean(l.specialAccountType),
+          collectFromId: l.collectFromId,
+          collectFromLabel: l.collectFromLabel,
+          division: l.division,
+          payee: l.payee,
+          description: l.description,
+          amount: l.amount,
+        }))
+      )
+      setImportResult(result)
+    } catch {
+      setError('Could not read that file. Expected a .xlsx or .csv spreadsheet.')
+      setImportResult(null)
+    } finally {
+      setImporting(false)
+      // Let the same file be re-picked after a correction.
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const categoryOptions = useMemo(
-    () => accountsToCategoryOptions(expenseAccounts),
-    [expenseAccounts]
+    () => accountsToCategoryOptions(postableAccounts),
+    [postableAccounts]
   )
   // Supplier lines can be a real inventory purchase — offer the Inventory
   // Asset accounts there too, on top of the usual Expense ones. Every other
   // payee type stays Expense-only (categoryOptions above).
   const supplierCategoryOptions = useMemo(
-    () => accountsToCategoryOptions([...expenseAccounts, ...inventoryAccounts]),
-    [expenseAccounts, inventoryAccounts]
+    () => accountsToCategoryOptions([...postableAccounts, ...inventoryAccounts]),
+    [postableAccounts, inventoryAccounts]
   )
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
@@ -372,7 +512,7 @@ function ExpenseFormFields({
   )?.accountId
 
   const subtotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
-  const vatTotal = lines.reduce((sum, l) => sum + (Number(l.vatAmount) || 0), 0)
+  const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
   const total = subtotal + vatTotal
 
   // Item mode computes Amount from Qty * Unit Price. Applied to every line
@@ -393,7 +533,7 @@ function ExpenseFormFields({
         // rejects tax on a non-taxable line (it would have nowhere to post
         // and would unbalance the entry), so the field can't be left holding
         // a stale amount the user can no longer see a reason for.
-        if (patch.taxCode !== undefined && patch.taxCode !== TAXABLE_CODE) next.vatAmount = ''
+
         return next
       })
     )
@@ -533,9 +673,18 @@ function ExpenseFormFields({
       return 'Describe what this Other expense is for.'
     if (lines.length === 0) return 'Add at least one line.'
     for (const l of lines) {
-      if (!l.amount || Number(l.amount) <= 0) return 'Every line needs an amount greater than 0.'
+      if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
+        return 'Every line needs an amount — positive to add, negative to deduct.'
       if (!l.categoryAccountId) return 'Every line needs an account.'
+      // The name is what the balance is carried against, and what ties an
+      // advance or loan back to that person later.
+      if (l.isSpecialAccount && !l.payee.trim())
+        return 'A Special Account line needs a name — it is who the balance is for.'
     }
+    // The entry as a whole has to be money going out: record() credits cash
+    // for the total, and deductions exceeding what they deduct from is a
+    // mis-key. The server rejects it too.
+    if (total <= 0) return 'Deductions cannot meet or exceed the amounts they deduct from.'
     return null
   }
 
@@ -576,10 +725,20 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        categoryAccountId: l.categoryAccountId,
         amount: Number(l.amount),
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
+      }
+      line.categoryAccountId = l.categoryAccountId
+      if (l.isSpecialAccount) line.isSpecialAccount = true
+      // Only a deduction can collect — a positive line would be issuing
+      // money, not receiving it.
+      if (l.collectFromId && Number(l.amount) < 0) line.customerId = l.collectFromId
+      // Only generic-mode lines carry a recipient or a division — an
+      // inventory purchase line has neither, and neither column is rendered.
+      if (!isItemMode) {
+        if (l.payee.trim()) line.payee = l.payee.trim()
+        Object.assign(line, divisionIdsFor(l.division))
       }
       if (isItemMode && l.itemId) {
         line.itemId = l.itemId
@@ -587,9 +746,9 @@ function ExpenseFormFields({
         if (l.unitPrice) line.unitPrice = Number(l.unitPrice)
         if (l.apBillId) line.apBillId = l.apBillId
       }
-      // Drives the Input VAT debit and the header total server-side.
-      const vat = Number(l.vatAmount)
-      if (vat > 0) line.taxAmount = vat
+      // taxAmount is deliberately not sent: the server derives it from
+      // taxCode and ignores anything supplied, so sending one would only
+      // create a figure that could disagree with what posts.
       return line
     })
 
@@ -872,23 +1031,30 @@ function ExpenseFormFields({
                 </>
               )}
               <div>Account</div>
+              {!isItemMode && <div>Special Account</div>}
               {isItemMode ? (
                 <>
                   <div>Qty</div>
                   <div>Unit Price</div>
                 </>
               ) : (
-                <div>Description</div>
+                <>
+                  <div>Name</div>
+                  <div>Description</div>
+                </>
               )}
               <div>Amount</div>
               <div>Tax Code</div>
               <div>Tax Amount</div>
               <div>Total</div>
+              {/* One pick from the branches and departments list — per line,
+                  because a payroll run spans every department it pays. */}
+              {!isItemMode && <div>Division</div>}
               <div />
             </div>
             <div className="divide-y divide-zinc-100">
               {lines.map((line, i) => {
-                const lineTotal = (Number(line.amount) || 0) + (Number(line.vatAmount) || 0)
+                const lineTotal = (Number(line.amount) || 0) + vatFor(line)
                 return (
                   <div
                     key={i}
@@ -945,15 +1111,30 @@ function ExpenseFormFields({
                         />
                       </>
                     )}
-                    <CategorySelect
-                      compact
-                      aria-label="Account"
-                      noun="accounts"
-                      value={line.categoryAccountId}
-                      onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                      options={isItemMode ? supplierCategoryOptions : categoryOptions}
-                      placeholder="— Select —"
-                    />
+                    {
+                      <CategorySelect
+                        compact
+                        aria-label="Account"
+                        noun="accounts"
+                        value={line.categoryAccountId}
+                        onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                        options={isItemMode ? supplierCategoryOptions : categoryOptions}
+                        placeholder="— Select —"
+                      />
+                    }
+                    {/* Yes when the balance is carried against the named
+                        person, whichever control account the picker chose. */}
+                    {!isItemMode && (
+                      <Select
+                        compact
+                        value={line.isSpecialAccount ? 'yes' : ''}
+                        onChange={(value) => setLine(i, { isSpecialAccount: value === 'yes' })}
+                        options={SPECIAL_ACCOUNT_CHOICES.map((o) => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
+                      />
+                    )}
                     {isItemMode ? (
                       <>
                         <input
@@ -976,18 +1157,55 @@ function ExpenseFormFields({
                         />
                       </>
                     ) : (
-                      <input
-                        aria-label="Line description"
-                        value={line.description}
-                        onChange={(e) => setLine(i, { description: e.target.value })}
-                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                      />
+                      <>
+                        <div className="min-w-0">
+                          <input
+                            aria-label="Name"
+                            value={line.payee}
+                            onChange={(e) => setLine(i, { payee: e.target.value })}
+                            placeholder={
+                              line.isSpecialAccount ? 'Name (required)' : 'Who this is for'
+                            }
+                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          />
+                          {/* Folded under the Name rather than given its own
+                            column: the typed name and the customer it was
+                            matched to read as a pair, so a wrong match is
+                            obvious. Only offered on a deduction — a positive
+                            line issues money rather than collecting it. */}
+                          {Number(line.amount) < 0 && (
+                            <div className="mt-1">
+                              <CustomerPicker
+                                compact
+                                value={line.collectFromId}
+                                selectedLabel={line.collectFromLabel}
+                                onChange={(collectFromId, collectFromLabel) =>
+                                  setLine(i, { collectFromId, collectFromLabel })
+                                }
+                              />
+                              {!line.collectFromId && (
+                                <p className="mt-0.5 text-[10px] text-zinc-400">
+                                  Collects from nobody — instalments stay unpaid
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          aria-label="Line description"
+                          value={line.description}
+                          onChange={(e) => setLine(i, { description: e.target.value })}
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                        />
+                      </>
                     )}
+                    {/* Negative deducts — the payroll disbursement sheet's
+                        Credit column (statutory withholding, an advance taken
+                        back out of pay). No min, so it stays typeable. */}
                     <input
                       required
                       type="number"
                       step="0.01"
-                      min="0.01"
                       aria-label="Amount"
                       readOnly={isItemMode && !!line.itemId}
                       value={line.amount}
@@ -1006,27 +1224,34 @@ function ExpenseFormFields({
                           the others have no VAT by definition, so the field
                           is locked rather than left open to an entry the
                           backend will reject on save. */}
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
+                    <div
                       aria-label="Tax amount"
-                      readOnly={line.taxCode !== TAXABLE_CODE}
-                      value={line.vatAmount}
-                      onChange={(e) => setLine(i, { vatAmount: e.target.value })}
-                      placeholder={line.taxCode === TAXABLE_CODE ? '0.00' : ''}
                       title={
                         line.taxCode === TAXABLE_CODE
-                          ? undefined
-                          : 'Set the tax code to Input VAT to enter a tax amount'
+                          ? `${VAT_RATE_PERCENT}% of the line amount, computed on save`
+                          : 'No VAT on this tax code'
                       }
-                      className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
-                        line.taxCode !== TAXABLE_CODE ? 'bg-zinc-50 text-zinc-400' : ''
+                      className={`min-w-0 truncate px-2.5 py-1.5 text-[13px] ${
+                        vatFor(line) > 0 ? 'text-zinc-600' : 'text-zinc-400'
                       }`}
-                    />
+                    >
+                      {vatFor(line) > 0 ? fmtMoney(vatFor(line)) : '—'}
+                    </div>
                     <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
                       {fmtMoney(lineTotal)}
                     </div>
+                    {!isItemMode && (
+                      <Select
+                        compact
+                        value={line.division}
+                        onChange={(division) => setLine(i, { division })}
+                        options={divisionChoices.map((d) => ({
+                          value: d.value,
+                          label: d.label,
+                        }))}
+                        placeholder="— None —"
+                      />
+                    )}
                     <div className="flex justify-end">
                       {lines.length > 1 && (
                         <button
@@ -1042,6 +1267,90 @@ function ExpenseFormFields({
                 )
               })}
             </div>
+            {/* Import sits with Add line: both are ways of getting rows into
+                the table, and the imported rows are ordinary editable lines
+                once they land. */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                aria-label="Import lines from a spreadsheet"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleImport(file)
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+              >
+                {importing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {importing ? 'Reading…' : 'Import from spreadsheet'}
+              </button>
+              {/* Same affordance the inventory bulk-import modals offer: a
+                  template in the exact column order the parser reads, so
+                  nobody has to guess it from a tooltip. */}
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    'expense-lines-template.csv',
+                    ['Account', 'Particulars / Memo', 'Debit', 'Credit'],
+                    [
+                      ['Salaries and Wages', 'ACCOUNTING & FINANCE-NEGROS', 41008.47, ''],
+                      ['Employee Cash Advance', 'DELA CRUZ, JUAN', '', 2500],
+                    ]
+                  )
+                }
+                className="rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                Download template
+              </button>
+              <span className="text-[11px] text-zinc-400">
+                Account · Particulars · Debit · Credit — replaces the lines below
+              </span>
+            </div>
+
+            {importResult && (
+              <div className="mt-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50/40 p-2.5 text-[12px] text-zinc-700">
+                <p className="font-medium">
+                  Imported {importResult.lines.length} of {importResult.rowsRead} rows.
+                </p>
+                {importResult.skippedSummaryRows.length > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    Skipped {importResult.skippedSummaryRows.join(', ')} — totals, not transactions.
+                    The payment above covers the cash side.
+                  </p>
+                )}
+                {importResult.unmatchedAccounts.length > 0 && (
+                  <p className="mt-0.5 text-amber-700">
+                    No matching account for {importResult.unmatchedAccounts.join(', ')} — those
+                    lines need an Account picked before saving.
+                  </p>
+                )}
+                {importResult.matchedCustomers > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    {importResult.matchedCustomers} deduction(s) matched a customer and will settle
+                    their instalments on save.
+                  </p>
+                )}
+                {importResult.unmatchedDivisions.length > 0 && (
+                  <p className="mt-0.5 text-zinc-500">
+                    {importResult.unmatchedDivisions.length} value(s) matched no branch or
+                    department and went to Description instead.
+                  </p>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={addLine}
