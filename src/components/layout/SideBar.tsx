@@ -23,6 +23,7 @@ import {
   FileBarChart,
   FileCheck2,
   FilePlus,
+  PackageX,
   ClipboardCheck,
   HandCoins,
   House,
@@ -38,6 +39,7 @@ import {
   Percent,
   Receipt,
   ReceiptText,
+  PhilippinePeso,
   RefreshCcw,
   ScrollText,
   Settings,
@@ -152,6 +154,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ],
       },
       {
+        label: 'Debit Memos',
+        href: '/inventory/debit-memos',
+        icon: PackageX,
+        requiredPermission: INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+      },
+      {
         label: 'Suppliers',
         href: '/inventory/suppliers',
         icon: Truck,
@@ -239,6 +247,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
+        // Scenario 46 Part F — the disbursement register existed since
+        // Scenario 43 but had no nav entry, reachable only via a secondary
+        // button on AP Invoices. It is the record of everything that left the
+        // bank, so it sits at the same level rather than nested under AP.
+        label: 'Payments',
+        href: '/accounting/ap-bills/payments',
+        icon: PhilippinePeso,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+      },
+      {
         label: 'General Ledger',
         href: '/accounting/general-ledger',
         icon: Library,
@@ -251,6 +269,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       // ── Regular / weekly ──
+      // Two entries, not four. Credit and debit stay separate — that is the
+      // split accounting actually thinks in — while customer and supplier
+      // debit memos share one table, told apart by a Party column.
       {
         label: 'Credit Memos',
         href: '/accounting/credit-memos',
@@ -261,7 +282,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Debit Memos',
         href: '/accounting/debit-memos',
         icon: FilePlus,
-        requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
+        requiredPermission: [
+          ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
+          ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+        ],
       },
       {
         label: 'Withholding Tax (CWT)',

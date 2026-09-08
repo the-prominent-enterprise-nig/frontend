@@ -4,7 +4,6 @@ import { useEffect } from 'react'
 import { useForm, Controller, useFieldArray, useWatch } from 'react-hook-form'
 import type { Control, FieldErrors, UseFormSetValue } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
 import { X, Loader2, ShoppingCart, Plus } from 'lucide-react'
 import {
   ConvertPrToPoFormSchema,
@@ -13,7 +12,7 @@ import {
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { NumericInput } from '@/src/app/(app)/(dashboard)/inventory/items/_components/item-form-shared'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
-import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
+import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 
 type Props = {
   open: boolean
@@ -24,18 +23,6 @@ type Props = {
 }
 
 export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting }: Props) {
-  // Scenario 27 — a PO's destination is always one of the 2 real warehouses,
-  // decided once here at creation and carried through unedited to receiving
-  // (see ReceiveAgainstPoModal, which locks the field once this is set).
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 10, status: 'active', standaloneOnly: true }),
-    enabled: !!pr,
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const warehouses = warehousesQuery.data?.data?.data ?? []
-
   const {
     control,
     handleSubmit,
@@ -159,51 +146,28 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
               )}
             </div>
 
-            {/* Location + Expected Delivery */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Location <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="warehouseId"
-                  control={control}
-                  render={({ field }) => (
-                    <select
-                      {...field}
-                      value={field.value ?? ''}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    >
-                      <option value="">Select location…</option>
-                      {warehouses.map((wh) => (
-                        <option key={wh.id} value={wh.id}>
-                          {wh.branch?.name ?? wh.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                />
-                {errors.warehouseId && (
-                  <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
+            {/* Location — same picker as the create form. Expected delivery
+                date isn't asked for here either; whatever the PR carried
+                rides along untouched in the form's defaults. */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Location <span className="text-red-500">*</span>
+              </label>
+              <Controller
+                name="warehouseId"
+                control={control}
+                render={({ field }) => (
+                  <WarehouseSearchCombobox
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.warehouseId?.message}
+                    initialLabel={pr?.warehouse?.name ?? undefined}
+                  />
                 )}
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Expected Delivery Date
-                </label>
-                <Controller
-                  name="expectedDeliveryDate"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="date"
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    />
-                  )}
-                />
-              </div>
+              />
+              {errors.warehouseId && (
+                <p className="mt-1 text-xs text-red-500">{errors.warehouseId.message}</p>
+              )}
             </div>
 
             {/* Delivery Instructions */}

@@ -76,11 +76,11 @@ export function Select({
         // needs an explicit label reflecting the current selection.
         aria-label={selected ? selected.label : placeholder}
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white text-left outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
+        className={`flex w-full min-w-0 items-center justify-between rounded-lg border border-zinc-200 bg-white text-left outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
           compact ? 'px-2.5 py-1.5 text-[13px]' : 'px-3 py-2 text-sm'
         }`}
       >
-        <span className={selected ? 'text-zinc-900' : 'text-zinc-400'}>
+        <span className={`truncate ${selected ? 'text-zinc-900' : 'text-zinc-400'}`}>
           {selected ? selected.label : placeholder}
         </span>
         <ChevronDown

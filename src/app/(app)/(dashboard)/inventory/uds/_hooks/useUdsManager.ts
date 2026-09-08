@@ -10,6 +10,9 @@ import { updateUdsStatus } from '../_actions/update-uds-status'
 import { assessUds } from '../_actions/assess-uds'
 import { setRepairProvider } from '../_actions/set-repair-provider'
 import { writeOffUds } from '../_actions/write-off-uds'
+import { dispatchToProvider } from '../_actions/dispatch-to-provider'
+import { receiveFromProvider } from '../_actions/receive-from-provider'
+import { releaseToCustomer } from '../_actions/release-to-customer'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
@@ -19,6 +22,9 @@ import type {
   AssessUdsFormValues,
   SetRepairProviderFormValues,
   WriteOffUdsFormValues,
+  DispatchToProviderFormValues,
+  ReceiveFromProviderFormValues,
+  ReleaseToCustomerFormValues,
   UdsStatus,
 } from '@/src/schema/inventory/uds'
 
@@ -132,6 +138,56 @@ export function useUdsManager() {
     },
   })
 
+  const dispatchMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: DispatchToProviderFormValues }) =>
+      dispatchToProvider(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Sent to service centre',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({ title: 'Failed to dispatch', description: result.message, status: 'error' })
+      }
+    },
+  })
+
+  const receiveFromProviderMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReceiveFromProviderFormValues }) =>
+      receiveFromProvider(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Unit received back', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({
+          title: 'Failed to receive the unit',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  const releaseMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReleaseToCustomerFormValues }) =>
+      releaseToCustomer(id, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({ title: 'Released to customer', description: result.message, status: 'success' })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+      } else {
+        showToast({ title: 'Failed to release', description: result.message, status: 'error' })
+      }
+    },
+  })
+
   const writeOffMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: WriteOffUdsFormValues }) =>
       writeOffUds(id, data),
@@ -211,5 +267,14 @@ export function useUdsManager() {
     writeOffUds: (id: string, data: WriteOffUdsFormValues) =>
       writeOffMutation.mutateAsync({ id, data }),
     isWritingOff: writeOffMutation.isPending,
+    dispatchToProvider: (id: string, data: DispatchToProviderFormValues) =>
+      dispatchMutation.mutateAsync({ id, data }),
+    isDispatching: dispatchMutation.isPending,
+    receiveFromProvider: (id: string, data: ReceiveFromProviderFormValues) =>
+      receiveFromProviderMutation.mutateAsync({ id, data }),
+    isReceivingFromProvider: receiveFromProviderMutation.isPending,
+    releaseToCustomer: (id: string, data: ReleaseToCustomerFormValues) =>
+      releaseMutation.mutateAsync({ id, data }),
+    isReleasing: releaseMutation.isPending,
   }
 }

@@ -6,7 +6,6 @@ import { showToast } from '@/src/components/ui/toast'
 import { getReturns } from '../_actions/get-returns'
 import { createReturn } from '../_actions/create-return'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getItems } from '../../items/_actions/get-items'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import type { CreateReturnFormValues } from '@/src/schema/inventory/returns'
 
@@ -45,12 +44,6 @@ export function useReturnsManager() {
     staleTime: 5 * 60 * 1000,
   })
 
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   const serialsQuery = useQuery({
     queryKey: ['inventory-serials-in-stock'],
     queryFn: () => getSerialNumbers({ status: 'in_stock', limit: 500 }),
@@ -61,7 +54,16 @@ export function useReturnsManager() {
     mutationFn: (data: CreateReturnFormValues) => createReturn(data),
     onSuccess: (result) => {
       if (result.success) {
-        showToast({ title: 'Return processed', description: result.message, status: 'success' })
+        // The stock always moved; the accounting may not have. A note comes
+        // back only when something did not happen, so it warns rather than
+        // reporting a clean success the accountant would have to go and
+        // disprove later.
+        const note = result.data?.accountingNote
+        showToast({
+          title: note ? 'Return recorded — check the accounting' : 'Return processed',
+          description: result.message,
+          status: note ? 'warning' : 'success',
+        })
         queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
       } else {
@@ -121,7 +123,6 @@ export function useReturnsManager() {
     setPage,
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    itemOptions: itemsQuery.data?.data?.data ?? [],
     serialOptions: serialsQuery.data?.data?.data ?? [],
 
     createReturn: createMutation.mutateAsync,

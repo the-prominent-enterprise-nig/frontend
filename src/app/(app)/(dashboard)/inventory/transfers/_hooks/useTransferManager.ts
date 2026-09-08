@@ -66,11 +66,15 @@ export function useTransferManager() {
   })
 
   const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
+    // Keyed apart from the bare ['inventory-warehouses-lookup'] every
+    // branch-scoped picker shares — this list is deliberately wider, and
+    // parking it under the shared key would hand other screens warehouses
+    // outside the caller's branch for as long as it stays fresh.
+    queryKey: ['inventory-warehouses-lookup', 'all-branches'],
     // allBranches: a transfer is inherently cross-branch — the create
     // modal's "From Branch" picker needs every branch, not just the
     // caller's own. Safe to always request: the backend only honors this
-    // for callers who can actually create transfers (see
+    // for callers cleared for cross-branch work (see
     // warehouses.controller.ts), silently ignoring it otherwise.
     queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
     staleTime: 5 * 60 * 1000,
