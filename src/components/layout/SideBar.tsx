@@ -29,6 +29,7 @@ import {
   House,
   IdCard,
   Key,
+  Landmark,
   Layers,
   Library,
   Monitor,
@@ -380,6 +381,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/accounting/bank-accounts',
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+      },
+      // Its own entry, not a button on Bank Reconciliation: moving money
+      // between two fund accounts is a disbursement, not part of agreeing a
+      // statement to the books.
+      {
+        label: 'Fund Transfer',
+        href: '/accounting/fund-transfers',
+        icon: Landmark,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
       },
     ],
     bottom: [],
