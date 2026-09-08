@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Loader2, Printer } from 'lucide-react'
+import { ArrowLeft, Download, Loader2 } from 'lucide-react'
 import { ARInvoices, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { printCollectionReceiptDocument } from '@/src/libs/print/printInventoryDocument'
 import {
@@ -79,13 +79,21 @@ function CollectionReceiptDetailBody() {
           enterprise: docs[0].enterprise,
           document: {
             paymentDate: first.paymentDate,
+            receiptNumber: first.receiptNumber,
             reference: first.reference,
-            amount: docs.reduce((sum, d) => sum + d.document.amount, 0),
+            // One payment action, so the type and method are shared by every
+            // application it produced — take them off the first.
+            paymentType: first.paymentType,
+            method: first.method,
+            amountReceived: docs.reduce((sum, d) => sum + d.document.amountReceived, 0),
             description: `Payment across ${docs.length} installment dues`,
             customer: first.customer,
+            // Deliberately no previous/remaining balance: this receipt
+            // settled several invoices, each with its own running balance,
+            // so there is no single figure that is true for all of them.
             lines: docs.map((d) => ({
               accountLine: `Accounts Receivable — ${first.customer.name} — ${d.document.invoiceNumber ?? '—'}`,
-              amount: d.document.amount,
+              amount: d.document.amountReceived,
             })),
           },
         })
@@ -134,8 +142,8 @@ function CollectionReceiptDetailBody() {
           onClick={() => printCollectionReceiptDocument(doc)}
           className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
         >
-          <Printer className="h-4 w-4" />
-          Print
+          <Download className="h-4 w-4" />
+          Print / Download
         </button>
       </div>
 
@@ -147,7 +155,7 @@ function CollectionReceiptDetailBody() {
         </span>
         <span>Receipt {doc.documentNumber}</span>
         <span>{fmtDate(receipt.paymentDate)}</span>
-        <span>Amount {fmtMoney(receipt.amount)}</span>
+        <span>Received {fmtMoney(receipt.amountReceived)}</span>
         {dueCount > 1 && <span>Settled {dueCount} dues</span>}
       </div>
 

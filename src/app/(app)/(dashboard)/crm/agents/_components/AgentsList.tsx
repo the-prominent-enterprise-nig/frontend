@@ -352,7 +352,10 @@ function AgentCommissionsDialog({ agent, onClose }: { agent: Agent; onClose: () 
     }
   }, [agent.id])
 
-  const total = (commissions ?? []).reduce((sum, c) => sum + c.commissionAmount, 0)
+  // Number() — AgentCommission.commissionAmount is a Prisma Decimal(15,2)
+  // and arrives as a string, so a bare + concatenates instead of adding
+  // (same bug as Customer360's upcoming-payables total).
+  const total = (commissions ?? []).reduce((sum, c) => sum + Number(c.commissionAmount), 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

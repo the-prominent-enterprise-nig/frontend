@@ -1,5 +1,4 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
-import { discountChainLabel, type ChainDiscount } from '@/src/libs/format/discount-chain'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -17,139 +16,6 @@ export interface PrintDocumentEnvelope {
 }
 
 /**
- * The paper these documents are printed on.
- *
- * Every builder in this file used to be a fluid web page — no `@page` rule and
- * no fixed width — so the preview stretched to whatever the popup window
- * happened to be and printed at whatever margins the browser defaulted to. A
- * voucher previewed at 2000px wide and came out reflowed and portrait; what
- * you saw was never what you got.
- *
- * Dimensions are PORTRAIT millimetres. sheetCss() swaps them for landscape, so
- * changing the stock for every printed document is this one line.
- */
-const PAPER = { width: 210, height: 297 } // A4
-// Philippine long bond (8.5 x 13in): { width: 215.9, height: 330.2 }
-// US Letter           (8.5 x 11in):  { width: 215.9, height: 279.4 }
-// US Legal            (8.5 x 14in):  { width: 215.9, height: 355.6 }
-
-/** Margin on all four edges, in millimetres. */
-const PAGE_MARGIN = 12
-
-/**
- * Page setup, plus an on-screen sheet that matches it exactly.
- *
- * `@page` takes explicit dimensions rather than `size: A4 landscape` because
- * the CSS keywords cover none of the Philippine stocks — long bond has no name
- * at all — and a keyword sitting alongside PAPER is free to drift out of sync
- * with it.
- *
- * On screen the sheet is the paper, centred on a grey backdrop with its
- * margins as real padding, so the page edges are visible and the line breaks
- * are the ones that will print. In print the backdrop goes and `@page` supplies
- * the same margins, so the sheet becomes the page box and the two agree.
- *
- * Callers that want the signature block to sit on the foot of the page rather
- * than trailing the content add `sheet--pinned` and wrap the footer in
- * `sheet-foot`. It is opt-in because a flex container paginates poorly, and the
- * item-list documents legitimately run to several pages.
- */
-function sheetCss(orientation: 'portrait' | 'landscape' = 'portrait'): string {
-  const landscape = orientation === 'landscape'
-  const sheetW = landscape ? PAPER.height : PAPER.width
-  const sheetH = landscape ? PAPER.width : PAPER.height
-  return `
-    @page { size: ${sheetW}mm ${sheetH}mm; margin: ${PAGE_MARGIN}mm; }
-    html { background: #9ca3af; }
-    body {
-      margin: 0; padding: ${PAGE_MARGIN}mm 0;
-      font-family: Arial, sans-serif; color: #111; font-size: 13px;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    .sheet {
-      box-sizing: border-box;
-      width: ${sheetW}mm; min-height: ${sheetH}mm;
-      margin: 0 auto; padding: ${PAGE_MARGIN}mm;
-      background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
-    }
-    .sheet--pinned { display: flex; flex-direction: column; }
-    /* A document that forces a page break renders as a second sheet, so the
-       preview shows two pages rather than one very long one. */
-    .sheet + .sheet { margin-top: ${PAGE_MARGIN}mm; }
-    .sheet-foot { margin-top: auto; }
-    .print-bar { text-align: center; padding-bottom: ${PAGE_MARGIN}mm; }
-    .print-bar button {
-      padding: 6px 16px; margin: 0 3px; border-radius: 6px; cursor: pointer;
-      font-size: 13px; border: 1px solid #6d28d9; background: #6d28d9; color: #fff;
-    }
-    .print-bar button.ghost { background: #fff; color: #6d28d9; }
-    @media print {
-      html { background: none; }
-      body { padding: 0; }
-      .sheet {
-        width: auto; margin: 0; padding: 0; box-shadow: none;
-        /* @page has already inset the page by PAGE_MARGIN on every edge, so
-           the printable box is this tall. The extra millimetre of slack is
-           what keeps a rounding error from spilling an empty second page. */
-        min-height: ${sheetH - 2 * PAGE_MARGIN - 1}mm;
-      }
-      .sheet + .sheet { margin-top: 0; }
-      .print-bar, button { display: none; }
-    }`
-}
-
-/**
- * The preview's own toolbar — sits above the sheet, never on the paper.
- *
- * Print opens the browser dialog, which now produces an exact PDF via its own
- * "Save as PDF" destination because the page carries real @page dimensions.
- * Download saves the document itself: the live DOM minus this toolbar, with the
- * letterhead inlined as a data URI first so the saved copy still renders once
- * it is off the network — a file emailed to a supplier, or filed for the year,
- * has no app to fetch /nig-logo.png from.
- */
-function printBar(documentNumber: string): string {
-  // Sanitised for two contexts at once: a filename the OS will accept, and
-  // a JS string literal embedded in an inline <script> — where a stray
-  // quote or a "</script>" would end the block early.
-  const filename = String(documentNumber ?? '').replace(/[^A-Za-z0-9._-]+/g, '-') || 'document'
-  return `<div class="print-bar">
-      <button onclick="window.print()">Print</button>
-      <button class="ghost" onclick="downloadSheet()">Download</button>
-    </div>
-    <script>
-      async function downloadSheet() {
-        for (const img of document.querySelectorAll('img')) {
-          if (img.src.startsWith('data:')) continue
-          try {
-            const blob = await (await fetch(img.src)).blob()
-            img.src = await new Promise((done) => {
-              const r = new FileReader()
-              r.onload = () => done(r.result)
-              r.readAsDataURL(blob)
-            })
-          } catch (e) {
-            /* Letterhead unreachable — save the document without it rather
-               than failing the download outright. */
-          }
-        }
-        const copy = document.documentElement.cloneNode(true)
-        copy.querySelectorAll('.print-bar, script').forEach((n) => n.remove())
-        const url = URL.createObjectURL(
-          new Blob(['<!DOCTYPE html>' + copy.outerHTML], { type: 'text/html' })
-        )
-        const a = document.createElement('a')
-        a.href = url
-        a.download = ${JSON.stringify(filename)} + '.html'
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setTimeout(() => URL.revokeObjectURL(url), 0)
-      }
-    </script>`
-}
-
-/**
  * Shared print shell for inventory documents (goods receipts, transfers, etc).
  * Renders the enterprise header/meta block and hands off the document-type-
  * specific content to `renderBody`.
@@ -164,8 +30,7 @@ export function printInventoryDocument(
   const win = window.open('', '_blank', 'width=900,height=700')
   if (!win) return
 
-  win.document
-    .write(`<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${doc.documentNumber}</title><style>
+  win.document.write(`<!DOCTYPE html><html><head><title>${doc.documentNumber}</title><style>
     body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
     h1 { font-size: 20px; margin: 0 0 4px; }
     h2 { font-size: 14px; font-weight: 600; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
@@ -261,11 +126,11 @@ export function buildReceivingReportHtml(
     })
     .join('')
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
-    ${sheetCss()}
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 110px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
@@ -288,9 +153,8 @@ export function buildReceivingReportHtml(
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
     .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
+    @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
-    ${printBar(doc.documentNumber)}
-    <div class="sheet">
     <div class="top">
       <h1>Receiving Report</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
@@ -356,7 +220,9 @@ export function buildReceivingReportHtml(
         ${rr.receivedByName ? `<p class="sig-name">${esc(rr.receivedByName)}</p>` : ''}
       </div>
     </div>
-  </div></body></html>`
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 export function printReceivingReportDocument(
@@ -417,7 +283,7 @@ export function buildStockTransferHtml(data: unknown): string {
     { label: 'Carrier', value: transfer.carrierName },
   ].filter((f) => f.value)
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -612,12 +478,11 @@ export function printPurchaseOrderDocument(
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
 
-  win.document
-    .write(`<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
-    ${sheetCss()}
+  win.document.write(`<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 110px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
@@ -641,15 +506,14 @@ export function printPurchaseOrderDocument(
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; width: 260px; }
     .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
-    .page-break { page-break-before: always; break-before: page; }
+    .page-break { page-break-before: always; break-before: page; padding-top: 32px; }
     .mono { font-family: "Courier New", monospace; }
     .item-name { font-weight: 700; }
     .discount-note { font-size: 11px; color: #555; margin-top: 2px; }
     .sn-table thead { display: table-header-group; }
     .sn-table tr { break-inside: avoid; }
+    @media print { body { padding: 0; } .page-break { padding-top: 0; } button { display: none; } }
   </style></head><body>
-    ${printBar(doc.documentNumber)}
-    <div class="sheet">
     <div class="top">
       <h1>Purchase Order</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
@@ -713,10 +577,9 @@ export function printPurchaseOrderDocument(
       </div>
     </div>
 
-    </div>
     ${
       serialRows
-        ? `<div class="sheet page-break">
+        ? `<div class="page-break">
       <h1>Serial Numbers Received</h1>
       <p class="party-address" style="margin: 4px 0 16px">${esc(po.code)} — check off each unit against the physical delivery.</p>
       <table class="sn-table">
@@ -731,6 +594,8 @@ export function printPurchaseOrderDocument(
     </div>`
         : ''
     }
+
+    <button onclick="window.print()" style="margin:12px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`)
   win.document.close()
 }
@@ -825,7 +690,7 @@ export function buildCustomerLedgerHtml(ledger: InstallmentLedger): string {
       </tr>`
       : ''
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
     .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
     .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
@@ -1010,7 +875,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
     )
     .join('')
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Customer Ledger — ${esc(customer.customerCode)}</title><style>
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(customer.customerCode)}</title><style>
     body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
     .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
     .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
@@ -1225,7 +1090,7 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
     })
     .join('')
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>AR Aging Report</title><style>
+  return `<!DOCTYPE html><html><head><title>AR Aging Report</title><style>
     body { font-family: Arial, sans-serif; padding: 14px; color: #111; font-size: 9.5px; }
     .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
     .letterhead h1 { font-size: 15px; margin: 0; text-decoration: underline; }
@@ -1282,8 +1147,11 @@ export function printAgingReportDocument(report: AgingReportResponse): void {
  * like): customer + address left, Date/Reference centre, enterprise right,
  * an uppercase description line, then a numbered Account/Total table.
  *
- * Deliberately the same layout as buildCollectionReceiptHtml() below, which
- * prints one *payment*; this one prints the invoice itself, so its single
+ * Shares the client's account-table layout, but NOT its identity: this
+ * prints the invoice — what is owed — so it is titled "AR Invoice" and its
+ * totals row reads "Amount Billed". It was titled "Collection Receipt", the
+ * same as buildCollectionReceiptHtml(), which meant printing a ₱12,597.31
+ * invoice produced paper claiming ₱12,597.31 had been received. Its single
  * account row is the receivable being billed — customer, invoice number and
  * due date — not a settled application.
  *
@@ -1305,14 +1173,8 @@ export function buildARInvoiceHtml(data: unknown): string {
 
   const totalAmount = Number(inv.totalAmount ?? 0)
   const accountLine = `Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(inv.invoiceNumber)} — ${fmtDate(inv.dueDate)}`
-  const posTx = inv.posTransaction as
-    | { transactionNumber?: string; salesInvoiceNumber?: string | null }
-    | null
-    | undefined
-  // The number off the physical SI booklet, same as the on-screen sheet.
-  const reference = posTx?.salesInvoiceNumber || (inv.invoiceNumber as string)
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
@@ -1335,8 +1197,6 @@ export function buildARInvoiceHtml(data: unknown): string {
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <!-- It is the invoice. The receipt heading printed a receipt for the
-           full balance on an invoice with nothing collected against it. -->
       <h1>AR Invoice</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
@@ -1351,7 +1211,7 @@ export function buildARInvoiceHtml(data: unknown): string {
         <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(inv.invoiceDate)}</p>
         <p class="meta-label">Reference</p>
-        <p class="meta-value">${esc(reference)}</p>
+        <p class="meta-value">${esc(inv.invoiceNumber)}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -1367,7 +1227,7 @@ export function buildARInvoiceHtml(data: unknown): string {
       </thead>
       <tbody>
         <tr><td class="num">1</td><td>${accountLine}</td><td class="right">${fmt(totalAmount)}</td></tr>
-        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(totalAmount)}</td></tr>
+        <tr class="total-row"><td colspan="2">Amount Billed</td><td class="right">${fmt(totalAmount)}</td></tr>
       </tbody>
     </table>
 
@@ -1399,9 +1259,8 @@ export function printARInvoiceDocument(data: unknown): void {
  * is VAT-exclusive (subtotal + taxAmount), so Input VAT is an addend above
  * Total, not an "includes VAT" note below it; and withholding sits under
  * Total with the payments, since it never reduced totalAmount — receive()
- * reclassifies it to WHT Payable (it goes to the BIR, not the supplier),
- * which is exactly how it reaches Balance due. It is not a payment, so it is
- * deducted here in its own right and is never part of amountPaid.
+ * counts it into amountPaid instead (it goes to the BIR, not the supplier),
+ * which is exactly how it reaches Balance due.
  */
 export function buildAPBillHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
@@ -1425,7 +1284,7 @@ export function buildAPBillHtml(data: unknown): string {
   const totalAmount = Number(bill.totalAmount ?? 0)
   const amountPaid = Number(bill.amountPaid ?? 0)
   const withholdingAmount = Number(bill.withholdingAmount ?? 0)
-  const outstanding = totalAmount - withholdingAmount - amountPaid
+  const outstanding = totalAmount - amountPaid
 
   const rrCodes = Array.from(new Set(goodsReceipts.map((r) => r.code).filter(Boolean)))
 
@@ -1436,20 +1295,8 @@ export function buildAPBillHtml(data: unknown): string {
         const item = l.item as { name?: string } | null
         const qty = Number(l.quantityReceived ?? 0)
         const unitCost = Number(l.unitCost ?? 0)
-        // The supplier's own terms under the line they produced — an approver
-        // checking this invoice against the PO shouldn't have to open the PO to
-        // see whether the agreed discounts were actually applied. Blank on
-        // receipts taken before the pricing fields reached the server.
-        const chain = discountChainLabel(
-          l as {
-            srp?: number | null
-            discounts?: ChainDiscount[] | null
-            discountedCost?: number | null
-          },
-          fmt
-        )
         return `<tr>
-          <td>${esc(item?.name) || '—'}${chain ? `<div class="sub">${esc(chain)}</div>` : ''}</td>
+          <td>${esc(item?.name) || '—'}</td>
           <td class="right">${qty}</td>
           <td class="right">${fmt(unitCost)}</td>
           <td class="right">${fmt(qty * unitCost)}</td>
@@ -1468,11 +1315,11 @@ export function buildAPBillHtml(data: unknown): string {
     })
     .join('')
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
-    ${sheetCss()}
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 110px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
@@ -1486,10 +1333,6 @@ export function buildAPBillHtml(data: unknown): string {
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    /* The supplier's discount chain under the item it priced — secondary to
-       the item name, and it must survive printing in greyscale, so it is set
-       by size rather than by colour alone. */
-    td .sub { font-size: 11px; color: #555; margin-top: 2px; }
     .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
     .total-wrap table { width: auto; border: none; }
     .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
@@ -1497,9 +1340,8 @@ export function buildAPBillHtml(data: unknown): string {
     .total-wrap td.value { text-align: right; min-width: 140px; }
     .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
     .total-wrap tr.balance td { font-weight: 700; border-top: 2px solid #333; border-bottom: 2px solid #333; }
+    @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
-    ${printBar(doc.documentNumber)}
-    <div class="sheet">
     <div class="top">
       <h1>Purchase Invoice</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
@@ -1568,7 +1410,9 @@ export function buildAPBillHtml(data: unknown): string {
         <tr class="balance"><td class="label">Balance due</td><td class="value">${fmt(outstanding)}</td></tr>
       </table>
     </div>
-  </div></body></html>`
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 export function printAPBillDocument(data: unknown): void {
@@ -1601,80 +1445,21 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  // A voucher covers a whole payment transaction — one cheque, every invoice
-  // it settled. `invoices` is present on a disbursement's document; a payment
-  // made through the retired per-bill route has only its own share to show and
-  // falls back to the single-line shape below.
-  const invoices =
-    (p.invoices as { billNumber?: string | null; amount?: number }[] | undefined) ?? []
-  // The reference document's "Total" is what this payment settled, not the
-  // whole bill (a bill can be paid across several payments) — matches how the
-  // Payments list already sums amount + withholdingAmount.
-  const amount = invoices.length
-    ? Number(p.totalAmount ?? 0)
-    : Number(p.amount ?? 0) + Number(p.withholdingAmount ?? 0)
+  // The reference document's "Total" is what this one payment settled, not
+  // the whole bill (a bill can be paid across several payments) — matches
+  // how the Payment history list already sums amount + withholdingAmount.
+  const amount = Number(p.amount ?? 0) + Number(p.withholdingAmount ?? 0)
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
     : p.reference
       ? esc(p.reference)
       : '—'
 
-  // The client's own voucher names the invoices in a line above the table
-  // ("PAYMENT TO SI#430946") and uses the table for the ACCOUNT being charged.
-  // Following that: a voucher is payable to one entity, so there is one
-  // account — listing the invoices as table rows repeated it once per line and
-  // said nothing about where the money is posted.
-  const paidToNote = invoices.length
-    ? `PAYMENT TO ${invoices
-        .map((inv) => {
-          if (!inv.billNumber) return 'Pending SI'
-          // The client's own invoice numbers are bare digits, so their voucher
-          // writes "SI#430946". Ours often already carry the prefix, and
-          // adding it blindly printed "SI#SI-TEST-SEPT-4".
-          return /^si[-#\s]?/i.test(inv.billNumber)
-            ? esc(inv.billNumber)
-            : `SI#${esc(inv.billNumber)}`
-        })
-        .join(', ')}`
-    : ''
-  // The client's voucher writes the row as ACCOUNT — DETAIL, with no account
-  // number ("TRANSPORTATION & DELIVERY EQUIPMENT — ISUZU WING VAN-PLATE#..."):
-  // the account, then the specific thing it is for. On an AP payment that
-  // detail is the payee — "Accounts Payable - Trade Suppliers" alone names the
-  // account but not who is being paid out of it.
-  const chargedAccount = p.account as { number?: string; name?: string } | null
-  const accountName = chargedAccount?.name
-    ? esc(chargedAccount.name)
-    : effectiveExpenseAccount?.name
-      ? esc(effectiveExpenseAccount.name)
-      : '—'
-  const accountLabel = p.payee ? `${accountName} — ${esc(p.payee)}` : accountName
-  // The client's voucher spells the tax out inside the row, not as a footer:
-  //   Total amount ---- P812,762.65
-  //   Less: 1% w/Tax --- P7,256.81
-  //   Net amount ------ P805,505.84
-  // and the figure in the Total column is the NET — what the cheque is for.
-  // Withholding was already reclassified out of AP at receive(), so the
-  // amounts here are net already; this shows the working rather than leaving
-  // the reader to reconcile the voucher against the invoice by hand.
-  const withheld = Number(p.withholdingAmount ?? 0)
-  const gross = amount + withheld
-  const taxBreakdown =
-    withheld > 0
-      ? `<div class="sub">Total amount &nbsp;&mdash;&mdash;&mdash;&nbsp; ${fmt(gross)}</div>
-         <div class="sub">Less: withholding tax &nbsp;&mdash;&mdash;&mdash;&nbsp; ${fmt(withheld)}</div>
-         <div class="sub net">Net amount &nbsp;&mdash;&mdash;&mdash;&nbsp; ${fmt(amount)}</div>`
-      : ''
-  const accountRows = `<tr>
-          <td>${accountLabel}${taxBreakdown}</td>
-          <td class="right">${fmt(amount)}</td>
-        </tr>`
-
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
-    ${sheetCss()}
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 110px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
@@ -1688,27 +1473,16 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
-    /* Spacing comes from .sheet-foot, which floats this to the bottom of
-       the page — a fixed margin here would fight it. */
-    .signatures { display: flex; gap: 40px; }
-    .sheet-foot { padding-top: 28px; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
-    .ack { margin-top: 32px; text-align: center; }
-    /* The client's own voucher heads its table with the invoices being paid,
-       in bold, above it — "PAYMENT TO SI#430946". */
-    .paid-to { font-weight: 700; margin: 0 0 12px; }
-    /* The withholding working, under the account it belongs to. Sized rather
-       than coloured so it survives a greyscale print. */
-    td .sub { font-size: 12px; color: #333; margin-top: 4px; }
-    td .sub.net { border-top: 1px solid #999; display: inline-block; padding-top: 3px; margin-top: 5px; }
+    .ack { margin-top: 48px; text-align: center; }
     .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
     .ack-line.short { width: 120px; }
     .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
-    ${printBar(doc.documentNumber)}
-    <div class="sheet sheet--pinned">
     <div class="top">
       <h1>Payment</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
@@ -1720,13 +1494,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
       <div class="meta">
         <p class="meta-label">Date</p>
-        <!-- A voucher is dated when it is raised. paymentDate is null until a
-             cheque is actually cut, so keying off it printed an unpaid voucher
-             with no date at all — and a paid one is still, correctly, dated by
-             when it was authorised. paymentDate remains the fallback for
-             payments made through the retired per-bill route, which have no
-             voucherDate. -->
-        <p class="meta-value">${fmtDate(p.voucherDate ?? p.paymentDate)}</p>
+        <p class="meta-value">${fmtDate(p.paymentDate)}</p>
         <p class="meta-label">Reference</p>
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
@@ -1738,7 +1506,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
     </div>
 
-    ${paidToNote ? `<p class="paid-to">${paidToNote}</p>` : ''}
     ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
 
     <table>
@@ -1746,12 +1513,14 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <tr><th>Account</th><th class="right">Total</th></tr>
       </thead>
       <tbody>
-        ${accountRows}
+        <tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td class="right">${fmt(amount)}</td>
+        </tr>
         <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
       </tbody>
     </table>
 
-    <div class="sheet-foot">
     <div class="signatures">
       <div class="sig-block">
         <p class="sig-label">Prepared By:</p>
@@ -1772,8 +1541,9 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       <span class="ack-line"></span>/<span class="ack-line short"></span>
     </p>
     <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
-    </div>
-  </div></body></html>`
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 export function printAPPaymentVoucherDocument(data: unknown): void {
@@ -1837,11 +1607,11 @@ export function buildExpenseVoucherHtml(data: unknown): string {
       .filter(Boolean)
       .join(split ? '<br />' : ', ') || '—'
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
-    ${sheetCss()}
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
+    body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-    .brand-logo { height: 110px; width: auto; object-fit: contain; }
+    .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 16px; }
     .info > div { flex: 1; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
@@ -1856,20 +1626,16 @@ export function buildExpenseVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
-    /* Spacing comes from .sheet-foot, which floats this to the bottom of
-       the page — a fixed margin here would fight it. */
-    .signatures { display: flex; gap: 40px; }
-    .sheet-foot { padding-top: 28px; }
+    .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
-    .ack { margin-top: 32px; text-align: center; }
+    .ack { margin-top: 48px; text-align: center; }
     .ack-line { display: inline-block; border-bottom: 1px solid #333; width: 320px; margin: 0 4px; }
     .ack-line.short { width: 120px; }
     .ack-caption { margin-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
-    ${printBar(doc.documentNumber)}
-    <div class="sheet sheet--pinned">
     <div class="top">
       <h1>Payment</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
@@ -1928,7 +1694,6 @@ export function buildExpenseVoucherHtml(data: unknown): string {
       </tbody>
     </table>
 
-    <div class="sheet-foot">
     <div class="signatures">
       <div class="sig-block">
         <p class="sig-label">Prepared By:</p>
@@ -1949,8 +1714,9 @@ export function buildExpenseVoucherHtml(data: unknown): string {
       <span class="ack-line"></span>/<span class="ack-line short"></span>
     </p>
     <p class="ack-caption">Printed Name and Signature / Date &amp; Time</p>
-    </div>
-  </div></body></html>`
+
+    <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
+  </body></html>`
 }
 
 export function printExpenseVoucherDocument(data: unknown): void {
@@ -1961,12 +1727,17 @@ export function printExpenseVoucherDocument(data: unknown): void {
 }
 
 /**
- * Scenario 44 Part 2 — the AR-side mirror of buildAPPaymentVoucherHtml()
- * above: same letterhead/info-block/Account-Total-table family, titled
- * "Collection Receipt" per the client's own paper form. No signature
- * blocks or acknowledgment line — those are specific to AP's internal
- * payment-voucher sign-off chain; a customer-facing collection receipt has
- * neither in the client's own reference document.
+ * The Collection Receipt as the customer receives it.
+ *
+ * A receipt records MONEY RECEIVED, so every figure here is about the
+ * payment: what was collected, how, against which invoice, and the balance
+ * it leaves. The invoice total appears only as context for that balance —
+ * printing it as the document's own total (which this did, via the shared
+ * account-table layout) makes a ₱2,600 collection read as a ₱12,597.31 one.
+ *
+ * Deliberately NOT the account-table shape buildARInvoiceHtml() uses: that
+ * one prints a receivable being billed, this one prints cash taken in. They
+ * looked identical before, which is precisely what made them confusable.
  */
 export function buildCollectionReceiptHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
@@ -1975,48 +1746,80 @@ export function buildCollectionReceiptHtml(data: unknown): string {
   const enterprise = doc.enterprise
 
   const fmt = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 })
+  const longDate = (v: unknown) =>
+    v
+      ? new Date(v as string).toLocaleDateString('en-PH', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  const amount = Number(r.amount ?? 0)
-  // A grouped receipt (one payment action that touched several installment
-  // dues at once — see ARInvoicesList's viewReceipt) carries a `lines`
-  // array instead of a single invoiceNumber; render one row per due plus a
-  // total row rather than collapsing back into one misleadingly-labeled
-  // account line.
+  const amountReceived = Number(r.amountReceived ?? 0)
+  // A receipt combined from several applications (one payment across several
+  // dues) settles several invoices, each with its own running balance — so it
+  // gets a per-invoice APPLIED TO list and no single account summary.
   const lines = r.lines as { accountLine: string; amount: number }[] | undefined
-  const rows =
-    lines && lines.length > 0
-      ? lines
-          .map(
-            (l, i) =>
-              `<tr><td class="num">${i + 1}</td><td>${esc(l.accountLine)}</td><td class="right">${fmt(l.amount)}</td></tr>`
-          )
-          .join('')
-      : `<tr><td class="num">1</td><td>Accounts Receivable — ${esc(customer?.name) || '—'} — ${esc(r.invoiceNumber) || '—'}</td><td class="right">${fmt(amount)}</td></tr>`
+  const grouped = !!lines && lines.length > 0
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(doc.documentNumber)}</title><style>
+  const row = (label: string, value: string) =>
+    `<div class="row"><span class="label">${esc(label)}</span><span class="value">${value}</span></div>`
+  const section = (title: string, body: string) =>
+    `<div class="section"><p class="section-title">${esc(title)}</p>${body}</div>`
+
+  const paymentDetails = [
+    r.paymentType ? row('Payment Type', esc(r.paymentType)) : '',
+    row('Amount Received', fmt(amountReceived)),
+    row('Payment Method', esc(r.method) || '—'),
+    row('Reference No.', esc(r.reference || r.receiptNumber) || '—'),
+    Number(r.withholdingAmount ?? 0) > 0
+      ? row('Withholding (2307)', fmt(Number(r.withholdingAmount)))
+      : '',
+    Number(r.rebateAmount ?? 0) > 0 ? row('Rebate applied', fmt(Number(r.rebateAmount))) : '',
+  ].join('')
+
+  const appliedTo = grouped
+    ? lines!.map((l) => row(l.accountLine, fmt(l.amount))).join('')
+    : [
+        row('AR Invoice', esc(r.invoiceNumber) || '—'),
+        r.invoiceAmount != null ? row('Invoice Amount', fmt(Number(r.invoiceAmount))) : '',
+        // Only when captured at checkout — an always-empty line trains people
+        // to stop reading it.
+        r.relatedDeliveryReceipt ? row('Related DO', esc(r.relatedDeliveryReceipt)) : '',
+        r.relatedSalesInvoice ? row('Sales Invoice', esc(r.relatedSalesInvoice)) : '',
+      ].join('')
+
+  const accountSummary =
+    !grouped && r.previousBalance != null && r.remainingBalance != null
+      ? section(
+          'Account Summary',
+          [
+            r.invoiceAmount != null ? row('Invoice Amount', fmt(Number(r.invoiceAmount))) : '',
+            row('Previous Balance', fmt(Number(r.previousBalance))),
+            row('Amount Received', fmt(amountReceived)),
+            `<div class="row grand"><span>Remaining Balance</span><span class="value">${fmt(Number(r.remainingBalance))}</span></div>`,
+          ].join('')
+        )
+      : ''
+
+  return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
     h1 { font-size: 26px; margin: 0; text-transform: uppercase; }
-    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+    .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .info { display: flex; gap: 28px; margin-bottom: 16px; }
-    .info > div { flex: 1; }
-    .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
-    .info .meta { text-align: right; }
-    .party-name { font-weight: 700; margin: 0 0 4px; }
-    .party-address { margin: 0; color: #333; }
-    .meta-label { font-weight: 700; margin: 0 0 2px; }
-    .meta-value { margin: 0 0 12px; }
-    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
-    th { background: #f5f5f5; text-align: left; font-weight: 700; }
-    td.right, th.right { text-align: right; }
-    td.num, th.num { width: 34px; text-align: center; }
-    tr.total-row td { font-weight: 700; text-align: right; }
+    .row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; }
+    .label { color: #444; }
+    .value { text-align: right; font-weight: 600; }
+    .section { border-top: 1px solid #ccc; margin-top: 14px; padding-top: 10px; }
+    .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+    .row.grand { border-top: 1px solid #ccc; margin-top: 6px; padding-top: 6px; font-weight: 700; }
+    .received { border-top: 1px solid #ccc; margin-top: 14px; padding-top: 10px; display: flex; justify-content: space-between; gap: 24px; font-weight: 700; }
+    .received .amount { font-size: 15px; }
+    .words { margin: 4px 0 0; font-style: italic; color: #444; font-size: 12px; }
+    .footer { border-top: 1px solid #ccc; margin-top: 22px; padding-top: 10px; font-size: 11px; color: #666; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
@@ -2024,35 +1827,25 @@ export function buildCollectionReceiptHtml(data: unknown): string {
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
-    <div class="info">
-      <div class="party">
-        <p class="party-name">${esc(customer?.name) || '—'}</p>
-        ${customer?.address ? `<p class="party-address">${esc(customer.address)}</p>` : ''}
-        ${customer?.taxId ? `<p class="party-address">TIN: ${esc(customer.taxId)}</p>` : ''}
-      </div>
-      <div class="meta">
-        <p class="meta-label">Date</p>
-        <p class="meta-value">${fmtDate(r.paymentDate)}</p>
-        <p class="meta-label">Reference</p>
-        <p class="meta-value">${r.reference ? esc(r.reference) : '—'}</p>
-      </div>
-      <div class="enterprise">
-        <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
-        <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-      </div>
+    ${row('Customer', esc(customer?.name) || '—')}
+    ${row('Receipt No.', esc(r.receiptNumber || doc.documentNumber) || '—')}
+    ${row('Date', longDate(r.paymentDate))}
+
+    ${section('Payment Details', paymentDetails)}
+    ${section('Applied To', appliedTo)}
+    ${accountSummary}
+
+    <div class="received">
+      <span>Amount Received</span>
+      <span class="value amount">${fmt(amountReceived)}</span>
     </div>
+    ${r.amountInWords ? `<p class="words">${esc(r.amountInWords)}</p>` : ''}
 
-    ${r.description ? `<p class="description">${esc(r.description)}</p>` : ''}
-
-    <table>
-      <thead>
-        <tr><th class="num">#</th><th>Account</th><th class="right">Total</th></tr>
-      </thead>
-      <tbody>
-        ${rows}
-        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
-      </tbody>
-    </table>
+    ${
+      enterprise?.companyLegalName
+        ? `<p class="footer">${esc(enterprise.companyLegalName)}${enterprise.address ? ` &middot; ${esc(enterprise.address)}` : ''}</p>`
+        : ''
+    }
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>
   </body></html>`

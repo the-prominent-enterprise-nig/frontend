@@ -2,19 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { printUnifiedCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
-import type { Customer, CustomerLedger } from '@/src/schema/crm/types'
+import type { Customer, CustomerLedger, CustomerLedgerScope } from '@/src/schema/crm/types'
 
-// Unified per-customer ledger — merges installment, charge, and cash sale
-// events into one chronological Date/Ref/Inst./Description/Debit/Credit/
-// Due/Outstanding table (same row shape as InstallmentLedgerView.tsx's
-// per-account ledger). Unlike that view, there's no single sale/item/agent/
-// financing-scheme to show — this can span several separate purchases of
-// different kinds — so the header here is just customer info + totals
-// summarizing across every source, not the paper-form field grid.
+// Per-customer ledger of FINANCED purchases — every in-house installment
+// plan and TPF-financed sale, merged into one chronological Date/Ref/Inst./
+// Description/Debit/Credit/Due/Outstanding table (same row shape as
+// InstallmentLedgerView.tsx's per-account ledger). Unlike that view this can
+// span several separate contracts, so there's no single sale/item/agent/
+// financing-scheme to head it with — just customer info + totals across
+// every plan, not the paper-form field grid.
 export default function CustomerLedgerView({
   customerId,
   backHref,
@@ -26,9 +27,32 @@ export default function CustomerLedgerView({
   backLabel: string
   canEdit?: boolean
 }) {
+  // This ledger is the customer's financed purchases, and only those. It used
+  // to offer an "All spending" scope that also folded in charge invoices and
+  // cash sales, but a cash sale is settled at the counter and owes nothing —
+  // it contributed a Debit and an equal Credit, adding rows that always
+  // netted to zero and never moved Outstanding. What this page is opened to
+  // answer is "what does this customer still owe on their plans", so the
+  // scope is now fixed at 'installments' (in-house plans plus TPF-financed
+  // ones). The server still accepts ?scope=all for any other caller.
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const scope: CustomerLedgerScope = 'installments'
+  // Which single contract to narrow to, kept in the URL so a narrowed ledger
+  // stays linkable/bookmarkable and survives a refresh.
+  const planId = searchParams.get('planId') ?? ''
+
   const [ledger, setLedger] = useState<CustomerLedger | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  function setPlan(next: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next) params.set('planId', next)
+    else params.delete('planId')
+    const qs = params.toString()
+    router.replace(qs ? `?${qs}` : '?', { scroll: false })
+  }
 
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [editingTax, setEditingTax] = useState(false)
@@ -37,14 +61,30 @@ export default function CustomerLedgerView({
   const [taxError, setTaxError] = useState<string | null>(null)
 
   useEffect(() => {
-    customersApi.getLedger(customerId).then((res) => {
+    let cancelled = false
+    // No synchronous setLoading(true) here: when the plan picker changes the
+    // existing rows stay on screen until the new ones land, instead of
+    // flashing "Loading…" — the picker's own selected value is the feedback.
+    // Both branches reset error so a recovered fetch clears a stale one.
+    customersApi.getLedger(customerId, scope, planId || undefined).then((res) => {
+      if (cancelled) return
       if (res.success && res.data) {
         setLedger(res.data)
+        setError(null)
       } else {
         setError(res.message || res.error || 'Ledger not found')
       }
       setLoading(false)
     })
+    return () => {
+      cancelled = true
+    }
+  }, [customerId, scope, planId])
+
+  // Customer/tax info doesn't vary with the plan filter — kept in its own
+  // effect so narrowing the ledger doesn't refetch it (and blow away an
+  // in-progress tax edit).
+  useEffect(() => {
     customersApi.get(customerId).then((res) => {
       if (res.success && res.data) {
         setCustomer(res.data)
@@ -96,6 +136,34 @@ export default function CustomerLedgerView({
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
         </Link>
+
+        {/* Own row — the back link above is inline-flex, so rendering these
+            as siblings let them collide on one line. Kept outside the loading
+            branch so the filters stay visible and clickable while refetching. */}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {/* Plan picker — shown once there's a contract to choose between.
+              The scope toggle that used to sit beside it is gone; this
+              ledger is always the installments one now. */}
+          {(ledger?.plans.length ?? 0) > 0 && (
+            <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+              Plan
+              <select
+                value={planId}
+                onChange={(e) => setPlan(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800"
+              >
+                <option value="">All plans</option>
+                {ledger?.plans.map((pl) => (
+                  <option key={pl.id} value={pl.id}>
+                    {pl.ref} — {pl.label}
+                    {pl.termMonths ? ` · ${pl.termMonths}mo` : ''}
+                    {pl.status ? ` · ${pl.status}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
 
         {loading ? (
           <div className="mt-6 text-center text-gray-500">Loading…</div>
@@ -225,10 +293,20 @@ export default function CustomerLedgerView({
 
             <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <h2 className="p-4 pb-2 text-[14px] font-semibold text-gray-900">Totals</h2>
-              <div className="grid grid-cols-2 gap-3 border-t border-gray-100 p-4 pt-3 sm:grid-cols-4">
+              <div
+                className={`grid grid-cols-2 gap-3 border-t border-gray-100 p-4 pt-3 ${
+                  ledger.totals.totalFinanced > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
+                }`}
+              >
                 <TotalStat label="Total Billed" value={fmtMoney(ledger.totals.totalBilled)} />
                 <TotalStat label="Total Paid" value={fmtMoney(ledger.totals.totalPaid)} />
                 <TotalStat label="Total Rebates" value={fmtMoney(ledger.totals.totalRebates)} />
+                {/* Settled by a TPF partner, not by the customer — shown only
+                    when there is any, so a customer with no TPF purchase keeps
+                    the original four-stat row. */}
+                {ledger.totals.totalFinanced > 0 && (
+                  <TotalStat label="Financed (TPF)" value={fmtMoney(ledger.totals.totalFinanced)} />
+                )}
                 <TotalStat label="Outstanding" value={fmtMoney(ledger.totals.outstanding)} bold />
               </div>
             </section>

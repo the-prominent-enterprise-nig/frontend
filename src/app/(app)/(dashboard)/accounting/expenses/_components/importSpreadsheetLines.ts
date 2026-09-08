@@ -14,18 +14,15 @@ import type { DivisionOption } from '@/src/libs/data/OrgStructureData'
  * Column B holds a department or branch name for the salary block
  * ("ACCOUNTING & FINANCE-NEGROS", "AJUY") and a person's name for the
  * advances and loans block ("TRAYCO, JOSHUA"). It is matched against the
- * Division list first; anything that doesn't match a branch or department
- * falls through to Description rather than being dropped, which is what
- * keeps the recipient of an advance visible on its line.
+ * Division list first. What happens to the rest is decided by the account
+ * the row resolved to, not by how the value is spelled: on an account that
+ * keeps a subsidiary ledger it is the name that balance is carried against;
+ * on any other account it is a memo, and goes to Description. Either way it
+ * is kept rather than dropped, so the recipient stays visible on the line.
  */
 
 export interface ImportedLine {
   categoryAccountId: string
-  /** Set instead of categoryAccountId when column A names a Special
-   * Account. Those are asset accounts (1-03-0xx) that never appear in the
-   * Account picker, so matching them by name would always fail — they are
-   * recognised by name here and resolved server-side from the mapping. */
-  specialAccountType: string
   /** Column A verbatim, kept whether or not it matched an account — an
    * unmatched row still has to show the user what it was trying to be. */
   accountLabel: string
@@ -36,9 +33,11 @@ export interface ImportedLine {
    * for confirmation rather than assumed. */
   collectFromId: string
   collectFromLabel: string
-  /** The line's recipient. On a Special Account row column B is a person's
-   * name, which is what ties the advance or loan to their outstanding
-   * balance — so it lands here rather than in Description. */
+  /** Which named balance the line belongs to. Only set when the resolved
+   * account keeps a subsidiary ledger (`isSpecialAccountControl`) — that is
+   * what ties an advance or loan to the person's outstanding balance. On
+   * any other account there is no such ledger, so column B is a memo and
+   * goes to Description instead. */
   payee: string
   description: string
   amount: string
@@ -50,11 +49,18 @@ export interface ImportResult {
   rowsRead: number
   /** Summary rows dropped by design (see SUMMARY_ROW_LABELS). */
   skippedSummaryRows: string[]
+  /** Rows counted but not imported for any other reason — the sheet's own
+   * header row, and any row whose debit and credit cancel to nothing.
+   * Reported so that rowsRead minus what was skipped actually equals the
+   * number of lines, rather than a row quietly disappearing. */
+  skippedEmptyRows: number
   /** Column A values with no matching account, deduplicated. Those lines
    * still import — with a blank Account for the user to fill in. */
   unmatchedAccounts: string[]
-  /** Column B values that matched no branch or department, deduplicated.
-   * Those went to Description instead. */
+  /** Column B values that matched no branch or department **and** sit on an
+   * account with no per-name ledger, deduplicated — the ones that might be a
+   * division we are missing. Names on advance/loan rows are excluded: they
+   * are Special Account names, not failed division matches. */
   unmatchedDivisions: string[]
   /** Recipients matched to a customer, so the import can say how many
    * deductions will actually settle an instalment. */
@@ -68,21 +74,6 @@ export interface ImportResult {
  * Dropping both leaves lines that net to exactly the cash paid out.
  */
 const SUMMARY_ROW_LABELS = ['total net pay', 'grand totals', 'grand total', 'total']
-
-/**
- * Column A spellings that name a Special Account rather than an expense
- * category. The client's sheet writes them as "Advances to Officer's and
- * Employees" and "Loans to Officer's and Employees" — 368 of its 657 rows —
- * where the chart of accounts calls them "Employee Cash Advance" and
- * "Employee Cash Loan". Matching on the account name alone would leave every
- * one of those rows unmatched.
- */
-const SPECIAL_ACCOUNT_ALIASES: { match: string; type: string }[] = [
-  { match: 'employee cash advance', type: 'EMPLOYEE_CASH_ADVANCE' },
-  { match: 'employee cash loan', type: 'EMPLOYEE_CASH_LOAN' },
-  { match: 'cash loan others', type: 'CASH_LOAN_OTHERS' },
-  { match: 'cash loan – others', type: 'CASH_LOAN_OTHERS' },
-]
 
 /**
  * Spellings the sheet uses for accounts that do exist, just under a
@@ -119,11 +110,6 @@ function looksLikeAPersonName(value: string): boolean {
   return parts.length >= 2 && parts.every((p) => /^[A-Za-zÑñ' -]+$/.test(p))
 }
 
-function specialAccountFor(accountLabel: string): string {
-  const key = norm(accountLabel)
-  return SPECIAL_ACCOUNT_ALIASES.find((a) => a.match === key)?.type ?? ''
-}
-
 /** Comparison key for a name: case, spacing and punctuation all vary between
  * a chart of accounts and a hand-maintained spreadsheet. */
 function norm(value: string): string {
@@ -140,15 +126,69 @@ function norm(value: string): string {
  * FINANCE-PANAY" is a different department in a different branch, and
  * matching on the prefix alone would silently file every Panay row under
  * Negros. So the suffix is matched against the branch, never dropped. */
+/** Region words the sheet appends to a division. The client's Division list
+ * is region-free, so the suffix is stripped before matching. */
+const REGION_SUFFIXES = ['panay', 'negros']
+
+/**
+ * Sheet spellings the mapping cannot derive, read off the client's own entry
+ * by comparing its Description column against the Division each line was
+ * filed under. Their mapping is curated, not mechanical: marketing files
+ * under "NIG MARKETEAM", and both receivable and collection collapse into one
+ * "AR & COLLECTIONDEPARTMENT".
+ *
+ * Incomplete by construction — this is only what their screenshot shows.
+ * "SALES AND MARKETING DEPARTMENT NEGROS" is deliberately absent: it could be
+ * either NIG MARKETEAM or SALES DEPARTMENT and guessing would misfile a whole
+ * region's payroll. Anything unmapped is reported for a person to place.
+ *
+ * Keys and values are both `norm`-ed spellings.
+ */
+const DIVISION_ALIASES: Record<string, string> = {
+  'marketing department': 'nig marketeam',
+  'sales and branch support department': 'sales department',
+  'sales and branch support': 'sales department',
+  'account receivable department': 'ar collectiondepartment',
+  'accounts receivable department': 'ar collectiondepartment',
+  'credit collection': 'ar collectiondepartment',
+  'credit collection department': 'ar collectiondepartment',
+  'accounting and finance department': 'accounting finance department',
+  edp: 'edp department',
+  hr: 'hr department',
+  inventory: 'inventory department',
+  aircool: 'aircool department',
+  logistics: 'logistics department',
+  it: 'it department',
+}
+
 function divisionCandidates(raw: string): string[] {
-  const candidates = [norm(raw)]
+  const out: string[] = []
+  const push = (v: string) => {
+    if (v && !out.includes(v)) out.push(v)
+  }
+  const base = norm(raw)
+  push(base)
+  // "ACCOUNTING & FINANCE-NEGROS" — name and region either side of a dash.
   const dash = raw.lastIndexOf('-')
   if (dash > 0) {
     const name = norm(raw.slice(0, dash))
     const region = norm(raw.slice(dash + 1))
-    if (name && region) candidates.push(`${name} ${region}`)
+    if (name && region) {
+      push(`${name} ${region}`)
+      push(name)
+    }
   }
-  return candidates.filter(Boolean)
+  // "HR DEPARTMENT PANAY" — the same thing separated by a space, which is
+  // how the client's own payroll entry writes it.
+  for (const region of REGION_SUFFIXES) {
+    if (base.endsWith(` ${region}`)) push(base.slice(0, -(region.length + 1)))
+  }
+  // Their curated spellings, applied to everything derived so far.
+  for (const candidate of [...out]) {
+    const alias = DIVISION_ALIASES[candidate]
+    if (alias) push(alias)
+  }
+  return out
 }
 
 /**
@@ -206,6 +246,12 @@ export async function importSpreadsheetLines(
   // spelled — the client's own mapping is positional.
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false })
 
+  // Accounts that keep one balance per named person or project. Whether a
+  // line is a Special Account is a property of the account it posts to —
+  // not of how column A happens to be spelled.
+  const controlAccountIds = new Set(
+    accounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)
+  )
   const accountByName = new Map<string, string>()
   for (const a of accounts) {
     accountByName.set(norm(a.name), a.id)
@@ -217,6 +263,10 @@ export async function importSpreadsheetLines(
     // "<department> <branch>" — never the department name alone, which
     // repeats across branches.
     if (d.kind === 'branch') {
+      divisionByName.set(norm(d.name), d.value)
+    } else if (!d.branchName) {
+      // Company-wide, which is how the client's own Division list is
+      // organised: the name stands alone and the region lives in the memo.
       divisionByName.set(norm(d.name), d.value)
     } else {
       // A payroll sheet writes "ACCOUNTING & FINANCE-NEGROS" — department
@@ -272,6 +322,7 @@ export async function importSpreadsheetLines(
   const unmatchedAccounts = new Set<string>()
   const unmatchedDivisions = new Set<string>()
   let rowsRead = 0
+  let skippedEmptyRows = 0
 
   for (const row of rows) {
     const accountLabel = String(row[0] ?? '').trim()
@@ -286,21 +337,24 @@ export async function importSpreadsheetLines(
       continue
     }
     // The header row: text in the amount columns, nothing numeric.
-    if (debit === null && credit === null) continue
+    if (debit === null && credit === null) {
+      skippedEmptyRows++
+      continue
+    }
 
     // Debit adds, credit deducts. A row carrying both is malformed; the
     // debit wins and the credit is folded in, so nothing is silently lost.
     const amount = (debit ?? 0) - (credit ?? 0)
-    if (amount === 0) continue
+    if (amount === 0) {
+      skippedEmptyRows++
+      continue
+    }
 
-    // A Special Account short-circuits the category lookup entirely.
-    const specialAccountType = specialAccountFor(accountLabel)
     const aliased = ACCOUNT_NAME_ALIASES[norm(accountLabel)]
-    const accountId = specialAccountType
-      ? ''
-      : (accountByName.get(norm(accountLabel)) ??
-        (aliased ? (accountByName.get(norm(aliased)) ?? '') : ''))
-    if (accountLabel && !accountId && !specialAccountType) {
+    const accountId =
+      accountByName.get(norm(accountLabel)) ??
+      (aliased ? (accountByName.get(norm(aliased)) ?? '') : '')
+    if (accountLabel && !accountId) {
       unmatchedAccounts.add(accountLabel)
     }
 
@@ -318,24 +372,38 @@ export async function importSpreadsheetLines(
       // Exact match first, always. Only if that finds nothing does the
       // looser spelling comparison get a turn.
       if (!division) division = looseBranchMatch(particulars, divisions) ?? ''
-      if (!division) {
-        // A Special Account row is always a recipient; so is anything that
-        // reads as a person's name, whichever account it posts to — the
-        // sheet's advance, loan and receivable rows all name people, and
-        // they resolve to real accounts now rather than Special Accounts.
-        if (specialAccountType || looksLikeAPersonName(particulars)) {
-          payee = particulars
-        } else {
-          description = particulars
-        }
+      // Division and Description are not either/or. The client's own entry
+      // carries both — "HR DEPARTMENT PANAY" in Description, "HR DEPARTMENT"
+      // in Division — and Description is the column their printed voucher
+      // actually shows, so dropping it on a successful Division match would
+      // print a blank column.
+      //
+      // The exception is an account that keeps a subsidiary ledger: there
+      // column B is the name the balance is carried against, and the memo is
+      // a sentence the user writes ("To take up payment for Cash advances
+      // from Payroll 08/30/26"), not the name repeated.
+      if (controlAccountIds.has(accountId)) {
+        payee = particulars
+      } else {
+        description = particulars
+      }
+      // Only worth reporting when the value could plausibly have been an org
+      // unit. A person's name on an advance or loan row was never going to
+      // match a division — it is a Special Account name and is exactly where
+      // it belongs — so counting those buried the handful that actually need
+      // a look under hundreds that do not.
+      if (!division && !controlAccountIds.has(accountId)) {
         unmatchedDivisions.add(particulars)
       }
     }
 
-    // Match on the recipient's name, in either spelling.
+    // Match on the recipient's name, in either spelling. Keyed off column B
+    // itself rather than `payee`: a receivable line names a person but keeps
+    // no per-name ledger, so its name sits in Description — and it is
+    // exactly the line that has instalments to settle.
     let matched: { id: string; name: string } | null = null
-    if (payee) {
-      for (const key of nameKeys(payee)) {
+    if (particulars && !division && looksLikeAPersonName(particulars)) {
+      for (const key of nameKeys(particulars)) {
         const hit = customerByName.get(key)
         if (hit) {
           matched = hit
@@ -348,7 +416,6 @@ export async function importSpreadsheetLines(
       collectFromId: matched?.id ?? '',
       collectFromLabel: matched?.name ?? '',
       categoryAccountId: accountId,
-      specialAccountType,
       accountLabel,
       division,
       payee,
@@ -360,6 +427,7 @@ export async function importSpreadsheetLines(
   return {
     lines,
     rowsRead,
+    skippedEmptyRows,
     skippedSummaryRows,
     unmatchedAccounts: [...unmatchedAccounts],
     unmatchedDivisions: [...unmatchedDivisions],

@@ -467,6 +467,24 @@ export interface InstallmentLedger {
 // into one chronological table instead of separate per-source views. Rows
 // use the same shape as InstallmentLedgerRow; totals summarize across all
 // sources instead of one installment account's specific paper-form fields.
+/** Which purchases a customer-ledger request covers. 'installments' keeps the
+ * financed ones only — in-house plans plus TPF (which the customer likewise
+ * pays monthly) — and drops charge invoices and cash sales. */
+export type CustomerLedgerScope = 'all' | 'installments'
+
+/** One selectable contract under the 'installments' scope. `id` is prefixed by
+ * kind ('acct:' / 'tpf:') because the two come from different tables: an
+ * in-house plan is an InstallmentAccount, while a TPF plan has no account and
+ * is identified by its PosTransaction. */
+export interface CustomerLedgerPlan {
+  id: string
+  kind: 'inhouse' | 'tpf'
+  ref: string
+  label: string
+  termMonths: number | null
+  status: string | null
+}
+
 export interface CustomerLedger {
   customer: {
     id: string
@@ -479,11 +497,18 @@ export interface CustomerLedger {
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
   items: { date: string; ref: string; itemLabel: string }[]
+  /** Populated only under the 'installments' scope — the plan picker's options. */
+  plans: CustomerLedgerPlan[]
   rows: InstallmentLedgerRow[]
   totals: {
     totalBilled: number
     totalPaid: number
     totalRebates: number
+    /** Billed amounts settled by a TPF partner rather than by the customer.
+     * Kept out of totalPaid so that stays "money this customer paid", but
+     * still deducted from outstanding — the customer owes nothing on a TPF
+     * purchase, the receivable is the partner's. */
+    totalFinanced: number
     outstanding: number
   }
 }

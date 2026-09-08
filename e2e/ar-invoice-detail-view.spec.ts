@@ -157,11 +157,12 @@ test('per-invoice detail view is reachable from both the AR Invoices list and Cu
   await gotoReady(page, `/accounting/ar-invoices?customerId=${customer.id}`)
   const row = page.locator('table tbody tr', { has: page.getByText(invoice.invoiceNumber) })
   await expect(row).toBeVisible({ timeout: 10_000 })
-  // The Terms column (Invoice# 0, Customer 1, Invoice Date 2, Due Date 3,
-  // Terms 4, Total 5, Paid 6, Outstanding 7, Status 8, Actions 9) reports
-  // the financing term this due line was sold on — the same "Term" the AR
-  // Aging sheet shows, sourced from the schedule's FinancingTerm.
-  await expect(row.locator('td').nth(4)).toHaveText(`${term.termMonths} mos`)
+  // Scenario 29 ACC-05 — a freshly-created installment due is always in
+  // the future, so the new Due column (Invoice# 0, Customer 1, Invoice
+  // Date 2, Due Date 3, Total 4, Paid 5, Outstanding 6, Due 7, Status 8,
+  // Actions 9) shows "—" (nothing due yet) even though Outstanding is the
+  // real balance.
+  await expect(row.locator('td').nth(7)).toHaveText('—')
 
   // Scenario 31 Part 1 — "Sale: <transactionNumber>" link under the
   // invoice number, deep-linking into a prefilled search on the

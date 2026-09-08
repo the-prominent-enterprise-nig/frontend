@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Download, Loader2, Printer } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, Download, Loader2 } from 'lucide-react'
 import {
   ARInvoices,
   fmtMoney,
   fmtDate,
   type ARInvoiceDocument,
+  type ARInvoiceDue,
   type ARInvoiceMemo,
 } from '@/src/libs/data/AccountingV2Data'
 import { printARInvoiceDocument } from '@/src/libs/print/printInventoryDocument'
-import CollectionReceiptSheet from '../../_components/CollectionReceiptSheet'
-import InstallmentScheduleTable from '../../_components/InstallmentScheduleTable'
-import CollectionReceiptsTable from '../../_components/CollectionReceiptsTable'
+import CollectionReceiptSheet, {
+  CollectionReceiptDocumentSheet,
+  type CollectionReceiptDocument,
+} from '../../_components/CollectionReceiptSheet'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -27,15 +29,30 @@ const INVOICE_STATUS_BADGE: Record<string, string> = {
   PAID: 'bg-emerald-50 text-emerald-700',
 }
 
+/** A due's own state. The dues of a plan all hang off ONE invoice, so this
+ * cannot be read off an invoice status the way it could when each due had its
+ * own — it comes from the due's settlement columns, plus the calendar for
+ * anything still open. */
+function dueStatus(d: ARInvoiceDue, isNext: boolean): { label: string; className: string } {
+  if (d.settledAt) return { label: 'Paid', className: 'bg-emerald-50 text-emerald-700' }
+  if (Number(d.paidAmount) > 0) return { label: 'Partial', className: 'bg-amber-50 text-amber-700' }
+  // Compared against the START of today, so a due dated today is not already
+  // Overdue by a few hours.
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const dueDay = new Date(d.dueDate)
+  dueDay.setHours(0, 0, 0, 0)
+  if (dueDay.getTime() < startOfToday.getTime())
+    return { label: 'Overdue', className: 'bg-red-50 text-red-700' }
+  // "Due" is the one being collected NEXT, not merely one whose date has
+  // arrived — collections settle oldest-first, so exactly one open due is
+  // ever the live one. Everything behind it is simply Upcoming.
+  if (isNext) return { label: 'Due', className: 'bg-prominent-purple-50 text-prominent-purple-700' }
+  return { label: 'Upcoming', className: 'bg-gray-100 text-gray-600' }
+}
+
 /** en-PH numeric date (09/02/2026) — the format the printed document uses. */
-
-/** Names a due the way the rest of this page does ("Payment 2 of 12")
- * rather than by its raw INST-POS-… number. A receipt can also settle a
- * plain standalone invoice with no installment line — that falls back to
- * the invoice number, so a mixed receipt reads correctly either way. */
-
-/** en-PH numeric date, as the account line has always shown it. */
-function docDate(v: string | Date | null | undefined): string {
+function docDate(v: string | Date | undefined | null): string {
   return v ? new Date(v).toLocaleDateString('en-PH') : '—'
 }
 
@@ -104,16 +121,44 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   const [doc, setDoc] = useState<ARInvoiceDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // The collection receipts issued against this invoice — the down payment
+  // and every monthly collection after it. Each is its own document with its
+  // own balance, so they are fetched per payment rather than derived here.
+  const [receipts, setReceipts] = useState<CollectionReceiptDocument[]>([])
+  // Which payment row is currently showing its receipt. One at a time: these
+  // are full-page documents, and two open at once reads as one long sheet.
+  const [openReceiptId, setOpenReceiptId] = useState<string | null>(null)
 
   useEffect(() => {
     // The document envelope is a superset of GET /ar-invoices/:id — it adds
     // the enterprise letterhead block — so one fetch backs both this view
     // and the Print button.
+    let cancelled = false
     ARInvoices.getDocument(id).then((res) => {
-      if (res.success && res.data) setDoc(res.data)
-      else setError(res.error ?? 'Invoice not found')
+      if (cancelled) return
+      if (res.success && res.data) {
+        setDoc(res.data)
+        // Oldest first, so the receipts read in the order they were issued
+        // and each one's Previous Balance follows on from the last.
+        const payments = [...(res.data.document.payments ?? [])]
+          .filter((p) => !p.cancelledAt)
+          .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
+        Promise.all(payments.map((p) => ARInvoices.getReceiptDocument(id, p.id))).then(
+          (results) => {
+            if (cancelled) return
+            setReceipts(
+              results
+                .filter((r) => r.success && r.data)
+                .map((r) => r.data as CollectionReceiptDocument)
+            )
+          }
+        )
+      } else setError(res.error ?? 'Invoice not found')
       setLoading(false)
     })
+    return () => {
+      cancelled = true
+    }
   }, [id])
 
   if (loading) {
@@ -142,103 +187,21 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
   const enterprise = doc.enterprise
   const detail = invoice.installmentDetail
   const payments = invoice.payments ?? []
+  // getReceiptDocument() sets document.id to the ARPayment it was built for,
+  // which is what pairs a fetched receipt back to its row below.
+  const receiptByPaymentId = new Map(
+    receipts.filter((r) => r.document.id).map((r) => [r.document.id as string, r])
+  )
   const creditMemos = invoice.creditMemos ?? []
   const debitMemos = invoice.debitMemos ?? []
   const outstanding = invoice.totalAmount - invoice.amountPaid
-
-  // Start of today, so a due dated today reads as due rather than late.
-  const todayStart = (() => {
-    const d = new Date()
-    d.setHours(0, 0, 0, 0)
-    return d.getTime()
-  })()
-
-  // What the collector should chase next. On a plan that's the earliest
-  // unsettled due; on a charge invoice the invoice's own due date is the
-  // whole story.
-  const openLines = [...(invoice.scheduleLines ?? [])]
-    .filter((l) => !l.settledAt)
-    .sort((a, b) => a.lineNumber - b.lineNumber)
-  const overdueCount = openLines.filter((l) => new Date(l.dueDate).getTime() < todayStart).length
-
-  const nextDue = (() => {
-    const fmt = (v: string) =>
-      new Date(v).toLocaleDateString('en-PH', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      })
-    const describe = (dateStr: string, amount: number) => {
-      const ms = todayStart - new Date(dateStr).getTime()
-      const days = Math.floor(ms / 86_400_000)
-      return {
-        amount,
-        overdue: days > 0,
-        label: days > 0 ? `${fmt(dateStr)} · ${days}d overdue` : `Due ${fmt(dateStr)}`,
-      }
-    }
-    const line = openLines[0]
-    if (line) {
-      return describe(line.dueDate, Math.round((line.amount - line.paidAmount) * 100) / 100)
-    }
-    // Charge invoice, or a plan with every due settled.
-    if ((invoice.scheduleLines?.length ?? 0) === 0 && outstanding > 0) {
-      return describe(invoice.dueDate, outstanding)
-    }
-    return null
-  })()
-
-  // A plan-level label. The raw enum ("SENT") says nothing useful about a
-  // twelve-month plan halfway through collection.
-  const planLabel =
-    outstanding <= 0.01
-      ? 'Paid'
-      : overdueCount > 0
-        ? `Overdue (${overdueCount})`
-        : nextDue?.overdue
-          ? 'Due now'
-          : openLines.length > 0 || invoice.status !== 'DRAFT'
-            ? 'On track'
-            : invoice.status
-
-  // Sale first, then every collection in date order. Cancelled applications
-  // are left out: they never reduced the balance, so showing them would make
-  // the running total disagree with Outstanding above it.
-  const scheduleLineNumber = new Map((invoice.scheduleLines ?? []).map((l) => [l.id, l.lineNumber]))
-  const isPlan = (invoice.scheduleLines?.length ?? 0) > 0
-  const statementRows = [
-    {
-      date: invoice.invoiceDate,
-      ref: invoice.posTransaction?.salesInvoiceNumber || invoice.invoiceNumber,
-      // The opening debit is the whole contract being billed — named for what
-      // it is rather than echoing the invoice's free-text description.
-      description: 'AR Invoice',
-      debit: invoice.totalAmount,
-      credit: 0,
-    },
-    ...(invoice.payments ?? [])
-      .filter((p) => !p.cancelledAt)
-      .slice()
-      .sort((a, b) => +new Date(a.paymentDate) - +new Date(b.paymentDate))
-      .map((p) => {
-        const due = p.installmentScheduleLineId
-          ? scheduleLineNumber.get(p.installmentScheduleLineId)
-          : undefined
-        return {
-          date: p.paymentDate,
-          ref: p.receipt?.number ?? p.reference ?? null,
-          description: due ? `Installment #${due}` : isPlan ? 'Downpayment' : 'Payment',
-          debit: 0,
-          // Withholding and rebate discharge the debt just as cash does, so
-          // the balance has to fall by all three or it will never reach zero.
-          credit:
-            Math.round((p.amount + (p.withholdingAmount ?? 0) + (p.rebateAmount ?? 0)) * 100) / 100,
-        }
-      }),
-  ]
+  // The due collections will settle next — the earliest still unsettled.
+  const nextDueLineNumber = detail?.dues?.find((d) => !d.settledAt)?.lineNumber ?? null
   // Scenario 29 ACC-05 — Outstanding is the total owed regardless of
   // maturity; Due only counts it once this invoice's own due date has
   // passed (the collector's number).
+  const due = new Date(invoice.dueDate) <= new Date() ? Math.max(outstanding, 0) : 0
+  const daysOverdue = Math.floor((Date.now() - new Date(invoice.dueDate).getTime()) / 86400000)
 
   return (
     <div className="px-4 py-4 sm:px-6 lg:px-8">
@@ -253,98 +216,25 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           onClick={() => printARInvoiceDocument(doc)}
           className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
         >
-          <Printer className="h-4 w-4" />
-          Print
+          <Download className="h-4 w-4" />
+          Print / Download
         </button>
       </div>
 
-      <div className="mt-3">
-        <CollectionReceiptSheet
-          customer={invoice.customer}
-          enterprise={enterprise}
-          date={invoice.invoiceDate}
-          reference={invoice.posTransaction?.salesInvoiceNumber || invoice.invoiceNumber}
-          description={invoice.description}
-          rows={[
-            {
-              accountLine: `Accounts Receivable — ${invoice.customer?.name ?? '—'} — ${invoice.invoiceNumber} — ${docDate(invoice.dueDate)}`,
-              amount: invoice.totalAmount,
-            },
-          ]}
-          total={invoice.totalAmount}
-          title="AR Invoice"
-        />
-      </div>
-
-      {/* The four questions this page exists to answer, before any document:
-          how much was billed, how much has been paid, how much is left, and
-          which installment is due next. These were previously a run of small
-          grey text a reader had to parse left to right. */}
-      <dl className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white px-3.5 py-3">
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            Total billed
-          </dt>
-          <dd className="mt-0.5 text-[17px] font-bold tabular-nums text-prominent-purple-900">
-            {fmtMoney(invoice.totalAmount)}
-          </dd>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-3.5 py-3">
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            Amount paid
-          </dt>
-          <dd className="mt-0.5 text-[17px] font-bold tabular-nums text-emerald-700">
-            {fmtMoney(invoice.amountPaid)}
-          </dd>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white px-3.5 py-3">
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            Outstanding
-          </dt>
-          <dd
-            className={`mt-0.5 text-[17px] font-bold tabular-nums ${
-              outstanding > 0 ? 'text-prominent-purple-900' : 'text-emerald-700'
-            }`}
-          >
-            {fmtMoney(outstanding)}
-          </dd>
-        </div>
-        <div
-          className={`rounded-lg border px-3.5 py-3 ${
-            nextDue?.overdue ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'
-          }`}
-        >
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            {nextDue?.overdue ? 'Overdue' : 'Next due'}
-          </dt>
-          {nextDue ? (
-            <>
-              <dd
-                className={`mt-0.5 text-[17px] font-bold tabular-nums ${
-                  nextDue.overdue ? 'text-red-700' : 'text-prominent-purple-900'
-                }`}
-              >
-                {fmtMoney(nextDue.amount)}
-              </dd>
-              <dd className={`text-[11.5px] ${nextDue.overdue ? 'text-red-600' : 'text-gray-500'}`}>
-                {nextDue.label}
-              </dd>
-            </>
-          ) : (
-            <dd className="mt-0.5 text-[17px] font-bold text-emerald-700">Settled</dd>
-          )}
-        </div>
-      </dl>
-
       {/* Record data the paper document doesn't carry — kept outside the sheet
           so the sheet itself stays a faithful preview of what prints. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-gray-500">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-gray-500">
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${INVOICE_STATUS_BADGE[invoice.status] ?? 'bg-gray-100 text-gray-600'}`}
         >
           {invoice.status === 'PAID' && <CheckCircle2 className="h-3 w-3" />}
-          {planLabel}
+          {invoice.status}
         </span>
+        {detail?.lineNumber != null && detail.termMonths && (
+          <span>
+            Payment {detail.lineNumber} of {detail.termMonths}
+          </span>
+        )}
         {invoice.posTransaction && (
           <span>
             Source sale{' '}
@@ -356,25 +246,82 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
             </Link>
           </span>
         )}
-        <span>Invoice {invoice.invoiceNumber}</span>
+        {invoice.status === 'OVERDUE' && daysOverdue > 0 && (
+          <span className="font-medium text-red-500">{daysOverdue} days overdue</span>
+        )}
       </div>
 
-      <InstallmentScheduleTable
-        lines={invoice.scheduleLines ?? []}
-        payments={invoice.payments ?? []}
-      />
+      {/* The receivable at a glance. One installment sale is ONE invoice, so
+          these three numbers describe the whole contract: what was billed,
+          what has been collected against it (the down payment included), and
+          what the customer still owes. */}
+      <section className="mt-3 rounded-lg border border-gray-200 bg-white p-5">
+        <dl className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              Total billed
+            </dt>
+            <dd className="mt-1 text-[18px] font-semibold tabular-nums text-prominent-purple-900">
+              {fmtMoney(invoice.totalAmount)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              Amount paid
+            </dt>
+            <dd className="mt-1 text-[18px] font-semibold tabular-nums text-emerald-700">
+              {fmtMoney(invoice.amountPaid)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              Outstanding
+            </dt>
+            <dd className="mt-1 text-[18px] font-semibold tabular-nums text-prominent-purple-900">
+              {fmtMoney(outstanding)}
+            </dd>
+            {/* Scenario 29 ACC-05 — Outstanding is everything still owed;
+                this is the slice that has actually matured. */}
+            {due > 0 && (
+              <p className="mt-0.5 text-[11px] text-gray-500">{fmtMoney(due)} of it already due</p>
+            )}
+          </div>
+        </dl>
+      </section>
 
-      <CollectionReceiptsTable
-        invoiceId={invoice.id}
-        payments={invoice.payments ?? []}
-        scheduleLines={invoice.scheduleLines ?? []}
-        customer={invoice.customer}
-        enterprise={enterprise}
-        appliedToReference={invoice.posTransaction?.salesInvoiceNumber || invoice.invoiceNumber}
-        invoiceDate={invoice.invoiceDate}
-        totalAmount={invoice.totalAmount}
-        saleReference={invoice.posTransaction?.transactionNumber || invoice.invoiceNumber}
-      />
+      {/* The invoice document. It used to render titled "Collection Receipt"
+          — the same paper as the receipt that settles it — which meant this
+          page showed the FULL billed amount under a heading that claims money
+          was received. An invoice states what is owed; the receipt states
+          what was paid. Its single row is the receivable being billed. */}
+      <div className="mt-2.5">
+        <CollectionReceiptSheet
+          customer={invoice.customer}
+          enterprise={enterprise}
+          date={invoice.invoiceDate}
+          reference={invoice.invoiceNumber}
+          description={invoice.description}
+          rows={[
+            {
+              accountLine: `Accounts Receivable — ${invoice.customer?.name ?? '—'} — ${invoice.invoiceNumber} — ${docDate(invoice.dueDate)}`,
+              amount: invoice.totalAmount,
+            },
+          ]}
+          total={invoice.totalAmount}
+          title="AR Invoice"
+          totalLabel="Amount Billed"
+        />
+      </div>
+
+      {/* The collection receipts used to be stacked here in full, one sheet
+          per payment, below the invoice. On a 12-month plan that pushed the
+          schedule and the memos off the bottom of the page behind a dozen
+          near-identical documents — and it put records of money RECEIVED
+          inside the document view of the BILL, which is what this page's
+          own sheet above is. Each receipt now opens from its row in
+          Payments / collections below, where the reader is already asking
+          "which collection was that?". */}
+
       {/* The financing plan behind this due — item lines, serials and their
           receiving provenance. None of it appears on the client's Collection
           Receipt, which is a one-line account document, so it sits here. */}
@@ -384,9 +331,8 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
             Financed items — full plan
           </h2>
           <p className="mb-3 text-[12px] text-gray-500">
-            Full price of everything on this {detail.termMonths ?? '—'}-month plan — this invoice
-            only covers 1 of {detail.termMonths ?? '—'} monthly payments, not the full amount shown
-            below.
+            Everything financed on this {detail.termMonths ?? '—'}-month plan. This invoice is the
+            receivable for the whole contract, billed out over the schedule below.
           </p>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100 text-[13px]">
@@ -444,56 +390,154 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           which the printed invoice carries. */}
       <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-prominent-purple-900">
-          Payment history
+          Payments / collections
         </h2>
         {payments.length === 0 && (
           <p className="py-4 text-center text-[13px] text-gray-400">No payments recorded yet.</p>
         )}
         {payments.length > 0 && (
           <ul className="divide-y divide-gray-100">
-            {payments.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
-                <div>
-                  <div className="text-gray-800">
-                    {fmtDate(p.paymentDate)}
-                    {p.method ? ` · ${p.method}` : ''}
-                    {/* CR number off the booklet first; the generated
-                        CR-YYYYMMDD-NNNN only backs up older payments. */}
-                    {p.reference
-                      ? ` · ${p.reference}`
-                      : p.receipt?.number
-                        ? ` · ${p.receipt.number}`
-                        : ''}
-                    {p.cancelledAt && (
-                      <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
-                        cancelled
-                      </span>
-                    )}
-                  </div>
-                  {/* This amount is only a slice of a wider payment — show
+            {payments.map((p) => {
+              // A cancelled application has no receipt document fetched for
+              // it, so its row stays inert rather than opening an empty
+              // dropdown.
+              const receipt = receiptByPaymentId.get(p.id)
+              const expanded = openReceiptId === p.id
+              return (
+                <li key={p.id} className="py-2.5 text-[13px]">
+                  <button
+                    type="button"
+                    disabled={!receipt}
+                    aria-expanded={expanded}
+                    onClick={() => setOpenReceiptId(expanded ? null : p.id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-md text-left ${
+                      receipt
+                        ? 'cursor-pointer px-1.5 py-1 hover:bg-gray-50'
+                        : 'cursor-default px-1.5 py-1'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-gray-800">
+                        {fmtDate(p.paymentDate)}
+                        {p.method ? ` · ${p.method}` : ''}
+                        {/* CR number off the booklet first; the generated
+                        CR-YYYYMMDD-NNNN backs it up. `receiptNumber` is
+                        always present when there is one — `receipt` only
+                        appears when the payment also settled OTHER
+                        invoices. */}
+                        {p.reference
+                          ? ` · ${p.reference}`
+                          : (p.receiptNumber ?? p.receipt?.number)
+                            ? ` · ${p.receiptNumber ?? p.receipt?.number}`
+                            : ''}
+                        {/* The down payment settles no single month — it credits
+                        the contract as a whole — so it is named rather than
+                        left to read as an ordinary monthly collection. */}
+                        {p.isDownPayment && (
+                          <span className="ml-2 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 ring-1 ring-inset ring-purple-200">
+                            Downpayment
+                          </span>
+                        )}
+                        {p.cancelledAt && (
+                          <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-inset ring-gray-200">
+                            cancelled
+                          </span>
+                        )}
+                      </div>
+                      {/* This amount is only a slice of a wider payment — show
                       what the whole payment was and which other dues it
                       cleared, so the figure doesn't read as unrelated to the
                       rest of the schedule. */}
-                  {p.receipt && p.receipt.settledOthers.length > 0 && (
-                    <div className="mt-0.5 text-[11px] text-gray-500">
-                      Part of a {fmtMoney(p.receipt.amount)} payment · also settled{' '}
-                      {p.receipt.settledOthers
-                        .slice(0, 3)
-                        .map((s) => dueLabel(s))
-                        .join(', ')}
-                      {p.receipt.settledOthers.length > 3 &&
-                        ` +${p.receipt.settledOthers.length - 3} more`}
+                      {p.receipt && p.receipt.settledOthers.length > 0 && (
+                        <div className="mt-0.5 text-[11px] text-gray-500">
+                          Part of a {fmtMoney(p.receipt.amount)} payment · also settled{' '}
+                          {p.receipt.settledOthers
+                            .slice(0, 3)
+                            .map((s) => dueLabel(s))
+                            .join(', ')}
+                          {p.receipt.settledOthers.length > 3 &&
+                            ` +${p.receipt.settledOthers.length - 3} more`}
+                        </div>
+                      )}
+                    </div>
+                    <span className="flex shrink-0 items-center gap-2 font-semibold tabular-nums text-gray-900">
+                      {fmtMoney(p.amount + p.withholdingAmount)}
+                      {receipt && (
+                        <ChevronDown
+                          aria-hidden
+                          className={`h-4 w-4 text-gray-400 transition-transform ${
+                            expanded ? 'rotate-180' : ''
+                          }`}
+                        />
+                      )}
+                    </span>
+                  </button>
+                  {/* The receipt itself — what was actually received, and the
+                    balance it left behind. Rendered only for the row the
+                    reader opened, so the page stays the invoice's. */}
+                  {expanded && receipt && (
+                    <div className="mt-3">
+                      <CollectionReceiptDocumentSheet doc={receipt} />
                     </div>
                   )}
-                </div>
-                <span className="shrink-0 font-semibold tabular-nums text-gray-900">
-                  {fmtMoney(p.amount + p.withholdingAmount)}
-                </span>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
+
+      {/* The plan itself. These dues are NOT invoices — they all hang off the
+          single receivable above — so each one's state comes from its own
+          settlement columns rather than from an invoice status. */}
+      {detail?.dues && detail.dues.length > 0 && (
+        <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="mb-1 text-[14px] font-semibold text-prominent-purple-900">
+            Installment schedule
+          </h2>
+          <p className="mb-3 text-[12px] text-gray-500">
+            The {detail.dues.length} monthly dues this receivable is billed out over. Collections
+            settle them oldest first.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-100 text-[13px]">
+              <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="py-2 pr-4">#</th>
+                  <th className="py-2 pr-4">Due date</th>
+                  <th className="py-2 pr-4 text-right">Amount</th>
+                  <th className="py-2 pr-4 text-right">Paid</th>
+                  <th className="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {detail.dues.map((d) => {
+                  const status = dueStatus(d, d.lineNumber === nextDueLineNumber)
+                  return (
+                    <tr key={d.lineNumber}>
+                      <td className="py-2 pr-4 tabular-nums text-gray-500">#{d.lineNumber}</td>
+                      <td className="py-2 pr-4 text-gray-900">{fmtDate(d.dueDate)}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-gray-900">
+                        {fmtMoney(Number(d.amount))}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-gray-500">
+                        {Number(d.paidAmount) > 0 ? fmtMoney(Number(d.paidAmount)) : '—'}
+                      </td>
+                      <td className="py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}
+                        >
+                          {status.label}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* A credit memo moves amountPaid without any money changing hands, so
           without this the balance appears to drop for no reason — which is

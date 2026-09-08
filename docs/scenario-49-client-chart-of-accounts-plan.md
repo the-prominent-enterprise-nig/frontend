@@ -62,7 +62,13 @@ The aliases written earlier that day — mapping `Advances to Officer's and Empl
 3. **`Salaries and Wages` still sits on our invented `6-01-010`.** It matches by name only; whether that is the client's number is unknown.
 4. **The local database still runs half on a legacy four-digit chart.** `prominent-enterprise` has 22 accounts numbered `1000`/`2000`/`5100`, with **52 posted transactions and 20 GL mappings** pointing at them — including `AR_RECEIVABLE → 1100`, `DEFAULT_CASH → 1000`, `COGS_EXPENSE → 5050`, `INPUT_VAT → 1250`. Posting there does not use the client's chart at all.
 5. **The 44 relocated `7-` accounts are clutter.** They still carry mappings and posted data so they cannot simply be deleted, but they appear in every account picker.
-6. **`seedPH()` must not be run** on a database that has the client's chart — it would reintroduce every collision resolved here.
+6. **`seedPH()` must not be run** on a database that has the client's chart. It is worse than
+   reintroducing collisions: `coa-seed.service.ts:1815-1822` looks each account up **by number**,
+   and on a hit takes the `if (existing)` branch, which calls `setMapping(acc.mappingKey,
+existing.id)`. Since `1-03-021` now means _Building ImprovemenT_ rather than _Employee Cash
+   Advance_, a re-run would silently repoint `SPECIAL_ACCOUNT_EMP_CASH_ADVANCE` at a fixed-asset
+   account — creating nothing, warning about nothing, and corrupting the posting target.
+   Reachable at `POST /coa-seed/ph` with `accounting:account:create`.
 
 ## Two defects in the client's own export
 
@@ -98,3 +104,33 @@ Doing 3 before 2 breaks every posting path.
 - All seven payroll accounts confirmed present at the client's numbers by direct query.
 - The payroll importer re-run afterwards resolved **657 of 657** accounts, up from 426.
 - Backend 574/574 tests pass.
+
+## Run record — development database, 2026-09-08
+
+The seeder had only ever been run against the throwaway test database. The
+developer's working database still held the invented chart alone, which is why a
+payroll import there showed every Special Account as "No" and most org units
+falling through to Description: **none** of the client's control accounts existed.
+
+Run with a `\copy` snapshot of `accounts` (id, number, name, type) taken first.
+
+|                                  |                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| Accounts before → after          | 325 → 397 (**72 added**)                                                               |
+| Relocated to `7-`                | 44                                                                                     |
+| Skipped, already present by name | 4                                                                                      |
+| Unplaceable                      | 1 — `2-01-020 Cash advances from Apartment`, duplicated within the client's own export |
+
+Post-run checks: **0 duplicate numbers, 0 orphaned transactions, 0 broken account
+mappings.** Two mappings (`SUPPLIER_SUPPORT_INCOME`, `SUPPLIER_INCENTIVE_INCOME`)
+have a null `accountId`, but they were never configured — not damage from this run.
+
+All twelve control accounts on the client's Special Accounts list are present at
+their own numbers: `1-01-023`, `1-01-048`, `1-01-051`, `1-01-052`, `1-01-060`,
+`1-03-010`, `1-03-020`, `1-03-021`, `1-03-022`, `1-03-030`, `1-03-040`, `1-03-060`.
+
+**Left in an odd state:** `1-03-023 Cash Loan – Others` and `1-03-024 CA-Liquidation`
+were _not_ relocated — the client's chart has no row at either number, so two invented
+accounts now sit interleaved among their fixed assets (LAND, BUILDING, Building
+Improvement, Leasehold, Computer Software, Office Equipment). Their mapping keys still
+resolve, but the chart reads wrongly. Worth folding into the Special Accounts work.

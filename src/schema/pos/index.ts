@@ -136,7 +136,10 @@ export type PosTransactionStatus = 'completed' | 'voided'
 // 'charge' is no longer selectable from checkout (dropped in favor of Pay
 // Now/Installment) — kept in the type only because historical transactions
 // still carry it.
-export type PosInvoiceType = 'cash' | 'charge' | 'installment'
+/** Mirrors the Prisma PosInvoiceType enum. 'charge' is retired from checkout
+ * but kept for historical rows; 'mixed' is PosTransaction-level only — set when
+ * a cart's lines don't all agree on one mode — and is never a line's own value. */
+export type PosInvoiceType = 'cash' | 'charge' | 'installment' | 'mixed'
 // 'gcash'/'maya' are no longer offered from checkout (superseded by 'qr',
 // Scenario 37) — kept in the type only because historical transactions still
 // carry them.
@@ -200,6 +203,9 @@ export interface PosTransactionLine {
   invoiceType?: PosInvoiceType
   installmentProvider?: InstallmentProvider | null
   payNowMethod?: PayNowMethod | null
+  /** Resolved from this line's own financingTerm — only set on installment
+   * lines, and only by endpoints that include it (findOne, getCustomerHistory). */
+  termMonths?: number | null
 }
 
 export interface PosPayment {
@@ -278,15 +284,24 @@ export interface CustomerHistoryPayment {
 
 export type CustomerHistoryItem = ({ kind: 'SALE' } & PosTransaction) | CustomerHistoryPayment
 
-// Scenario 23 Gap 1 — every invoice a transaction produced (the charge
-// invoice, and/or each installment schedule's per-due-date invoices),
-// flattened into one list for the transaction detail screen. `source`
-// distinguishes the two cases; lineNumber/totalLines/termMonths are only
-// set for installment-sourced rows.
+// Scenario 23 Gap 1 — what a transaction left the customer owing, one row
+// per thing they actually pay: a charge sale's single invoice, or one row per
+// DUE of each installment schedule. `source` distinguishes the two;
+// lineNumber/totalLines/termMonths are only set for installment rows.
+//
+// An installment row is a DUE, not an invoice — Scenario 47 made a whole
+// installment sale one receivable, and these are the InstallmentScheduleLine
+// rows hanging off it. `invoiceNumber` is therefore shared by every due of a
+// plan and cannot identify a row; `id` (the due's own) can.
 export interface PosTransactionInvoice {
   id: string
   invoiceNumber: string
+  /** The due's own date. NOT the receivable's, which AR keeps pointed at the
+   * earliest still-unpaid due and so reads the same on every row. */
   dueDate: string
+  /** The due's own amount — one month. The contract total (down payment +
+   * total payable) is deliberately not surfaced here; it lives in AR and in
+   * Customer 360's plan modal. */
   totalAmount: number
   amountPaid: number
   status: string
@@ -983,9 +998,21 @@ export interface ComputeInstallmentPreviewInput {
 }
 
 export interface InstallmentScheduleLineWithInvoice {
+  /** Per-due identity. A plan's dues all hang off ONE ARInvoice now (the
+   * receivable for the whole sale), so arInvoice.id no longer tells one due
+   * apart from another — anything keyed per due (selection, React keys) has
+   * to use this. */
+  id: string
   lineNumber: number
   dueDate: string
   amount: number
+  /** Per-due settlement state, advanced by ARInvoicesService's oldest-due-
+   * first allocation as collections come in. The shared invoice's own
+   * amountPaid/totalAmount/status are plan-wide (and its totalAmount includes
+   * the down payment), so per-due "how much of this month is paid" can only
+   * be read here. */
+  paidAmount: number
+  settledAt: string | null
   arInvoice: {
     id: string
     invoiceNumber: string

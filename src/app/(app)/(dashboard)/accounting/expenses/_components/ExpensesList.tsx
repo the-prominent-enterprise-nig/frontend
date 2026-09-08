@@ -14,6 +14,7 @@ import {
   Printer,
   Eye,
 } from 'lucide-react'
+import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
@@ -113,7 +114,6 @@ export default function ExpensesList() {
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [branches, setBranches] = useState<BranchLite[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [printingFor, setPrintingFor] = useState<string | null>(null)
 
   const expenseAccounts = accounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE')
 
@@ -174,15 +174,46 @@ export default function ExpensesList() {
     if (!res.success) alert(res.message || res.error || 'Void failed')
     load()
   }
+  // Collapsed into one overflow menu rather than six icon buttons, the way
+  // AP Bills already does it — the icons alone never said which was Record
+  // and which was Void, and half the row's width went on actions.
+  const rowMenu = (x: BusinessExpense): RowMenuItem[] => [
+    { label: 'View', icon: Eye, onClick: () => router.push(`/accounting/expenses/${x.id}`) },
+    { label: 'Print voucher', icon: Printer, onClick: () => printVoucher(x.id) },
+    ...(x.status === 'DRAFT'
+      ? [
+          {
+            label: 'Record',
+            icon: CheckCircle,
+            onClick: () => record(x.id),
+            variant: 'success' as const,
+          },
+        ]
+      : []),
+    ...(x.status === 'RECORDED'
+      ? [{ label: 'Void — reverses JE', icon: Ban, onClick: () => voidExpense(x.id) }]
+      : []),
+    ...(x.status === 'DRAFT'
+      ? [
+          {
+            label: 'Edit',
+            icon: Pencil,
+            onClick: () => router.push(`/accounting/expenses/${x.id}/edit`),
+          },
+          {
+            label: 'Delete',
+            icon: Trash2,
+            onClick: () => del(x.id),
+            variant: 'danger' as const,
+          },
+        ]
+      : []),
+  ]
+
   const printVoucher = async (id: string) => {
-    setPrintingFor(id)
-    try {
-      const res = await Expenses.getDocument(id)
-      if (res.success && res.data) printExpenseVoucherDocument(res.data)
-      else alert(res.message || res.error || 'Could not build the voucher')
-    } finally {
-      setPrintingFor(null)
-    }
+    const res = await Expenses.getDocument(id)
+    if (res.success && res.data) printExpenseVoucherDocument(res.data)
+    else alert(res.message || res.error || 'Could not build the voucher')
   }
 
   return (
@@ -336,56 +367,8 @@ export default function ExpensesList() {
                       the bubble so a Delete/Record press doesn't also open
                       the detail page behind the confirm dialog. */}
                   <td className="px-3 py-2 text-right" onClick={(ev) => ev.stopPropagation()}>
-                    <div className="flex justify-end gap-1">
-                      <Link
-                        href={`/accounting/expenses/${x.id}`}
-                        title="View"
-                        className="p-1.5 text-gray-600 hover:bg-gray-100 rounded"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
-                      <button
-                        onClick={() => printVoucher(x.id)}
-                        disabled={printingFor === x.id}
-                        title="Print voucher"
-                        className="p-1.5 text-zinc-600 hover:bg-zinc-100 rounded disabled:opacity-50"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                      {x.status === 'DRAFT' && (
-                        <button
-                          onClick={() => record(x.id)}
-                          title="Record — posts to GL"
-                          className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded"
-                        >
-                          <CheckCircle className="w-4 h-4" />
-                        </button>
-                      )}
-                      {x.status === 'RECORDED' && (
-                        <button
-                          onClick={() => voidExpense(x.id)}
-                          title="Void — reverses journal entry"
-                          className="p-1.5 text-amber-600 hover:bg-amber-50 rounded"
-                        >
-                          <Ban className="w-4 h-4" />
-                        </button>
-                      )}
-                      {x.status === 'DRAFT' && (
-                        <>
-                          <Link
-                            href={`/accounting/expenses/${x.id}/edit`}
-                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Link>
-                          <button
-                            onClick={() => del(x.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
+                    <div className="flex justify-end">
+                      <RowActionsMenu items={rowMenu(x)} />
                     </div>
                   </td>
                 </tr>

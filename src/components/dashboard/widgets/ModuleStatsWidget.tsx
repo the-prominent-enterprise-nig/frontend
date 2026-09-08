@@ -10,7 +10,7 @@ import {
   type ReorderAlertByWarehouse,
 } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
 import { ARInvoices, APBills } from '@/src/libs/data/AccountingV2Data'
-import { leadsApi, customersApi } from '@/src/libs/api/crm'
+import { customersApi } from '@/src/libs/api/crm'
 import { api } from '@/src/libs/api/client'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
@@ -89,7 +89,6 @@ export default function ModuleStatsWidget() {
   const [crmStats, setCrmStats] = useState<ModuleStat[]>([
     { label: 'Customers', value: '—' },
     { label: 'New This Month', value: '—' },
-    { label: 'Active Leads', value: '—' },
   ])
 
   const branchId = usePosBranchContext((s) => s.branchId)
@@ -98,16 +97,14 @@ export default function ModuleStatsWidget() {
     let cancelled = false
     ;(async () => {
       const { dateFrom, dateTo } = todayRange()
-      const [txRes, inventoryAlerts, itemsRes, arRes, apRes, customersRes, leadsRes] =
-        await Promise.all([
-          getTransactions({ dateFrom, dateTo, branchId: branchId ?? undefined }),
-          loadInventoryAlerts(branchId),
-          api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
-          ARInvoices.list(),
-          APBills.list(),
-          customersApi.list({ limit: 200 }),
-          leadsApi.list({ limit: 200 }),
-        ])
+      const [txRes, inventoryAlerts, itemsRes, arRes, apRes, customersRes] = await Promise.all([
+        getTransactions({ dateFrom, dateTo, branchId: branchId ?? undefined }),
+        loadInventoryAlerts(branchId),
+        api.get<{ meta?: { total?: number } }>('/inventory/items', { limit: 1 }),
+        ARInvoices.list(),
+        APBills.list(),
+        customersApi.list({ limit: 200 }),
+      ])
       if (cancelled) return
 
       // POS
@@ -161,11 +158,9 @@ export default function ModuleStatsWidget() {
       const newThisMonth = (customersRes.data?.data ?? []).filter(
         (c) => new Date(c.createdAt).getTime() >= monthStart.getTime()
       ).length
-      const activeLeads = (leadsRes.data?.data ?? []).filter((l) => l.status === 'active').length
       setCrmStats([
         { label: 'Customers', value: totalCustomers },
         { label: 'New This Month', value: newThisMonth },
-        { label: 'Active Leads', value: activeLeads },
       ])
     })()
     return () => {

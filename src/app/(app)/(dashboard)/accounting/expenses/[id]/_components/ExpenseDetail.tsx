@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Pencil, Printer } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Trash2 } from 'lucide-react'
 import { Expenses, fmtMoney, type ExpenseDocument } from '@/src/libs/data/AccountingV2Data'
+import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 
 // Mirrors ExpensesList's own STATUS_STYLES — kept local rather than imported
@@ -58,18 +60,51 @@ export default function ExpenseDetail({ id }: { id: string }) {
   const [doc, setDoc] = useState<ExpenseDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+
+  // The document envelope is a superset of GET /expenses/:id — it resolves
+  // the weak cross-module ids (item, supplier invoice, bank) into names and
+  // adds the enterprise letterhead — so one fetch backs both this view and
+  // the Print button.
+  //
+  // Split into "fetch" and "apply" so the effect below only ever kicks off a
+  // promise: calling a state-setting function straight from an effect is what
+  // react-hooks/set-state-in-effect flags.
+  const apply = useCallback((res: Awaited<ReturnType<typeof Expenses.getDocument>>) => {
+    if (res.success && res.data) setDoc(res.data)
+    else setError(res.error ?? 'Expense not found')
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    // The document envelope is a superset of GET /expenses/:id — it resolves
-    // the weak cross-module ids (item, supplier invoice, bank) into names and
-    // adds the enterprise letterhead — so one fetch backs both this view and
-    // the Print button.
-    Expenses.getDocument(id).then((res) => {
-      if (res.success && res.data) setDoc(res.data)
-      else setError(res.error ?? 'Expense not found')
-      setLoading(false)
-    })
-  }, [id])
+    Expenses.getDocument(id).then(apply)
+  }, [id, apply])
+
+  /** Re-reads the expense after an action changes its status. */
+  const load = () => Expenses.getDocument(id).then(apply)
+
+  // Record, Void and Delete were reachable only from the list — landing on
+  // an expense meant going back to act on it. Same actions, same wording and
+  // the same confirmations the list uses.
+  const record = async () => {
+    const res = await Expenses.record(id)
+    if (!res.success)
+      alert(res.message || res.error || 'Record failed — check Account Mapping settings')
+    await load()
+  }
+  const voidExpense = async () => {
+    if (!confirm('Void this expense? Its journal entry will be reversed.')) return
+    const res = await Expenses.void(id)
+    if (!res.success) alert(res.message || res.error || 'Void failed')
+    await load()
+  }
+  const del = async () => {
+    if (!confirm('Delete expense?')) return
+    const res = await Expenses.remove(id)
+    if (!res.success) return alert(res.message || res.error || 'Delete failed')
+    // Nothing left to show here.
+    router.push('/accounting/expenses')
+  }
 
   if (loading) {
     return (
@@ -94,6 +129,26 @@ export default function ExpenseDetail({ id }: { id: string }) {
   }
 
   const e = doc.document
+
+  // Mirrors the list row's menu, minus Print (the primary button above) and
+  // View (this is it), so the same expense offers the same actions wherever
+  // it is looked at.
+  const menuItems: RowMenuItem[] = [
+    ...(e.status === 'DRAFT'
+      ? [
+          { label: 'Record', icon: CheckCircle, onClick: record, variant: 'success' as const },
+          {
+            label: 'Edit',
+            icon: Pencil,
+            onClick: () => router.push(`/accounting/expenses/${id}/edit`),
+          },
+          { label: 'Delete', icon: Trash2, onClick: del, variant: 'danger' as const },
+        ]
+      : []),
+    ...(e.status === 'RECORDED'
+      ? [{ label: 'Void — reverses JE', icon: Ban, onClick: voidExpense }]
+      : []),
+  ]
   // Item/Qty/Unit price only ever apply to a Supplier entry (see the form's
   // ITEM_MODE_GRID_COLS) — every other payee type records account + amount
   // alone, so those columns are dropped rather than printed as three dashes.
@@ -113,20 +168,13 @@ export default function ExpenseDetail({ id }: { id: string }) {
           <ArrowLeft className="h-4 w-4" /> Back to Expenses
         </Link>
         <div className="flex items-center gap-2">
-          {e.status === 'DRAFT' && (
-            <Link
-              href={`/accounting/expenses/${id}/edit`}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-purple-700 shadow-sm hover:bg-purple-50"
-            >
-              <Pencil className="h-4 w-4" /> Edit
-            </Link>
-          )}
           <button
             onClick={() => printExpenseVoucherDocument(doc)}
             className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
           >
             <Printer className="h-4 w-4" /> Print voucher
           </button>
+          <RowActionsMenu items={menuItems} />
         </div>
       </div>
 

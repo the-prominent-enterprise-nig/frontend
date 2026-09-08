@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Plus, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Loader2, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Expenses,
   APBillSuppliers,
@@ -36,6 +36,7 @@ import {
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
 import { importSpreadsheetLines, type ImportResult } from './importSpreadsheetLines'
+import { SpecialAccountPicker } from './SpecialAccountPicker'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 
@@ -70,21 +71,40 @@ const TAX_CODE_OPTIONS = [
   { value: 'EXEMPT', label: 'Exempt' },
 ]
 
-/**
- * Whether a line is carried against a named person — an advance, a loan, a
- * receivable. Which account it sits under is whatever the Account picker
- * chose: that account IS the person's control account. It used to be a
- * list of types, which offered a different set of accounts than the picker
- * beside it and would silently override the picked one.
- */
-const SPECIAL_ACCOUNT_CHOICES = [
-  { value: '', label: 'No' },
-  { value: 'yes', label: 'Yes' },
-] as const
-
 /** The one code that carries a claimable tax amount — everything else is,
  * by definition, a line with no VAT on it. */
 const TAXABLE_CODE = 'VAT'
+
+/**
+ * Payroll lives at Payee → Other with this typed into Other Category, and
+ * nothing else in the app turns those columns on. Matching the typed word
+ * rather than offering a dropdown is deliberate: Other Category stays the
+ * free-text box it has always been, and `PAYROLL` is a real backend
+ * otherCategory, so the word the clerk types is what gets stored.
+ *
+ * Interim: a spreadsheet import parked under a category, until payroll gets
+ * a screen of its own.
+ */
+/** The one Category worth recording today — it marks an entry as a payroll
+ * run. It changes no fields; see OTHER_CATEGORY_OPTIONS. */
+const PAYROLL_CATEGORY = 'PAYROLL'
+
+/**
+ * Payee → Other's sub-choice. It marks what the entry *is* — so a payroll
+ * run can be told apart from any other Other expense later — and nothing
+ * more: both categories get identical fields, because the columns are
+ * driven by the account on each line, not by the header.
+ *
+ * UTILITIES and SALARIES_WAGES are real backend categories left out
+ * deliberately: they only ever prefilled a default line account, which the
+ * Account picker does directly. SPECIAL_ACCOUNTS is out too — it needs a
+ * specialAccountType this screen has no picker for, so offering it would
+ * only produce a rejected save.
+ */
+const OTHER_CATEGORY_OPTIONS = [
+  { value: '', label: '— None —' },
+  { value: PAYROLL_CATEGORY, label: 'Payroll' },
+]
 
 /** VAT a line attracts, derived from its code rather than typed. The server
  * computes the same figure from the same code and ignores any amount sent
@@ -99,18 +119,15 @@ function vatFor(line: { taxCode: string; amount: string }): number {
 
 interface LineState {
   categoryAccountId: string
-  /** Who this line is for, by name. Payroll reads "name / department" — the
-   * name per line, the department fixed at the header — and it is also what
-   * ties an advance or loan recovery back to the person's outstanding
-   * balance, which the server matches on the typed name. Generic-mode lines
-   * only; an inventory purchase line has no recipient. */
+  /** Which named balance this line belongs to, under its own account —
+   * a person for an advance or a loan, a project for capital expenditure.
+   * Stored as free text and matched by name, which is what ties a recovery
+   * back to that balance. Only meaningful on an account that keeps a
+   * subsidiary ledger; `isSpecialAccount` is derived from it on submit. */
   payee: string
   /** The Division picker's value — `branch:<id>` or `department:<id>`,
    * unpacked into the two ids the API takes on submit. */
   division: string
-  /** Carried against a named person. The Account picker says under which
-   * control account; `payee` is who. */
-  isSpecialAccount: boolean
   /** Which customer this line collects from, when it is a payroll
    * deduction of their monthly instalment. Recording the expense settles
    * their instalment dues; blank means it settles nobody's. */
@@ -137,7 +154,6 @@ function emptyLine(): LineState {
     categoryAccountId: '',
     payee: '',
     division: '',
-    isSpecialAccount: false,
     collectFromId: '',
     collectFromLabel: '',
     description: '',
@@ -175,7 +191,11 @@ function emptyPayment(): PaymentState {
 const ITEM_MODE_GRID_COLS =
   'grid-cols-[minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
 const GENERIC_MODE_GRID_COLS =
-  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
+  'grid-cols-[minmax(0,2fr)_minmax(0,2.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+// Payee → Other's shape: the generic one plus Special Account and Division.
+// A Customer, Supplier or Employee expense has no use for either.
+const OTHER_MODE_GRID_COLS =
+  'grid-cols-[minmax(0,1.7fr)_minmax(0,1.8fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto]'
 
 // Accounts come back flat (with a parentId) ordered by account number — turn
 // that into the depth-ordered list CategorySelect needs so headers like
@@ -353,6 +373,7 @@ function ExpenseFormFields({
       ? [initial.employee.firstName, initial.employee.lastName].filter(Boolean).join(' ')
       : '',
     payee: initial?.payee ?? '',
+    otherCategory: initial?.otherCategory ?? '',
     description: initial?.description ?? '',
   })
   const [payments, setPayments] = useState<PaymentState[]>(
@@ -371,7 +392,6 @@ function ExpenseFormFields({
           categoryAccountId: l.categoryAccountId ?? '',
           payee: l.payee || (l.employee ? `${l.employee.firstName} ${l.employee.lastName}` : ''),
           division: divisionValueFor(l),
-          isSpecialAccount: Boolean((l as any).isSpecialAccount),
           collectFromId: (l as any).customerId ?? '',
           collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
@@ -436,7 +456,6 @@ function ExpenseFormFields({
         result.lines.map((l) => ({
           ...emptyLine(),
           categoryAccountId: l.categoryAccountId,
-          isSpecialAccount: Boolean(l.specialAccountType),
           collectFromId: l.collectFromId,
           collectFromLabel: l.collectFromLabel,
           division: l.division,
@@ -458,7 +477,21 @@ function ExpenseFormFields({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // An ordinary expense line posts to an expense account, which is all this
+  // picker ever offered. Payroll is the one exception below.
+  const expenseAccounts = useMemo(
+    () => postableAccounts.filter((a) => (a.type ?? '').toUpperCase() === 'EXPENSE'),
+    [postableAccounts]
+  )
   const categoryOptions = useMemo(
+    () => accountsToCategoryOptions(expenseAccounts),
+    [expenseAccounts]
+  )
+  // Payee → Other only. These entries credit assets and liabilities as well
+  // as debiting expense — a payroll run touches the receivable and both
+  // statutory payables — so they need the full postable list. Widening it
+  // for every expense made the picker unusable.
+  const ledgerCategoryOptions = useMemo(
     () => accountsToCategoryOptions(postableAccounts),
     [postableAccounts]
   )
@@ -466,8 +499,8 @@ function ExpenseFormFields({
   // Asset accounts there too, on top of the usual Expense ones. Every other
   // payee type stays Expense-only (categoryOptions above).
   const supplierCategoryOptions = useMemo(
-    () => accountsToCategoryOptions([...postableAccounts, ...inventoryAccounts]),
-    [postableAccounts, inventoryAccounts]
+    () => accountsToCategoryOptions([...expenseAccounts, ...inventoryAccounts]),
+    [expenseAccounts, inventoryAccounts]
   )
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
@@ -504,6 +537,27 @@ function ExpenseFormFields({
   // purchase, so it's the only one that gets an Item/Qty/Unit Price line
   // shape. Everyone else just types a flat Amount.
   const isItemMode = form.payeeType === 'SUPPLIER'
+  // Payee -> Other -> "Payroll". The spreadsheet import and the Special
+  // Account / Name / Division columns exist for a payroll run and nothing
+  // else, so they are rendered here and nowhere else.
+  // Payee → Other is what turns on the ledger columns — Special Account,
+  // Division, the spreadsheet import, negative amounts. Not the Category:
+  // both categories get identical fields, and whether a given line has a
+  // Special Account to pick is decided by its own account. Category only
+  // records what the entry is.
+  const isOtherMode = form.payeeType === 'OTHER'
+  // The one thing Category does change. The importer reads a payroll
+  // disbursement sheet specifically — its column order, its summary rows,
+  // its region suffixes — so offering it on any other Other expense invites
+  // a file it has no way to understand.
+  const isPayrollCategory = isOtherMode && form.otherCategory === PAYROLL_CATEGORY
+  // Accounts that keep one balance per named person or project. Only a line
+  // posting to one of these has a Special Account to pick; everywhere else
+  // the account total is the whole story.
+  const specialAccountControlIds = useMemo(
+    () => new Set(postableAccounts.filter((a) => a.isSpecialAccountControl).map((a) => a.id)),
+    [postableAccounts]
+  )
   // Supplier line-category default (Settings → Account Mapping) — used when
   // a picked Item has no inventory account of its own, or no Item is
   // picked yet at all.
@@ -654,6 +708,21 @@ function ExpenseFormFields({
   const addPayment = () => setPayments((prev) => [...prev, emptyPayment()])
   const removePayment = (index: number) => setPayments((prev) => prev.filter((_, i) => i !== index))
   const paymentsTotal = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  // The figure every payment has to add up to, repeated beside the payment
+  // rows because that is where it gets typed — the totals block sits below
+  // hundreds of imported lines, well off screen by then. Rendered unformatted
+  // so it pastes straight into the Amount box, and `select-all` makes one
+  // click take the whole number.
+  const [copiedTotal, setCopiedTotal] = useState(false)
+  const copyTotal = async () => {
+    try {
+      await navigator.clipboard.writeText(total.toFixed(2))
+      setCopiedTotal(true)
+      setTimeout(() => setCopiedTotal(false), 1500)
+    } catch {
+      // Clipboard can be blocked; the number is selectable either way.
+    }
+  }
 
   const validate = (): string | null => {
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
@@ -670,20 +739,24 @@ function ExpenseFormFields({
     if (form.payeeType === 'CUSTOMER' && !form.customerId) return 'Pick a customer.'
     if (form.payeeType === 'EMPLOYEE' && !form.employeeId) return 'Pick an employee.'
     if (form.payeeType === 'OTHER' && !form.payee.trim())
-      return 'Describe what this Other expense is for.'
+      return 'Name the payee — who the money went to.'
     if (lines.length === 0) return 'Add at least one line.'
     for (const l of lines) {
-      if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
-        return 'Every line needs an amount — positive to add, negative to deduct.'
+      // Only a Payee → Other entry deducts (a payroll withholding, an advance
+      // taken back). Elsewhere a line is money going out, so a negative is a
+      // mis-key.
+      if (isOtherMode) {
+        if (l.amount === '' || !Number.isFinite(Number(l.amount)) || Number(l.amount) === 0)
+          return 'Every line needs an amount — positive to add, negative to deduct.'
+      } else if (!l.amount || Number(l.amount) <= 0) {
+        return 'Every line needs an amount greater than 0.'
+      }
       if (!l.categoryAccountId) return 'Every line needs an account.'
-      // The name is what the balance is carried against, and what ties an
-      // advance or loan back to that person later.
-      if (l.isSpecialAccount && !l.payee.trim())
-        return 'A Special Account line needs a name — it is who the balance is for.'
     }
     // The entry as a whole has to be money going out: record() credits cash
     // for the total, and deductions exceeding what they deduct from is a
-    // mis-key. The server rejects it too.
+    // mis-key. The server rejects it too. Unreachable off payroll, where
+    // every line is already required to be positive.
     if (total <= 0) return 'Deductions cannot meet or exceed the amounts they deduct from.'
     return null
   }
@@ -712,16 +785,19 @@ function ExpenseFormFields({
       reference: p.reference || undefined,
       amount: Number(p.amount),
     }))
+    // The one document number for the whole entry, whoever it was paid to.
+    payload.voucherNumber = form.voucherNumber || undefined
     if (form.payeeType === 'CUSTOMER') {
       payload.customerId = form.customerId
     } else if (form.payeeType === 'EMPLOYEE') {
       payload.employeeId = form.employeeId
     } else if (form.payeeType === 'SUPPLIER') {
       payload.supplierId = form.supplierId || undefined
-      payload.voucherNumber = form.voucherNumber || undefined
     } else {
-      // OTHER's free-text payee label — it's the only field OTHER shows at all.
+      // The payee's own name — "NIG EMPLOYEES" on the client's payroll
+      // voucher, and what the printed voucher shows as the payee.
       payload.payee = form.payee || undefined
+      payload.otherCategory = form.otherCategory || undefined
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
@@ -730,14 +806,20 @@ function ExpenseFormFields({
         taxCode: l.taxCode || undefined,
       }
       line.categoryAccountId = l.categoryAccountId
-      if (l.isSpecialAccount) line.isSpecialAccount = true
-      // Only a deduction can collect — a positive line would be issuing
-      // money, not receiving it.
-      if (l.collectFromId && Number(l.amount) < 0) line.customerId = l.collectFromId
-      // Only generic-mode lines carry a recipient or a division — an
-      // inventory purchase line has neither, and neither column is rendered.
-      if (!isItemMode) {
-        if (l.payee.trim()) line.payee = l.payee.trim()
+      // Special Account, Division, and the customer a deduction collects from
+      // belong to Payee → Other alone. Nothing else renders them, so nothing
+      // else sends them — any value left in state from a payee type that was
+      // since changed is dropped here.
+      if (isOtherMode) {
+        // Only a deduction can collect — a positive line would be issuing
+        // money, not receiving it.
+        if (l.collectFromId && Number(l.amount) < 0) line.customerId = l.collectFromId
+        if (l.payee.trim()) {
+          line.payee = l.payee.trim()
+          // Derived, not stored separately: a name under a control account
+          // IS a special-account line. The two can no longer disagree.
+          if (specialAccountControlIds.has(l.categoryAccountId)) line.isSpecialAccount = true
+        }
         Object.assign(line, divisionIdsFor(l.division))
       }
       if (isItemMode && l.itemId) {
@@ -905,7 +987,7 @@ function ExpenseFormFields({
               )}
             </div>
           ))}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <button
               type="button"
               onClick={addPayment}
@@ -913,22 +995,51 @@ function ExpenseFormFields({
             >
               <Plus className="w-4 h-4" /> Add payment method
             </button>
-            {payments.length > 1 && (
-              <span
-                className={`text-xs ${Math.abs(paymentsTotal - total) > 0.01 ? 'text-amber-600' : 'text-zinc-400'}`}
-              >
-                Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(total)}
-              </span>
-            )}
+            <div className="flex items-center gap-3">
+              {payments.length > 1 && (
+                <span
+                  className={`text-xs ${Math.abs(paymentsTotal - total) > 0.01 ? 'text-amber-600' : 'text-zinc-400'}`}
+                >
+                  Payments total: {fmtMoney(paymentsTotal)} / {fmtMoney(total)}
+                </span>
+              )}
+              {total > 0 && (
+                <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  Amount total
+                  <span className="select-all font-medium tabular-nums text-zinc-700">
+                    {total.toFixed(2)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyTotal}
+                    aria-label="Copy amount total"
+                    title="Copy — paste into Amount"
+                    className="rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+                  >
+                    {copiedTotal ? (
+                      <Check className="h-3.5 w-3.5 text-green-600" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div
-          className={`grid gap-3 ${form.payeeType === 'OTHER' ? 'grid-cols-2 max-w-md' : 'max-w-xs'}`}
+          className={`grid gap-3 ${
+            form.payeeType === 'OTHER' ? 'grid-cols-4 max-w-4xl' : 'grid-cols-2 max-w-md'
+          }`}
         >
-          <Field label="Payee *">
+          {/* Unlabelled when the free-text Payee sits beside it — that box
+              carries the label for the pair, the way the client's own screen
+              reads "Contact | Other | NIG EMPLOYEES". */}
+          <Field label={form.payeeType === 'OTHER' ? '' : 'Payee *'}>
             <Select
               compact
+              aria-label="Payee type"
               value={form.payeeType}
               onChange={(value) => {
                 setForm({
@@ -937,10 +1048,10 @@ function ExpenseFormFields({
                   customerId: '',
                   customerLabel: '',
                   supplierId: '',
-                  voucherNumber: '',
                   employeeId: '',
                   employeeLabel: '',
                   payee: '',
+                  otherCategory: '',
                 })
                 resetLinesForPayeeChange()
               }}
@@ -950,14 +1061,41 @@ function ExpenseFormFields({
           </Field>
 
           {form.payeeType === 'OTHER' && (
-            <Field label="Other Category *">
-              <input
-                value={form.payee}
-                onChange={(e) => setForm({ ...form, payee: e.target.value })}
-                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-              />
-            </Field>
+            <>
+              {/* Who the money went to. Not a category — this is the name
+                  the printed voucher shows as the payee. */}
+              <Field label="Payee *">
+                <input
+                  value={form.payee}
+                  onChange={(e) => setForm({ ...form, payee: e.target.value })}
+                  placeholder="e.g. NIG EMPLOYEES"
+                  className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                />
+              </Field>
+              <Field label="Category">
+                <Select
+                  compact
+                  aria-label="Other category"
+                  value={form.otherCategory}
+                  onChange={(otherCategory) => setForm({ ...form, otherCategory })}
+                  options={OTHER_CATEGORY_OPTIONS}
+                />
+              </Field>
+            </>
           )}
+          {/* The printed voucher's "VOUCHER #" — the one document number for
+              the whole entry, distinct from each payment's own Reference
+              (the client's payroll voucher carries UB#0826-P2 against a
+              reference of UB#0826-02P). Optional, and offered for every
+              payee type: any disbursement can be raised against a voucher,
+              not just a supplier's. */}
+          <Field label="Voucher #">
+            <input
+              value={form.voucherNumber}
+              onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
+              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          </Field>
         </div>
 
         {form.payeeType === 'CUSTOMER' && (
@@ -991,7 +1129,7 @@ function ExpenseFormFields({
         )}
 
         {form.payeeType === 'SUPPLIER' && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="max-w-md">
             <Field label="Supplier">
               <CategorySelect
                 compact
@@ -1003,15 +1141,16 @@ function ExpenseFormFields({
                 placeholder="— None —"
               />
             </Field>
-            <Field label="Voucher #">
-              <input
-                value={form.voucherNumber}
-                onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
-                className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-              />
-            </Field>
           </div>
         )}
+
+        <Field label="Description">
+          <input
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+          />
+        </Field>
 
         {/* Line items — Scenario 40 Part 6. Supplier is the only payee type
             that can be a real inventory purchase, so it's the only one that
@@ -1021,7 +1160,11 @@ function ExpenseFormFields({
           <div className="pt-2">
             <div
               className={`grid gap-2 rounded-lg bg-zinc-50 py-1.5 text-xs font-medium text-zinc-500 ${
-                isItemMode ? ITEM_MODE_GRID_COLS : GENERIC_MODE_GRID_COLS
+                isItemMode
+                  ? ITEM_MODE_GRID_COLS
+                  : isOtherMode
+                    ? OTHER_MODE_GRID_COLS
+                    : GENERIC_MODE_GRID_COLS
               }`}
             >
               {isItemMode && (
@@ -1031,17 +1174,14 @@ function ExpenseFormFields({
                 </>
               )}
               <div>Account</div>
-              {!isItemMode && <div>Special Account</div>}
+              {isOtherMode && <div>Special Account</div>}
               {isItemMode ? (
                 <>
                   <div>Qty</div>
                   <div>Unit Price</div>
                 </>
               ) : (
-                <>
-                  <div>Name</div>
-                  <div>Description</div>
-                </>
+                <div>Description</div>
               )}
               <div>Amount</div>
               <div>Tax Code</div>
@@ -1049,7 +1189,7 @@ function ExpenseFormFields({
               <div>Total</div>
               {/* One pick from the branches and departments list — per line,
                   because a payroll run spans every department it pays. */}
-              {!isItemMode && <div>Division</div>}
+              {isOtherMode && <div>Division</div>}
               <div />
             </div>
             <div className="divide-y divide-zinc-100">
@@ -1059,7 +1199,11 @@ function ExpenseFormFields({
                   <div
                     key={i}
                     className={`grid gap-2 items-center py-1.5 ${
-                      isItemMode ? ITEM_MODE_GRID_COLS : GENERIC_MODE_GRID_COLS
+                      isItemMode
+                        ? ITEM_MODE_GRID_COLS
+                        : isOtherMode
+                          ? OTHER_MODE_GRID_COLS
+                          : GENERIC_MODE_GRID_COLS
                     }`}
                   >
                     {isItemMode && (
@@ -1111,29 +1255,43 @@ function ExpenseFormFields({
                         />
                       </>
                     )}
-                    {
-                      <CategorySelect
-                        compact
-                        aria-label="Account"
-                        noun="accounts"
-                        value={line.categoryAccountId}
-                        onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
-                        options={isItemMode ? supplierCategoryOptions : categoryOptions}
-                        placeholder="— Select —"
-                      />
-                    }
-                    {/* Yes when the balance is carried against the named
-                        person, whichever control account the picker chose. */}
-                    {!isItemMode && (
-                      <Select
-                        compact
-                        value={line.isSpecialAccount ? 'yes' : ''}
-                        onChange={(value) => setLine(i, { isSpecialAccount: value === 'yes' })}
-                        options={SPECIAL_ACCOUNT_CHOICES.map((o) => ({
-                          value: o.value,
-                          label: o.label,
-                        }))}
-                      />
+                    <CategorySelect
+                      compact
+                      aria-label="Account"
+                      noun="accounts"
+                      value={line.categoryAccountId}
+                      onChange={(id) => setLine(i, { categoryAccountId: id ?? '' })}
+                      options={
+                        isItemMode
+                          ? supplierCategoryOptions
+                          : isOtherMode
+                            ? ledgerCategoryOptions
+                            : categoryOptions
+                      }
+                      placeholder="— Select —"
+                    />
+                    {/* Which named balance the line belongs to, under whichever
+                        control account the Account picker chose. Inert on an
+                        account that keeps no such ledger. */}
+                    {isOtherMode && (
+                      <div className="min-w-0">
+                        <SpecialAccountPicker
+                          value={{
+                            name: line.payee,
+                            customerId: line.collectFromId,
+                            customerLabel: line.collectFromLabel,
+                          }}
+                          onChange={(v) =>
+                            setLine(i, {
+                              payee: v.name,
+                              collectFromId: v.customerId,
+                              collectFromLabel: v.customerLabel,
+                            })
+                          }
+                          accountId={line.categoryAccountId}
+                          disabled={!specialAccountControlIds.has(line.categoryAccountId)}
+                        />
+                      </div>
                     )}
                     {isItemMode ? (
                       <>
@@ -1157,55 +1315,22 @@ function ExpenseFormFields({
                         />
                       </>
                     ) : (
-                      <>
-                        <div className="min-w-0">
-                          <input
-                            aria-label="Name"
-                            value={line.payee}
-                            onChange={(e) => setLine(i, { payee: e.target.value })}
-                            placeholder={
-                              line.isSpecialAccount ? 'Name (required)' : 'Who this is for'
-                            }
-                            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                          />
-                          {/* Folded under the Name rather than given its own
-                            column: the typed name and the customer it was
-                            matched to read as a pair, so a wrong match is
-                            obvious. Only offered on a deduction — a positive
-                            line issues money rather than collecting it. */}
-                          {Number(line.amount) < 0 && (
-                            <div className="mt-1">
-                              <CustomerPicker
-                                compact
-                                value={line.collectFromId}
-                                selectedLabel={line.collectFromLabel}
-                                onChange={(collectFromId, collectFromLabel) =>
-                                  setLine(i, { collectFromId, collectFromLabel })
-                                }
-                              />
-                              {!line.collectFromId && (
-                                <p className="mt-0.5 text-[10px] text-zinc-400">
-                                  Collects from nobody — instalments stay unpaid
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <input
-                          aria-label="Line description"
-                          value={line.description}
-                          onChange={(e) => setLine(i, { description: e.target.value })}
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                        />
-                      </>
+                      <input
+                        aria-label="Line description"
+                        value={line.description}
+                        onChange={(e) => setLine(i, { description: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      />
                     )}
-                    {/* Negative deducts — the payroll disbursement sheet's
-                        Credit column (statutory withholding, an advance taken
-                        back out of pay). No min, so it stays typeable. */}
+                    {/* Payee → Other alone can go negative — a payroll
+                        sheet's Credit column (statutory withholding, an
+                        advance taken back out of pay), which needs no min to
+                        stay typeable. Every other payee keeps its floor. */}
                     <input
                       required
                       type="number"
                       step="0.01"
+                      min={isOtherMode ? undefined : '0.01'}
                       aria-label="Amount"
                       readOnly={isItemMode && !!line.itemId}
                       value={line.amount}
@@ -1240,7 +1365,7 @@ function ExpenseFormFields({
                     <div className="min-w-0 truncate px-2.5 py-1.5 text-[13px] text-zinc-600">
                       {fmtMoney(lineTotal)}
                     </div>
-                    {!isItemMode && (
+                    {isOtherMode && (
                       <Select
                         compact
                         value={line.division}
@@ -1267,88 +1392,107 @@ function ExpenseFormFields({
                 )
               })}
             </div>
-            {/* Import sits with Add line: both are ways of getting rows into
-                the table, and the imported rows are ordinary editable lines
-                once they land. */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                aria-label="Import lines from a spreadsheet"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) handleImport(file)
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importing}
-                className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
-              >
-                {importing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                {importing ? 'Reading…' : 'Import from spreadsheet'}
-              </button>
-              {/* Same affordance the inventory bulk-import modals offer: a
-                  template in the exact column order the parser reads, so
-                  nobody has to guess it from a tooltip. */}
-              <button
-                type="button"
-                onClick={() =>
-                  downloadCsv(
-                    'expense-lines-template.csv',
-                    ['Account', 'Particulars / Memo', 'Debit', 'Credit'],
-                    [
-                      ['Salaries and Wages', 'ACCOUNTING & FINANCE-NEGROS', 41008.47, ''],
-                      ['Employee Cash Advance', 'DELA CRUZ, JUAN', '', 2500],
-                    ]
-                  )
-                }
-                className="rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50"
-              >
-                Download template
-              </button>
-              <span className="text-[11px] text-zinc-400">
-                Account · Particulars · Debit · Credit — replaces the lines below
-              </span>
-            </div>
+            {/* Category = Payroll only. A 659-row disbursement sheet is the
+                reason this exists, and the parser is built around that
+                sheet's own shape; anything else is a handful of lines typed
+                straight in. */}
+            {isPayrollCategory && (
+              <>
+                {/* Import sits with Add line: both are ways of getting rows into
+                  the table, and the imported rows are ordinary editable lines
+                  once they land. */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    aria-label="Import lines from a spreadsheet"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) handleImport(file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={importing}
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+                  >
+                    {importing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    {importing ? 'Reading…' : 'Import from spreadsheet'}
+                  </button>
+                  {/* Same affordance the inventory bulk-import modals offer: a
+                    template in the exact column order the parser reads, so
+                    nobody has to guess it from a tooltip. */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        'expense-lines-template.csv',
+                        ['Account', 'Particulars / Memo', 'Debit', 'Credit'],
+                        [
+                          ['Salaries and Wages', 'ACCOUNTING & FINANCE-NEGROS', 41008.47, ''],
+                          ['Employee Cash Advance', 'DELA CRUZ, JUAN', '', 2500],
+                        ]
+                      )
+                    }
+                    className="rounded-lg px-2 py-1 text-[13px] text-prominent-purple-700 hover:bg-prominent-purple-50"
+                  >
+                    Download template
+                  </button>
+                  <span className="text-[11px] text-zinc-400">
+                    Account · Particulars · Debit · Credit — replaces the lines below
+                  </span>
+                </div>
 
-            {importResult && (
-              <div className="mt-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50/40 p-2.5 text-[12px] text-zinc-700">
-                <p className="font-medium">
-                  Imported {importResult.lines.length} of {importResult.rowsRead} rows.
-                </p>
-                {importResult.skippedSummaryRows.length > 0 && (
-                  <p className="mt-0.5 text-zinc-500">
-                    Skipped {importResult.skippedSummaryRows.join(', ')} — totals, not transactions.
-                    The payment above covers the cash side.
-                  </p>
+                {importResult && (
+                  <div className="mt-2 rounded-lg border border-prominent-purple-100 bg-prominent-purple-50/40 p-2.5 text-[12px] text-zinc-700">
+                    <p className="font-medium">
+                      Imported {importResult.lines.length} of {importResult.rowsRead} rows.
+                    </p>
+                    {importResult.skippedEmptyRows > 0 && (
+                      <p className="mt-0.5 text-zinc-500">
+                        {importResult.skippedEmptyRows} row(s) carried no amount — the sheet&apos;s
+                        own header row, and any row whose debit and credit cancel out.
+                      </p>
+                    )}
+                    {importResult.skippedSummaryRows.length > 0 && (
+                      <p className="mt-0.5 text-zinc-500">
+                        Skipped {importResult.skippedSummaryRows.join(', ')} — totals, not
+                        transactions. The payment above covers the cash side.
+                      </p>
+                    )}
+                    {importResult.unmatchedAccounts.length > 0 && (
+                      <p className="mt-0.5 text-amber-700">
+                        No matching account for {importResult.unmatchedAccounts.join(', ')} — those
+                        lines need an Account picked before saving.
+                      </p>
+                    )}
+                    {importResult.matchedCustomers > 0 && (
+                      <p className="mt-0.5 text-zinc-500">
+                        {importResult.matchedCustomers} deduction(s) matched a customer and will
+                        settle their instalments on save.
+                      </p>
+                    )}
+                    {importResult.unmatchedDivisions.length > 0 && (
+                      <p className="mt-0.5 text-zinc-500">
+                        {importResult.unmatchedDivisions.length} value(s) matched no Division and
+                        went to Description instead — check whether any is a division you are
+                        missing: {importResult.unmatchedDivisions.slice(0, 6).join(', ')}
+                        {importResult.unmatchedDivisions.length > 6 &&
+                          ` and ${importResult.unmatchedDivisions.length - 6} more`}
+                        . Names on advance and loan lines are not counted here — those are Special
+                        Accounts, not missed divisions.
+                      </p>
+                    )}
+                  </div>
                 )}
-                {importResult.unmatchedAccounts.length > 0 && (
-                  <p className="mt-0.5 text-amber-700">
-                    No matching account for {importResult.unmatchedAccounts.join(', ')} — those
-                    lines need an Account picked before saving.
-                  </p>
-                )}
-                {importResult.matchedCustomers > 0 && (
-                  <p className="mt-0.5 text-zinc-500">
-                    {importResult.matchedCustomers} deduction(s) matched a customer and will settle
-                    their instalments on save.
-                  </p>
-                )}
-                {importResult.unmatchedDivisions.length > 0 && (
-                  <p className="mt-0.5 text-zinc-500">
-                    {importResult.unmatchedDivisions.length} value(s) matched no branch or
-                    department and went to Description instead.
-                  </p>
-                )}
-              </div>
+              </>
             )}
 
             <button
@@ -1361,13 +1505,6 @@ function ExpenseFormFields({
           </div>
         )}
 
-        <Field label="Description">
-          <input
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-          />
-        </Field>
         <div className="space-y-0.5 text-right text-sm text-gray-600">
           {vatTotal > 0 && (
             <>
@@ -1412,7 +1549,10 @@ function ExpenseFormFields({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
+      {/* A deliberately unlabelled field still reserves the label's line —
+          the Payee type select has none (the Payee box beside it labels the
+          pair), and without this it rides up out of its row. */}
+      <span className="block text-xs font-medium text-gray-600 mb-1">{label || '\u00A0'}</span>
       {children}
     </label>
   )

@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { collectionReceiptHref } from '../receipts/view/_components/CollectionReceiptDetail'
 import {
   Plus,
   RefreshCw,
@@ -25,7 +24,6 @@ import {
   Search,
   User,
   Loader2,
-  Eye,
   ChevronRight,
 } from 'lucide-react'
 import {
@@ -36,7 +34,6 @@ import {
   type ARInvoice,
   type ARInvoiceCustomerResult,
   type ARPayment,
-  type ARReceiptListItem,
   type BankAccount,
   type PaymentMethod,
   PAYMENT_METHOD_OPTIONS,
@@ -57,17 +54,15 @@ import { SerialSearchCombobox } from '@/src/app/(app)/(dashboard)/inventory/tran
 import { getSerialNumbers } from '@/src/app/(app)/(dashboard)/inventory/serial-numbers/_actions/get-serial-numbers'
 import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import Tooltip from '@/src/components/ui/Tooltip'
-import CreditMemoDialog from '../../_shared/CreditMemoDialog'
-import DebitMemoDialog from '../../_shared/DebitMemoDialog'
 import Field from '../../_shared/Field'
 
-/** The sales invoice number off the physical SI booklet is this invoice's
- * identity everywhere it's shown to staff — it's what the customer's copy
- * says and what they quote on the phone. The generated INST-POS-… /
- * INV-… number is only a fallback, for a manually-created invoice with no
- * originating sale. Same rule the invoice detail sheet, the POS transaction
- * list and the Receipts rows in this file already follow. */
-const invoiceLabel = (i: ARInvoice) => i.posTransaction?.salesInvoiceNumber || i.invoiceNumber
+const INVOICE_STATUS_BADGE: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SENT: 'bg-blue-50 text-blue-700',
+  PARTIAL: 'bg-amber-50 text-amber-700',
+  OVERDUE: 'bg-red-50 text-red-700',
+  PAID: 'bg-emerald-50 text-emerald-700',
+}
 
 export default function ARInvoicesList({
   initialCustomerId,
@@ -82,9 +77,6 @@ export default function ARInvoicesList({
 } = {}) {
   const router = useRouter()
   const [items, setItems] = useState<ARInvoice[]>([])
-  // A customer's own payment receipts, merged into their due-invoice table
-  // below (there is no separate Receipts view any more — one table).
-  const [receipts, setReceipts] = useState<ARReceiptListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
   const [editing, setEditing] = useState<ARInvoice | null>(null)
@@ -119,22 +111,16 @@ export default function ARInvoicesList({
   const load = useCallback(async () => {
     setLoading(true)
     if (customerFilter) {
-      // A customer's due-invoice list also merges in their payment receipts
-      // (sorted together by date below) — paying across several dues in one
-      // shot should visibly show the one amount actually paid, not just the
-      // per-due fragments it settled.
-      const [invRes, rcptRes] = await Promise.all([
-        ARInvoices.list({
-          customerId: customerFilter,
-          ...(appliedSearch ? { search: appliedSearch } : {}),
-        }),
-        ARInvoices.listReceipts({
-          customerId: customerFilter,
-          ...(appliedSearch ? { search: appliedSearch } : {}),
-        }),
-      ])
+      // Invoices only. This list is the AR register — what is owed — and a
+      // collection is not a receivable, so it no longer gets a row here.
+      // Each payment lives on the invoice it settled, under that invoice's
+      // Payments / collections, and the money it moved is already visible
+      // in this row's own Paid/Outstanding columns.
+      const invRes = await ARInvoices.list({
+        customerId: customerFilter,
+        ...(appliedSearch ? { search: appliedSearch } : {}),
+      })
       setItems(invRes.data?.items ?? [])
-      setReceipts(rcptRes.data?.items ?? [])
     } else {
       // Customer-rollup landing view — every invoice tenant-wide (optionally
       // narrowed by search), grouped client-side by customer below.
@@ -229,72 +215,31 @@ export default function ARInvoicesList({
     return Array.from(map.values()).sort((a, b) => b.outstanding - a.outstanding)
   }, [items])
 
-  // A customer's due-invoice table, merged with their payment receipts —
-  // paying across several dues in one shot must show that one payment as
-  // its own line here (not just as fragments split across the dues it
-  // settled). Only built for the customer-filtered view; `receipts` is
-  // otherwise driven by the separate landingView==='receipts' tab.
-  type CustomerRow =
-    | { kind: 'invoice'; date: string; invoice: ARInvoice }
-    | { kind: 'payment'; date: string; receipt: ARReceiptListItem }
-  const customerRows = useMemo((): CustomerRow[] => {
+  // One customer's invoices, newest first. Payment receipts used to be
+  // merged in as their own rows, from when a plan was one invoice PER DUE
+  // and a single payment across several dues showed only as fragments split
+  // across those rows — a receipt row was the one place the real tendered
+  // amount appeared. A plan is one receivable now, so that payment lands on
+  // one invoice and is already legible in its Paid/Outstanding columns, with
+  // the receipts themselves on that invoice's detail page. Listing them here
+  // as well showed the same money twice, in a register of what is OWED.
+  const customerRows = useMemo(() => {
     if (!customerFilter) return []
-    return [
-      ...items.map((i): CustomerRow => ({ kind: 'invoice', date: i.invoiceDate, invoice: i })),
-      ...receipts
-        // Down payments never become an ARPayment — they're netted out of
-        // the financed principal before this schedule's due-date invoices
-        // even exist, so they were never applied to any row in this table.
-        // Listing them here would show money that settled none of these
-        // dues. (`source` is undefined on rows that predate the field —
-        // those are all real ARPayment-backed receipts, so keep them.)
-        .filter((r) => r.source !== 'down_payment')
-        .map((r): CustomerRow => ({ kind: 'payment', date: r.paymentDate, receipt: r })),
-    ].sort((a, b) => {
-      // Payments first, ranked by kind BEFORE date — deliberately not a
-      // chronological sort. CollectionReceipt.paymentDate is date-only
-      // (persisted at 00:00 from a YYYY-MM-DD string) while
-      // ARInvoice.invoiceDate carries the sale's wall-clock time, so a
-      // straight date sort drops every receipt below every invoice raised
-      // that same day. On real data that buried a payment made minutes ago
-      // 23 rows down, reading as "my payment never showed up".
-      if (a.kind !== b.kind) return a.kind === 'payment' ? -1 : 1
-      // Newest first within each block.
-      const byDate = new Date(b.date).getTime() - new Date(a.date).getTime()
-      if (byDate !== 0) return byDate
-      // Deterministic tiebreak — all 12 dues of one installment schedule
-      // share an invoiceDate, and same-day receipts share a payment date.
-      if (a.kind === 'invoice' && b.kind === 'invoice') {
-        return (
-          new Date(a.invoice.dueDate).getTime() - new Date(b.invoice.dueDate).getTime() ||
-          a.invoice.id.localeCompare(b.invoice.id)
-        )
-      }
-      if (a.kind === 'payment' && b.kind === 'payment') {
-        return (
-          (b.receipt.number ?? '').localeCompare(a.receipt.number ?? '') ||
-          a.receipt.id.localeCompare(b.receipt.id)
-        )
-      }
-      return 0
-    })
-  }, [items, receipts, customerFilter])
+    return [...items].sort(
+      (a, b) =>
+        new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime() ||
+        // Deterministic tiebreak — all 12 dues of one installment schedule
+        // share an invoiceDate.
+        new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime() ||
+        a.id.localeCompare(b.id)
+    )
+  }, [items, customerFilter])
 
   const send = async (id: string) => {
     const res = await ARInvoices.send(id)
     if (!res.success)
       alert(res.message || res.error || 'Send failed — check Account Mapping settings')
     load()
-  }
-
-  /** Opens the receipt on its own page — the same document layout the AR
-   * invoice detail page renders, with its own Print/Download. The (invoice,
-   * payment) pairs travel in the URL because a grouped receipt (see
-   * ARReceiptListItem.applications) has no single document endpoint of its
-   * own; that page fetches and combines them. */
-  const viewReceipt = (r: ARReceiptListItem) => {
-    if (r.applications.length === 0) return
-    router.push(collectionReceiptHref(r.applications))
   }
 
   /** Scenario 26 Part 6 — no @Cron exists anywhere in the backend, so this
@@ -428,7 +373,7 @@ export default function ARInvoicesList({
         )}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
-            Invoice #, SI # or Transaction #
+            Invoice # or Transaction #
           </label>
           <div className="relative">
             <Search
@@ -476,7 +421,7 @@ export default function ARInvoicesList({
               <th className="px-3 py-2 text-left">Invoice #</th>
               <th className="px-3 py-2 text-left">Customer</th>
               <th className="px-3 py-2 text-left">Invoice Date</th>
-              <th className="px-3 py-2 text-left">Next due</th>
+              <th className="px-3 py-2 text-left">Due Date</th>
               <th className="px-3 py-2 text-right">Terms</th>
               <th className="px-3 py-2 text-right">Total</th>
               <th className="px-3 py-2 text-right">Paid</th>
@@ -500,29 +445,21 @@ export default function ARInvoicesList({
                   </td>
                 </tr>
               ) : (
-                customerRows.map((row) =>
-                  row.kind === 'invoice' ? (
-                    <InvoiceRow
-                      key={row.invoice.id}
-                      i={row.invoice}
-                      onOpen={() => router.push(`/accounting/ar-invoices/${row.invoice.id}`)}
-                      onSend={() => send(row.invoice.id)}
-                      onPay={() => setPayingFor(row.invoice)}
-                      onHistory={() => setHistoryFor(row.invoice)}
-                      onCredit={() => setCreditingFor(row.invoice)}
-                      onDebit={() => setDebitingFor(row.invoice)}
-                      onEdit={() => setEditing(row.invoice)}
-                      onVoid={() => setVoidingFor(row.invoice)}
-                      onDelete={() => setDeletingFor(row.invoice)}
-                    />
-                  ) : (
-                    <PaymentReferenceRow
-                      key={row.receipt.id}
-                      r={row.receipt}
-                      onView={() => viewReceipt(row.receipt)}
-                    />
-                  )
-                )
+                customerRows.map((invoice) => (
+                  <InvoiceRow
+                    key={invoice.id}
+                    i={invoice}
+                    onOpen={() => router.push(`/accounting/ar-invoices/${invoice.id}`)}
+                    onSend={() => send(invoice.id)}
+                    onPay={() => setPayingFor(invoice)}
+                    onHistory={() => setHistoryFor(invoice)}
+                    onCredit={() => setCreditingFor(invoice)}
+                    onDebit={() => setDebitingFor(invoice)}
+                    onEdit={() => setEditing(invoice)}
+                    onVoid={() => setVoidingFor(invoice)}
+                    onDelete={() => setDeletingFor(invoice)}
+                  />
+                ))
               )
             ) : customerGroups.length === 0 ? (
               <tr>
@@ -671,45 +608,11 @@ function InvoiceRow({
   onVoid: () => void
   onDelete: () => void
 }) {
-  const outstanding = i.totalAmount - i.amountPaid
-  // A plan is late if any of its dues is; a charge invoice has no dues, so
-  // its server-resolved status is the only signal. Deliberately no clock of
-  // its own here — a client clock can disagree with the server's on the
-  // boundary day, and `status` already carries that judgement.
-  const planOverdue =
-    outstanding > 0.01 && ((i.overdueLineCount ?? 0) > 0 || i.status === 'OVERDUE')
-  // "SENT" says nothing about a 12-month plan that is three dues behind.
-  const planLabel =
-    outstanding <= 0.01
-      ? 'Paid'
-      : (i.overdueLineCount ?? 0) > 0
-        ? `Overdue (${i.overdueLineCount})`
-        : planOverdue
-          ? 'Due now'
-          : i.status === 'DRAFT'
-            ? 'Draft'
-            : 'On track'
-  const planBadge =
-    planLabel === 'Paid'
-      ? 'bg-emerald-50 text-emerald-700'
-      : planOverdue
-        ? 'bg-red-50 text-red-700'
-        : planLabel === 'Draft'
-          ? 'bg-gray-100 text-gray-600'
-          : 'bg-prominent-purple-50 text-prominent-purple-700'
-
   return (
     <tr onClick={onOpen} className="cursor-pointer hover:bg-gray-50">
       <td className="px-3 py-2 max-w-40">
-        <span
-          title={
-            i.posTransaction?.salesInvoiceNumber
-              ? `${invoiceLabel(i)} · ${i.invoiceNumber}`
-              : i.invoiceNumber
-          }
-          className="block truncate font-mono text-xs text-purple-700"
-        >
-          {invoiceLabel(i)}
+        <span title={i.invoiceNumber} className="block truncate font-mono text-xs text-purple-700">
+          {i.invoiceNumber}
         </span>
         {i.posTransaction && (
           <Link
@@ -727,33 +630,31 @@ function InvoiceRow({
         </span>
       </td>
       <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
-      {/* ARInvoice.dueDate is re-pointed at the earliest UNSETTLED due as
-          collections land, so this column is the next thing to collect —
-          shown with what that due still needs, not the plan total. */}
-      <td className="px-3 py-2 text-xs whitespace-nowrap">
-        <span className={planOverdue ? 'font-medium text-red-600' : undefined}>
-          {fmtDate(i.dueDate)}
-        </span>
-        {i.nextDueAmount != null && i.nextDueAmount > 0 && (
-          <span className="block text-[10px] text-gray-400">{fmtMoney(i.nextDueAmount)}</span>
-        )}
-      </td>
-      {/* The financing term this due line was sold on, same "Term" the AR
-          Aging sheet reports. Charge-mode invoices carry no schedule and so
-          no term. */}
+      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
+      {/* Which month of the plan this due is — "3/12". The term alone is the
+          same on all twelve rows of a schedule, so it can't tell them apart;
+          the position can. A charge invoice has no schedule, so neither. */}
       <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
-        {i.termMonths != null ? `${i.termMonths} mos` : <span className="text-gray-400">—</span>}
+        {i.termMonths != null ? (
+          i.lineNumber != null ? (
+            `${i.lineNumber}/${i.termMonths}`
+          ) : (
+            `${i.termMonths} mos`
+          )
+        ) : (
+          <span className="text-gray-400">—</span>
+        )}
       </td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
       <td className="px-3 py-2">
         <span
-          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${planBadge}`}
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
         >
-          {planLabel}
+          {i.status}
         </span>
-        {planOverdue && (
+        {i.status === 'OVERDUE' && (
           <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
             {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days overdue
           </span>
@@ -860,63 +761,6 @@ function InvoiceRow({
   )
 }
 
-/** One payment/receipt, shown as its own row inline with a customer's
- * due-invoices (not just a fragment split across the dues it settled) — the
- * one amount actually paid, with its own CR number, same column layout as
- * InvoiceRow so it reads as one merged, date-sorted table. */
-function PaymentReferenceRow({ r, onView }: { r: ARReceiptListItem; onView: () => void }) {
-  const cancelled = !!r.cancelledAt
-  return (
-    <tr
-      onClick={onView}
-      className={`cursor-pointer hover:bg-gray-50 ${cancelled ? 'opacity-50' : ''}`}
-    >
-      <td className="px-3 py-2 max-w-40">
-        {/* The cashier's CR number wins — that's the number off the physical
-            booklet the customer is holding, and what this reconciles
-            against. The generated CR-YYYYMMDD-NNNN is only a fallback for
-            payments recorded before a CR was required. */}
-        <span
-          title={r.reference ?? r.number ?? undefined}
-          className="block truncate font-mono text-xs text-emerald-700"
-        >
-          {r.reference ?? r.number ?? '—'}
-        </span>
-        <span className="block truncate text-[10px] text-gray-400">Payment</span>
-      </td>
-      <td className="px-3 py-2 max-w-40">
-        <span title={r.customerName} className="block truncate">
-          {r.customerName}
-        </span>
-      </td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap text-gray-400">—</td>
-      <td className="px-3 py-2 text-right text-xs text-gray-400">—</td>
-      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
-      <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
-      <td className="px-3 py-2 text-right text-gray-400">—</td>
-      <td className="px-3 py-2">
-        <span
-          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cancelled ? 'bg-gray-100 text-gray-600' : 'bg-emerald-50 text-emerald-700'}`}
-        >
-          {cancelled ? 'VOIDED' : 'PAID'}
-        </span>
-      </td>
-      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-        <Tooltip label="View receipt">
-          <button
-            onClick={onView}
-            aria-label="View receipt"
-            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-        </Tooltip>
-      </td>
-    </tr>
-  )
-}
-
 function VoidInvoiceDialog({
   invoice,
   onClose,
@@ -966,7 +810,7 @@ function VoidInvoiceDialog({
           <div className="text-sm text-gray-600 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              Void invoice <span className="font-mono">{invoiceLabel(invoice)}</span>? This reverses
+              Void invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This reverses
               its journal entry and cannot be undone.
             </span>
           </div>
@@ -1064,7 +908,7 @@ function DeleteInvoiceDialog({
           <div className="text-sm text-gray-600 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              Delete invoice <span className="font-mono">{invoiceLabel(invoice)}</span>? This cannot
+              Delete invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This cannot
               be undone.
             </span>
           </div>
@@ -1105,6 +949,676 @@ function DeleteInvoiceDialog({
               className="px-4 py-2 text-sm font-semibold bg-red-600 text-white rounded-lg disabled:opacity-50"
             >
               {deleting ? 'Deleting...' : 'Delete Invoice'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const CREDIT_MEMO_TYPE_OPTIONS: { value: CreateCreditMemoFormValues['type']; label: string }[] = [
+  { value: 'sales_return', label: 'Sales Return' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+  { value: 'goodwill', label: 'Goodwill' },
+]
+
+function CreditMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateCreditMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  // Mirrors CreateTransferModal's TransferLineRow — the serial picker only
+  // makes sense once we know the item is serial-tracked at all.
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Not status-filtered to 'in_stock' — the whole point here is picking a
+  // unit that was already SOLD (and is now being returned/credited), the
+  // opposite of what a transfer's source-warehouse picker needs.
+  const serialsQuery = useQuery({
+    queryKey: ['credit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Deduction">
+          <Controller
+            name={`lines.${index}.deductionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific serial returned (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`credit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
+function CreditMemoDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const outstanding = invoice.totalAmount - invoice.amountPaid
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateCreditMemoFormValues>({
+    resolver: zodResolver(buildCreateCreditMemoFormSchema(outstanding)),
+    defaultValues: {
+      type: 'sales_return',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', deductionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) -
+      (Number(l?.deductionAmount) || 0),
+    0
+  )
+  const remaining = outstanding - total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateCreditMemoFormValues) {
+    setSaving(true)
+    setError(null)
+    const res = await CreditMemos.issue({
+      arInvoiceId: invoice.id,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        deductionAmount: l.deductionAmount || undefined,
+      })),
+    })
+    setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to issue credit memo')
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
+          <h3 className="text-lg font-semibold">Issue Credit Memo</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Outstanding:{' '}
+            <span className="font-semibold">{fmtMoney(outstanding)}</span>
+          </div>
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {CREDIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+          </Field>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    deductionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <CreditMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Credit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
+            Remaining after credit: <span className="font-semibold">{fmtMoney(remaining)}</span>
+          </div>
+
+          <Field label="Reason">
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Returns, discount, billing adjustment..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+          </Field>
+          <Field label="Memo Date *">
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
+          </Field>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Issuing...' : 'Issue Credit Memo'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const DEBIT_MEMO_TYPE_OPTIONS: { value: CreateDebitMemoFormValues['type']; label: string }[] = [
+  { value: 'unit_replacement', label: 'Unit Replacement' },
+  { value: 'billing_adjustment', label: 'Billing Adjustment' },
+]
+
+function DebitMemoLineRow({
+  control,
+  index,
+  canRemove,
+  onRemove,
+  itemError,
+  quantityError,
+  unitPriceError,
+}: {
+  control: Control<CreateDebitMemoFormValues>
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  itemError?: string
+  quantityError?: string
+  unitPriceError?: string
+}) {
+  const selectedItemId = useWatch({ control, name: `lines.${index}.itemId` })
+
+  const itemDetailQuery = useQuery({
+    queryKey: ['inventory-item-detail', selectedItemId],
+    queryFn: () => getItem(selectedItemId),
+    enabled: !!selectedItemId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const isSerialTracked = itemDetailQuery.data?.data?.isSerialTracked ?? false
+
+  // Status-filtered to 'in_stock', the opposite of CreditMemoLineRow's own
+  // choice — a debit memo's primary case is handing the customer a NEW
+  // replacement unit, not referencing one already sold.
+  const serialsQuery = useQuery({
+    queryKey: ['debit-memo-serials', selectedItemId],
+    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'in_stock', limit: 500 }),
+    enabled: isSerialTracked && !!selectedItemId,
+    staleTime: 60 * 1000,
+  })
+  const serialOptions = serialsQuery.data?.data?.data ?? []
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <Controller
+            name={`lines.${index}.itemId`}
+            control={control}
+            render={({ field: f }) => (
+              <ItemSearchCombobox value={f.value} onChange={f.onChange} error={itemError} />
+            )}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={!canRemove}
+          className="mt-1.5 rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Qty *">
+          <Controller
+            name={`lines.${index}.quantity`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {quantityError && <p className="mt-1 text-xs text-red-600">{quantityError}</p>}
+        </Field>
+        <Field label="Unit Price *">
+          <Controller
+            name={`lines.${index}.unitPrice`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+          {unitPriceError && <p className="mt-1 text-xs text-red-600">{unitPriceError}</p>}
+        </Field>
+        <Field label="Addition">
+          <Controller
+            name={`lines.${index}.additionAmount`}
+            control={control}
+            render={({ field: f }) => (
+              <input
+                {...f}
+                value={f.value ?? ''}
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                onChange={(e) => f.onChange(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            )}
+          />
+        </Field>
+      </div>
+
+      {isSerialTracked && (
+        <Field label="Specific replacement serial (optional)">
+          <Controller
+            name={`lines.${index}.serialNumberId`}
+            control={control}
+            render={({ field: f }) => (
+              <SerialSearchCombobox
+                value={f.value ?? ''}
+                onChange={f.onChange}
+                options={serialOptions}
+                queryKey={`debit-memo-serial-${selectedItemId}`}
+                disabled={serialsQuery.isLoading}
+                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
+              />
+            )}
+          />
+        </Field>
+      )}
+    </div>
+  )
+}
+
+function DebitMemoDialog({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: ARInvoice
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateDebitMemoFormValues>({
+    resolver: zodResolver(CreateDebitMemoFormSchema),
+    defaultValues: {
+      type: 'unit_replacement',
+      reason: '',
+      memoDate: new Date().toISOString().slice(0, 10),
+      lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', additionAmount: 0 }],
+    },
+  })
+  const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const lines = useWatch({ control, name: 'lines' })
+  const total = (lines ?? []).reduce(
+    (sum, l) =>
+      sum +
+      (Number(l?.quantity) || 0) * (Number(l?.unitPrice) || 0) +
+      (Number(l?.additionAmount) || 0),
+    0
+  )
+  const newTotal = invoice.totalAmount + total
+  const linesArrayError =
+    typeof errors.lines?.message === 'string' ? errors.lines.message : undefined
+
+  async function handleFormSubmit(data: CreateDebitMemoFormValues) {
+    setSaving(true)
+    setError(null)
+    const res = await DebitMemos.issue({
+      arInvoiceId: invoice.id,
+      type: data.type,
+      reason: data.reason || undefined,
+      memoDate: data.memoDate,
+      lines: data.lines.map((l) => ({
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        serialNumberId: l.serialNumberId || undefined,
+        additionAmount: l.additionAmount || undefined,
+      })),
+    })
+    setSaving(false)
+    if (!res.success) {
+      setError(res.message || res.error || 'Failed to issue debit memo')
+      return
+    }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white">
+          <h3 className="text-lg font-semibold">Issue Debit Memo</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate className="p-5 space-y-3">
+          <div className="text-sm text-gray-600">
+            Invoice <span className="font-mono">{invoice.invoiceNumber}</span> · Current total:{' '}
+            <span className="font-semibold">{fmtMoney(invoice.totalAmount)}</span>
+          </div>
+
+          <Field label="Type *">
+            <Controller
+              name="type"
+              control={control}
+              render={({ field: f }) => (
+                <select
+                  {...f}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                >
+                  {DEBIT_MEMO_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            />
+          </Field>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-600">Line Items *</span>
+              <button
+                type="button"
+                onClick={() =>
+                  append({
+                    itemId: '',
+                    quantity: 1,
+                    unitPrice: 0,
+                    serialNumberId: '',
+                    additionAmount: 0,
+                  })
+                }
+                className="text-xs font-medium text-purple-700 hover:text-purple-900"
+              >
+                + Add line
+              </button>
+            </div>
+            {fields.map((field, idx) => (
+              <DebitMemoLineRow
+                key={field.id}
+                control={control}
+                index={idx}
+                canRemove={fields.length > 1}
+                onRemove={() => remove(idx)}
+                itemError={errors.lines?.[idx]?.itemId?.message}
+                quantityError={errors.lines?.[idx]?.quantity?.message}
+                unitPriceError={errors.lines?.[idx]?.unitPrice?.message}
+              />
+            ))}
+            {linesArrayError && <p className="text-xs text-red-600">{linesArrayError}</p>}
+          </div>
+
+          <div className="text-xs text-gray-500 border-t pt-2">
+            Total Debit: <span className="font-semibold text-gray-900">{fmtMoney(total)}</span> ·
+            New invoice total: <span className="font-semibold">{fmtMoney(newTotal)}</span>
+          </div>
+
+          <Field label="Reason">
+            <Controller
+              name="reason"
+              control={control}
+              render={({ field: f }) => (
+                <textarea
+                  {...f}
+                  placeholder="Replacement unit, under-billed fee..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+          </Field>
+          <Field label="Memo Date *">
+            <Controller
+              name="memoDate"
+              control={control}
+              render={({ field: f }) => (
+                <input
+                  {...f}
+                  type="date"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                />
+              )}
+            />
+            {errors.memoDate && (
+              <p className="mt-1 text-xs text-red-600">{errors.memoDate.message}</p>
+            )}
+          </Field>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-3 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-semibold bg-orange-700 text-white rounded-lg disabled:opacity-50"
+            >
+              {saving ? 'Issuing...' : 'Issue Debit Memo'}
             </button>
           </div>
         </form>
@@ -1589,7 +2103,7 @@ function PaymentHistoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h3 className="text-lg font-semibold">Payment history — {invoiceLabel(invoice)}</h3>
+          <h3 className="text-lg font-semibold">Payment history — {invoice.invoiceNumber}</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>

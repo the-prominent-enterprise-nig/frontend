@@ -533,12 +533,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
       },
       {
-        label: 'Leads',
-        href: '/crm/leads',
-        icon: UsersRound,
-        requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
-      {
         label: 'Collectors',
         href: '/crm/collectors',
         icon: HandCoins,

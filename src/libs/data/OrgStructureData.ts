@@ -21,7 +21,10 @@ export interface BranchLite {
 
 export interface Department {
   id: string
-  branchId: string
+  /** Null for a company-wide department, which is how the client's own
+   * Division list is organised — one "HR DEPARTMENT", with PANAY/NEGROS
+   * carried in the line's Description rather than in the department. */
+  branchId: string | null
   branch?: BranchLite | null
   name: string
   code?: string | null
@@ -37,7 +40,7 @@ export const BranchesApi = {
 export const DepartmentsApi = {
   list: (params?: { branchId?: string; includeInactive?: boolean }) =>
     api.get<Listed<Department>>('/departments', params),
-  create: (body: { branchId: string; name: string; code?: string }) =>
+  create: (body: { branchId?: string; name: string; code?: string }) =>
     api.post<Department>('/departments', body),
   update: (id: string, body: { name?: string; code?: string; isActive?: boolean }) =>
     api.patch<Department>(`/departments/${id}`, body),
@@ -61,17 +64,35 @@ export interface DivisionOption {
   branchRegion?: string | null
 }
 
-/** Builds the Division option list: every branch, then every department
- * under it, so the list reads the way the org does. */
+/**
+ * Builds the Division option list — one flat list of branches and
+ * departments, the way the client's own picker reads.
+ *
+ * Company-wide departments come first (they are the bulk of the client's
+ * list), then every branch with any department that still belongs to it.
+ */
 export function divisionOptions(
   branches: BranchLite[],
   departments: Department[]
 ): DivisionOption[] {
   const byBranch = new Map<string, Department[]>()
+  const companyWide: Department[] = []
   for (const d of departments) {
-    byBranch.set(d.branchId, [...(byBranch.get(d.branchId) ?? []), d])
+    if (d.branchId) byBranch.set(d.branchId, [...(byBranch.get(d.branchId) ?? []), d])
+    else companyWide.push(d)
   }
   const options: DivisionOption[] = []
+  for (const d of companyWide) {
+    options.push({
+      value: `department:${d.id}`,
+      // No branch suffix: the name is already unique company-wide, and the
+      // region it applies to lives in the line's Description.
+      label: d.name,
+      kind: 'department',
+      id: d.id,
+      name: d.name,
+    })
+  }
   for (const b of branches) {
     options.push({
       value: `branch:${b.id}`,

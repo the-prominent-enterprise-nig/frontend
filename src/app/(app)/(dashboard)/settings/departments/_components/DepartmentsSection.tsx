@@ -31,21 +31,23 @@ export default function DepartmentsSection() {
   const [savingDept, setSavingDept] = useState(false)
 
   useEffect(() => {
-    BranchesApi.list().then((r) => {
-      const list = r.data?.data ?? []
-      setBranches(list)
-      // Land on a usable branch rather than an empty page.
-      if (list.length > 0) setBranchId((current) => current || list[0].id)
-    })
+    // No default branch: '' means Company-wide, which is where the client's
+    // own Division list lives and so the more useful landing view.
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
   }, [])
 
   const load = useCallback(async () => {
-    if (!branchId) return
     setLoading(true)
     setError(null)
-    const d = await DepartmentsApi.list({ branchId, includeInactive: true })
-    if (d.success && d.data) setDepartments(d.data.data)
-    else setError(d.message || d.error || 'Failed to load departments')
+    // The API filters by branch when given one and returns everything when
+    // not, so the company-wide view asks for all and keeps the unowned ones.
+    const d = await DepartmentsApi.list({
+      branchId: branchId || undefined,
+      includeInactive: true,
+    })
+    if (d.success && d.data) {
+      setDepartments(branchId ? d.data.data : d.data.data.filter((x) => !x.branchId))
+    } else setError(d.message || d.error || 'Failed to load departments')
     setLoading(false)
   }, [branchId])
 
@@ -55,11 +57,11 @@ export default function DepartmentsSection() {
 
   const addDepartment = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!branchId || !deptName.trim()) return
+    if (!deptName.trim()) return
     setSavingDept(true)
     setError(null)
     const res = await DepartmentsApi.create({
-      branchId,
+      branchId: branchId || undefined,
       name: deptName.trim(),
       code: deptCode.trim() || undefined,
     })
@@ -88,8 +90,8 @@ export default function DepartmentsSection() {
       <header>
         <h1 className="text-2xl font-semibold text-gray-900">Departments</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Each department belongs to one branch. Expense lines are tagged with a Division, which is
-          one pick from your branches and these departments listed together.
+          A department is company-wide, or belongs to one branch. Expense lines are tagged with a
+          Division, which is one pick from your branches and these departments listed together.
         </p>
       </header>
 
@@ -101,7 +103,7 @@ export default function DepartmentsSection() {
             onChange={(e) => setBranchId(e.target.value)}
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
           >
-            {branches.length === 0 && <option value="">No branches yet</option>}
+            <option value="">— Company-wide —</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -142,7 +144,7 @@ export default function DepartmentsSection() {
           </label>
           <button
             type="submit"
-            disabled={savingDept || !branchId || !deptName.trim()}
+            disabled={savingDept || !deptName.trim()}
             className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {savingDept ? (

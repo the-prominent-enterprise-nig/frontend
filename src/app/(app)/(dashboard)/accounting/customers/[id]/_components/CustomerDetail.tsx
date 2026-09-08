@@ -126,7 +126,12 @@ export default function CustomerDetail({ id }: { id: string }) {
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold text-gray-900">{customer.name}</h1>
-                  {customer.lifecycleStatus && (
+                  {/* 'alive' is the default every customer carries, so
+                      badging it said nothing — it just sat next to the name
+                      on every record. Only the exceptions are worth
+                      flagging: a deceased account changes how collections
+                      proceed, and 'employed' is a real distinction. */}
+                  {customer.lifecycleStatus && customer.lifecycleStatus !== 'alive' && (
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                         LIFECYCLE_COLORS[customer.lifecycleStatus] ?? ''

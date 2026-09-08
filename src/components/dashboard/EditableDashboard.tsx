@@ -33,7 +33,6 @@ import EnterpriseSummaryWidget from './widgets/EnterpriseSummaryWidget'
 import ModuleStatsWidget from './widgets/ModuleStatsWidget'
 import PendingApprovalsWidget from './widgets/PendingApprovalsWidget'
 import CogsGapsWidget from './widgets/CogsGapsWidget'
-import RecentLeadsWidget from './widgets/RecentLeadsWidget'
 // Not registered: there is no HR module on the backend (no employees/leave-management/
 // attendance/payroll controllers), so every one of these widgets' API calls 404s. Uncomment
 // once a real HR backend module exists.
@@ -73,7 +72,6 @@ const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   'module-stats': ModuleStatsWidget,
   'pending-approvals': PendingApprovalsWidget,
   'cogs-gaps': CogsGapsWidget,
-  'recent-leads': RecentLeadsWidget,
   // 'attendance-summary': AttendanceSummaryWidget,
   // 'department-summary': DepartmentSummaryWidget,
   // 'leave-requests': LeaveRequestsWidget,

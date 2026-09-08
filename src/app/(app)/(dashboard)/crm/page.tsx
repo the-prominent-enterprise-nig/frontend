@@ -3,8 +3,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import {
-  TrendingUp,
-  Users,
   Contact,
   BellRing,
   RefreshCw,
@@ -17,43 +15,20 @@ import {
   CalendarCheck,
   AlertTriangle,
   CheckCircle,
-  UserPlus,
   Activity,
-  Target,
-  Award,
   LayoutGrid,
   PieChart,
   BarChart2,
   ShieldAlert,
 } from 'lucide-react'
-import {
-  leadsApi,
-  customersApi,
-  remindersApi,
-  interactionsApi,
-  segmentsApi,
-} from '@/src/libs/api/crm'
+import { customersApi, remindersApi, interactionsApi, segmentsApi } from '@/src/libs/api/crm'
 import CollectionsCalendar from './collections-calendar/_components/CollectionsCalendar'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-function fmtMoney(n: number) {
-  if (!Number.isFinite(n)) return '₱0'
-  const abs = Math.abs(n)
-  const sign = n < 0 ? '-' : ''
-  if (abs >= 1_000_000) return `${sign}₱${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${sign}₱${(abs / 1_000).toFixed(0)}K`
-  return `${sign}₱${Math.round(abs).toLocaleString('en-PH')}`
-}
-
 function fmtNum(n: number) {
   if (!Number.isFinite(n)) return '0'
   return Math.round(n).toLocaleString('en-PH')
-}
-
-function fmtPct(n: number) {
-  if (!Number.isFinite(n)) return '0%'
-  return `${n.toFixed(1)}%`
 }
 
 function fmtDateShort(dateStr?: string | null) {
@@ -88,14 +63,6 @@ function reminderTarget(r: any): { label: string; href: string } | null {
     }
   }
   return null
-}
-
-function leadStatusCls(status: string) {
-  if (status === 'active') return 'bg-blue-100 text-blue-700'
-  if (status === 'won') return 'bg-emerald-100 text-emerald-700'
-  if (status === 'lost') return 'bg-red-100 text-red-600'
-  if (status === 'archived') return 'bg-gray-100 text-gray-500'
-  return 'bg-gray-100 text-gray-600'
 }
 
 function reminderStatusCls(status: string) {
@@ -144,75 +111,6 @@ const COLORS = [
   '#8b5cf6',
   '#ec4899',
 ]
-
-// ── DonutChart ────────────────────────────────────────────────────────────────
-
-function DonutChart({
-  segments,
-  size = 148,
-  stroke = 22,
-}: {
-  segments: { label: string; value: number; color: string }[]
-  size?: number
-  stroke?: number
-}) {
-  const tot = useMemo(() => segments.reduce((s, x) => s + x.value, 0), [segments])
-  const r = (size - stroke) / 2
-  const C = 2 * Math.PI * r
-  const cx = size / 2
-  let accum = 0
-  const arcs = segments.map((seg) => {
-    const pct = tot > 0 ? seg.value / tot : 0
-    const len = pct * C
-    const offset = -accum
-    accum += len
-    return { ...seg, pct, len, offset }
-  })
-  if (!segments.length || tot === 0) {
-    return (
-      <div className="flex h-[148px] items-center justify-center">
-        <p className="text-xs text-gray-400 italic">No data available</p>
-      </div>
-    )
-  }
-  return (
-    <div className="flex items-center gap-5">
-      <svg width={size} height={size} className="shrink-0 -rotate-90">
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
-        {arcs.map((arc, i) =>
-          arc.len > 0.5 ? (
-            <circle
-              key={i}
-              cx={cx}
-              cy={cx}
-              r={r}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth={stroke}
-              strokeDasharray={`${arc.len} ${C}`}
-              strokeDashoffset={arc.offset}
-              style={{ transition: 'stroke-dasharray 0.7s ease-out' }}
-            />
-          ) : null
-        )}
-      </svg>
-      <div className="min-w-0 flex-1 space-y-2">
-        {arcs.map((arc, i) => (
-          <div key={i} className="flex items-center gap-2 min-w-0">
-            <div
-              className="h-2.5 w-2.5 shrink-0 rounded-sm"
-              style={{ backgroundColor: arc.color }}
-            />
-            <span className="text-xs text-gray-600 truncate flex-1">{arc.label}</span>
-            <span className="text-xs font-semibold text-gray-900 tabular-nums shrink-0">
-              {arc.value} <span className="text-gray-400">({(arc.pct * 100).toFixed(0)}%)</span>
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 // ── HBarChart ─────────────────────────────────────────────────────────────────
 
@@ -328,13 +226,6 @@ function EmptyState({ message }: { message: string }) {
 const INIT = {
   loaded: false,
   lastUpdated: null as Date | null,
-  openPipelineValue: 0,
-  wonValue: 0,
-  winRate: 0,
-  totalLeads: 0,
-  activeLeads: 0,
-  wonLeads: 0,
-  lostLeads: 0,
   totalCustomers: 0,
   activeCustomers: 0,
   overdueReminders: 0,
@@ -342,11 +233,8 @@ const INIT = {
   dueTodayCount: 0,
   totalInteractions: 0,
   totalSegments: 0,
-  leadStatusChart: [] as { label: string; value: number; color: string }[],
-  pipelineStageChart: [] as { label: string; value: number; color: string; badge?: string }[],
   customerSourceChart: [] as { label: string; value: number; color: string; badge?: string }[],
   interactionTypeChart: [] as { label: string; value: number; color: string; badge?: string }[],
-  recentLeads: [] as any[],
   recentInteractions: [] as any[],
   overdueRemindersList: [] as any[],
   pendingRemindersList: [] as any[],
@@ -368,16 +256,13 @@ export default function CrmDashboardPage() {
     todayEnd.setHours(23, 59, 59, 999)
 
     const settled = await Promise.allSettled([
-      leadsApi.list({ limit: 200 }), // 0
-      leadsApi.pipeline(), // 1 — PipelineColumn[]
-      customersApi.list({ limit: 1 }), // 2 — only meta.total is read; see below
-      remindersApi.list({ limit: 200 }), // 3
-      interactionsApi.list({ limit: 100 }), // 4
-      segmentsApi.list(), // 5 — CustomerSegment[]
-      leadsApi.statusSummary(), // 6 — real counts, not capped like list()
-      customersApi.sourceSummary(), // 7 — real counts, not capped like list()
-      customersApi.statusSummary(), // 8 — real counts, not capped like list()
-      interactionsApi.typeSummary(), // 9 — real counts, not capped like list()
+      customersApi.list({ limit: 1 }), // 0 — only meta.total is read; see below
+      remindersApi.list({ limit: 200 }), // 1
+      interactionsApi.list({ limit: 100 }), // 2
+      segmentsApi.list(), // 3 — CustomerSegment[]
+      customersApi.sourceSummary(), // 4 — real counts, not capped like list()
+      customersApi.statusSummary(), // 5 — real counts, not capped like list()
+      interactionsApi.typeSummary(), // 6 — real counts, not capped like list()
     ])
 
     function pick(i: number): any {
@@ -403,52 +288,16 @@ export default function CrmDashboardPage() {
       return arr(i).length
     }
 
-    // ── Leads ─────────────────────────────────────────────────────────────────
-    const leadList = arr(0)
-    const totalLeads = total(0)
-    // Scenario 29 — Win Rate/Lead Status/Won-Lost come from a real
-    // server-side aggregate (leadsApi.statusSummary()), not leadList's own
-    // 200-row fetch cap, which undercounts/skews once a tenant has more
-    // leads than that.
-    const statusSummary = pick(6) ?? { active: 0, won: 0, lost: 0, archived: 0, winRate: 0 }
-    const activeLeads = statusSummary.active
-    const wonLeads = statusSummary.won
-    const lostLeads = statusSummary.lost
-    const winRate = statusSummary.winRate
-
-    const leadStatusChart = [
-      { label: 'Active', value: activeLeads, color: '#0ea5e9' },
-      { label: 'Won', value: wonLeads, color: '#10b981' },
-      { label: 'Lost', value: lostLeads, color: '#ef4444' },
-      { label: 'Archived', value: statusSummary.archived, color: '#94a3b8' },
-    ].filter((s) => s.value > 0)
-
-    // ── Pipeline ──────────────────────────────────────────────────────────────
-    const pipelineColumns = arr(1)
-    const openPipelineValue = pipelineColumns
-      .filter((c: any) => !c.isWonStage && !c.isLostStage)
-      .reduce((sum: number, c: any) => sum + (Number(c.totalValue) || 0), 0)
-    const wonValue = Number(pipelineColumns.find((c: any) => c.isWonStage)?.totalValue ?? 0)
-    const pipelineStageChart = pipelineColumns
-      .filter((c: any) => !c.isLostStage)
-      .map((c: any, i: number) => ({
-        label: c.stageName,
-        value: c.leadCount,
-        color: c.isWonStage ? '#10b981' : COLORS[i % COLORS.length],
-        badge: `${c.leadCount} (${fmtMoney(Number(c.totalValue))})`,
-      }))
-      .sort((a: any, b: any) => b.value - a.value)
-
     // ── Customers ─────────────────────────────────────────────────────────────
     // Only `meta.total` from this fetch is used now — activeCustomers and
     // the source breakdown both moved to real aggregates below, so there's
     // no longer any reason to pull actual customer rows here.
-    const totalCustomers = total(2)
-    const activeCustomers = (pick(8) ?? { active: 0 }).active
+    const totalCustomers = total(0)
+    const activeCustomers = (pick(5) ?? { active: 0 }).active
 
     // Scenario 29 — real server-side counts per source channel
     // (customersApi.sourceSummary()), not a capped list fetch.
-    const sourceSummary = arr(7) as { sourceChannel: string; count: number }[]
+    const sourceSummary = arr(4) as { sourceChannel: string; count: number }[]
     const sourceGroups: Record<string, number> = {}
     sourceSummary.forEach(({ sourceChannel, count }) => {
       const src = sourceChannel ?? 'other'
@@ -468,7 +317,7 @@ export default function CrmDashboardPage() {
     // endpoint this dashboard calls (only /crm/reminders/mine computes
     // isOverdue, and no write path ever sets status to 'overdue') — mirror
     // Accounting's own live date-comparison pattern instead (accounting/page.tsx).
-    const reminderList = arr(3)
+    const reminderList = arr(1)
     const isReminderOverdue = (r: any) =>
       r.status === 'pending' && new Date(r.dueAt).getTime() < now.getTime()
     const overdueRemindersList = reminderList
@@ -485,12 +334,12 @@ export default function CrmDashboardPage() {
     }).length
 
     // ── Interactions ──────────────────────────────────────────────────────────
-    const interactionList = arr(4)
-    const totalInteractions = total(4)
+    const interactionList = arr(2)
+    const totalInteractions = total(2)
 
     // Scenario 29 — real server-side counts per interaction type
     // (interactionsApi.typeSummary()), not interactionList's own 100-row cap.
-    const typeSummary = arr(9) as { interactionType: string; count: number }[]
+    const typeSummary = arr(6) as { interactionType: string; count: number }[]
     const typeGroups: Record<string, number> = {}
     typeSummary.forEach(({ interactionType, count }) => {
       const t = interactionType ?? 'other'
@@ -506,19 +355,12 @@ export default function CrmDashboardPage() {
       .sort((a, b) => b.value - a.value)
 
     // ── Segments ──────────────────────────────────────────────────────────────
-    const segList = arr(5)
+    const segList = arr(3)
     const totalSegments = segList.length
 
     setS({
       loaded: true,
       lastUpdated: new Date(),
-      openPipelineValue,
-      wonValue,
-      winRate,
-      totalLeads,
-      activeLeads,
-      wonLeads,
-      lostLeads,
       totalCustomers,
       activeCustomers,
       overdueReminders,
@@ -526,13 +368,8 @@ export default function CrmDashboardPage() {
       dueTodayCount,
       totalInteractions,
       totalSegments,
-      leadStatusChart,
-      pipelineStageChart,
       customerSourceChart,
       interactionTypeChart,
-      recentLeads: [...leadList]
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, 8),
       recentInteractions: [...interactionList]
         .sort(
           (a: any, b: any) =>
@@ -583,13 +420,6 @@ export default function CrmDashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/crm/leads/new"
-              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <UserPlus className="h-3.5 w-3.5 text-gray-500" />
-              New Lead
-            </Link>
             <button
               onClick={load}
               disabled={spinning}
@@ -610,10 +440,9 @@ export default function CrmDashboardPage() {
             <h2 className="text-base font-semibold text-gray-900">Module Navigation</h2>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {(
                 [
-                  { label: 'Leads', href: '/crm/leads', icon: Users },
                   { label: 'Customers', href: '/crm/customers', icon: Contact },
                   { label: 'Reminders', href: '/crm/reminders', icon: BellRing },
                   { label: 'Segments', href: '/crm/segments', icon: Layers },
@@ -645,53 +474,7 @@ export default function CrmDashboardPage() {
           </div>
         </div>
 
-        {/* Row 1: Pipeline KPIs */}
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <Target className="h-4 w-4 text-orange-500" />
-            <h2 className="text-base font-semibold text-gray-900">Pipeline</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KpiCard
-              label="Open Pipeline Value"
-              value={loading ? '—' : fmtMoney(s.openPipelineValue)}
-              sub="Active stages only"
-              icon={TrendingUp}
-              iconBg="bg-emerald-500"
-              href="/crm/leads"
-              loading={loading}
-            />
-            <KpiCard
-              label="Won Value"
-              value={loading ? '—' : fmtMoney(s.wonValue)}
-              sub="Closed won deals"
-              icon={Award}
-              iconBg="bg-violet-500"
-              href="/crm/leads"
-              loading={loading}
-            />
-            <KpiCard
-              label="Win Rate"
-              value={loading ? '—' : fmtPct(s.winRate)}
-              sub="Won ÷ (won + lost)"
-              icon={Target}
-              iconBg="bg-cyan-500"
-              href="/crm/leads"
-              loading={loading}
-            />
-            <KpiCard
-              label="Total Leads"
-              value={loading ? '—' : fmtNum(s.totalLeads)}
-              sub={loading ? '' : `${s.activeLeads} active`}
-              icon={Users}
-              iconBg="bg-blue-500"
-              href="/crm/leads"
-              loading={loading}
-            />
-          </div>
-        </div>
-
-        {/* Row 2: Customer & Activity KPIs */}
+        {/* Row 1: Customer & Activity KPIs */}
         <div>
           <div className="mb-3 flex items-center gap-2">
             <Activity className="h-4 w-4 text-orange-500" />
@@ -907,23 +690,9 @@ export default function CrmDashboardPage() {
             <BarChart2 className="h-4 w-4 text-orange-500" />
             <h2 className="text-base font-semibold text-gray-900">Quick Stats</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
             {(
               [
-                {
-                  label: 'Won Leads',
-                  val: s.wonLeads,
-                  href: '/crm/leads',
-                  accent: 'text-emerald-700',
-                  bg: 'bg-emerald-50 border-emerald-100',
-                },
-                {
-                  label: 'Lost Leads',
-                  val: s.lostLeads,
-                  href: '/crm/leads',
-                  accent: 'text-red-700',
-                  bg: 'bg-red-50 border-red-100',
-                },
                 {
                   label: 'Pending Reminders',
                   val: s.pendingReminders,
@@ -954,66 +723,13 @@ export default function CrmDashboardPage() {
           </div>
         </div>
 
-        {/* Analysis: Lead status donut + Pipeline stages HBar + Customer sources HBar */}
+        {/* Analysis: Customer sources HBar */}
         <div>
           <div className="mb-3 flex items-center gap-2">
             <PieChart className="h-4 w-4 text-orange-500" />
-            <h2 className="text-base font-semibold text-gray-900">Lead Analytics</h2>
+            <h2 className="text-base font-semibold text-gray-900">Customer Analytics</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">Lead Status</h2>
-                  <p className="text-xs text-gray-400">All leads by current status</p>
-                </div>
-                <Link
-                  href="/crm/leads"
-                  className="flex items-center gap-0.5 text-xs text-orange-600 hover:text-orange-700"
-                >
-                  All <ChevronRight className="h-3 w-3" />
-                </Link>
-              </div>
-              {loading ? (
-                <div className="flex items-center gap-6">
-                  <Sk className="h-[148px] w-[148px] rounded-full" />
-                  <div className="space-y-2.5 flex-1">
-                    {[...Array(4)].map((_, i) => (
-                      <Sk key={i} className="h-4 w-full" />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <DonutChart segments={s.leadStatusChart} />
-              )}
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">Pipeline by Stage</h2>
-                  <p className="text-xs text-gray-400">Lead count and value per stage</p>
-                </div>
-                <Link
-                  href="/crm/leads"
-                  className="flex items-center gap-0.5 text-xs text-orange-600 hover:text-orange-700"
-                >
-                  View <ChevronRight className="h-3 w-3" />
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-3">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : s.pipelineStageChart.length === 0 ? (
-                <EmptyState message="No pipeline data available" />
-              ) : (
-                <HBarChart items={s.pipelineStageChart} />
-              )}
-            </div>
-
+          <div className="grid grid-cols-1 gap-4">
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
                 <div>
@@ -1087,74 +803,8 @@ export default function CrmDashboardPage() {
           </div>
         )}
 
-        {/* Tables: Recent Leads + Recent Interactions */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">Recent Leads</h2>
-              <Link
-                href="/crm/leads"
-                className="flex items-center gap-0.5 text-xs text-orange-600 hover:text-orange-700"
-              >
-                All <ChevronRight className="h-3 w-3" />
-              </Link>
-            </div>
-            {loading ? (
-              <div className="space-y-2">
-                {[...Array(5)].map((_, i) => (
-                  <Sk key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : s.recentLeads.length === 0 ? (
-              <EmptyState message="No leads yet" />
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left py-2 pr-3 text-gray-400 font-semibold uppercase tracking-wide">
-                        Name
-                      </th>
-                      <th className="text-left py-2 pr-3 text-gray-400 font-semibold uppercase tracking-wide">
-                        Status
-                      </th>
-                      <th className="text-right py-2 text-gray-400 font-semibold uppercase tracking-wide">
-                        Value
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {s.recentLeads.map((lead: any, i: number) => (
-                      <tr key={lead.id ?? i} className="hover:bg-gray-50">
-                        <td className="py-2.5 pr-3">
-                          <Link
-                            href={`/crm/leads/${lead.id}`}
-                            className="font-semibold text-orange-700 hover:underline truncate block max-w-[140px]"
-                          >
-                            {lead.firstName} {lead.lastName ?? ''}
-                          </Link>
-                          {lead.company && (
-                            <p className="text-[10px] text-gray-400 truncate">{lead.company}</p>
-                          )}
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${leadStatusCls(lead.status)}`}
-                          >
-                            {fmtStatus(lead.status)}
-                          </span>
-                        </td>
-                        <td className="py-2.5 text-right font-semibold text-gray-900 tabular-nums">
-                          {lead.estimatedValue ? fmtMoney(Number(lead.estimatedValue)) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
+        {/* Tables: Recent Interactions */}
+        <div className="grid grid-cols-1 gap-4">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-gray-900">Recent Interactions</h2>

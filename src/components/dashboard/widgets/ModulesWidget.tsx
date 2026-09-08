@@ -10,7 +10,7 @@ import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/
 import { getReorderAlertsByWarehouse } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { leadsApi, customersApi } from '@/src/libs/api/crm'
+import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 
@@ -115,7 +115,6 @@ export default function ModulesWidget() {
   const [crmStats, setCrmStats] = useState<ModuleStat[]>([
     { label: 'Customers', value: '—' },
     { label: 'New This Month', value: '—' },
-    { label: 'Active Leads', value: '—' },
   ])
 
   const branchId = usePosBranchContext((s) => s.branchId)
@@ -124,7 +123,7 @@ export default function ModulesWidget() {
     let cancelled = false
     ;(async () => {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      const [items, ar, inventoryStatsResult, txRes, customersRes, leadsRes] = await Promise.all([
+      const [items, ar, inventoryStatsResult, txRes, customersRes] = await Promise.all([
         // HR: see the commented-out hrStats state above — /employees and
         // /leave-management/summary both 404, no HR backend module exists.
         // api.get<{ meta?: { total?: number } }>('/employees', { limit: 1 }),
@@ -139,7 +138,6 @@ export default function ModulesWidget() {
         loadInventoryStats(branchId),
         getTransactions({ dateFrom: monthStart.toISOString(), branchId: branchId ?? undefined }),
         customersApi.list({ limit: 200 }),
-        leadsApi.list({ limit: 200 }),
       ])
       if (cancelled) return
 
@@ -181,11 +179,9 @@ export default function ModulesWidget() {
       const newThisMonth = (customersRes.data?.data ?? []).filter(
         (c) => new Date(c.createdAt).getTime() >= monthStart.getTime()
       ).length
-      const activeLeads = (leadsRes.data?.data ?? []).filter((l) => l.status === 'active').length
       setCrmStats([
         { label: 'Customers', value: totalCustomers },
         { label: 'New This Month', value: newThisMonth },
-        { label: 'Active Leads', value: activeLeads },
       ])
     })()
     return () => {
@@ -233,7 +229,7 @@ export default function ModulesWidget() {
     },
     {
       label: 'CRM',
-      description: 'Leads, customers, and pipeline',
+      description: 'Customers, accounts, and collections',
       icon: UsersRound,
       iconBg: 'bg-purple-100',
       iconColor: 'text-purple-600',

@@ -22,7 +22,6 @@ import {
   Layers,
   ClipboardList,
   Calculator,
-  UserPlus,
 } from 'lucide-react'
 
 export type DashboardRole = 'admin' | 'hr' | 'accounting' | 'inventory' | 'sales' | 'default'
@@ -338,17 +337,6 @@ export const ALL_WIDGETS: WidgetDef[] = [
     minW: 3,
     minH: 3,
     roles: ['admin', 'accounting'],
-  },
-  {
-    id: 'recent-leads',
-    label: 'Recent Leads',
-    icon: UserPlus,
-    description: 'Newest CRM leads, stage, and estimated value',
-    defaultW: 6,
-    defaultH: 4,
-    minW: 3,
-    minH: 3,
-    roles: ['admin', 'sales'],
   },
   // ── HR widgets ───────────────────────────────────────────────────────────────
   // Not registered: there is no HR module on the backend (no employees/leave-management/

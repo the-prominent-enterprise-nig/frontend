@@ -334,14 +334,18 @@ export interface ARPayment {
   branchId?: string | null
   collectorId?: string | null
   createdAt: string
-  /** Which installment due this collection settled, when the invoice is a
-   * plan. Null for a charge invoice and for a down payment, which credits the
-   * contract rather than paying any single due. */
-  installmentScheduleLineId?: string | null
   /** The wider payment this one is a slice of, present only when that
    * payment settled dues other than this invoice (findOne populates it).
    * `amount` is the live total across the receipt's still-active
    * applications, not the raw tendered column. */
+  /** This collection's CR number, always present when it has one — unlike
+   *  `receipt` below, which only appears when the payment ALSO settled other
+   *  invoices. */
+  receiptNumber?: string | null
+  /** True for the down payment: the collection that settles no due, on an
+   *  invoice that has them. It credits the contract as a whole rather than
+   *  any one month. */
+  isDownPayment?: boolean
   receipt?: {
     id: string
     number: string | null
@@ -418,14 +422,14 @@ export interface ARInvoiceInstallmentItem {
   secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
-/** One due date on the plan. The invoice holds the whole receivable; these
- * are what it is billed across, and each carries its own settlement state. */
-export interface ARInvoiceScheduleLine {
-  id: string
+/** One month of an installment plan. The plan's dues all hang off a single
+ *  ARInvoice, so these carry their own settlement state rather than each
+ *  having an invoice status of its own. */
+export interface ARInvoiceDue {
   lineNumber: number
   dueDate: string
-  amount: number
-  paidAmount: number
+  amount: number | string
+  paidAmount: number | string
   settledAt: string | null
 }
 
@@ -433,21 +437,12 @@ export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
-  /** Cash taken at the till at checkout. Deliberately NOT part of this
-   * receivable — it was netted out of the price before the balance was
-   * financed, so it reduces `amountFinanced`, never `totalAmount`. */
-  downPayment: number
-  /** listedCashPrice - downPayment: the principal the plan actually finances. */
-  amountFinanced: number
-  monthlyInstallment: number
-  /** amountFinanced + the financing charge = what this invoice bills. */
-  totalPayable: number
-  /** What the goods cost before any financing (downPayment + amountFinanced). */
-  listedCashPrice: number
-  /** This due's position within the schedule (e.g. 2 of 12) — the rest of
-   * this detail is schedule-wide and identical across every due-date
-   * invoice on the same plan. */
+  /** Always null now: one installment sale is ONE receivable covering every
+   * due, so no single due identifies the invoice. Kept so older callers
+   * reading it degrade to blank rather than breaking. */
   lineNumber: number | null
+  /** The plan's monthly dues, in order. */
+  dues?: ARInvoiceDue[]
 }
 
 /** A credit or debit memo as it appears on an invoice — enough to explain a
@@ -487,13 +482,6 @@ export interface ARInvoice {
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
   installmentDetail?: ARInvoiceInstallmentDetail | null
-  /** Every due date of this plan, ordered. Empty/absent for a charge invoice. */
-  scheduleLines?: ARInvoiceScheduleLine[]
-  /** What the earliest UNSETTLED due still needs — list-view only. Null once
-   * every due is settled, or on a charge invoice with no schedule. */
-  nextDueAmount?: number | null
-  /** How many dues on this plan are already past their date and unsettled. */
-  overdueLineCount?: number
   posTransaction?: {
     id: string
     transactionNumber: string
@@ -505,6 +493,9 @@ export interface ARInvoice {
    * belongs to — the AR register's "Terms" column. Null for charge-mode
    * invoices, which have no schedule and so no term. */
   termMonths?: number | null
+  /** Which due of the plan this invoice is — 3 of 12. Null on a charge
+   * invoice, which has no schedule. */
+  lineNumber?: number | null
   /** Populated by get()/findOne only — the list endpoint's select stops short. */
   creditMemos?: ARInvoiceMemo[]
   debitMemos?: ARInvoiceMemo[]
@@ -1432,10 +1423,12 @@ export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
 export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
-// Payee → Other sub-choice. UTILITIES/SALARIES_WAGES behave like SUPPLIER
-// (each line picks its own category); SPECIAL_ACCOUNTS is the pre-existing
-// Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation flow.
-export type OtherCategory = 'UTILITIES' | 'SALARIES_WAGES' | 'SPECIAL_ACCOUNTS'
+// Payee → Other sub-choice. UTILITIES/SALARIES_WAGES/PAYROLL behave like
+// SUPPLIER (each line picks its own category); SPECIAL_ACCOUNTS is the
+// pre-existing Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation
+// flow. PAYROLL is the only one the Expense screen sends, off a typed
+// "Payroll" in its free-text Other Category box.
+export type OtherCategory = 'UTILITIES' | 'SALARIES_WAGES' | 'SPECIAL_ACCOUNTS' | 'PAYROLL'
 export type SpecialAccountType =
   | 'EMPLOYEE_CASH_ADVANCE'
   | 'EMPLOYEE_CASH_LOAN'

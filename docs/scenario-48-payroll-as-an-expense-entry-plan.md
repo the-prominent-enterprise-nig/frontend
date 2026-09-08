@@ -114,12 +114,211 @@ An expense line may name a customer. Recording the expense settles that customer
 
 The line's customer is picked under its Name, and import pre-fills it by matching the recipient — indexed as given, surname-first flipped, and both with middle initials dropped, since the sheet writes `ADVENCULA, JUVY B.` where a customer record says `Juvy Advencula`. An ambiguous name is dropped rather than guessed.
 
+## Revision — payroll pulled back behind its own category (2026-09-08)
+
+The build above put Import, **Division**, **Special Account** and **Name** on the
+shared line grid, so every expense — a utility bill, a box of stationery — got
+payroll's columns and an Import button that nothing there could feed. The
+developer's call: the expense screen goes back to what
+`feat/accounting-expenses-voucher` had, and payroll gets a category of its own.
+
+**Payroll is now `Payee → Other` with `Payroll` typed into Other Category.**
+Other Category stays the free-text box it has always been — the word is matched
+case-insensitively rather than picked from a dropdown, which is what keeps the
+field itself unchanged. `PAYROLL` joins `OTHER_CATEGORIES` server-side, so the
+typed word is stored and a payroll run is afterwards identifiable as one.
+
+Behind that category, and nowhere else:
+
+|                            | Off payroll                                                    | On payroll                                                                           |
+| -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Line grid                  | Account · Description · Amount · Tax Code · Tax Amount · Total | + Special Account, Name, Division                                                    |
+| Import / Download template | absent                                                         | present                                                                              |
+| Line amount                | `min 0.01`, must be > 0                                        | negative allowed (deductions)                                                        |
+| Account picker             | EXPENSE accounts                                               | every postable account                                                               |
+| Sent per line              | —                                                              | `isSpecialAccount`, `payee`, `divisionBranchId`/`divisionDepartmentId`, `customerId` |
+
+`PAYROLL` keeps its free-text `payee` in `resolveHeader` (`UTILITIES` was the
+only category that did). Without that the header would drop the very word the
+clerk typed to get into payroll mode, and an entry would not re-open in it.
+
+**One deliberate departure from the branch**: Tax Amount stays **read-only and
+derived** everywhere, rather than going back to a typed box. The branch's server
+took `line.taxAmount` as given; today's derives it from `taxCode` and ignores
+what is sent (`expenses.service.ts:441`), and that is untouched here. Restoring
+the input would put a field on screen whose value is silently discarded.
+
+Nothing is stranded: a query over `business_expense_lines` found **zero** rows
+carrying a division, a special-account flag, a customer or a negative amount, so
+no saved entry loses data by the columns going away.
+
+**Left alone**: the Expenses list keeps its Division filters and its
+"name / division" recipient summary, and Settings → Departments stays — payroll
+entries still have to be findable. Backend validation stays permissive (UI
+gating only), so nothing already saved fails on edit.
+
+**Interim, by design.** The CSV upload is parked under a category until payroll
+gets a screen of its own; see the _Risks_ note above on how little of payroll
+actually exists.
+
+## Revision 2 — Special Account becomes the name, not a yes/no (2026-09-08)
+
+Prompted by the client's own screen alongside ours. Theirs puts a **named
+balance** in the Special Account column — `CL MONTELIBANO -BLDG IMPROVEMENT
+(P4,787,136.51)`, `NARCISO SANTIAGO` — with no separate Name column. Ours had a
+Yes/No beside a free-text Name, and every imported line came back **No**.
+
+### Why it was always "No"
+
+`specialAccountFor()` matched a four-entry alias list — `employee cash advance`,
+`employee cash loan`, `cash loan others`. The client's sheet writes **`Advances
+to Officer's and Employees`** and **`Loans to Officers and Employees`**. The
+aliases had been deleted earlier "now that the client's own chart is loaded", on
+the reasoning that those names resolve to real accounts directly — but nothing
+replaced the _signal_ that those accounts keep a per-person ledger. So
+`specialAccountType` was `''` on every row of the client's file, and the alias
+list had become unreachable code.
+
+### The fix: it is a property of the account
+
+New column `Account.isSpecialAccountControl`, backfilled from the client's own
+"SPECIAL ACCOUNTS — RECORDING/LEDGER … per Transactions/Employee" list, which
+names control accounts rather than entries. Eleven accounts flagged: their nine,
+plus `Advances to Non-Employees` and `Loans to Officers and Employees` — **not on
+their list**, added because every deduction line in their construction payroll
+screenshot posts to the first, and their disbursement sheet carries per-person
+rows on the second. Both need the client's confirmation.
+
+A flag, not a mapping key: this is a set, not a named role, and its membership is
+the client's to change without a code release.
+
+### The fix: one control, not two
+
+`SpecialAccountPicker` replaces the Yes/No **and** the Name column. It is an
+editable combobox — suggestions come from `GET /expenses/special-accounts`
+scoped to the line's own account, each with its running balance the way the
+client's tool shows it, and a name not yet in the register can simply be typed.
+That last part is required, not a convenience: the register is derived from
+RECORDED lines, so a person's first advance can never be in it.
+
+`isSpecialAccount` is now **derived** on submit — a name under a control account
+is a special-account line — so the flag and the name can no longer disagree.
+Inert, greyed and placeholdered `—` on an account that keeps no ledger.
+
+The picker is portalled, like `CategorySelect`, because the line grid scrolls.
+
+### Where column B goes now
+
+Decided by the resolved account, not by whether the text looks like a person:
+
+| Column B                          | Lands in        |
+| --------------------------------- | --------------- |
+| Matches a branch or department    | Division        |
+| Account keeps a subsidiary ledger | Special Account |
+| Anything else                     | Description     |
+
+Customer matching moved off `payee` onto column B itself — a receivable line
+names a person but keeps no per-name ledger, so its name sits in Description, and
+it is exactly the line with instalments to settle.
+
+### Environment
+
+Both seeds had only ever run against the throwaway test database. Run here
+2026-09-08: `seed-client-coa.ts` (325 → 397 accounts, 44 relocated) then
+`seed-departments.ts` (20 created). Before that, **none** of the client's control
+accounts existed and there were zero departments — which is the rest of why the
+screen looked wrong. See [Scenario 49](./scenario-49-client-chart-of-accounts-plan.md).
+
+### Still open
+
+1. **Is the client's list exhaustive?** It omits `Advances to Non-Employees`,
+   which their own screenshot uses throughout.
+2. **`Accounts receivable - MI` is deliberately not flagged.** Its balances are
+   per customer and already tracked in the instalment ledger; flagging it would
+   double-represent them in the Special Accounts register.
+3. **`1-03-023 Cash Loan – Others` and `1-03-024 CA-Liquidation`** — the invented
+   chart's own special accounts — were not relocated by the COA seed and now sit
+   interleaved among the client's fixed assets. Mappings resolve; the chart reads
+   wrongly.
+
+## Revision 3 — matching the client's live payroll entry (2026-09-08)
+
+From four screenshots of their own system: a real payroll entry (`NIG EMPLOYEES`,
+`PAYROLL AUGUST 28, 2026`), its deduction rows, ours beside it, and their printed
+voucher.
+
+### Description was about to print blank
+
+Their entry carries **both** — `HR DEPARTMENT PANAY` in Description, `HR
+DEPARTMENT` in Division — and Description is the column their printed voucher
+shows. Our importer treated the two as either/or, filling Description only when
+no Division matched. Seeding the departments would therefore have _emptied_ the
+voucher's Description column. Column B now populates both; the exception is a
+control account, where column B is the name a balance is carried against and the
+memo is a sentence the user writes.
+
+### `Advances to Executives` was missing
+
+Their entry files executive advances against `1-01-050` with a person in Special
+Account. Not on the list they sent. Flagged, pending confirmation. Its sibling
+`1-01-049 Advances to Agents` deliberately left alone — nothing seen shows it
+carrying per-person balances.
+
+Their `Pag-ibig Loan Payable` row has **no** Special Account, confirming the
+earlier call to leave the statutory payables unflagged.
+
+### Divisions are region-free
+
+Their Division column reads `HR DEPARTMENT`; the region lives in Description.
+Ours were branch-owned and region-suffixed, so every department appeared twice.
+`Department.branchId` is now nullable (partial unique index covers the company-
+wide case, since Postgres treats NULLs as distinct), `seed-departments.ts`
+reseeds their twelve names, and the twenty branch-owned ones are soft-deleted —
+guarded on nothing referencing them.
+
+**Their mapping is curated, not mechanical**, and this is the part to watch:
+`MARKETING DEPARTMENT PANAY` files under `NIG MARKETEAM`; both `ACCOUNT
+RECEIVABLE` and `CREDIT & COLLECTION` collapse into `AR & COLLECTIONDEPARTMENT`.
+`DIVISION_ALIASES` in the importer holds what their screenshot shows and nothing
+more. `SALES AND MARKETING DEPARTMENT NEGROS` is left unmapped on purpose — it
+could be either `NIG MARKETEAM` or `SALES DEPARTMENT`, and guessing misfiles a
+region's payroll.
+
+Settings → Departments was branch-scoped and would have shown none of these; it
+now defaults to a Company-wide view.
+
+### One control, prefilled and clearable
+
+Per the developer: _"just put the customer/employee as default in the picker. if
+they want to change they have to remove the existing customer."_ The separate
+customer field is gone. A matched customer is shown **as** the picker's value,
+tinted, with an × — the row is one line tall, and replacing a match takes a
+deliberate clear rather than a stray keystroke. Once cleared, the dropdown offers
+both existing balances on that account and customer search.
+
+### Voucher
+
+Their payroll voucher carries `UB#0826-P2`, distinct from the payment reference
+`UB#0826-02P`. The field was SUPPLIER-only, so payroll printed `—`. Now offered
+on payroll too, server-side included.
+
+`buildExpenseVoucherHtml` already produced their voucher's layout — payee, Date /
+Reference / VOUCHER #, company block, `Account | Description | Total`, signatures
+— so nothing else there changed.
+
+### Deliberately not done
+
+Their Special Account column appears only on rows that need it, and their Account
+cell changes width row to row as a result. Ours keeps the column always present,
+greyed to `—` — the developer's call, since a fixed grid keeps every row aligned
+with the header.
+
 ## Accepted tradeoffs
 
 1. **Customer matching is by name.** There is no employee↔customer link. A name held by two customers matches neither. The picker exists so a wrong match is visible rather than silent.
 2. **`GUIMARAS` imports without a division** — three rows, deliberately.
 3. **Loose branch matching** (`BAGO CITY` → `Bago`, `JORDAN` → `Guimaras - Jordan`) runs only after exact matching fails, and commits only when exactly one branch is a candidate.
-4. **Payroll's home is `Payee → Other → Salaries & Wages`**, which came from `development`'s own `otherCategory` work rather than this branch.
+4. ~~**Payroll's home is `Payee → Other → Salaries & Wages`**, which came from `development`'s own `otherCategory` work rather than this branch.~~ **Superseded 2026-09-08** — payroll's home is `Payee → Other → Payroll`, typed into the free-text Other Category box. See the Revision section above.
 
 ## Open questions
 
