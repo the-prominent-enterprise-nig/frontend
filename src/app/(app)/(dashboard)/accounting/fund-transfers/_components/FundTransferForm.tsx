@@ -70,17 +70,17 @@ export default function FundTransferForm() {
       setError(res.message || res.error || 'Transfer failed — check Account Mapping settings')
       return
     }
-    router.push('/accounting/bank-reconciliation')
+    router.push('/accounting/bank-accounts')
   }
 
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
-        href="/accounting/bank-reconciliation"
+        href="/accounting/bank-accounts"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to bank reconciliation
+        Back to bank accounts
       </Link>
 
       <h1 className="text-2xl font-semibold text-gray-900">Fund Transfer</h1>
@@ -184,7 +184,7 @@ export default function FundTransferForm() {
         )}
         <div className="flex justify-end gap-2 pt-3 border-t">
           <Link
-            href="/accounting/bank-reconciliation"
+            href="/accounting/bank-accounts"
             className="px-4 py-2 text-sm hover:bg-gray-100 rounded-lg text-gray-700"
           >
             Cancel
