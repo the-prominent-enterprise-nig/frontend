@@ -20,8 +20,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`${poppins.variable} font-(family-name:--font-poppins) antialiased`}>
+    // The Poppins variable lives on <html> so `--font-poppins` — and therefore
+    // the `--font-sans`/`--font-mono` theme tokens that reference it — resolves
+    // for every element, including the base `html { font-sans }` rule.
+    <html lang="en" className={poppins.variable}>
+      <body className="font-sans antialiased">
         <NumberInputScrollGuard />
         {children}
       </body>

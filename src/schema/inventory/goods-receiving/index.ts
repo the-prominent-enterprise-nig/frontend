@@ -1,11 +1,32 @@
 import { z } from 'zod'
 
+/** One step of a supplier discount chain, applied in order off SRP. Same shape
+ * PO lines use, so a receipt taken against a PO carries the terms unchanged. */
+const LineDiscountSchema = z.object({
+  name: z.string().optional().nullable(),
+  type: z.enum(['percentage', 'amount']),
+  value: z.number(),
+})
+
 const ReceiveStockLineSchema = z
   .object({
     itemId: z.string().min(1, 'Item is required'),
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
+    // Scenario 46 — the supplier's pricing as stated: SRP and the ordered
+    // discount chain that produced unitCost, plus per-line tax.
+    //
+    // These were missing here while the Receive modal collected them and the
+    // backend persisted them, and zod strips unknown keys — so receive-stock.ts
+    // forwards parsed.data with all four silently deleted. Every receipt line
+    // ever created landed with srp/discounts NULL, and the RR could never show
+    // why a cost was what it was (found 2026-09-07: the PO showed
+    // "SRP ₱3,000 · 3% → ₱500 off → ₱2,410", the receipt showed only 2410).
+    srp: z.number().min(0).optional(),
+    discounts: z.array(LineDiscountSchema).optional(),
+    taxCode: z.string().optional(),
+    taxAmount: z.number().min(0).optional(),
     // Promotional/free item included in the delivery — server forces
     // unitCost to 0 for these regardless of what's submitted (Scenario 05
     // followup, "freebies" gap).

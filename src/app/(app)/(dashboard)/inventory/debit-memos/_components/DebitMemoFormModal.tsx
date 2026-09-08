@@ -9,6 +9,7 @@ import { Loader2, Plus, Trash2, X } from 'lucide-react'
 import {
   APBills,
   SupplierDebitMemos,
+  apOutstanding,
   fmtMoney,
   type APBill,
   type SupplierDebitMemo,
@@ -224,9 +225,14 @@ export default function DebitMemoFormModal({
   // added back before the cap is judged — mirroring the server's own
   // `alreadyApplied`. Otherwise raising a ₱500 memo to ₱800 would be refused
   // by the ₱500 it had itself removed.
+  //
+  // Net of withholding, via apOutstanding: the withheld slice left Accounts
+  // Payable at receive() and is owed to the BIR, so a returned-goods credit
+  // cannot reach it. totalAmount - amountPaid offered a cap above what the
+  // supplier is actually owed, which the server now refuses — this stops the
+  // form inviting the rejection.
   const outstanding = selectedBill
-    ? selectedBill.totalAmount -
-      selectedBill.amountPaid +
+    ? apOutstanding(selectedBill) +
       (isPosted && selectedBill.id === memo!.apBillId ? memo!.amount : 0)
     : null
 

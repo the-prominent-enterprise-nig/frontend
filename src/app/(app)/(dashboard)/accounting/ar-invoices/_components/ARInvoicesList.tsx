@@ -61,13 +61,13 @@ import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import DebitMemoDialog from '../../_shared/DebitMemoDialog'
 import Field from '../../_shared/Field'
 
-const INVOICE_STATUS_BADGE: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-600',
-  SENT: 'bg-blue-50 text-blue-700',
-  PARTIAL: 'bg-amber-50 text-amber-700',
-  OVERDUE: 'bg-red-50 text-red-700',
-  PAID: 'bg-emerald-50 text-emerald-700',
-}
+/** The sales invoice number off the physical SI booklet is this invoice's
+ * identity everywhere it's shown to staff — it's what the customer's copy
+ * says and what they quote on the phone. The generated INST-POS-… /
+ * INV-… number is only a fallback, for a manually-created invoice with no
+ * originating sale. Same rule the invoice detail sheet, the POS transaction
+ * list and the Receipts rows in this file already follow. */
+const invoiceLabel = (i: ARInvoice) => i.posTransaction?.salesInvoiceNumber || i.invoiceNumber
 
 export default function ARInvoicesList({
   initialCustomerId,
@@ -201,7 +201,6 @@ export default function ARInvoicesList({
         total: number
         paid: number
         outstanding: number
-        dueNow: number
         overdueCount: number
       }
     >()
@@ -215,7 +214,6 @@ export default function ARInvoicesList({
           total: 0,
           paid: 0,
           outstanding: 0,
-          dueNow: 0,
           overdueCount: 0,
         }
         map.set(inv.customerId, g)
@@ -224,9 +222,6 @@ export default function ARInvoicesList({
       g.total += inv.totalAmount
       g.paid += inv.amountPaid
       g.outstanding += inv.totalAmount - inv.amountPaid
-      if (new Date(inv.dueDate) <= new Date()) {
-        g.dueNow += Math.max(inv.totalAmount - inv.amountPaid, 0)
-      }
       if (inv.status === 'OVERDUE') g.overdueCount += 1
     }
     // Customers owing the most float to the top — that's who collections
@@ -433,7 +428,7 @@ export default function ARInvoicesList({
         )}
         <div className="min-w-64 flex-1">
           <label className="mb-1 block text-xs font-semibold text-gray-600">
-            Invoice # or Transaction #
+            Invoice #, SI # or Transaction #
           </label>
           <div className="relative">
             <Search
@@ -481,11 +476,11 @@ export default function ARInvoicesList({
               <th className="px-3 py-2 text-left">Invoice #</th>
               <th className="px-3 py-2 text-left">Customer</th>
               <th className="px-3 py-2 text-left">Invoice Date</th>
-              <th className="px-3 py-2 text-left">Due Date</th>
+              <th className="px-3 py-2 text-left">Next due</th>
+              <th className="px-3 py-2 text-right">Terms</th>
               <th className="px-3 py-2 text-right">Total</th>
               <th className="px-3 py-2 text-right">Paid</th>
               <th className="px-3 py-2 text-right">Outstanding</th>
-              <th className="px-3 py-2 text-right">Due</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
@@ -551,7 +546,7 @@ export default function ARInvoicesList({
                       </span>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-xs" colSpan={2}>
+                  <td className="px-3 py-2 text-xs" colSpan={3}>
                     {g.overdueCount > 0 && (
                       <span className="font-medium text-red-600">{g.overdueCount} overdue</span>
                     )}
@@ -559,13 +554,6 @@ export default function ARInvoicesList({
                   <td className="px-3 py-2 text-right">{fmtMoney(g.total)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(g.paid)}</td>
                   <td className="px-3 py-2 text-right">{fmtMoney(g.outstanding)}</td>
-                  <td className="px-3 py-2 text-right">
-                    {g.dueNow > 0 ? (
-                      <span className="font-medium text-red-600">{fmtMoney(g.dueNow)}</span>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
-                  </td>
                   <td className="px-3 py-2" />
                   <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     <Link
@@ -683,11 +671,45 @@ function InvoiceRow({
   onVoid: () => void
   onDelete: () => void
 }) {
+  const outstanding = i.totalAmount - i.amountPaid
+  // A plan is late if any of its dues is; a charge invoice has no dues, so
+  // its server-resolved status is the only signal. Deliberately no clock of
+  // its own here — a client clock can disagree with the server's on the
+  // boundary day, and `status` already carries that judgement.
+  const planOverdue =
+    outstanding > 0.01 && ((i.overdueLineCount ?? 0) > 0 || i.status === 'OVERDUE')
+  // "SENT" says nothing about a 12-month plan that is three dues behind.
+  const planLabel =
+    outstanding <= 0.01
+      ? 'Paid'
+      : (i.overdueLineCount ?? 0) > 0
+        ? `Overdue (${i.overdueLineCount})`
+        : planOverdue
+          ? 'Due now'
+          : i.status === 'DRAFT'
+            ? 'Draft'
+            : 'On track'
+  const planBadge =
+    planLabel === 'Paid'
+      ? 'bg-emerald-50 text-emerald-700'
+      : planOverdue
+        ? 'bg-red-50 text-red-700'
+        : planLabel === 'Draft'
+          ? 'bg-gray-100 text-gray-600'
+          : 'bg-prominent-purple-50 text-prominent-purple-700'
+
   return (
     <tr onClick={onOpen} className="cursor-pointer hover:bg-gray-50">
       <td className="px-3 py-2 max-w-40">
-        <span title={i.invoiceNumber} className="block truncate font-mono text-xs text-purple-700">
-          {i.invoiceNumber}
+        <span
+          title={
+            i.posTransaction?.salesInvoiceNumber
+              ? `${invoiceLabel(i)} · ${i.invoiceNumber}`
+              : i.invoiceNumber
+          }
+          className="block truncate font-mono text-xs text-purple-700"
+        >
+          {invoiceLabel(i)}
         </span>
         {i.posTransaction && (
           <Link
@@ -705,31 +727,33 @@ function InvoiceRow({
         </span>
       </td>
       <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
-      <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(i.dueDate)}</td>
+      {/* ARInvoice.dueDate is re-pointed at the earliest UNSETTLED due as
+          collections land, so this column is the next thing to collect —
+          shown with what that due still needs, not the plan total. */}
+      <td className="px-3 py-2 text-xs whitespace-nowrap">
+        <span className={planOverdue ? 'font-medium text-red-600' : undefined}>
+          {fmtDate(i.dueDate)}
+        </span>
+        {i.nextDueAmount != null && i.nextDueAmount > 0 && (
+          <span className="block text-[10px] text-gray-400">{fmtMoney(i.nextDueAmount)}</span>
+        )}
+      </td>
+      {/* The financing term this due line was sold on, same "Term" the AR
+          Aging sheet reports. Charge-mode invoices carry no schedule and so
+          no term. */}
+      <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+        {i.termMonths != null ? `${i.termMonths} mos` : <span className="text-gray-400">—</span>}
+      </td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount)}</td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.amountPaid)}</td>
       <td className="px-3 py-2 text-right">{fmtMoney(i.totalAmount - i.amountPaid)}</td>
-      <td className="px-3 py-2 text-right">
-        {/* Scenario 29 ACC-05 — Outstanding above counts the
-            balance regardless of maturity; Due only counts it
-            once the invoice's own due date has passed. */}
-        {new Date(i.dueDate) <= new Date() ? (
-          <span
-            className={i.totalAmount - i.amountPaid > 0 ? 'font-medium text-red-600' : undefined}
-          >
-            {fmtMoney(Math.max(i.totalAmount - i.amountPaid, 0))}
-          </span>
-        ) : (
-          <span className="text-gray-400">—</span>
-        )}
-      </td>
       <td className="px-3 py-2">
         <span
-          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${INVOICE_STATUS_BADGE[i.status] ?? 'bg-gray-100 text-gray-600'}`}
+          className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${planBadge}`}
         >
-          {i.status}
+          {planLabel}
         </span>
-        {i.status === 'OVERDUE' && (
+        {planOverdue && (
           <span className="block text-[10px] text-red-500 mt-0.5 whitespace-nowrap">
             {Math.floor((Date.now() - new Date(i.dueDate).getTime()) / 86400000)} days overdue
           </span>
@@ -867,9 +891,9 @@ function PaymentReferenceRow({ r, onView }: { r: ARReceiptListItem; onView: () =
       </td>
       <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(r.paymentDate)}</td>
       <td className="px-3 py-2 text-xs whitespace-nowrap text-gray-400">—</td>
+      <td className="px-3 py-2 text-right text-xs text-gray-400">—</td>
       <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
       <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
-      <td className="px-3 py-2 text-right text-gray-400">—</td>
       <td className="px-3 py-2 text-right text-gray-400">—</td>
       <td className="px-3 py-2">
         <span
@@ -942,7 +966,7 @@ function VoidInvoiceDialog({
           <div className="text-sm text-gray-600 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              Void invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This reverses
+              Void invoice <span className="font-mono">{invoiceLabel(invoice)}</span>? This reverses
               its journal entry and cannot be undone.
             </span>
           </div>
@@ -1040,7 +1064,7 @@ function DeleteInvoiceDialog({
           <div className="text-sm text-gray-600 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <span>
-              Delete invoice <span className="font-mono">{invoice.invoiceNumber}</span>? This cannot
+              Delete invoice <span className="font-mono">{invoiceLabel(invoice)}</span>? This cannot
               be undone.
             </span>
           </div>
@@ -1565,7 +1589,7 @@ function PaymentHistoryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-lg bg-white shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h3 className="text-lg font-semibold">Payment history — {invoice.invoiceNumber}</h3>
+          <h3 className="text-lg font-semibold">Payment history — {invoiceLabel(invoice)}</h3>
           <button onClick={onClose}>
             <X className="w-5 h-5 text-gray-500" />
           </button>
