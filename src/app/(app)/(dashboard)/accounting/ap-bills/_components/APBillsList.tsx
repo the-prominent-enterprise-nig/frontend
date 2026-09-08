@@ -462,10 +462,15 @@ export default function APBillsList() {
               <th className="px-3 py-2 text-left">Bill Date</th>
               <th className="px-3 py-2 text-left">Due Date</th>
               <th className="px-3 py-2 text-right">Total</th>
-              {/* Without this column Total − Paid wouldn't equal Outstanding on
-                  any bill with withholding, and the gap would look like a bug. */}
+              {/* Without this column Total − Settled wouldn't equal Outstanding
+                  on any bill with withholding, and the gap would look like a
+                  bug. */}
               <th className="px-3 py-2 text-right">Withheld</th>
-              <th className="px-3 py-2 text-right">Paid</th>
+              {/* "Settled", not "Paid": withholding is no longer folded into
+                  amountPaid — it has its own column now — but a posted debit
+                  memo still lands there, and a returned-goods credit is not
+                  money paid to the supplier. Open the bill for the breakdown. */}
+              <th className="px-3 py-2 text-right">Settled</th>
               <th className="px-3 py-2 text-right">Outstanding</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="w-10 px-3 py-2" />

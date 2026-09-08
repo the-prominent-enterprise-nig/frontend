@@ -46,6 +46,8 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   businessType: undefined,
   alphanumericTaxCode: undefined,
   taxRate: undefined,
+  defaultInputVat: 'pct_12',
+  defaultWithholding: 'pct_1',
   defaultPayableAccountId: undefined,
   defaultExpenseAccountId: undefined,
 }
@@ -77,6 +79,8 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
     businessType: supplier.businessType ?? undefined,
     alphanumericTaxCode: supplier.alphanumericTaxCode ?? undefined,
     taxRate: supplier.taxRate ?? undefined,
+    defaultInputVat: supplier.defaultInputVat ?? 'pct_12',
+    defaultWithholding: supplier.defaultWithholding ?? 'pct_1',
     defaultPayableAccountId: supplier.defaultPayableAccountId ?? undefined,
     defaultExpenseAccountId: supplier.defaultExpenseAccountId ?? undefined,
   }
@@ -270,16 +274,43 @@ export function SupplierFormModal({
                   <p className="mt-1 text-xs text-red-500">{errors.alphanumericTaxCode.message}</p>
                 )}
               </div>
+              {/* Replaces the old free-text "Tax Rate" box, which read
+                  "e.g. 12%, Exempt" but drove nothing. This one is what
+                  receiving actually computes Input VAT from — the column
+                  itself is untouched, so existing values are still on file. */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">Tax Rate</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 12%, Exempt"
-                  {...register('taxRate')}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                />
-                {errors.taxRate && (
-                  <p className="mt-1 text-xs text-red-500">{errors.taxRate.message}</p>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">Input VAT</label>
+                <select
+                  {...register('defaultInputVat')}
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="pct_12">VAT-registered (12%)</option>
+                  <option value="none">Non-VAT (no input tax)</option>
+                </select>
+                {errors.defaultInputVat && (
+                  <p className="mt-1 text-xs text-red-500">{errors.defaultInputVat.message}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Withholding */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Held back from what's paid out and remitted to the BIR
+                  (Form 2307). Computed on the VAT-exclusive amount at
+                  receiving — you never withhold on the government's own tax. */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Withholding Tax
+                </label>
+                <select
+                  {...register('defaultWithholding')}
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
+                >
+                  <option value="pct_1">Withhold 1% (BIR 2307)</option>
+                  <option value="none">None</option>
+                </select>
+                {errors.defaultWithholding && (
+                  <p className="mt-1 text-xs text-red-500">{errors.defaultWithholding.message}</p>
                 )}
               </div>
             </div>
