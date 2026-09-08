@@ -396,7 +396,7 @@ export default function Customer360({
             <>
               <ul className="divide-y divide-gray-100">
                 {upcomingPayables.slice(0, 10).map((p) => (
-                  <li key={p.invoiceId} className="py-2.5 text-[13px]">
+                  <li key={p.key} className="py-2.5 text-[13px]">
                     <button
                       type="button"
                       onClick={() => setScheduleDetailTarget(p.schedule)}
@@ -774,6 +774,11 @@ function productLabel(
 // new endpoint — just reshaped client-side: filter out settled/void lines,
 // flatten every schedule's lines into one array, sort by due date.
 type UpcomingPayable = {
+  /** Unique per due. Scenario 47 made one ARInvoice cover a whole installment
+   * sale — InstallmentScheduleLine.arInvoiceId lost its @unique — so the
+   * invoice id repeats across every due of a plan and can no longer identify
+   * one. The schedule plus the line number can. */
+  key: string
   schedule: InstallmentSchedule
   invoiceId: string
   invoiceNumber: string
@@ -790,13 +795,20 @@ function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPaya
     for (const line of schedule.lines) {
       if (['PAID', 'CANCELLED', 'DRAFT'].includes(line.arInvoice.status)) continue
       payables.push({
+        key: `${schedule.id}-${line.lineNumber}`,
         schedule,
         invoiceId: line.arInvoice.id,
         invoiceNumber: line.arInvoice.invoiceNumber,
         lineNumber: line.lineNumber,
         totalLines: schedule.lines.length,
-        dueDate: line.arInvoice.dueDate,
-        amountDue: line.arInvoice.totalAmount - line.arInvoice.amountPaid,
+        // The LINE's own due date and amount, not the invoice's. They agreed
+        // while every due had its own ARInvoice; since Scenario 47 gave the
+        // whole sale one invoice they do not. Reading the invoice showed every
+        // due carrying the same date, and each one carrying the entire
+        // remaining balance — so a ₱12,000 plan with 10 dues left summed to
+        // ₱120,000 in the header above.
+        dueDate: line.dueDate,
+        amountDue: line.amount,
         status: line.arInvoice.status,
       })
     }

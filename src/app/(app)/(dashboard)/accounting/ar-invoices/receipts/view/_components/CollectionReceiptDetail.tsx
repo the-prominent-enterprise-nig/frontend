@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Download, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Printer } from 'lucide-react'
 import { ARInvoices, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { printCollectionReceiptDocument } from '@/src/libs/print/printInventoryDocument'
 import {
@@ -134,8 +134,8 @@ function CollectionReceiptDetailBody() {
           onClick={() => printCollectionReceiptDocument(doc)}
           className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
         >
-          <Download className="h-4 w-4" />
-          Print / Download
+          <Printer className="h-4 w-4" />
+          Print
         </button>
       </div>
 
