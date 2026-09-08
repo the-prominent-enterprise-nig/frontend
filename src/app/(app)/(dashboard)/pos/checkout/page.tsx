@@ -38,8 +38,8 @@ import 'react-phone-number-input/style.css'
 import {
   computePricingTotals,
   resolveLineTaxRate,
-  displayUnitPriceWithTax,
   displayUnitPriceExclTax,
+  effectiveUnitPrice,
   lineTaxAmount,
 } from './_utils/calculations'
 import { useRouter } from 'next/navigation'
@@ -1085,7 +1085,11 @@ export default function CheckoutPage() {
   // (inclusive), and the real per-line tax for lines that still need it added
   // on top (exclusive) — correct for carts that mix both, not just carts that
   // uniformly match the tenant's global pricing-mode default.
-  const subtotal = rawSubtotal + additiveTax
+  // Exempt: the VAT-exclusive base IS the price, so Subtotal and Total both
+  // drop by the embedded tax. Using rawSubtotal here left the total showing
+  // the VAT-inclusive figure while the Tax Exempt row read "—", so flipping
+  // the toggle appeared to do nothing.
+  const subtotal = isTaxExempt ? vatExclSubtotalForBackend : rawSubtotal + additiveTax
 
   const totalAmount = Math.max(0, Math.round((subtotal - promoDiscount) * 100) / 100)
 
@@ -1137,7 +1141,8 @@ export default function CheckoutPage() {
   const cashLinesGross =
     Math.round(
       cashCartLines.reduce(
-        (s, l) => s + displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity,
+        (s, l) =>
+          s + effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity,
         0
       ) * 100
     ) / 100
@@ -1149,7 +1154,8 @@ export default function CheckoutPage() {
   const tpfLinesGross =
     Math.round(
       tpfInstallmentCartLines.reduce(
-        (s, l) => s + displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity,
+        (s, l) =>
+          s + effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity,
         0
       ) * 100
     ) / 100
@@ -1381,7 +1387,9 @@ export default function CheckoutPage() {
     for (const line of installmentCartLines) {
       const lineAmount =
         Math.round(
-          displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity * 100
+          effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
+            line.quantity *
+            100
         ) / 100
       const financingTermId = line.financingTermId
       if (!financingTermId || lineAmount <= 0) {
@@ -1432,7 +1440,12 @@ export default function CheckoutPage() {
       updateSessionDisplay(sessionId, {
         status: cart.length > 0 ? 'active' : 'idle',
         lines: cart.map((l) => {
-          const displayUnitPrice = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing)
+          const displayUnitPrice = effectiveUnitPrice(
+            l,
+            activeTaxRate,
+            inclusivePricing,
+            isTaxExempt
+          )
           return {
             itemName: l.itemName,
             quantity: l.quantity,
@@ -1649,7 +1662,8 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
-        const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
+        const lineAmount =
+          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         return {
           ...l,
           installmentProvider: provider,
@@ -1679,7 +1693,9 @@ export default function CheckoutPage() {
               // 10% floor (ceil instead of round guarantees that even if the
               // exact 10% has a fractional remainder).
               Math.ceil(
-                displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity * 0.1
+                effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
+                  l.quantity *
+                  0.1
               ).toFixed(2)
         return { ...l, financingTermId, downPaymentInput }
       })
@@ -2015,7 +2031,8 @@ export default function CheckoutPage() {
       // Same 10% floor as inhouse — the financier funds only the balance,
       // so a missing down payment isn't "financed in full", it's unbilled.
       for (const l of tpfInstallmentCartLines) {
-        const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
+        const lineAmount =
+          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
         if (downPayment <= 0) {
           setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
@@ -2032,7 +2049,8 @@ export default function CheckoutPage() {
       }
     }
     for (const l of inhouseInstallmentCartLines) {
-      const lineAmount = displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity
+      const lineAmount =
+        effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
       const downPayment = parseFloat(l.downPaymentInput ?? '0') || 0
       if (downPayment < 0 || downPayment > lineAmount) {
         setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
@@ -2511,7 +2529,7 @@ export default function CheckoutPage() {
             l.invoiceType === 'installment' && l.installmentProvider === 'tpf'
               ? Math.max(
                   0,
-                  displayUnitPriceWithTax(l, activeTaxRate, inclusivePricing) * l.quantity -
+                  effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity -
                     (parseFloat(l.downPaymentInput ?? '0') || 0)
                 )
               : null,
@@ -2714,6 +2732,7 @@ export default function CheckoutPage() {
         promoDiscount={promoDiscount}
         activeTaxRate={activeTaxRate}
         inclusivePricing={inclusivePricing}
+        isTaxExempt={isTaxExempt}
       />
     )
   }
@@ -3734,7 +3753,8 @@ export default function CheckoutPage() {
                   const groupMode = line.invoiceType ?? 'cash'
                   const groupProvider = line.installmentProvider ?? 'inhouse'
                   const lineSaleAmount =
-                    displayUnitPriceWithTax(line, activeTaxRate, inclusivePricing) * line.quantity
+                    effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
+                    line.quantity
                   const minDownPayment = 0.1 * lineSaleAmount
                   // Whole pesos, rounded up — matches the auto-fill in
                   // setLineFinancingTermId() so the displayed floor is never
@@ -5262,6 +5282,7 @@ function SuccessScreen({
   promoDiscount,
   activeTaxRate,
   inclusivePricing,
+  isTaxExempt,
 }: {
   success: {
     transactionId: string
@@ -5296,6 +5317,9 @@ function SuccessScreen({
   promoDiscount: number
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
+  // The receipt has to price its lines the way the sale did, or a printed
+  // exempt receipt shows VAT-inclusive lines against a net total.
+  isTaxExempt: boolean
 }) {
   const { branchName } = usePosBranchContext()
   const [branding, setBranding] = useState<{
@@ -5550,10 +5574,11 @@ function SuccessScreen({
           {/* Items */}
           <div className="space-y-2.5 border-t border-dashed border-gray-200 px-6 py-3">
             {cart.map((line) => {
-              const displayUnitPrice = displayUnitPriceWithTax(
+              const displayUnitPrice = effectiveUnitPrice(
                 line,
                 activeTaxRate,
-                inclusivePricing
+                inclusivePricing,
+                isTaxExempt
               )
               const displayLineTotal = displayUnitPrice * line.quantity
               return (
