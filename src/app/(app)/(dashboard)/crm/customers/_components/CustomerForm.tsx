@@ -19,9 +19,11 @@ import {
 import type {
   CustomerType,
   CustomerSourceChannel,
+  CustomerAccountType,
   DuplicateCheckResult,
 } from '@/src/schema/crm/types'
 import CustomerExtraFields from '@/src/components/crm/CustomerExtraFields'
+import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 
 type FormState = {
   customerCode: string
@@ -42,6 +44,8 @@ type FormState = {
   barangayCode: string
   creditLimit: string
   groupId: string
+  branchId: string
+  accountType: CustomerAccountType
   sourceChannel: CustomerSourceChannel
   notes: string
   coMakers: CoMakerFormValues[]
@@ -70,6 +74,8 @@ const empty: FormState = {
   barangayCode: '',
   creditLimit: '',
   groupId: '',
+  branchId: '',
+  accountType: 'cash',
   sourceChannel: 'pos_walkin',
   notes: '',
   coMakers: [],
@@ -117,6 +123,11 @@ export default function CustomerForm({ id }: { id?: string }) {
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [serverError, setServerError] = useState<string | null>(null)
+  const [branches, setBranches] = useState<BranchLite[]>([])
+
+  useEffect(() => {
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+  }, [])
 
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -163,6 +174,8 @@ export default function CustomerForm({ id }: { id?: string }) {
           barangayCode: c.barangayCode ?? '',
           creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
           groupId: c.groupId ?? '',
+          branchId: c.branchId ?? '',
+          accountType: c.accountType ?? 'cash',
           sourceChannel: c.sourceChannel,
           notes: c.notes ?? '',
           coMakers: (c.coMakers ?? []).map((cm) => ({
@@ -258,6 +271,8 @@ export default function CustomerForm({ id }: { id?: string }) {
       barangayCode: form.barangayCode || undefined,
       creditLimit: form.creditLimit === '' ? undefined : Number(form.creditLimit),
       groupId: form.groupId || undefined,
+      branchId: form.branchId || undefined,
+      accountType: form.accountType,
       notes: form.notes || undefined,
       coMakers: form.coMakers.map((cm) => ({ ...cm, email: cm.email || undefined })),
       idType: form.idType || undefined,
@@ -436,6 +451,38 @@ export default function CustomerForm({ id }: { id?: string }) {
           onChange={(patch) => setForm((f) => ({ ...f, ...patch }))}
           showGroupId={false}
         />
+
+        {/* Both drive the CRM customer list's filters. accountType is stored
+            rather than derived from whether an installment account exists,
+            so it stays correctable by hand. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Branch</label>
+            <select
+              value={form.branchId}
+              onChange={(e) => setField('branchId', e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">— None —</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[13px] font-medium text-gray-700">Cash or charge</label>
+            <select
+              value={form.accountType}
+              onChange={(e) => setField('accountType', e.target.value as CustomerAccountType)}
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="cash">Cash</option>
+              <option value="charge">Charge</option>
+            </select>
+          </div>
+        </div>
 
         {isEdit && (
           <div>

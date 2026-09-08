@@ -19,15 +19,13 @@ import type {
   InstallmentScheduleLineWithInvoice,
   PaymentMethodConfig,
 } from '@/src/schema/pos'
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft',
-  SENT: 'Due',
-  PARTIAL: 'Partially Paid',
-  PAID: 'Paid',
-  OVERDUE: 'Overdue',
-  CANCELLED: 'Cancelled',
-}
+import {
+  DUE_STATUS_LABELS,
+  dueOutstanding,
+  dueStatus,
+  isDueOpen,
+  todayIso,
+} from '@/src/libs/pos/installment-dues'
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-emerald-100 text-emerald-700',
@@ -46,13 +44,9 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[status] ?? 'bg-zinc-100 text-zinc-600'}`}
     >
-      {STATUS_LABELS[status] ?? status}
+      {DUE_STATUS_LABELS[status] ?? status}
     </span>
   )
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
 }
 
 function isToday(dateIso: string): boolean {
@@ -61,7 +55,8 @@ function isToday(dateIso: string): boolean {
 
 // Used to show an informational (non-blocking) note when the chosen payment
 // date already has a payment recorded — the backend only actually rejects
-// this once the invoice is fully paid (isFullyPaid, handled separately).
+// this once the due is fully settled (isFullyPaid, handled separately).
+// Plan-wide, not per-due: payments hang off the shared invoice.
 function hasPaymentOnDate(line: InstallmentScheduleLineWithInvoice, dateIso: string): boolean {
   return line.arInvoice.payments.some((p) => p.paymentDate.slice(0, 10) === dateIso.slice(0, 10))
 }
@@ -161,12 +156,10 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
   return [...configuredOptions, CHECK_PAYMENT_OPTION]
 }
 
-// A due is eligible for selection (and payment, via "Pay Selected") once
-// it's past DRAFT (never posted) and hasn't been settled/voided — the same
-// set MovementsTab et al. call "collectable".
-function isEligibleForBulkPay(line: InstallmentScheduleLineWithInvoice): boolean {
-  return !['DRAFT', 'CANCELLED', 'PAID'].includes(line.arInvoice.status)
-}
+// A due is eligible for selection (and payment, via "Pay Selected") once its
+// contract is past DRAFT (never posted) and not voided, and the due itself
+// hasn't been settled yet.
+const isEligibleForBulkPay = isDueOpen
 
 // Shopee-style early-payment selection: checking a due auto-checks every
 // earlier unpaid due on its schedule; unchecking one un-checks everything
@@ -180,15 +173,34 @@ function toggleLineSelection(
   selected: Set<string>
 ): Set<string> {
   const eligible = scheduleLines.filter(isEligibleForBulkPay)
-  const idx = eligible.findIndex((l) => l.arInvoice.id === line.arInvoice.id)
+  // Keyed by the DUE's own id: every due of a plan shares one arInvoice.id,
+  // so keying on that made checking any one month check all twelve.
+  const idx = eligible.findIndex((l) => l.id === line.id)
   if (idx === -1) return selected
   const next = new Set(selected)
-  if (!next.has(line.arInvoice.id)) {
-    for (let i = 0; i <= idx; i++) next.add(eligible[i].arInvoice.id)
+  if (!next.has(line.id)) {
+    for (let i = 0; i <= idx; i++) next.add(eligible[i].id)
   } else {
-    for (let i = idx; i < eligible.length; i++) next.delete(eligible[i].arInvoice.id)
+    for (let i = idx; i < eligible.length; i++) next.delete(eligible[i].id)
   }
   return next
+}
+
+// The AR service reports these guards as bare codes, deliberately — they are
+// an API contract its own e2e specs assert on. This screen is where a cashier
+// reads them, so translate them here rather than leaking "rebate_exceeds_ppd"
+// into the dialog. Anything unmapped falls through to the server's own text.
+const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
+  rebate_exceeds_ppd:
+    'The rebate is more than the prompt payment discount these dues have earned. A due only earns its PPD once the payment covers it in full.',
+  rebate_requires_installment_account:
+    'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
+}
+
+function paymentErrorMessage(res: { message?: string; error?: string }): string {
+  const raw = res.message || res.error
+  if (!raw) return 'Failed to collect payment'
+  return PAYMENT_ERROR_MESSAGES[raw] ?? raw
 }
 
 // Splits a bulk payment's Total/Rebate across the selected dues (given in
@@ -206,7 +218,7 @@ function allocateBulkPayment(
   let remainingAmount = Math.max(totalAmount, 0)
   let remainingRebate = Math.max(totalRebate, 0)
   return lines.map(({ line, suggestedRebate }, i) => {
-    const outstanding = Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0)
+    const outstanding = dueOutstanding(line)
     const cap = suggestedRebate ?? 0
     const rebateAmount = Math.round(Math.min(remainingRebate, cap) * 100) / 100
     remainingRebate = Math.max(Math.round((remainingRebate - rebateAmount) * 100) / 100, 0)
@@ -286,7 +298,7 @@ export default function CollectionsScreen() {
   const [query, setQuery] = useState('')
   const [branchId, setBranchId] = useState('')
   const [customer, setCustomer] = useState<PosCustomer | null>(null)
-  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(new Set())
   const [showBulkPay, setShowBulkPay] = useState(false)
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
 
@@ -298,7 +310,7 @@ export default function CollectionsScreen() {
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
   const selectedPayableLines = schedules.flatMap((s) =>
     s.lines
-      .filter((l) => selectedInvoiceIds.has(l.arInvoice.id))
+      .filter((l) => selectedLineIds.has(l.id))
       .map((l) => ({
         line: l,
         suggestedRebate:
@@ -308,7 +320,7 @@ export default function CollectionsScreen() {
 
   function selectCustomer(next: PosCustomer | null) {
     setCustomer(next)
-    setSelectedInvoiceIds(new Set())
+    setSelectedLineIds(new Set())
   }
 
   // Deep link from an installment plan's due row (Customer360 / Installment
@@ -332,7 +344,7 @@ export default function CollectionsScreen() {
     const match = schedules.find((s) => s.id === pendingScheduleId)
     const nextDue = match?.lines.filter(isEligibleForBulkPay)[0]
     if (match && nextDue) {
-      setSelectedInvoiceIds(toggleLineSelection(match.lines, nextDue, new Set()))
+      setSelectedLineIds(toggleLineSelection(match.lines, nextDue, new Set()))
       setShowBulkPay(true)
     }
     setPendingScheduleId(null)
@@ -469,13 +481,13 @@ export default function CollectionsScreen() {
                     </span>
                   </div>
                   {(() => {
-                    // Dues are settled in order — the earliest line that
-                    // isn't PAID/CANCELLED yet is the only one collectible.
-                    // Backed by a matching hard block server-side
-                    // (ar-invoices.service.ts's recordPayment()), so this
-                    // is UI convenience, not the only guard.
-                    const nextDueLineNumber = s.lines.find(
-                      (l) => !['PAID', 'CANCELLED'].includes(l.arInvoice.status)
+                    // Dues are settled in order — the earliest unsettled
+                    // line is the only one collectible. Backed by a matching
+                    // hard block server-side (ar-invoices.service.ts applies
+                    // every collection oldest-due-first), so this is UI
+                    // convenience, not the only guard.
+                    const nextDueLineNumber = s.lines.find((l) =>
+                      isEligibleForBulkPay(l)
                     )?.lineNumber
                     return (
                       <ul className="divide-y divide-zinc-100">
@@ -485,13 +497,13 @@ export default function CollectionsScreen() {
                           // entry via a stray click here. A genuine correction
                           // (e.g. reversing a bad payment) goes through
                           // Accounting → AR Invoices instead.
-                          const isFullyPaid = line.arInvoice.status === 'PAID'
+                          const isFullyPaid = !!line.settledAt
                           const isNextDue = line.lineNumber === nextDueLineNumber
                           const isEligible = isEligibleForBulkPay(line)
-                          const isSelected = selectedInvoiceIds.has(line.arInvoice.id)
+                          const isSelected = selectedLineIds.has(line.id)
                           return (
                             <li
-                              key={line.lineNumber}
+                              key={line.id}
                               className="flex items-center justify-between gap-3 px-5 py-3"
                             >
                               <div className="flex min-w-0 items-center gap-3">
@@ -500,7 +512,7 @@ export default function CollectionsScreen() {
                                     type="checkbox"
                                     checked={isSelected}
                                     onChange={() =>
-                                      setSelectedInvoiceIds((prev) =>
+                                      setSelectedLineIds((prev) =>
                                         toggleLineSelection(s.lines, line, prev)
                                       )
                                     }
@@ -515,13 +527,13 @@ export default function CollectionsScreen() {
                                 <div className="min-w-0">
                                   <div className="text-[13px] text-zinc-800">
                                     Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                                    {fmtDate(line.arInvoice.dueDate)}
+                                    {fmtDate(line.dueDate)}
                                   </div>
                                   <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                    <StatusBadge status={line.arInvoice.status} />
+                                    <StatusBadge status={dueStatus(line)} />
                                     <span>
-                                      {fmtMoney(line.arInvoice.amountPaid)} of{' '}
-                                      {fmtMoney(line.arInvoice.totalAmount)} paid
+                                      {fmtMoney(Number(line.paidAmount))} of{' '}
+                                      {fmtMoney(Number(line.amount))} paid
                                     </span>
                                   </div>
                                 </div>
@@ -556,7 +568,7 @@ export default function CollectionsScreen() {
           onClose={() => setShowBulkPay(false)}
           onCollected={async () => {
             await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
-            setSelectedInvoiceIds(new Set())
+            setSelectedLineIds(new Set())
             setShowBulkPay(false)
           }}
         />
@@ -604,23 +616,18 @@ function CollectPaymentModal({
   // the batch UI (an itemized dues list) — both share the same editable
   // Amount/Total + Rebate fields below.
   const single = lines.length === 1 ? lines[0] : null
-  const outstanding = single
-    ? Math.max(single.line.arInvoice.totalAmount - single.line.arInvoice.amountPaid, 0)
-    : 0
+  const outstanding = single ? dueOutstanding(single.line) : 0
   // Defense-in-depth: the list view already hides the checkbox entirely for
   // a fully-paid due (see isEligibleForBulkPay), so this should be
   // unreachable in the normal flow — but if it is reached (stale list, race
   // with another cashier), hard-block submit here too instead of only
   // allowing it through as an overpayment.
-  const isFullyPaid = single?.line.arInvoice.status === 'PAID'
+  const isFullyPaid = !!single?.line.settledAt
 
   // Sums across every selected due — used for the rebate cap and for the
   // Total/Rebate fields' initial values (paying each due off in full is the
   // sensible starting point; the cashier can edit either field from there).
-  const outstandingSum = lines.reduce(
-    (sum, { line }) => sum + Math.max(line.arInvoice.totalAmount - line.arInvoice.amountPaid, 0),
-    0
-  )
+  const outstandingSum = lines.reduce((sum, { line }) => sum + dueOutstanding(line), 0)
   const rebateCapSum = lines.reduce((sum, { suggestedRebate }) => sum + (suggestedRebate ?? 0), 0)
   const outstandingTotal = single ? outstanding : outstandingSum
   const rebateCap = single ? (single.suggestedRebate ?? 0) : rebateCapSum
@@ -738,7 +745,7 @@ function CollectPaymentModal({
       })
       if (!res.success) {
         setSubmitting(false)
-        setError(res.message || res.error || 'Failed to collect payment')
+        setError(paymentErrorMessage(res))
         return
       }
       if (res.data?.overpayment) {
@@ -768,7 +775,7 @@ function CollectPaymentModal({
       })
       if (!res.success) {
         setSubmitting(false)
-        setError(res.message || res.error || 'Failed to collect payment')
+        setError(paymentErrorMessage(res))
         return
       }
       const overpaidPayments = (res.data?.payments ?? []).filter((p) => p.overpayment)
@@ -853,7 +860,7 @@ function CollectPaymentModal({
               <p className="text-sm text-zinc-500">
                 {customerName ?? 'Customer'} ·{' '}
                 {single
-                  ? `due ${fmtDate(single.line.arInvoice.dueDate)}`
+                  ? `due ${fmtDate(single.line.dueDate)}`
                   : `${lines.length} due${lines.length !== 1 ? 's' : ''}`}
               </p>
             </div>
@@ -880,7 +887,7 @@ function CollectPaymentModal({
             {single && !isFullyPaid && alreadyPaidOnChosenDate && (
               <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />A payment was already collected
-                for this due on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}.
+                on this plan on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}.
                 This will be recorded as an additional payment toward the remaining balance.
               </div>
             )}
@@ -917,19 +924,16 @@ function CollectPaymentModal({
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
                     {lines.map(({ line, suggestedRebate }) => {
-                      const dueOutstanding = Math.max(
-                        line.arInvoice.totalAmount - line.arInvoice.amountPaid,
-                        0
-                      )
+                      const remaining = dueOutstanding(line)
                       const cap = suggestedRebate ?? 0
-                      const withRebate = Math.max(Math.round((dueOutstanding - cap) * 100) / 100, 0)
+                      const withRebate = Math.max(Math.round((remaining - cap) * 100) / 100, 0)
                       return (
-                        <tr key={line.arInvoice.id}>
+                        <tr key={line.id}>
                           <td className="px-3 py-2 text-zinc-700">
-                            Payment {line.lineNumber} · due {fmtDate(line.arInvoice.dueDate)}
+                            Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
                           </td>
                           <td className="px-3 py-2 text-right text-zinc-500">
-                            {fmtMoney(dueOutstanding)}
+                            {fmtMoney(remaining)}
                           </td>
                           <td className="px-3 py-2 text-right text-emerald-600">
                             {cap > 0 ? `−${fmtMoney(cap)}` : fmtMoney(0)}

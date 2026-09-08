@@ -34,6 +34,14 @@ export interface CollectionReceiptSheetProps {
    * several dues has several, an invoice has the single receivable. */
   rows: { accountLine: string; amount: number }[]
   total: number
+  /** What this piece of paper IS. Defaults to Collection Receipt for the
+   * historical callers; the AR invoice passes "AR Invoice", because a
+   * document showing the amount BILLED must not announce itself as a record
+   * of money received. */
+  title?: string
+  /** Label on the totals row — "Amount Billed" on an invoice, "Total" on a
+   * receipt. */
+  totalLabel?: string
 }
 
 export default function CollectionReceiptSheet({
@@ -44,13 +52,13 @@ export default function CollectionReceiptSheet({
   description,
   rows,
   total,
+  title = 'Collection Receipt',
+  totalLabel = 'Total',
 }: CollectionReceiptSheetProps) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">
-          Collection Receipt
-        </h1>
+        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">{title}</h1>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/nig-logo.png"
@@ -100,7 +108,7 @@ export default function CollectionReceiptSheet({
             ))}
             <tr className="font-bold">
               <td className={`${TD} text-right`} colSpan={2}>
-                Total
+                {totalLabel}
               </td>
               <td className={`${TD} text-right tabular-nums`}>{fmtMoney(total)}</td>
             </tr>
@@ -112,47 +120,187 @@ export default function CollectionReceiptSheet({
 }
 
 /** Print/document envelope for one collection receipt (GET
- * /ar-invoices/:id/payments/:paymentId/document). `lines` is only present on
- * a receipt ARInvoicesList combined from several applications — a
- * single-application receipt falls back to its own invoice line. */
+ * /ar-invoices/:id/payments/:paymentId/document).
+ *
+ * A collection receipt records MONEY RECEIVED. Everything here is therefore
+ * about the payment — `amountReceived`, how it was paid, what it was applied
+ * to and what is left after it — never the invoice total, which belongs on
+ * the invoice. `invoiceAmount` appears only as context for the balance.
+ *
+ * `lines` is present only on a receipt combined from several applications
+ * (one payment action across several dues); such a receipt has no single
+ * account summary, since previous/remaining balance differ per invoice. */
 export interface CollectionReceiptDocument {
   documentType: string
   documentNumber: string
   generatedAt: string
   enterprise?: { companyLegalName?: string | null; address?: string | null } | null
   document: {
+    /** The ARPayment this receipt records. Absent on a combined receipt,
+     *  which has no single application to point at. */
+    id?: string
     paymentDate: string
+    /** System CR number (CR-YYYYMMDD-NNNN). */
+    receiptNumber?: string | null
+    /** Cashier-entered reference off the booklet. */
     reference: string | null
-    amount: number
+    /** "Downpayment", "Installment #3", or "Payment". */
+    paymentType?: string | null
+    method?: string | null
+    /** What actually crossed the counter. */
+    amountReceived: number
+    withholdingAmount?: number
+    rebateAmount?: number
+    amountInWords?: string | null
     description?: string | null
     invoiceNumber?: string
+    invoiceAmount?: number
+    relatedDeliveryReceipt?: string | null
+    relatedSalesInvoice?: string | null
+    previousBalance?: number
+    remainingBalance?: number
     customer: { name: string; address: string | null; taxId: string | null }
     lines?: { accountLine: string; amount: number }[]
   }
 }
 
-/** The same sheet, fed straight from the print envelope — so the inline
- * preview and printCollectionReceiptDocument() render the same document. */
+const ROW = 'flex justify-between gap-6 py-[3px]'
+const LABEL = 'text-gray-600'
+const VALUE = 'text-right font-medium tabular-nums text-gray-900'
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className={ROW}>
+      <span className={LABEL}>{label}</span>
+      <span className={VALUE}>{value}</span>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-gray-300 pt-3">
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-prominent-purple-900">
+        {title}
+      </p>
+      {children}
+    </div>
+  )
+}
+
+/** The collection receipt as the customer receives it — money received, what
+ * it settled, and the balance it leaves behind. Rendered from the same
+ * envelope printCollectionReceiptDocument() prints, so screen and paper
+ * cannot drift apart. */
 export function CollectionReceiptDocumentSheet({ doc }: { doc: CollectionReceiptDocument }) {
   const r = doc.document
-  const rows =
-    r.lines && r.lines.length > 0
-      ? r.lines
-      : [
-          {
-            accountLine: `Accounts Receivable — ${r.customer?.name ?? '—'} — ${r.invoiceNumber ?? '—'}`,
-            amount: r.amount,
-          },
-        ]
+  const grouped = (r.lines?.length ?? 0) > 0
+  const money = (n: number) =>
+    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 })
+  const longDate = (v: string | null | undefined) =>
+    v
+      ? new Date(v).toLocaleDateString('en-PH', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : '—'
+
   return (
-    <CollectionReceiptSheet
-      customer={r.customer}
-      enterprise={doc.enterprise}
-      date={r.paymentDate}
-      reference={r.reference || doc.documentNumber}
-      description={r.description}
-      rows={rows}
-      total={r.amount}
-    />
+    <div className="rounded-lg border border-gray-200 bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">
+          Collection Receipt
+        </h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/nig-logo.png"
+          alt="NIG Marketing"
+          className="h-16 w-auto object-contain sm:h-20"
+        />
+      </div>
+
+      <div className="mt-4 space-y-[3px]">
+        <Row label="Customer" value={r.customer?.name ?? '—'} />
+        <Row label="Receipt No." value={r.receiptNumber || doc.documentNumber || '—'} />
+        <Row label="Date" value={longDate(r.paymentDate)} />
+      </div>
+
+      <div className="mt-4 space-y-4">
+        <Section title="Payment details">
+          {r.paymentType && <Row label="Payment Type" value={r.paymentType} />}
+          <Row label="Amount Received" value={money(r.amountReceived)} />
+          <Row label="Payment Method" value={r.method ?? '—'} />
+          <Row label="Reference No." value={r.reference || r.receiptNumber || '—'} />
+          {/* Shown only when they exist: both reduce the balance without
+              being money received, so a zero line would invite the reader to
+              reconcile a figure that isn't part of this collection. */}
+          {!!r.withholdingAmount && (
+            <Row label="Withholding (2307)" value={money(r.withholdingAmount)} />
+          )}
+          {!!r.rebateAmount && <Row label="Rebate applied" value={money(r.rebateAmount)} />}
+        </Section>
+
+        <Section title="Applied to">
+          {grouped ? (
+            <div className="space-y-[3px]">
+              {r.lines!.map((l, i) => (
+                <Row key={i} label={l.accountLine} value={money(l.amount)} />
+              ))}
+            </div>
+          ) : (
+            <>
+              <Row label="AR Invoice" value={r.invoiceNumber ?? '—'} />
+              {r.invoiceAmount != null && (
+                <Row label="Invoice Amount" value={money(r.invoiceAmount)} />
+              )}
+              {/* Rendered only when captured at checkout — an empty "Related
+                  DO: —" on every receipt trains people to ignore the line. */}
+              {r.relatedDeliveryReceipt && (
+                <Row label="Related DO" value={r.relatedDeliveryReceipt} />
+              )}
+              {r.relatedSalesInvoice && <Row label="Sales Invoice" value={r.relatedSalesInvoice} />}
+            </>
+          )}
+        </Section>
+
+        {/* A combined receipt settles several invoices, each with its own
+            running balance, so there is no single summary to state. */}
+        {!grouped && r.previousBalance != null && r.remainingBalance != null && (
+          <Section title="Account summary">
+            {r.invoiceAmount != null && (
+              <Row label="Invoice Amount" value={money(r.invoiceAmount)} />
+            )}
+            <Row label="Previous Balance" value={money(r.previousBalance)} />
+            <Row label="Amount Received" value={money(r.amountReceived)} />
+            <div className="mt-1 flex justify-between gap-6 border-t border-gray-300 pt-1.5">
+              <span className="font-bold text-prominent-purple-900">Remaining Balance</span>
+              <span className="text-right font-bold tabular-nums text-prominent-purple-900">
+                {money(r.remainingBalance)}
+              </span>
+            </div>
+          </Section>
+        )}
+
+        <div className="border-t border-gray-300 pt-3">
+          <div className="flex justify-between gap-6">
+            <span className="font-bold text-prominent-purple-900">Amount Received</span>
+            <span className="text-right text-[15px] font-bold tabular-nums text-prominent-purple-900">
+              {money(r.amountReceived)}
+            </span>
+          </div>
+          {r.amountInWords && (
+            <p className="mt-1 text-[12px] italic text-gray-600">{r.amountInWords}</p>
+          )}
+        </div>
+      </div>
+
+      {doc.enterprise?.companyLegalName && (
+        <p className="mt-6 border-t border-gray-300 pt-3 text-[11px] text-gray-500">
+          {doc.enterprise.companyLegalName}
+          {doc.enterprise.address ? ` · ${doc.enterprise.address}` : ''}
+        </p>
+      )}
+    </div>
   )
 }

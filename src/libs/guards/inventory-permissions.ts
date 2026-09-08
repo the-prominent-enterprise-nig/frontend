@@ -103,6 +103,15 @@ export const INVENTORY_PERMISSIONS = {
   RETURNS_READ: 'inventory:returns:read',
   RETURNS_CREATE: 'inventory:returns:create',
 
+  // Scenario 46 — supplier debit memos. The whole lifecycle lives here: the
+  // people who agree the return with the supplier raise, approve and finalize
+  // it. Accounting only reads the finalized result.
+  SUPPLIER_RETURNS_READ: 'inventory:supplier-returns:read',
+  SUPPLIER_RETURNS_CREATE: 'inventory:supplier-returns:create',
+  SUPPLIER_RETURNS_APPROVE: 'inventory:supplier-returns:approve',
+  SUPPLIER_RETURNS_FINALIZE: 'inventory:supplier-returns:finalize',
+  SUPPLIER_RETURNS_VOID: 'inventory:supplier-returns:void',
+
   // ── Costing ────────────────────────────────────────────────────────────────
   COSTING_READ: 'inventory:costing:read',
   COSTING_CONFIGURE: 'inventory:costing:configure',
@@ -235,6 +244,13 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:quality-hold:manage': 'Place, release, or reject quality holds on received stock',
   'inventory:returns:read': 'View return records',
   'inventory:returns:create': 'Process returned items back into inventory',
+  'inventory:supplier-returns:read': 'View supplier debit memos from Inventory',
+  'inventory:supplier-returns:create':
+    'Raise a draft supplier debit memo from Inventory (defective stock going back)',
+  'inventory:supplier-returns:approve': 'Approve a draft supplier debit memo',
+  'inventory:supplier-returns:finalize':
+    'Finalize a supplier debit memo — posts it to the GL, moves the stock, and reduces the AP balance',
+  'inventory:supplier-returns:void': 'Void a supplier debit memo',
   'inventory:costing:read': 'View stock costing configuration',
   'inventory:costing:configure': 'Configure stock costing method (FIFO / LIFO / Weighted Average)',
   'inventory:price-lists:read': 'View price lists',

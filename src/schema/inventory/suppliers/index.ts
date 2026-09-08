@@ -16,6 +16,16 @@ export const SUPPLIER_TYPES = [
   'OTHER',
 ] as const
 
+// Whether this supplier charges VAT on what it sells us, and so whether
+// receiving from it generates claimable Input VAT at the flat 12%. Not
+// every supplier is VAT-registered — a non-VAT one quotes a flat price
+// with no tax to back out, and the goods are carried at that full price.
+export const SUPPLIER_INPUT_VAT_TYPES = ['pct_12', 'none'] as const
+
+// Expanded withholding held back from this supplier and remitted to the
+// BIR. 1% is the norm on goods; `none` is the per-supplier exception.
+export const SUPPLIER_WITHHOLDING_TYPES = ['pct_1', 'none'] as const
+
 // ─── Create / Update Supplier ─────────────────────────────────────────────────
 
 export const SupplierBankAccountFormSchema = z.object({
@@ -51,6 +61,8 @@ export const CreateSupplierFormSchema = z.object({
   businessType: z.string().max(100).optional(),
   alphanumericTaxCode: z.string().max(50).optional(),
   taxRate: z.string().max(20).optional(),
+  defaultInputVat: z.enum(SUPPLIER_INPUT_VAT_TYPES).optional(),
+  defaultWithholding: z.enum(SUPPLIER_WITHHOLDING_TYPES).optional(),
   defaultPayableAccountId: z.string().optional(),
   defaultExpenseAccountId: z.string().optional(),
 })
@@ -104,6 +116,8 @@ export const SupplierDetailSchema = SupplierListItemSchema.extend({
   businessType: z.string().optional().nullable(),
   alphanumericTaxCode: z.string().optional().nullable(),
   taxRate: z.string().optional().nullable(),
+  defaultInputVat: z.enum(SUPPLIER_INPUT_VAT_TYPES).optional().nullable(),
+  defaultWithholding: z.enum(SUPPLIER_WITHHOLDING_TYPES).optional().nullable(),
   defaultPayableAccountId: z.string().optional().nullable(),
   defaultExpenseAccountId: z.string().optional().nullable(),
 })

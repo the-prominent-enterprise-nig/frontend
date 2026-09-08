@@ -105,19 +105,55 @@ const PoSupplierSchema = z.object({
   name: z.string(),
   taxId: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
+  // Tax defaults, so the receiving screen can preview the Input VAT and
+  // withholding this receipt will generate — both derived server-side from
+  // these, not typed in. Optional so an older cached PO payload still parses.
+  defaultInputVat: z.enum(['pct_12', 'none']).optional().nullable(),
+  defaultWithholding: z.enum(['pct_1', 'none']).optional().nullable(),
 })
 
 const PoWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
   address: z.string().optional().nullable(),
+  // Set on a branch's own stock location, null on a standalone warehouse.
+  // Only used to decide how to label it — see poLocationLabel().
+  branchId: z.string().optional().nullable(),
 })
+
+/** How a PO's destination reads on screen. A branch's own location is named
+ * "{branch} Warehouse" in the data, but every location picker in the app
+ * shows just the branch — so trim the suffix rather than showing "Alimodian
+ * Warehouse" where the rest of the app says "Alimodian". A standalone
+ * warehouse keeps its own name, which is what it is actually called. */
+export function poLocationLabel(
+  warehouse?: { name: string; branchId?: string | null } | null
+): string {
+  if (!warehouse) return '—'
+  if (!warehouse.branchId) return warehouse.name
+  return warehouse.name.replace(/\s+Warehouse$/i, '')
+}
 
 const PoItemSchema = z.object({
   id: z.string(),
   sku: z.string(),
   name: z.string(),
   isSerialTracked: z.boolean().optional(),
+  // Scenario 46 — how the warehouse actually identifies a unit: brand, group,
+  // model. "Group" is the primary category; the schema keeps group/subgroup on
+  // that category's own parent/child hierarchy rather than a separate table.
+  modelNumber: z.string().optional().nullable(),
+  brand: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
+  primaryCategory: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      // Group/subgroup is this category's own parent/child hierarchy: a leaf
+      // category is the subgroup, its parent is the group.
+      parentCategory: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 })
 
 const PoLineSchema = z.object({

@@ -8,7 +8,9 @@ export type RowMenuItem = {
   label: string
   icon: ComponentType<{ className?: string }>
   onClick: () => void
-  variant?: 'danger'
+  /** `danger` for a destructive action, `success` for one that commits or
+   * posts something. Both only colour the row — neither changes behaviour. */
+  variant?: 'danger' | 'success'
 }
 
 type DropdownPos = { top: number; right: number }
@@ -81,7 +83,9 @@ export function RowActionsMenu({ items }: { items: RowMenuItem[] }) {
                 className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
                   item.variant === 'danger'
                     ? 'text-red-600 hover:bg-red-50'
-                    : 'text-zinc-700 hover:bg-zinc-50'
+                    : item.variant === 'success'
+                      ? 'text-emerald-600 hover:bg-emerald-50'
+                      : 'text-zinc-700 hover:bg-zinc-50'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" />

@@ -234,6 +234,54 @@ export const Reports = {
       ...(startDate && { startDate }),
       ...(endDate && { endDate }),
     }),
+  // Scenario 47 — expenses grouped branch x expense category. Unlike
+  // costCenter above (free-text tag), this joins the real Branch table.
+  expensesByBranch: (params: {
+    startDate?: string
+    endDate?: string
+    branchId?: string
+    includeDrafts?: boolean
+  }) =>
+    api.get<ExpensesByBranchResponse>('/reports/expenses-by-branch', {
+      ...(params.startDate && { startDate: params.startDate }),
+      ...(params.endDate && { endDate: params.endDate }),
+      ...(params.branchId && { branchId: params.branchId }),
+      ...(params.includeDrafts && { includeDrafts: 'true' }),
+    }),
+}
+
+/** Scenario 47 — shape returned by /reports/expenses-by-branch. */
+export interface ExpensesByBranchResponse {
+  summary: {
+    branchName: string
+    categoryAccount: string
+    entryCount: number
+    amount: number
+    taxAmount: number
+    total: number
+  }[]
+  rows: {
+    date: string
+    expenseNumber: string
+    branchId: string | null
+    branchName: string
+    categoryAccount: string
+    categoryNumber: string
+    payee: string
+    description: string
+    costCenter: string
+    amount: number
+    taxAmount: number
+    total: number
+    status: string
+  }[]
+  meta: {
+    startDate: string | null
+    endDate: string | null
+    rowCount: number
+    unassignedTotal: number
+    totals: { amount: number; taxAmount: number; total: number }
+  }
 }
 
 // ============ GL Reconciliation (Scenario 29 ACC-07) ============
@@ -338,6 +386,14 @@ export interface ARPayment {
    * payment settled dues other than this invoice (findOne populates it).
    * `amount` is the live total across the receipt's still-active
    * applications, not the raw tendered column. */
+  /** This collection's CR number, always present when it has one — unlike
+   *  `receipt` below, which only appears when the payment ALSO settled other
+   *  invoices. */
+  receiptNumber?: string | null
+  /** True for the down payment: the collection that settles no due, on an
+   *  invoice that has them. It credits the contract as a whole rather than
+   *  any one month. */
+  isDownPayment?: boolean
   receipt?: {
     id: string
     number: string | null
@@ -414,14 +470,42 @@ export interface ARInvoiceInstallmentItem {
   secondarySerialNumber: { id: string; serialNumber: string } | null
 }
 
+/** One month of an installment plan. The plan's dues all hang off a single
+ *  ARInvoice, so these carry their own settlement state rather than each
+ *  having an invoice status of its own. */
+export interface ARInvoiceDue {
+  lineNumber: number
+  dueDate: string
+  amount: number | string
+  paidAmount: number | string
+  settledAt: string | null
+}
+
 export interface ARInvoiceInstallmentDetail {
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
-  /** This due's position within the schedule (e.g. 2 of 12) — the rest of
-   * this detail is schedule-wide and identical across every due-date
-   * invoice on the same plan. */
+  /** Always null now: one installment sale is ONE receivable covering every
+   * due, so no single due identifies the invoice. Kept so older callers
+   * reading it degrade to blank rather than breaking. */
   lineNumber: number | null
+  /** The plan's monthly dues, in order. */
+  dues?: ARInvoiceDue[]
+}
+
+/** A credit or debit memo as it appears on an invoice — enough to explain a
+ *  movement in amountPaid without leaving the page. */
+export interface ARInvoiceMemo {
+  id: string
+  memoNumber: string
+  memoDate: string
+  type: string
+  amount: number
+  reason?: string | null
+  status: string
+  journalEntryId?: string | null
+  /** Set only on a memo auto-raised from an approved POS return. */
+  sourceReturnRequestId?: string | null
 }
 
 export interface ARInvoice {
@@ -446,7 +530,23 @@ export interface ARInvoice {
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
   installmentDetail?: ARInvoiceInstallmentDetail | null
-  posTransaction?: { id: string; transactionNumber: string; createdAt?: string } | null
+  posTransaction?: {
+    id: string
+    transactionNumber: string
+    createdAt?: string
+    /** The number off the physical SI booklet, captured at checkout. */
+    salesInvoiceNumber?: string | null
+  } | null
+  /** Financing term (in months) of the installment schedule this due line
+   * belongs to — the AR register's "Terms" column. Null for charge-mode
+   * invoices, which have no schedule and so no term. */
+  termMonths?: number | null
+  /** Which due of the plan this invoice is — 3 of 12. Null on a charge
+   * invoice, which has no schedule. */
+  lineNumber?: number | null
+  /** Populated by get()/findOne only — the list endpoint's select stops short. */
+  creditMemos?: ARInvoiceMemo[]
+  debitMemos?: ARInvoiceMemo[]
 }
 
 export interface RecordPaymentResult extends ARInvoice {
@@ -667,6 +767,8 @@ export interface CreateCreditMemoLineInput {
 export const CreditMemos = {
   list: (params?: {
     search?: string
+    /** One status, or several comma-separated — 'DRAFT,RECEIVED,PARTIAL,OVERDUE'
+     * is the open-items view. Ignored when `search` is given. */
     status?: string
     customerId?: string
     arInvoiceId?: string
@@ -753,6 +855,19 @@ export interface APBillPayment {
   notes?: string | null
   // Scenario 10 Part 5 — cheque number, present when method is "check".
   chequeNumber?: string | null
+  /** The payment transaction this belongs to. The voucher lives here, not on
+   * the bill — APBill.voucherNumber is the retired approve-then-pay field and
+   * nothing writes it any more. */
+  disbursement?: { id: string; voucherNumber: string | null } | null
+}
+/** A posted supplier debit memo as it appears on the bill it was applied
+ * against — a returned-goods or concession deduction, not a payment. */
+export interface APBillDebitMemo {
+  id: string
+  memoNumber: string
+  memoDate: string
+  amount: number
+  reason?: string | null
 }
 export interface APBill {
   id: string
@@ -803,14 +918,23 @@ export interface APBill {
     purchaseOrderNumber?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
-    // Line-level detail — only populated by APBills.get() (the detail
-    // page), findAll()'s list view stays on the lighter shape above.
+    // Line-level detail — populated by APBills.get() (the detail page) and by
+    // APBills.list({ withDetail: 'true' }); the plain list view stays on the
+    // lighter shape above.
     lines?: {
       id: string
       quantityReceived: number
       unitCost?: number | null
       isFreebie?: boolean
       item?: { id: string; name: string; sku?: string } | null
+      // Scenario 46 PO→RR→SI parity — the receipt captures the same pricing
+      // and tax the invoice states, so a bill with no APBillLine rows of its
+      // own can still be shown line by line.
+      srp?: number | null
+      discounts?: APBillLineDiscount[] | null
+      discountedCost?: number | null
+      taxCode?: string | null
+      taxAmount?: number | null
     }[]
   }[]
   // Scenario 10 Part 4 — voucher + two-step approval status. Scenario 43 —
@@ -826,6 +950,37 @@ export interface APBill {
     | 'voided'
     | null
   voucherRejectedReason?: string | null
+  /** Scenario 46 — a pending deletion request awaiting approval. */
+  deletionRequestedAt?: string | null
+  deletionRequestedById?: string | null
+  deletionReason?: string | null
+  /** The vouchers this bill sits on, newest first. Present on APBills.get()
+   * and on APBills.list().
+   * A voucher raised but not yet paid has no payment rows, so this is the only
+   * way an unpaid one is visible from the invoice. */
+  disbursementAllocations?: {
+    id: string
+    amount: number
+    /** This voucher's claim on the invoice's withholding. Subtract the claims
+     * of every non-cancelled voucher from the invoice's withholdingAmount to
+     * get what a new voucher still has left to take. */
+    withholdingAmount?: number
+    disbursement: {
+      id: string
+      voucherNumber: string | null
+      status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED'
+      voucherDate: string
+      paymentDate: string | null
+    }
+  }[]
+  /** The invoice's own line items — empty on bills entered before Scenario 46. */
+  lines?: APBillLine[]
+  /** Net-of-discount delivered cost, mirroring GoodsReceipt.nndpCost. */
+  nndpCost?: number | null
+  /** What this bill charged for the item passed as `itemId` to APBills.list —
+   * from the goods receipt's cost, else the PO line's price. Only present on
+   * that item-filtered call, and null when neither carries a price. */
+  matchedItemUnitPrice?: number | null
   billDate: string
   dueDate: string
   description?: string
@@ -834,10 +989,11 @@ export interface APBill {
   taxAmount: number
   // Withholding tax withheld from the supplier — defaults to the
   // supplier's configured withholding rate × subtotal (editable override).
-  // Posted to WHT Payable and counted toward amountPaid when the bill is
-  // received, not at payment time.
+  // Reclassified out of AP into WHT Payable when the bill is received, not at
+  // payment time. It is NOT a payment: see apOutstanding().
   withholdingAmount?: number
   totalAmount: number
+  // Cash actually disbursed to the supplier. Never includes withholding.
   amountPaid: number
   status: string
   costCenter?: string
@@ -851,6 +1007,12 @@ export interface APBill {
   // of at Record Payment (was APPaymentPayment.chequeNumber's input).
   serialNumber?: string | null
   payments?: APBillPayment[]
+  // Scenario 46 — posted supplier debit memos applied against this bill.
+  // They reduce what's owed exactly as a payment does (both land in
+  // amountPaid), so the invoice breakdown has to list them or Total minus
+  // the visible deductions won't reach Balance due. FINAL only; a draft
+  // memo hasn't touched the bill.
+  debitMemos?: APBillDebitMemo[]
   // True when scaffolded automatically from a goods receipt rather than
   // typed in by hand — see ap-bills.service.ts's createOrAttachDraftFromReceipt.
   isAutoGenerated?: boolean
@@ -888,27 +1050,191 @@ export interface APBillDocument {
   } | null
   document: APBill & { effectiveExpenseAccount?: { id: string; name: string } | null }
 }
+/** Scenario 46 — one line of a disbursement: how much of this cheque goes
+ * against one bill. Defaults to that bill's whole outstanding balance;
+ * overtyping it is what makes a staggered payment. */
+export interface DisbursementAllocation {
+  apBillId: string
+  amount: number
+  /** How much of this invoice's withholding the voucher claims.
+   *
+   * The withheld slice left AP at receive() (Dr AP / Cr WHT Payable), so this
+   * posts nothing — it decides which payment the withholding rides with, and so
+   * which BIR 2307 the supplier is handed. An invoice settled by several
+   * vouchers has one pot to share: summed across them this can never exceed the
+   * invoice's own withholdingAmount, and the server rejects it if it does.
+   * Omitted means zero — never the invoice's whole withholding. */
+  withholdingAmount?: number
+}
+export interface CreateDisbursementBody {
+  supplierId?: string
+  bankAccountId?: string
+  chequeNumber?: string
+  method?: string
+  reference?: string
+  /** Required when payNow is true (the default). A voucher raised before
+   * payment has no payment date yet. */
+  paymentDate?: string
+  /** When the voucher was raised. Distinct from paymentDate — a voucher raised
+   * on the 7th and paid on the 15th has both. Defaults to now. */
+  voucherDate?: string
+  /** SAME_DATE (default) or LATER_DATE — when the cheque clears the bank. */
+  clearedType?: string
+  /** Required when clearedType is LATER_DATE. */
+  clearedDate?: string
+  notes?: string
+  allocations: DisbursementAllocation[]
+  /** Where the money comes from, one entry per method — a payment can be part
+   * cheque and part bank transfer, as an expense can. Their amounts must add
+   * up to the allocated total. Omit to fund the whole payment from the single
+   * bankAccountId/chequeNumber/method above; the server records that as one
+   * source either way, and the voucher number derives from the first. */
+  sources?: DisbursementSource[]
+  /** false raises an UNPAID voucher: invoices recorded and a number issued,
+   * but no cheque cut, nothing posted to the GL and the bills left unpaid.
+   * Settle it later with settleDisbursement(). Defaults to true. */
+  payNow?: boolean
+}
+/** One funding source of a disbursement. */
+export interface DisbursementSource {
+  method: string
+  bankAccountId?: string
+  /** Still accepted by the API, but Record Payment no longer collects it —
+   * the cheque number was being typed into `reference` too. The voucher
+   * series falls back from this to `reference`, so nothing changed there. */
+  chequeNumber?: string
+  reference?: string
+  /** What this source was for, so a split payment's halves can be told apart. */
+  description?: string
+  amount: number
+}
+/** One row of the Payments screen — a whole transaction, not one invoice's
+ * share of it. `kind: 'payment'` rows are pre-disbursement payments made
+ * through the retired per-bill route; they settle exactly one invoice. */
+export interface APDisbursementListItem {
+  id: string
+  kind: 'disbursement' | 'payment'
+  voucherNumber: string | null
+  /** UNPAID until a cheque is cut. Raising a voucher posts nothing — it is the
+   * authorisation to pay, and settlement is what moves the money. */
+  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED'
+  payee: string | null
+  supplierId: string | null
+  /** When the voucher was raised. Always set. */
+  voucherDate: string
+  /** Null until settled. */
+  paymentDate: string | null
+  method: string | null
+  reference: string | null
+  bankAccount: { id: string; name: string; accountNumber: string } | null
+  amount: number
+  clearedType: string | null
+  clearedDate: string | null
+  notes: string | null
+  journalEntryId: string | null
+  invoices: { billId: string; billNumber: string | null; amount: number }[]
+  sources: {
+    method: string
+    reference: string | null
+    description: string | null
+    amount: number
+    bankAccount: { id: string; name: string; accountNumber: string } | null
+  }[]
+}
+
+/** One payment transaction — one cheque, one voucher, settling N bills. */
+export interface APDisbursement {
+  id: string
+  voucherNumber: string | null
+  supplierId: string | null
+  supplier?: { id: string; name: string } | null
+  bankAccountId: string | null
+  chequeNumber: string | null
+  method: string | null
+  /** The full funding split. The scalars above are source #1 (the primary),
+   * which is what the voucher number and bank reconciliation read. */
+  sources?: (DisbursementSource & { id: string; lineNumber: number })[]
+  reference: string | null
+  paymentDate: string
+  clearedType: string | null
+  clearedDate: string | null
+  notes: string | null
+  journalEntryId: string | null
+  totalAmount: number
+  payments: {
+    id: string
+    apBillId: string
+    amount: number
+    apBill?: { id: string; billNumber: string | null } | null
+  }[]
+}
+
 export const APBills = {
-  list: (params?: { search?: string; status?: string; supplierId?: string }) =>
-    api.get<{ items: APBill[]; total: number }>('/ap-bills', params as any),
+  list: (params?: {
+    search?: string
+    status?: string
+    supplierId?: string
+    /** Bills covering this item — matched through the bill's PO / goods receipts. */
+    itemId?: string
+    /** 'true' to also load the goods-receipt lines behind each bill — the only
+     * record of what a receiving-scaffolded bill (which has no APBillLine rows
+     * of its own) is billing for. Off by default: the plain list view renders
+     * none of it and it isn't free. */
+    withDetail?: 'true'
+  }) =>
+    api.get<{ items: APBill[]; total: number; totalUnfiltered: number }>(
+      '/ap-bills',
+      params as any
+    ),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
+  // Scenario 46 — each bill posts its own entry, so failures come back per
+  // bill rather than rolling the whole batch back.
+  receiveMany: (ids: string[]) =>
+    api.post<{
+      received: { id: string; billNumber: string | null }[]
+      failed: { id: string; billNumber: string | null; reason: string }[]
+    }>('/ap-bills/receive-many', { ids }),
   recordPayment: (id: string, body: any) => api.post<APBill>(`/ap-bills/${id}/payments`, body),
   remove: (id: string) => api.delete(`/ap-bills/${id}`),
-  // Scenario 10 Part 4 — voucher creation + two-step approval.
-  // Scenario 43 — voucherNumber is system-generated, no longer sent by the
-  // caller; voidVoucher resets a still-pending voucher back to unraised.
-  createVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher`, {}),
-  voidVoucher: (id: string) => api.post<APBill>(`/ap-bills/${id}/voucher/void`, {}),
-  approveVoucherOnline: (id: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/approve-online`, {}),
-  approveVoucherOnsite: (id: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/approve-onsite`, {}),
-  rejectVoucher: (id: string, reason: string) =>
-    api.post<APBill>(`/ap-bills/${id}/voucher/reject`, { reason }),
+  // Scenario 46 — one payment transaction across one or more bills: one
+  // cheque, one voucher. The voucher number is derived server-side from the
+  // bank and cheque, never sent by the caller.
+  //
+  // The old createVoucher / voidVoucher / approveVoucherOnline /
+  // approveVoucherOnsite / rejectVoucher clients were removed with their
+  // routes — the client asked for "no need digital approval for voucher", and
+  // the voucher moved off the bill onto the payment that produces it.
+  createDisbursement: (body: CreateDisbursementBody) =>
+    api.post<APDisbursement>('/ap-bills/disbursements', body),
+  /** Pay a voucher raised earlier — the invoices were decided when it was
+   * raised, so this supplies only the funding. */
+  settleDisbursement: (id: string, body: Record<string, unknown>) =>
+    api.post<APDisbursement>(`/ap-bills/disbursements/${id}/settle`, body),
+  /** Amend an unpaid voucher. Refused once it has been paid. */
+  updateDisbursement: (id: string, body: Record<string, unknown>) =>
+    api.patch<APDisbursement>(`/ap-bills/disbursements/${id}`, body),
+  /** Cancel an unpaid voucher — kept as CANCELLED, not deleted. */
+  cancelDisbursement: (id: string) => api.delete(`/ap-bills/disbursements/${id}`),
+  /** The Payments screen — one row per transaction. */
+  listDisbursements: (params?: { search?: string; supplierId?: string }) =>
+    api.get<{ items: APDisbursementListItem[]; total: number }>(
+      '/ap-bills/disbursements',
+      params as any
+    ),
+  // Scenario 46 Part D — a settled bill is editable only through the override
+  // route, which is gated on a permission only an owner holds.
+  updateWithOverride: (id: string, body: any) =>
+    api.patch<APBill>(`/ap-bills/${id}/override`, body),
+  // Deletion of a non-DRAFT bill is a request, then an approval — the request
+  // marks the bill, only the approval removes it.
+  requestDeletion: (id: string, reason: string) =>
+    api.post<APBill>(`/ap-bills/${id}/deletion-request`, { reason }),
+  approveDeletion: (id: string) => api.post<APBill>(`/ap-bills/${id}/deletion-request/approve`, {}),
+  rejectDeletion: (id: string) => api.post<APBill>(`/ap-bills/${id}/deletion-request/reject`, {}),
   // Scenario 43 Part D — standalone Payments list across all bills.
   listPayments: (params?: { search?: string; supplierId?: string }) =>
     api.get<{ items: APPaymentListItem[]; total: number }>('/ap-bills/payments', params as any),
@@ -937,6 +1263,36 @@ export const FileAttachments = {
 }
 
 // ============ AP Bill Suppliers (Scenario 10 Part 1) ============
+/** Scenario 46 — one line of a supplier invoice. The AP bill IS the SI, so it
+ * carries its own lines rather than borrowing the PO's: the PO is what we
+ * ordered, this is what they billed, and they are allowed to differ. */
+export interface APBillLineDiscount {
+  name?: string | null
+  type: 'percentage' | 'amount'
+  value: number
+}
+export interface APBillLine {
+  id: string
+  lineNumber: number
+  itemId?: string | null
+  item?: { id: string; name: string; sku?: string | null } | null
+  description?: string | null
+  quantity: number
+  unitPrice: number
+  /** Supplier SRP the discount chain applies off, when priced that way. */
+  srp?: number | null
+  discounts?: APBillLineDiscount[] | null
+  /** Computed from srp + the discounts chain — stored under the same name PO
+   * and RR lines use, so a 3-way match compares like with like. */
+  discountedCost?: number | null
+  lineTotal: number
+  taxCode?: string | null
+  taxAmount: number
+  /** A promotional/zero-cost unit that was still billed as a line. */
+  isFreebie?: boolean
+  notes?: string | null
+}
+
 export interface APBillSupplierOption {
   id: string
   code: string
@@ -983,34 +1339,112 @@ export const APBillMatching = {
   matchCheck: (billId: string) => api.get<APBillMatchCheck>(`/ap-bills/${billId}/match-check`),
 }
 
-// ============ Supplier Debit Memos — supplier returns (Scenario 10 Part 5) ============
+// ============ Supplier Debit Memos — supplier returns (Scenario 10 Part 9, reworked by Scenario 46) ============
+// DRAFT and APPROVED post nothing: the GL, the AP bill and stock on hand are
+// untouched until FINAL. That is what "final to be available for accounting"
+// means, and it's why the Inventory surface can only reach the first two.
+export type SupplierDebitMemoStatus = 'DRAFT' | 'APPROVED' | 'FINAL' | 'VOID'
+
+export interface SupplierDebitMemoLine {
+  id: string
+  lineNumber: number
+  itemId?: string | null
+  item?: { id: string; sku: string; name: string } | null
+  serialNumberId?: string | null
+  serialNumber?: { id: string; serialNumber: string } | null
+  accountId?: string | null
+  account?: { id: string; number: string; name: string } | null
+  /** Where the unit originally came in. Provenance only — never validated
+   * against the memo's own settlement bill. */
+  sourceApBillId?: string | null
+  sourceApBill?: { id: string; billNumber: string | null } | null
+  sourceGoodsReceiptId?: string | null
+  sourceGoodsReceipt?: { id: string; code: string } | null
+  description?: string | null
+  quantity: number
+  unitPrice: number
+  taxCode?: string | null
+  taxAmount: number
+  lineTotal: number
+}
+
 export interface SupplierDebitMemo {
   id: string
+  tenantId: string
   memoNumber: string
   apBillId: string
+  apBill?: {
+    id: string
+    billNumber: string | null
+    totalAmount: number
+    amountPaid: number
+    status: string
+    dueDate: string
+  } | null
   supplierId: string
-  itemId: string
+  supplier?: { id: string; name: string; code?: string } | null
   warehouseId: string
-  quantity: number
+  warehouse?: { id: string; name: string } | null
+  memoDate: string
+  deliveryReceiptNumber?: string | null
+  subtotal: number
+  taxAmount: number
   amount: number
   reason?: string | null
-  memoDate: string
-  status: 'ISSUED' | 'VOID'
+  status: SupplierDebitMemoStatus
+  journalEntryId?: string | null
+  approvedBy?: string | null
+  approvedAt?: string | null
+  finalizedBy?: string | null
+  finalizedAt?: string | null
+  voidedBy?: string | null
+  voidedAt?: string | null
+  voidReason?: string | null
+  lines: SupplierDebitMemoLine[]
 }
+
+export interface SupplierDebitMemoLineInput {
+  itemId?: string
+  serialNumberId?: string
+  accountId?: string
+  sourceApBillId?: string
+  sourceGoodsReceiptId?: string
+  description?: string
+  quantity: number
+  unitPrice: number
+  taxCode?: string
+  taxAmount?: number
+}
+
+export interface SupplierDebitMemoInput {
+  apBillId: string
+  warehouseId: string
+  lines: SupplierDebitMemoLineInput[]
+  deliveryReceiptNumber?: string
+  reason?: string
+  memoDate?: string
+  /** Overrides the generated SDM-YYYYMMDD-NNNN. Omit for the normal case. */
+  memoNumber?: string
+}
+
 export const SupplierDebitMemos = {
-  list: (params?: { search?: string; status?: string; supplierId?: string; apBillId?: string }) =>
+  list: (params?: {
+    search?: string
+    status?: SupplierDebitMemoStatus
+    supplierId?: string
+    apBillId?: string
+    fromDate?: string
+    toDate?: string
+  }) =>
     api.get<{ items: SupplierDebitMemo[]; total: number }>('/supplier-debit-memos', params as any),
   get: (id: string) => api.get<SupplierDebitMemo>(`/supplier-debit-memos/${id}`),
-  issue: (body: {
-    apBillId: string
-    itemId: string
-    warehouseId: string
-    quantity: number
-    amount: number
-    reason?: string
-    memoDate?: string
-  }) => api.post<SupplierDebitMemo>('/supplier-debit-memos', body),
-  void: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, {}),
+  create: (body: SupplierDebitMemoInput) =>
+    api.post<SupplierDebitMemo>('/supplier-debit-memos', body),
+  update: (id: string, body: Partial<SupplierDebitMemoInput>) =>
+    api.patch<SupplierDebitMemo>(`/supplier-debit-memos/${id}`, body),
+  approve: (id: string) => api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/approve`, {}),
+  void: (id: string, voidReason?: string) =>
+    api.post<SupplierDebitMemo>(`/supplier-debit-memos/${id}/void`, { voidReason }),
 }
 
 // ============ AP Payment Methods — supplier payment method + GL config (Scenario 10 Part 3) ============
@@ -1036,7 +1470,13 @@ export const APPaymentMethods = {
 export type BusinessExpenseStatus = 'DRAFT' | 'RECORDED' | 'VOID'
 // Scenario 40 Gap 1 + Part 2 — Payee is now typed; OTHER unlocks the
 // Special Account list, including CA_LIQUIDATION (Part 2's settlement flow).
-export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'OTHER'
+export type PayeeType = 'CUSTOMER' | 'SUPPLIER' | 'EMPLOYEE' | 'OTHER'
+// Payee → Other sub-choice. UTILITIES/SALARIES_WAGES/PAYROLL behave like
+// SUPPLIER (each line picks its own category); SPECIAL_ACCOUNTS is the
+// pre-existing Employee Cash Advance/Loan/Cash Loan-Others/CA-Liquidation
+// flow. PAYROLL is the only one the Expense screen sends, off a typed
+// "Payroll" in its free-text Other Category box.
+export type OtherCategory = 'UTILITIES' | 'SALARIES_WAGES' | 'SPECIAL_ACCOUNTS' | 'PAYROLL'
 export type SpecialAccountType =
   | 'EMPLOYEE_CASH_ADVANCE'
   | 'EMPLOYEE_CASH_LOAN'
@@ -1044,6 +1484,11 @@ export type SpecialAccountType =
   | 'CA_LIQUIDATION'
 // The three types a liquidation can actually close out.
 export type LiquidatableType = 'EMPLOYEE_CASH_ADVANCE' | 'EMPLOYEE_CASH_LOAN' | 'CASH_LOAN_OTHERS'
+// A line's VAT treatment. The form sends the treatment and the server
+// computes the amount from it at the flat rate — a typed VAT figure could
+// disagree with the line it sat on, and the Input VAT debit posted from it
+// had no way to tell.
+export type ExpenseTaxCode = 'NON_TAXABLE' | 'INPUT_VAT'
 // Scenario 40 Part 6 — one entry is now a header + N lines. Which
 // dimension is fixed at the header vs. varies per line depends on
 // payeeType: CUSTOMER/SUPPLIER fixes the payee and lets each line pick its
@@ -1057,20 +1502,57 @@ export interface BusinessExpenseLine {
   employeeId?: string | null
   employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   payee?: string | null
+  /** SUPPLIER-only — optional catalog item this line is purchasing. */
+  itemId?: string | null
+  qty?: number | null
+  unitPrice?: number | null
+  /** Which Supplier Invoice (AP Bill) this item's purchase is against, when unambiguous. */
+  apBillId?: string | null
   description?: string | null
   amount: number
-  taxCode?: string | null
+  taxCode?: ExpenseTaxCode | string | null
   taxAmount: number
+  /** Read-only. Set by the API when this line's account is one of the
+   * mapped Special Accounts — it's how an advance or loan line reopens as
+   * itself rather than as an ordinary category line. */
+  specialAccountType?: SpecialAccountType | null
+  /** This line's Division — one pick from the tenant's branches and
+   * departments, so exactly one of the two is ever set. */
+  divisionBranchId?: string | null
+  divisionBranch?: { id: string; name: string; code?: string | null } | null
+  divisionDepartmentId?: string | null
+  divisionDepartment?: { id: string; name: string; code?: string | null } | null
 }
+// One entry can be paid through several methods at once (e.g. part Cash,
+// part Bank Transfer) — rows must sum to the entry's total.
+export interface BusinessExpensePayment {
+  id: string
+  lineNumber: number
+  paymentMethod: string
+  bankAccountId?: string | null
+  /** Resolved bank name — list() only; bankAccountId has no relation to join on. */
+  bankAccount?: string | null
+  reference?: string | null
+  amount: number
+}
+export type ClearedType = 'SAME_DATE' | 'LATER_DATE'
 export interface BusinessExpense {
   id: string
   expenseNumber: string
   expenseDate: string
+  /** Whether the payment clears the bank on expenseDate itself or later (e.g. an uncashed check). */
+  clearedType?: ClearedType | null
+  clearedDate?: string | null
   payeeType?: PayeeType | null
+  otherCategory?: OtherCategory | null
   supplierId?: string | null
   supplier?: { id: string; name: string } | null
+  /** SUPPLIER-only — the disbursement voucher number. */
+  voucherNumber?: string | null
   customerId?: string | null
   customer?: { id: string; name: string } | null
+  employeeId?: string | null
+  employee?: { id: string; firstName: string; lastName: string; employeeCode: string } | null
   specialAccountType?: SpecialAccountType | null
   liquidatesType?: LiquidatableType | null
   payee?: string | null
@@ -1079,13 +1561,87 @@ export interface BusinessExpense {
   subtotal: number
   taxAmount: number
   totalAmount: number
-  paymentMethod?: string | null
-  bankAccountId?: string | null
-  reference?: string | null
+  payments: BusinessExpensePayment[]
   costCenter?: string | null
+  /** Scenario 47 — set server-side from the creating user's branch; null on
+   * pre-Scenario-47 rows, which report as "Unassigned". */
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
 }
+/** Print-ready expense voucher — same envelope shape as APBillDocument.
+ * Also backs the read-only detail view, so it carries record-only fields
+ * (item, qty, SI number, bank, cleared date) the paper voucher never
+ * prints; buildExpenseVoucherHtml simply ignores them. */
+export interface ExpenseDocument {
+  documentType: string
+  documentNumber: string | null
+  generatedAt: string
+  enterprise?: {
+    companyLegalName?: string | null
+    companyTradingName?: string | null
+    registrationNumber?: string | null
+    taxId?: string | null
+    contactPerson?: string | null
+    address?: string | null
+  } | null
+  document: {
+    payee: string | null
+    payeeAddress: string | null
+    payeeTin: string | null
+    expenseNumber: string
+    voucherNumber: string | null
+    expenseDate: string
+    description: string | null
+    payments: {
+      paymentMethod: string
+      reference: string | null
+      amount: number
+      bankAccount: string | null
+    }[]
+    /** Supplier invoice numbers these lines settle — the "PAYMENT FOR …" line. */
+    paidFor: string[]
+    lines: {
+      account: string | null
+      description: string | null
+      total: number
+      item: string | null
+      qty: number | null
+      unitPrice: number | null
+      siNumber: string | null
+      lineEmployee: string | null
+      linePayee: string | null
+      taxCode: string | null
+      amount: number
+      taxAmount: number
+    }[]
+    subtotal: number
+    taxAmount: number
+    totalAmount: number
+    status: string
+    payeeType: PayeeType | null
+    otherCategory: OtherCategory | null
+    clearedType: ClearedType | null
+    clearedDate: string | null
+    costCenter: string | null
+    journalEntryId: string | null
+  }
+}
+/** One row of the Special Accounts register. */
+export interface SpecialAccountRow {
+  name: string
+  controlAccount: { id: string; number: string; name: string }
+  /** What is still carried against this person under that account. */
+  balance: number
+  entries: number
+  lastActivity: string | null
+}
+export interface SpecialAccountRegister {
+  rows: SpecialAccountRow[]
+  totals: { people: number; balance: number }
+}
+
 export const Expenses = {
   list: (params?: {
     search?: string
@@ -1094,8 +1650,11 @@ export const Expenses = {
     supplierId?: string
     startDate?: string
     endDate?: string
+    divisionBranchId?: string
+    divisionDepartmentId?: string
   }) => api.get<{ items: BusinessExpense[]; total: number }>('/expenses', params as any),
   get: (id: string) => api.get<BusinessExpense>(`/expenses/${id}`),
+  getDocument: (id: string) => api.get<ExpenseDocument>(`/expenses/${id}/document`),
   create: (body: any) => api.post<BusinessExpense>('/expenses', body),
   update: (id: string, body: any) => api.patch<BusinessExpense>(`/expenses/${id}`, body),
   record: (id: string) => api.post<BusinessExpense>(`/expenses/${id}/record`, {}),
@@ -1103,6 +1662,10 @@ export const Expenses = {
   remove: (id: string) => api.delete(`/expenses/${id}`),
   // Scenario 40 Part 2 — outstanding balance for a person/party on a
   // Special Account type, shown before a CA-Liquidation amount is entered.
+  /** The Special Accounts register — every named person a balance is
+   * carried against, under the control account carrying it. */
+  specialAccounts: (params?: { search?: string; accountId?: string }) =>
+    api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
   getSpecialAccountBalance: (params: {
     specialAccountType: LiquidatableType
     employeeId?: string
@@ -1169,6 +1732,28 @@ export interface BankReconciliation {
   pendingDeposits?: BankReconciliationLine[]
   pendingWithdrawals?: BankReconciliationLine[]
 }
+// One GL movement through a bank's own account — the drill-down rows behind
+// the reconciliation worksheet's Discrepancy tile.
+export interface BankLedgerEntry {
+  id: string
+  date: string
+  reference?: string | null
+  description?: string | null
+  account?: { id: string; name: string; number?: string } | null
+  debit: number
+  credit: number
+  balance: number | null
+  journalEntryId?: string | null
+}
+export interface BankLedgerWindow {
+  bankAccount: { id: string; name: string; glAccountId: string | null }
+  // Null when the account has never been reconciled before, i.e. the window
+  // opens at the start of its history.
+  startDate: string | null
+  endDate: string
+  transactions: BankLedgerEntry[]
+  totals: { debit: number; credit: number; net: number; count: number }
+}
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),
   get: (id: string) => api.get<BankAccount>(`/bank-accounts/${id}`),
@@ -1204,6 +1789,11 @@ export const BankAccounts = {
     }),
   completeReconciliation: (id: string) =>
     api.post<any>(`/bank-accounts/reconciliations/${id}/complete`, {}),
+  // The Discrepancy tile's drill-down: every GL movement through this bank
+  // over the period. With no dates the server defaults to the day after the
+  // previous reconciliation's statement date through this one's.
+  getReconciliationTransactions: (id: string, params?: { startDate?: string; endDate?: string }) =>
+    api.get<BankLedgerWindow>(`/bank-accounts/reconciliations/${id}/transactions`, params),
 }
 
 // ============ Fixed Assets ============
@@ -1534,6 +2124,30 @@ export const EmployeeApplianceLoans = {
 }
 
 // ============ Helpers ============
+
+/**
+ * Cash still owed to the supplier on an AP bill.
+ *
+ * Mirrors apOutstanding() in the backend's
+ * accounting/shared/invoice-status.util.ts — keep the two in step.
+ *
+ * withholdingAmount is not a payment: at receive() it moves from Accounts
+ * Payable to WHT Payable and is remitted to the BIR, so the supplier can claim
+ * that much less while no cash leaves the business. It used to be folded into
+ * amountPaid, which made an untouched invoice display "Paid ₱300 · PARTIAL".
+ *
+ * ARInvoice is deliberately not symmetric — there the customer withholds from
+ * us and remits on our behalf, which genuinely settles the receivable — so
+ * this helper is AP-only.
+ */
+export function apOutstanding(bill: {
+  totalAmount?: number | null
+  amountPaid?: number | null
+  withholdingAmount?: number | null
+}): number {
+  return (bill.totalAmount ?? 0) - (bill.withholdingAmount ?? 0) - (bill.amountPaid ?? 0)
+}
+
 export function fmtMoney(n: number | string | undefined | null): string {
   if (n === null || n === undefined || n === '') return '—'
   const v = typeof n === 'string' ? Number(n) : n

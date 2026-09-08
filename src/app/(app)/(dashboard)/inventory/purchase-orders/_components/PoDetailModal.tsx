@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { X, ShoppingCart, FileText, CheckCircle, Ban } from 'lucide-react'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
+import { discountChainLabel } from '@/src/libs/format/discount-chain'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -211,24 +212,14 @@ export function PoDetailModal({ po, onClose, canApprove, canCancel, onApprove, o
                         {line.description && (
                           <p className="mt-0.5 text-xs text-zinc-500">{line.description}</p>
                         )}
-                        {line.srp != null && (
+                        {/* This wording is the one the Receiving Report, the AP
+                            bill and the printed Purchase Invoice all follow —
+                            so it now comes from the shared formatter rather
+                            than being restated here, where a tweak on one
+                            screen would silently make the four disagree. */}
+                        {discountChainLabel(line, fmtPHP) && (
                           <p className="mt-0.5 text-xs text-zinc-500">
-                            SRP {fmtPHP(Number(line.srp))}
-                            {line.discounts && line.discounts.length > 0 && (
-                              <>
-                                {' · '}
-                                {line.discounts
-                                  .map((d) => {
-                                    const amount =
-                                      d.type === 'percentage' ? `${d.value}%` : fmtPHP(d.value)
-                                    return d.name ? `${d.name} (${amount})` : amount
-                                  })
-                                  .join(' → ')}{' '}
-                                off
-                                {line.discountedCost != null &&
-                                  ` → ${fmtPHP(Number(line.discountedCost))}`}
-                              </>
-                            )}
+                            {discountChainLabel(line, fmtPHP)}
                           </p>
                         )}
                         {(serialsByLine[line.id] ?? []).length > 0 && (

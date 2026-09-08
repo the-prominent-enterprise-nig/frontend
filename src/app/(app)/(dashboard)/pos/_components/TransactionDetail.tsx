@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
 import { X, Loader2, FileText, Clock, CheckCircle, XCircle, Undo2 } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
-import type { PosTransaction, PosVoidRequest } from '@/src/schema/pos'
+import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
 import { isRefundPendingApproval } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
@@ -107,7 +107,13 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          <h2 className="mb-1 text-lg font-bold text-gray-900">{tx.transactionNumber}</h2>
+          {/* Lead with the Sales Invoice No. — that's the document anyone
+              looking this up actually has in hand. Falls back to the
+              internal transaction number for rows without one (refunds,
+              and sales predating the required-SI rule). */}
+          <h2 className="mb-1 text-lg font-bold text-gray-900">
+            {tx.salesInvoiceNumber ?? tx.transactionNumber}
+          </h2>
           <p className="mb-4 text-sm text-gray-500 capitalize">
             {tx.transactionType} · {tx.status}
           </p>
@@ -241,9 +247,12 @@ export function TransactionDetail({
                 )}
                 {customerName && <Row label="Customer" value={customerName} />}
                 {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
-                {tx.salesInvoiceNumber && <Row label="SI Number" value={tx.salesInvoiceNumber} />}
                 {tx.deliveryReceiptNumber && (
-                  <Row label="DR Number" value={tx.deliveryReceiptNumber} />
+                  <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
+                )}
+                {/* Only when it isn't already the heading above. */}
+                {tx.salesInvoiceNumber && (
+                  <Row label="Transaction No." value={tx.transactionNumber} muted />
                 )}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
@@ -274,7 +283,10 @@ export function TransactionDetail({
               {/* Scenario 23 Gap 1 — invoice(s) this transaction produced,
                   one row per invoice (developer-confirmed UI convention). A
                   charge sale has exactly one; an installment sale has one
-                  per due date per financing term used. */}
+                  per financing term used — NOT one per due date. Scenario 47
+                  made a whole installment sale one receivable, so the dues
+                  are InstallmentScheduleLine rows hanging off it, not
+                  invoices of their own. */}
               {tx.invoices && tx.invoices.length > 0 && (
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Invoices</p>
@@ -289,7 +301,7 @@ export function TransactionDetail({
                           <p className="text-[11px] text-gray-400">
                             {inv.source === 'charge'
                               ? 'Charge invoice'
-                              : `Installment ${inv.lineNumber}/${inv.totalLines} · ${inv.termMonths} mo · due ${new Date(inv.dueDate).toLocaleDateString()}`}
+                              : installmentInvoiceLabel(inv)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -653,6 +665,17 @@ function Row({
 // InstallmentStatusBadge (crm/customers/[id]/_components/Customer360.tsx),
 // kept as a local copy rather than a cross-module import (POS importing
 // from a CRM page component would be the wrong dependency direction).
+// One row per DUE — the thing the customer actually pays. The receivable
+// behind them is the whole contract (down payment + total payable), so
+// listing IT here put a ~₱12.6k figure beside a ~₱833 monthly on a screen
+// where every other number is a payable amount. Matches Customer 360's plan
+// modal exactly, which is the same schedule seen from the customer side.
+function installmentInvoiceLabel(inv: PosTransactionInvoice): string {
+  const of = inv.totalLines ? ` of ${inv.totalLines}` : ''
+  const payment = inv.lineNumber ? `Payment ${inv.lineNumber}${of}` : 'Installment'
+  return `${payment} · due ${new Date(inv.dueDate).toLocaleDateString()}`
+}
+
 const INVOICE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   SENT: 'Due',

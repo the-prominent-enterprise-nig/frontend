@@ -9,6 +9,10 @@ export const POS_PERMISSIONS = {
   TRANSACTIONS_VOID: 'pos:transactions:void',
   TRANSACTIONS_REFUND: 'pos:transactions:refund',
   TRANSACTIONS_AUDIT: 'pos:transactions:audit',
+  // Scenario 47 — sales reports (per branch / per brand). Its own permission
+  // rather than riding on TRANSACTIONS_READ: these expose unit cost and
+  // margin, so they're Branch-Manager tier and withheld from Cashier.
+  REPORTS_READ: 'pos:reports:read',
   TRANSACTIONS_OVERRIDE: 'pos:transaction:override',
   TRANSACTIONS_PRICE_OVERRIDE: 'pos:transactions:price_override',
   PROMO_CODES_READ: 'pos:promo-codes:read',
@@ -61,6 +65,7 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:sessions:open': 'Open a POS session',
   'pos:sessions:close': 'Close a POS session',
   'pos:transactions:read': 'View POS transactions',
+  'pos:reports:read': 'View and export POS sales reports (Branch Manager tier)',
   'pos:transactions:create': 'Process POS sales',
   'pos:transactions:void': 'Void a transaction',
   'pos:transactions:refund': 'Process refunds',

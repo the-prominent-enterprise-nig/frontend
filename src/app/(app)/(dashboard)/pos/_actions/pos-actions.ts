@@ -647,6 +647,10 @@ export async function itemLookup(
         isBundle: Boolean(item.isBundle),
         pricingMode: (item.pricingMode as 'inclusive' | 'exclusive' | undefined) ?? undefined,
         isSerialTracked: Boolean(item.isSerialTracked),
+        requiresSecondarySerial: Boolean(item.requiresSecondarySerial),
+        brand: (item.brand as { id: string; name: string } | null | undefined) ?? null,
+        category: (item.category as { id: string; name: string } | null | undefined) ?? null,
+        modelNumber: (item.modelNumber as string | null | undefined) ?? null,
       }
     })
 
@@ -1348,12 +1352,20 @@ export async function getCustomerTransactions(
   }
 }
 
+export interface CustomerHistoryPage {
+  items: CustomerHistoryItem[]
+  meta: { page: number; limit: number; total: number; pageCount: number }
+}
+
 export async function getCustomerHistoryWithPayments(
-  customerId: string
-): Promise<ApiResponse<CustomerHistoryItem[]>> {
+  customerId: string,
+  page = 1,
+  limit = 20
+): Promise<ApiResponse<CustomerHistoryPage>> {
   try {
-    const result = await api.get<CustomerHistoryItem[]>(
-      `/pos/transactions/customer/${customerId}/history-with-payments`
+    const result = await api.get<CustomerHistoryPage>(
+      `/pos/transactions/customer/${customerId}/history-with-payments`,
+      { page, limit }
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch customer history' }

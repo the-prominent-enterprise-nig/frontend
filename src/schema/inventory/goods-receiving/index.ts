@@ -1,11 +1,32 @@
 import { z } from 'zod'
 
+/** One step of a supplier discount chain, applied in order off SRP. Same shape
+ * PO lines use, so a receipt taken against a PO carries the terms unchanged. */
+const LineDiscountSchema = z.object({
+  name: z.string().optional().nullable(),
+  type: z.enum(['percentage', 'amount']),
+  value: z.number(),
+})
+
 const ReceiveStockLineSchema = z
   .object({
     itemId: z.string().min(1, 'Item is required'),
     purchaseOrderLineId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
+    // Scenario 46 — the supplier's pricing as stated: SRP and the ordered
+    // discount chain that produced unitCost, plus per-line tax.
+    //
+    // These were missing here while the Receive modal collected them and the
+    // backend persisted them, and zod strips unknown keys — so receive-stock.ts
+    // forwards parsed.data with all four silently deleted. Every receipt line
+    // ever created landed with srp/discounts NULL, and the RR could never show
+    // why a cost was what it was (found 2026-09-07: the PO showed
+    // "SRP ₱3,000 · 3% → ₱500 off → ₱2,410", the receipt showed only 2410).
+    srp: z.number().min(0).optional(),
+    discounts: z.array(LineDiscountSchema).optional(),
+    taxCode: z.string().optional(),
+    taxAmount: z.number().min(0).optional(),
     // Promotional/free item included in the delivery — server forces
     // unitCost to 0 for these regardless of what's submitted (Scenario 05
     // followup, "freebies" gap).
@@ -51,6 +72,11 @@ export const ReceiveStockFormSchema = z
     // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier
     // -> this Receiving Report. Both are the supplier's own paperwork,
     // typed in by whoever is physically receiving the delivery.
+    // Scenario 46 — the DR is required at receiving, the SI is not. The
+    // delivery receipt comes in the driver's hand with the goods, so it always
+    // exists at this moment; the supplier's invoice often follows days later
+    // and the client wants it filled in (and editable) when it does. See the
+    // refine below — this used to be the other way round.
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
@@ -59,9 +85,9 @@ export const ReceiveStockFormSchema = z
     message: 'Supplier is required when this receipt is not linked to a PO',
     path: ['supplierId'],
   })
-  .refine((data) => data.applicationType !== 'new_stock' || !!data.supplierInvoiceNumber?.trim(), {
-    message: 'Supplier invoice number is required for new stock receipts',
-    path: ['supplierInvoiceNumber'],
+  .refine((data) => data.applicationType !== 'new_stock' || !!data.deliveryReceiptNumber?.trim(), {
+    message: "Delivery receipt number is required — it's on the paper that came with the goods",
+    path: ['deliveryReceiptNumber'],
   })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
@@ -152,6 +178,23 @@ export const StockLedgerEntrySchema = z.object({
   warehouse: LedgerWarehouseSchema.optional().nullable(),
   occurredAt: z.string().optional(),
   createdAt: z.string().optional(),
+  /** What the movement was worth. Carried by receipts and, since customer
+   *  returns started posting to the GL, by returns too. */
+  unitCost: z.coerce.number().optional().nullable(),
+  serialNumberId: z.string().optional().nullable(),
+  serialNumber: z.string().optional().nullable(),
+  customerId: z.string().optional().nullable(),
+  customer: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      customerCode: z.string().optional().nullable(),
+    })
+    .optional()
+    .nullable(),
+  journalEntryId: z.string().optional().nullable(),
+  creditMemoId: z.string().optional().nullable(),
+  creditMemoNumber: z.string().optional().nullable(),
 })
 
 export const StockLedgerListResponseSchema = z.object({
@@ -202,6 +245,22 @@ const ReceivingReportLineSchema = z.object({
   batchNumber: z.string().optional().nullable(),
   serialNumbers: z.array(z.string()).optional(),
   unitCost: z.number().optional().nullable(),
+  // Scenario 46 — the supplier's pricing as stated, not just the resulting
+  // cost, so the DR can show WHY a unit cost is what it is.
+  srp: z.number().optional().nullable(),
+  discounts: z
+    .array(
+      z.object({
+        name: z.string().optional().nullable(),
+        type: z.enum(['percentage', 'amount']),
+        value: z.number(),
+      })
+    )
+    .optional()
+    .nullable(),
+  discountedCost: z.number().optional().nullable(),
+  taxCode: z.string().optional().nullable(),
+  taxAmount: z.number().optional().nullable(),
   qualityHold: z.boolean(),
   isFreebie: z.boolean().optional(),
   notes: z.string().optional().nullable(),

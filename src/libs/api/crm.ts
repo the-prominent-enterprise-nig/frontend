@@ -25,9 +25,11 @@ import type {
   DuplicatePair,
   CollectionsCalendarResponse,
   CustomerSourceChannel,
+  CustomerAccountType,
   InteractionType,
   InstallmentLedger,
   CustomerLedger,
+  CustomerLedgerScope,
   AgingReportResponse,
 } from '@/src/schema/crm/types'
 import type { CreateLeadInput, UpdateLeadInput, ConvertLeadInput } from '@/src/schema/crm/lead'
@@ -124,9 +126,14 @@ export const leadsApi = {
 
 export type CustomerFilters = {
   search?: string
+  // status/sourceChannel are still served — the CRM list dropped both
+  // filters at the client's request, but the dashboard summaries and other
+  // callers still narrow by them.
   status?: string
   sourceChannel?: string
   groupId?: string
+  branchId?: string
+  accountType?: CustomerAccountType
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
@@ -161,7 +168,16 @@ export const customersApi = {
         reminders: Reminder[]
       }
     >(`/crm/customers/${id}/360`),
-  getLedger: (id: string) => api.get<CustomerLedger>(`/crm/customers/${id}/ledger`),
+  // scope 'installments' narrows the ledger to financed purchases (in-house
+  // plans + TPF); omitted/'all' returns every source.
+  // scope 'installments' narrows the ledger to financed purchases (in-house
+  // plans + TPF); planId narrows further to one contract. Both omitted from
+  // the query when unset so 'all' stays the plain URL.
+  getLedger: (id: string, scope: CustomerLedgerScope = 'all', planId?: string) =>
+    api.get<CustomerLedger>(
+      `/crm/customers/${id}/ledger`,
+      scope === 'all' ? undefined : { scope, ...(planId ? { planId } : {}) }
+    ),
   create: (body: CreateCustomerInput) => api.post<Customer>('/crm/customers', body),
   checkDuplicate: (params: { email?: string; phone?: string }) =>
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),

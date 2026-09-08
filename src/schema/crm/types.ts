@@ -9,6 +9,13 @@ export type CustomerSourceChannel = z.infer<typeof CustomerSourceChannelEnum>
 export const CustomerStatusEnum = z.enum(['active', 'inactive', 'blocked'])
 export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 
+// How a customer buys. Stored on the customer rather than derived from
+// whether they hold an installment account: a cash customer who takes one
+// installment shouldn't silently change category, and the client needs to
+// be able to correct it by hand.
+export const CustomerAccountTypeEnum = z.enum(['cash', 'charge'])
+export type CustomerAccountType = z.infer<typeof CustomerAccountTypeEnum>
+
 export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
 
@@ -160,6 +167,9 @@ export interface Customer {
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
+  accountType?: CustomerAccountType
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null
@@ -457,6 +467,24 @@ export interface InstallmentLedger {
 // into one chronological table instead of separate per-source views. Rows
 // use the same shape as InstallmentLedgerRow; totals summarize across all
 // sources instead of one installment account's specific paper-form fields.
+/** Which purchases a customer-ledger request covers. 'installments' keeps the
+ * financed ones only — in-house plans plus TPF (which the customer likewise
+ * pays monthly) — and drops charge invoices and cash sales. */
+export type CustomerLedgerScope = 'all' | 'installments'
+
+/** One selectable contract under the 'installments' scope. `id` is prefixed by
+ * kind ('acct:' / 'tpf:') because the two come from different tables: an
+ * in-house plan is an InstallmentAccount, while a TPF plan has no account and
+ * is identified by its PosTransaction. */
+export interface CustomerLedgerPlan {
+  id: string
+  kind: 'inhouse' | 'tpf'
+  ref: string
+  label: string
+  termMonths: number | null
+  status: string | null
+}
+
 export interface CustomerLedger {
   customer: {
     id: string
@@ -469,11 +497,18 @@ export interface CustomerLedger {
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
   items: { date: string; ref: string; itemLabel: string }[]
+  /** Populated only under the 'installments' scope — the plan picker's options. */
+  plans: CustomerLedgerPlan[]
   rows: InstallmentLedgerRow[]
   totals: {
     totalBilled: number
     totalPaid: number
     totalRebates: number
+    /** Billed amounts settled by a TPF partner rather than by the customer.
+     * Kept out of totalPaid so that stays "money this customer paid", but
+     * still deducted from outstanding — the customer owes nothing on a TPF
+     * purchase, the receivable is the partner's. */
+    totalFinanced: number
     outstanding: number
   }
 }
@@ -519,7 +554,27 @@ export interface AgingReportRow {
   lastOrLastnum: string | null
   lastOrAmt: number | null
   over: number | null
+  /** Scenario 47 — which kind of receivable this row is. */
+  source: 'installment' | 'invoice'
+  /** Scenario 47 — days past due as of the report date, and its bucket.
+   * Null means no due date on record: reported as unknown, never as current. */
+  daysOverdue: number | null
+  bucket: AgingBucket | null
 }
+
+export const AGING_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const
+export type AgingBucket = (typeof AGING_BUCKETS)[number]
+
+export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
+  current: 'Current',
+  '1_30': '1-30 days',
+  '31_60': '31-60 days',
+  '61_90': '61-90 days',
+  '90_plus': '90+ days',
+}
+
+/** Outstanding split by bucket, present at every subtotal level. */
+export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number }
 
 export interface AgingReportSubtotal {
   count: number
@@ -530,6 +585,8 @@ export interface AgingReportSubtotal {
   totalPayt: number
   totalPrice: number
   lcp: number
+  /** Scenario 47 — the branch x bucket matrix, at every subtotal level. */
+  buckets: AgingBucketTotals
 }
 
 export interface AgingReportCollectorGroup {

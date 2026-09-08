@@ -23,11 +23,13 @@ import {
   FileBarChart,
   FileCheck2,
   FilePlus,
+  PackageX,
   ClipboardCheck,
   HandCoins,
   House,
   IdCard,
   Key,
+  Landmark,
   Layers,
   Library,
   Monitor,
@@ -38,6 +40,7 @@ import {
   Percent,
   Receipt,
   ReceiptText,
+  PhilippinePeso,
   RefreshCcw,
   ScrollText,
   Settings,
@@ -53,6 +56,7 @@ import {
   UserPlus,
   Wallet,
   Warehouse,
+  Network,
   Wrench,
   X,
   type LucideIcon,
@@ -152,6 +156,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ],
       },
       {
+        label: 'Debit Memos',
+        href: '/inventory/debit-memos',
+        icon: PackageX,
+        requiredPermission: INVENTORY_PERMISSIONS.SUPPLIER_RETURNS_READ,
+      },
+      {
         label: 'Suppliers',
         href: '/inventory/suppliers',
         icon: Truck,
@@ -227,6 +237,12 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
       },
       {
+        section: 'Accounting',
+        label: 'Special Accounts',
+        href: '/accounting/special-accounts',
+        icon: Wallet,
+      },
+      {
         label: 'Unapplied Collections',
         href: '/accounting/unapplied-collections',
         icon: Wallet,
@@ -236,6 +252,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'AP Invoices',
         href: '/accounting/ap-bills',
         icon: ReceiptText,
+        requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+      },
+      {
+        // Scenario 46 Part F — the disbursement register existed since
+        // Scenario 43 but had no nav entry, reachable only via a secondary
+        // button on AP Invoices. It is the record of everything that left the
+        // bank, so it sits at the same level rather than nested under AP.
+        label: 'Payments',
+        href: '/accounting/ap-bills/payments',
+        icon: PhilippinePeso,
         requiredPermission: ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
       },
       {
@@ -251,6 +277,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         requiredPermission: ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
       },
       // ── Regular / weekly ──
+      // Two entries, not four. Credit and debit stay separate — that is the
+      // split accounting actually thinks in — while customer and supplier
+      // debit memos share one table, told apart by a Party column.
       {
         label: 'Credit Memos',
         href: '/accounting/credit-memos',
@@ -261,7 +290,10 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Debit Memos',
         href: '/accounting/debit-memos',
         icon: FilePlus,
-        requiredPermission: ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
+        requiredPermission: [
+          ACCOUNTING_PERMISSIONS.DEBIT_MEMOS_READ,
+          ACCOUNTING_PERMISSIONS.SUPPLIER_DEBIT_MEMOS_READ,
+        ],
       },
       {
         label: 'Withholding Tax (CWT)',
@@ -350,6 +382,15 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Wallet,
         requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
       },
+      // Its own entry, not a button on Bank Reconciliation: moving money
+      // between two fund accounts is a disbursement, not part of agreeing a
+      // statement to the books.
+      {
+        label: 'Fund Transfer',
+        href: '/accounting/fund-transfers',
+        icon: Landmark,
+        requiredPermission: ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_TRANSFER,
+      },
     ],
     bottom: [],
   },
@@ -377,6 +418,16 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/pos/collections',
         icon: Coins,
         requiredPermission: 'pos:collections:manage',
+      },
+      {
+        // Scenario 47 — sidebar gate matches the page's own guard
+        // (POS_PERMISSIONS.REPORTS_READ). Deliberately not
+        // 'pos:transactions:read': these reports expose unit cost and
+        // margin, so a Cashier must not even see the link.
+        label: 'Sales Reports',
+        href: '/pos/reports',
+        icon: BarChart3,
+        requiredPermission: 'pos:reports:read',
       },
       {
         label: 'Credit Applications',
@@ -499,12 +550,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'CRM Dashboard',
         href: '/crm',
         icon: House,
-        requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
-      {
-        label: 'Leads',
-        href: '/crm/leads',
-        icon: UsersRound,
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
       },
       {
@@ -802,6 +847,12 @@ const OWNER_WORKSPACE_ITEMS: NavItem[] = [
   },
   { section: 'My Workspace', label: 'Roles & Access', href: '/settings/roles', icon: ShieldCheck },
   { section: 'My Workspace', label: 'Branches', href: '/settings/branches', icon: Warehouse },
+  {
+    section: 'My Workspace',
+    label: 'Departments',
+    href: '/settings/departments',
+    icon: Network,
+  },
   {
     section: 'My Workspace',
     label: 'Business Policies',

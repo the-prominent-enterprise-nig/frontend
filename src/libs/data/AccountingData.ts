@@ -24,6 +24,11 @@ export interface Account {
   normalBalance?: NormalBalance
   parentId?: string | null
   description?: string | null
+  /** Does this account keep a subsidiary ledger — one running balance per
+   * named person or project? Drives whether an expense line posting here
+   * gets a Special Account to pick. Set per account in the database; see
+   * the client's own "SPECIAL ACCOUNTS" list. */
+  isSpecialAccountControl?: boolean
   isActive: boolean
   createdAt?: string
   updatedAt?: string

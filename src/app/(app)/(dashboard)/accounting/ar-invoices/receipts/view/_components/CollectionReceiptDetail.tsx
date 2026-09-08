@@ -79,13 +79,21 @@ function CollectionReceiptDetailBody() {
           enterprise: docs[0].enterprise,
           document: {
             paymentDate: first.paymentDate,
+            receiptNumber: first.receiptNumber,
             reference: first.reference,
-            amount: docs.reduce((sum, d) => sum + d.document.amount, 0),
+            // One payment action, so the type and method are shared by every
+            // application it produced — take them off the first.
+            paymentType: first.paymentType,
+            method: first.method,
+            amountReceived: docs.reduce((sum, d) => sum + d.document.amountReceived, 0),
             description: `Payment across ${docs.length} installment dues`,
             customer: first.customer,
+            // Deliberately no previous/remaining balance: this receipt
+            // settled several invoices, each with its own running balance,
+            // so there is no single figure that is true for all of them.
             lines: docs.map((d) => ({
               accountLine: `Accounts Receivable — ${first.customer.name} — ${d.document.invoiceNumber ?? '—'}`,
-              amount: d.document.amount,
+              amount: d.document.amountReceived,
             })),
           },
         })
@@ -147,7 +155,7 @@ function CollectionReceiptDetailBody() {
         </span>
         <span>Receipt {doc.documentNumber}</span>
         <span>{fmtDate(receipt.paymentDate)}</span>
-        <span>Amount {fmtMoney(receipt.amount)}</span>
+        <span>Received {fmtMoney(receipt.amountReceived)}</span>
         {dueCount > 1 && <span>Settled {dueCount} dues</span>}
       </div>
 

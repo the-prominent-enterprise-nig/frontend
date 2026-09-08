@@ -214,12 +214,13 @@ export default function TransactionsList({ session }: Props) {
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex-1 min-w-48">
-            {/* Scenario 23 Gap 3 — unified search: matches the transaction
-                number OR any invoice number it produced, so staff starting
-                from either a receipt's transaction # or a bank memo's
-                invoice # can find the same transaction here. */}
+            {/* Scenario 23 Gap 3 — unified search: matches the Sales
+                Invoice No., the transaction number, OR any AR invoice
+                number the sale produced, so staff starting from a sales
+                invoice, a receipt's transaction #, or a bank memo's
+                invoice # all land on the same transaction. */}
             <label className="mb-1 block text-xs font-semibold text-gray-600">
-              Transaction # or Invoice #
+              Sales Invoice, Transaction # or Invoice #
             </label>
             <div className="relative">
               <Search
@@ -327,7 +328,7 @@ export default function TransactionsList({ session }: Props) {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Transaction #
+                    Sales Invoice No.
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Type
@@ -375,7 +376,7 @@ export default function TransactionsList({ session }: Props) {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Transaction #
+                    Sales Invoice No.
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Type
@@ -398,8 +399,11 @@ export default function TransactionsList({ session }: Props) {
                     className="cursor-pointer hover:bg-gray-50"
                     onClick={() => setDetail({ type: 'detail', transaction: tx })}
                   >
+                    {/* The Sales Invoice No. is what staff have in hand;
+                        older sales and refunds carry none, so those fall
+                        back to the internal transaction number. */}
                     <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                      {tx.transactionNumber}
+                      {tx.salesInvoiceNumber ?? tx.transactionNumber}
                     </td>
                     <td className="px-5 py-3">
                       <span
@@ -461,7 +465,9 @@ export default function TransactionsList({ session }: Props) {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-gray-900">Void Transaction</h2>
-                  <p className="font-mono text-xs text-gray-500">{voidTarget.transactionNumber}</p>
+                  <p className="font-mono text-xs text-gray-500">
+                    {voidTarget.salesInvoiceNumber ?? voidTarget.transactionNumber}
+                  </p>
                 </div>
               </div>
 

@@ -9,6 +9,8 @@ import {
   fitLayoutToContent,
   compactLayoutVertically,
   DEFAULT_WIDGET_SETTINGS,
+  GRID_ROW_HEIGHT,
+  GRID_MARGIN_Y,
   type LayoutItem,
 } from '@/src/libs/dashboardWidgets'
 import DashboardWidgetWrapper from './DashboardWidgetWrapper'
@@ -29,11 +31,11 @@ import RecentOrdersWidget from './widgets/RecentOrdersWidget'
 import OutstandingInvoicesWidget from './widgets/OutstandingInvoicesWidget'
 import PendingDeliveriesWidget from './widgets/PendingDeliveriesWidget'
 import SalesByBranchWidget from './widgets/SalesByBranchWidget'
-import EnterpriseSummaryWidget from './widgets/EnterpriseSummaryWidget'
 import ModuleStatsWidget from './widgets/ModuleStatsWidget'
 import PendingApprovalsWidget from './widgets/PendingApprovalsWidget'
 import CogsGapsWidget from './widgets/CogsGapsWidget'
-import RecentLeadsWidget from './widgets/RecentLeadsWidget'
+import HeroKpiStripWidget from './widgets/HeroKpiStripWidget'
+import NeedsAttentionWidget from './widgets/NeedsAttentionWidget'
 // Not registered: there is no HR module on the backend (no employees/leave-management/
 // attendance/payroll controllers), so every one of these widgets' API calls 404s. Uncomment
 // once a real HR backend module exists.
@@ -69,11 +71,11 @@ const WIDGET_COMPONENTS: Record<string, WidgetComponent> = {
   'outstanding-invoices': OutstandingInvoicesWidget,
   'pending-deliveries': PendingDeliveriesWidget,
   'sales-by-branch': SalesByBranchWidget,
-  'enterprise-summary': EnterpriseSummaryWidget,
   'module-stats': ModuleStatsWidget,
   'pending-approvals': PendingApprovalsWidget,
   'cogs-gaps': CogsGapsWidget,
-  'recent-leads': RecentLeadsWidget,
+  'kpi-strip': HeroKpiStripWidget,
+  'needs-attention': NeedsAttentionWidget,
   // 'attendance-summary': AttendanceSummaryWidget,
   // 'department-summary': DepartmentSummaryWidget,
   // 'leave-requests': LeaveRequestsWidget,
@@ -155,11 +157,23 @@ export default function EditableDashboard({
     )
   }
 
-  // Re-fit all widget heights whenever the user opens edit mode, so stale h
-  // values from prior sessions don't leave blank space inside the cards.
+  // Re-fit all widget heights whenever the user opens edit mode, AND
+  // whenever the visible widget count changes while already editing (e.g.
+  // "Select All"/"Deselect All", or toggling one widget on) — otherwise
+  // newly-revealed widgets are stuck at their rough defaultH guess forever,
+  // since the one-time auto-fit below only ever fires once, on first mount.
+  //
+  // Several sweeps at increasing delays, not just one: revealing many
+  // widgets at once (e.g. "Select All") starts that many independent data
+  // fetches, which don't all resolve together. A single fit can catch most
+  // widgets still on their loading skeleton — if it fires during a brief
+  // lull while a couple of widgets are mid-fetch, their skeleton height
+  // gets locked in, and nothing else re-triggers a fit for them once their
+  // real (usually much shorter) content finally lands. The later sweeps
+  // give slow widgets a chance to be measured correctly too.
   useEffect(() => {
     if (!isEditing) return
-    const timer = setTimeout(() => {
+    const runFit = () => {
       const measured = Object.keys(naturalHeightsRef.current)
       if (measured.length === 0) return
       onLayoutChange(
@@ -167,36 +181,43 @@ export default function EditableDashboard({
           fitLayoutToContent(filteredLayoutRef.current, naturalHeightsRef.current)
         )
       )
-    }, 200)
-    return () => clearTimeout(timer)
+    }
+    const timers = [400, 1200, 2500].map((delay) => setTimeout(runFit, delay))
+    return () => timers.forEach(clearTimeout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing])
+  }, [isEditing, filteredLayout.length])
 
-  // One-time auto-fit flag — fires when all visible widgets have reported heights.
+  // Before the first fit, wait for every visible widget to report at least
+  // once — avoids snapping to a half-measured layout on first paint.
   const hasAutoFittedRef = useRef(false)
-  // Debounce timer: fires 100ms after the LAST height change, so variant-driven
+  // Debounce timer: fires 150ms after the LAST height change, so variant-driven
   // re-renders (contentRef ResizeObserver → size update → widget re-render) have
   // settled before we compute the fitted layout.
   const autoFitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Collect per-widget natural content heights reported by each wrapper.
-  // Triggers a one-time auto-fit once all heights have settled.
+  // Collect per-widget natural content heights reported by each wrapper, and
+  // keep re-fitting on every subsequent change — not just once on first
+  // mount. A widget's natural height can change well after initial load
+  // (a narrower viewport makes its internal grid reflow to more rows, new
+  // data loads in, a widget gets toggled on) — without an ongoing re-fit,
+  // its box stays sized for whatever content it had at the last fit, and
+  // anything taller than that gets clipped/scrolled inside a stale box
+  // rather than the box growing to fit it. This is not gated on edit mode:
+  // the same staleness affects plain viewing, e.g. resizing the browser.
   const handleNaturalHeightChange = useCallback(
     (id: string, px: number) => {
       naturalHeightsRef.current[id] = px
 
-      if (!hasAutoFittedRef.current) {
-        if (autoFitTimerRef.current) clearTimeout(autoFitTimerRef.current)
-        autoFitTimerRef.current = setTimeout(() => {
-          const reported = Object.keys(naturalHeightsRef.current).length
-          const total = filteredLayoutRef.current.length
-          if (reported >= total && total > 0) {
-            hasAutoFittedRef.current = true
-            const fitted = fitLayoutToContent(filteredLayoutRef.current, naturalHeightsRef.current)
-            onLayoutChange(compactLayoutVertically(fitted))
-          }
-        }, 100)
-      }
+      if (autoFitTimerRef.current) clearTimeout(autoFitTimerRef.current)
+      autoFitTimerRef.current = setTimeout(() => {
+        const reported = Object.keys(naturalHeightsRef.current).length
+        const total = filteredLayoutRef.current.length
+        if (total === 0) return
+        if (!hasAutoFittedRef.current && reported < total) return
+        hasAutoFittedRef.current = true
+        const fitted = fitLayoutToContent(filteredLayoutRef.current, naturalHeightsRef.current)
+        onLayoutChange(compactLayoutVertically(fitted))
+      }, 150)
     },
     [naturalHeightsRef, onLayoutChange]
   )
@@ -247,8 +268,8 @@ export default function EditableDashboard({
           layout={rglLayout}
           gridConfig={{
             cols: 12,
-            rowHeight: 64,
-            margin: [12, 12],
+            rowHeight: GRID_ROW_HEIGHT,
+            margin: [GRID_MARGIN_Y, GRID_MARGIN_Y],
             containerPadding: [0, 0],
             maxRows: Infinity,
           }}
@@ -262,7 +283,7 @@ export default function EditableDashboard({
             const WidgetComponent = WIDGET_COMPONENTS[item.i]
             const itemSettings = widgetSettings[item.i] ?? DEFAULT_WIDGET_SETTINGS[item.i] ?? {}
             return (
-              <div key={item.i}>
+              <div key={item.i} id={`widget-${item.i}`}>
                 <DashboardWidgetWrapper
                   id={item.i}
                   isEditing={isEditing}

@@ -17,30 +17,110 @@ import {
 } from 'lucide-react'
 import { customersApi, installmentAccountsApi } from '@/src/libs/api/crm'
 import { getCustomerHistoryWithPayments } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
+import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import type { Customer, Lead, Reminder, InstallmentAccount } from '@/src/schema/crm/types'
-import type { InstallmentSchedule, PosTransaction, CustomerHistoryItem } from '@/src/schema/pos'
+import type {
+  InstallmentSchedule,
+  CustomerHistoryItem,
+  PosTransaction,
+  PosInvoiceType,
+  InstallmentProvider,
+} from '@/src/schema/pos'
+import {
+  DUE_STATUS_LABELS,
+  dueOutstanding,
+  duePaid,
+  dueStatus,
+  isDueOpen,
+  sumDuesPaid,
+} from '@/src/libs/pos/installment-dues'
 
-// Same mapping TransactionsList.tsx uses for its own transaction rows —
-// kept local rather than imported since that file doesn't export it.
-const txTypeColor: Record<string, string> = {
-  sale: 'bg-blue-100 text-blue-700',
-  refund: 'bg-orange-100 text-orange-700',
-  exchange: 'bg-purple-100 text-purple-700',
-}
-const txStatusColor: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700',
-  voided: 'bg-red-100 text-red-700',
+// One row per ITEM bought, not per transaction. The per-transaction view this
+// replaced could only ever say "mixed" for a cart that financed one item and
+// paid cash for another — invoiceType lives on PosTransactionLine, not just
+// PosTransaction, so only a line-level list can show which item was which.
+// Payments (CollectionReceipt rows) are deliberately not here; they live in
+// Installment Plans, Upcoming Payables and the Customer Ledger.
+type PurchasedItem = {
+  key: string
+  itemName: string | null
+  sku: string | null
+  serials: string[]
+  quantity: number
+  unitPrice: number
+  lineTotal: number
+  invoiceType: PosInvoiceType
+  installmentProvider: InstallmentProvider | null
+  termMonths: number | null
+  occurredAt: string
+  transactionNumber: string
+  /** The parent sale. TransactionDetail re-fetches the full record itself
+   * (react-query on summary.id) — the invoices it lists only come back from
+   * findOne(), never from this history endpoint — so passing the summary is
+   * enough and no extra fetch is needed here. */
+  transaction: PosTransaction
+  /** Refunds are stored with POSITIVE amounts and netted out by the caller
+   * (see sessions.service.ts's `totalSales - totalRefunds`), so the sign is
+   * applied here for display rather than read off the row. */
+  isReturn: boolean
 }
 
-function summarizeTransactionItems(tx: PosTransaction): string {
-  const names = (tx.lines ?? []).map((l) => l.itemName)
-  if (names.length === 0) return 'No items'
-  if (names.length <= 2) return names.join(', ')
-  return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`
+/** Server-side page size for the customer's transaction history. */
+const HISTORY_PAGE_SIZE = 20
+
+function flattenPurchasedItems(history: CustomerHistoryItem[]): PurchasedItem[] {
+  const rows: PurchasedItem[] = []
+  for (const tx of history) {
+    if (tx.kind !== 'SALE') continue
+    // Voided sales never happened; refunds/exchanges do belong here, signed.
+    if (tx.status === 'voided') continue
+    const isReturn = tx.transactionType === 'refund'
+    const sign = isReturn ? -1 : 1
+    for (const line of tx.lines ?? []) {
+      rows.push({
+        key: line.id,
+        itemName: line.itemName,
+        sku: line.sku ?? null,
+        // Split-type items (aircon indoor+outdoor) carry two serials on one line.
+        serials: [line.serialNumber, line.secondarySerialNumber].filter((sn): sn is string =>
+          Boolean(sn)
+        ),
+        // Number() throughout — quantity/unitPrice/lineTotal are Prisma
+        // Decimals and arrive as strings despite the `number` types here.
+        quantity: sign * Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        lineTotal: sign * Number(line.lineTotal),
+        invoiceType: line.invoiceType ?? tx.invoiceType ?? 'cash',
+        installmentProvider: line.installmentProvider ?? null,
+        termMonths: line.termMonths ?? null,
+        occurredAt: tx.occurredAt ?? tx.createdAt,
+        transactionNumber: tx.transactionNumber,
+        transaction: tx,
+        isReturn,
+      })
+    }
+  }
+  return rows.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+}
+
+// Per-line payment mode. 'charge' is a retired checkout option kept for
+// historical rows (see PosInvoiceType in schema.prisma), so it still needs a label.
+const INVOICE_TYPE_LABEL: Record<PosInvoiceType, string> = {
+  cash: 'Cash',
+  charge: 'Charge',
+  installment: 'Installment',
+  mixed: 'Mixed',
+}
+
+const INVOICE_TYPE_CLASSES: Record<PosInvoiceType, string> = {
+  cash: 'bg-emerald-50 text-emerald-700',
+  charge: 'bg-amber-50 text-amber-700',
+  installment: 'bg-blue-50 text-blue-700',
+  mixed: 'bg-gray-100 text-gray-700',
 }
 
 type CustomerView = Customer & {
@@ -86,9 +166,16 @@ export default function Customer360({
   const [accountsError, setAccountsError] = useState<string | null>(null)
 
   // CRM-01: last 20 transactions (server-capped, GET /pos/transactions/customer/:customerId/history-with-payments)
-  // — covers cash/full-payment sales too, unlike Installment Plans above,
-  // merged with installment-due payments collected later via Collections.
+  // — covers cash/full-payment sales too, unlike Installment Plans above.
+  // The endpoint still merges in Collections payments; this page now shows
+  // only the sale lines from it (see flattenPurchasedItems).
   const [transactionHistory, setTransactionHistory] = useState<CustomerHistoryItem[]>([])
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyMeta, setHistoryMeta] = useState<{
+    page: number
+    total: number
+    pageCount: number
+  } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
   // TransactionDetail (the same receipt modal POS's own pages use) requires
@@ -99,6 +186,11 @@ export default function Customer360({
   useEffect(() => {
     getSessionOrNull().then((s) => setPosSession(s))
   }, [])
+
+  const purchasedItems = useMemo(
+    () => flattenPurchasedItems(transactionHistory),
+    [transactionHistory]
+  )
 
   const upcomingPayables = useMemo(
     () => flattenUpcomingPayables(installmentSchedules),
@@ -151,12 +243,15 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    getCustomerHistoryWithPayments(id).then((res) => {
-      if (res.success && res.data) setTransactionHistory(res.data)
-      else setHistoryError(res.error ?? 'Failed to load transaction history')
+    setHistoryLoading(true)
+    getCustomerHistoryWithPayments(id, historyPage, HISTORY_PAGE_SIZE).then((res) => {
+      if (res.success && res.data) {
+        setTransactionHistory(res.data.items)
+        setHistoryMeta(res.data.meta)
+      } else setHistoryError(res.error ?? 'Failed to load transaction history')
       setHistoryLoading(false)
     })
-  }, [id])
+  }, [id, historyPage])
 
   if (loading) {
     return <div className="px-6 py-8 text-gray-400">Loading customer…</div>
@@ -303,6 +398,106 @@ export default function Customer360({
 
       <div className="mt-4">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 className="text-[14px] font-semibold text-gray-900">Transaction History</h2>
+            <p className="text-[11px] text-gray-400">
+              Items bought — click for the sales invoice · payments are in the{' '}
+              <Link href={`/crm/customers/${id}/ledger`} className="underline hover:text-gray-600">
+                Customer Ledger
+              </Link>
+            </p>
+          </div>
+          {historyLoading ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              Loading transaction history…
+            </p>
+          ) : historyError ? (
+            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
+          ) : purchasedItems.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-gray-400">
+              No items bought by this customer.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-gray-100">
+                {purchasedItems.map((it) => (
+                  <li
+                    key={it.key}
+                    onClick={() => setSelectedTransaction(it.transaction)}
+                    className="flex cursor-pointer items-start justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-gray-800">
+                        {it.itemName ?? 'Unknown item'}
+                        {it.isReturn && (
+                          <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+                            returned
+                          </span>
+                        )}
+                      </p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
+                        <span>
+                          {new Date(it.occurredAt).toLocaleDateString('en-PH', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {Math.abs(it.quantity)} × {formatPeso(it.unitPrice)}
+                        </span>
+                        {it.sku && (
+                          <>
+                            <span>·</span>
+                            <span className="font-mono">{it.sku}</span>
+                          </>
+                        )}
+                        <span>·</span>
+                        <span className="font-mono">{it.transactionNumber}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-medium ${INVOICE_TYPE_CLASSES[it.invoiceType]}`}
+                        >
+                          {INVOICE_TYPE_LABEL[it.invoiceType]}
+                          {it.invoiceType === 'installment' && it.termMonths
+                            ? ` · ${it.termMonths}mo`
+                            : ''}
+                          {it.installmentProvider === 'tpf' ? ' · TPF' : ''}
+                        </span>
+                      </div>
+                      {it.serials.length > 0 && (
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-gray-400">
+                          SN: {it.serials.join(' / ')}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`shrink-0 font-medium ${it.isReturn ? 'text-orange-600' : 'text-gray-800'}`}
+                    >
+                      {it.isReturn ? '-' : ''}
+                      {formatPeso(Math.abs(it.lineTotal))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {historyMeta && historyMeta.total > 0 && (
+                <TablePagination
+                  page={historyMeta.page}
+                  pageCount={historyMeta.pageCount}
+                  onPageChange={setHistoryPage}
+                  pageStart={(historyMeta.page - 1) * HISTORY_PAGE_SIZE}
+                  pageSize={transactionHistory.length}
+                  totalItems={historyMeta.total}
+                  noun="transaction"
+                />
+              )}
+            </>
+          )}
+        </section>
+      </div>
+
+      <div className="mt-4">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
           <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Installment Plans</h2>
           {installmentLoading ? (
             <p className="py-4 text-center text-[13px] text-gray-400">Loading installment plans…</p>
@@ -396,7 +591,7 @@ export default function Customer360({
             <>
               <ul className="divide-y divide-gray-100">
                 {upcomingPayables.slice(0, 10).map((p) => (
-                  <li key={p.invoiceId} className="py-2.5 text-[13px]">
+                  <li key={p.key} className="py-2.5 text-[13px]">
                     <button
                       type="button"
                       onClick={() => setScheduleDetailTarget(p.schedule)}
@@ -591,106 +786,6 @@ export default function Customer360({
         </section>
       </div>
 
-      <div className="mt-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Transaction History</h2>
-          {historyLoading ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              Loading transaction history…
-            </p>
-          ) : historyError ? (
-            <p className="py-4 text-center text-[13px] text-red-600">{historyError}</p>
-          ) : transactionHistory.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-gray-400">
-              No transactions for this customer.
-            </p>
-          ) : (
-            <>
-              <ul className="divide-y divide-gray-100">
-                {transactionHistory.map((tx) =>
-                  tx.kind === 'PAYMENT' ? (
-                    <li
-                      key={tx.id}
-                      className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-800">
-                          Payment received
-                          {tx.reference ? ` — ${tx.reference}` : ''}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-                          <span>
-                            {new Date(tx.paymentDate).toLocaleDateString('en-PH', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          {tx.invoiceNumbers.length > 0 && (
-                            <span className="truncate">{tx.invoiceNumbers.join(', ')}</span>
-                          )}
-                          {tx.cancelledAt && (
-                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700">
-                              cancelled
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-medium text-green-700">
-                        {formatPeso(tx.amount)}
-                      </span>
-                    </li>
-                  ) : (
-                    <li
-                      key={tx.id}
-                      onClick={() => setSelectedTransaction(tx)}
-                      className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-[13px] hover:bg-gray-50"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-800">
-                          {summarizeTransactionItems(tx)}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-                          <span>
-                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          {tx.transactionType !== 'sale' && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-medium ${txTypeColor[tx.transactionType] ?? 'bg-gray-100 text-gray-700'}`}
-                            >
-                              {tx.transactionType}
-                            </span>
-                          )}
-                          {tx.status !== 'completed' && (
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-medium ${txStatusColor[tx.status] ?? 'bg-gray-100 text-gray-700'}`}
-                            >
-                              {tx.status}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-medium text-gray-800">
-                        {formatPeso(tx.totalAmount)}
-                      </span>
-                    </li>
-                  )
-                )}
-              </ul>
-              {transactionHistory.length >= 20 && (
-                <p className="mt-2 text-center text-[11px] text-gray-400">
-                  Showing the most recent 20 transactions.
-                </p>
-              )}
-            </>
-          )}
-        </section>
-      </div>
-
       {canDelete && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50/60 p-5">
           <h2 className="text-[14px] font-semibold text-red-900">Danger Zone</h2>
@@ -774,6 +869,11 @@ function productLabel(
 // new endpoint — just reshaped client-side: filter out settled/void lines,
 // flatten every schedule's lines into one array, sort by due date.
 type UpcomingPayable = {
+  /** Unique per due. Scenario 47 made one ARInvoice cover a whole installment
+   * sale — InstallmentScheduleLine.arInvoiceId lost its @unique — so the
+   * invoice id repeats across every due of a plan and can no longer identify
+   * one. The schedule plus the line number can. */
+  key: string
   schedule: InstallmentSchedule
   invoiceId: string
   invoiceNumber: string
@@ -788,16 +888,37 @@ function flattenUpcomingPayables(schedules: InstallmentSchedule[]): UpcomingPaya
   const payables: UpcomingPayable[] = []
   for (const schedule of schedules) {
     for (const line of schedule.lines) {
-      if (['PAID', 'CANCELLED', 'DRAFT'].includes(line.arInvoice.status)) continue
+      // Per DUE, not per invoice. Filtering on the shared invoice's status
+      // kept a settled due listed until the WHOLE plan closed, and then
+      // dropped all of its dues at once.
+      if (!isDueOpen(line)) continue
       payables.push({
+        key: `${schedule.id}-${line.lineNumber}`,
         schedule,
         invoiceId: line.arInvoice.id,
         invoiceNumber: line.arInvoice.invoiceNumber,
         lineNumber: line.lineNumber,
         totalLines: schedule.lines.length,
-        dueDate: line.arInvoice.dueDate,
-        amountDue: line.arInvoice.totalAmount - line.arInvoice.amountPaid,
-        status: line.arInvoice.status,
+        // The LINE's own due date and amount, not the invoice's. They agreed
+        // while every due had its own ARInvoice; since Scenario 47 gave the
+        // whole sale one invoice they do not. Reading the invoice showed every
+        // due carrying the same date, and each one carrying the entire
+        // remaining balance — so a ₱12,000 plan with 10 dues left summed to
+        // ₱120,000 in the header above.
+        dueDate: line.dueDate,
+        // Number() because InstallmentScheduleLine.amount is a Prisma
+        // Decimal(15,2), which serializes to JSON as a STRING — the
+        // `amount: number` in schema/pos is a lie. formatPeso() coerces
+        // internally so single values looked fine, but the header's
+        // reduce() was string-concatenating every due into one number
+        // ("2140" x12 -> ₱214,021,402,140,214,...).
+        amountDue: Number(line.amount),
+        // Likewise the badge: the shared invoice sits at PARTIAL from the
+        // moment the down payment posts (it opens at downPayment +
+        // totalPayable, so amountPaid is never 0 and never the full
+        // contract), which showed every due of every plan as "Partially
+        // Paid" before a single month had been collected.
+        status: dueStatus(line),
       })
     }
   }
@@ -827,19 +948,11 @@ const URGENCY_STRIP_CLASSES: Record<PayableUrgency, string> = {
   upcoming: 'border-gray-200 bg-gray-50',
 }
 
-// ARInvoice.status is the underlying AR lifecycle state (DRAFT/SENT/PARTIAL/
-// PAID/OVERDUE/CANCELLED) — "SENT" means "posted, awaiting payment", not that
-// a notification went out. Relabeled to the Paid/Due/Overdue language a
-// customer-facing installment schedule actually needs.
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft',
-  SENT: 'Due',
-  PARTIAL: 'Partially Paid',
-  PAID: 'Paid',
-  OVERDUE: 'Overdue',
-  CANCELLED: 'Cancelled',
-}
-
+// The plan's overall finished/ongoing state — distinct from
+// InstallmentStatusBadge above, which marks one due-date line's own AR
+// status. closed/early_closed/written_off all mean "no longer active", just
+// via different paths (paid off on schedule, paid off early, or written off
+// as uncollectible).
 // The plan's overall finished/ongoing state — distinct from
 // InstallmentStatusBadge above, which marks one due-date line's own AR
 // status. closed/early_closed/written_off all mean "no longer active", just
@@ -881,7 +994,7 @@ function InstallmentStatusBadge({ status }: { status: string }) {
     <span
       className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}
     >
-      {STATUS_LABELS[status] ?? status}
+      {DUE_STATUS_LABELS[status] ?? status}
     </span>
   )
 }
@@ -903,14 +1016,16 @@ function InstallmentScheduleDetailModal({
   onClose: () => void
 }) {
   const router = useRouter()
-  const totalPayments = schedule.lines.reduce(
-    (sum, line) => sum + Number(line.arInvoice.amountPaid),
-    0
-  )
+  // Every due of this plan points at the SAME ARInvoice, so summing
+  // arInvoice.amountPaid across the lines counted the plan's whole
+  // collected-to-date once per due (12x on a 12-month plan) and drove
+  // Remaining balance to zero on day one. The dues' own paidAmount is the
+  // per-month figure, and it nets against totalPayable because both exclude
+  // the down payment — which settles no due and is reported on its own row
+  // above.
+  const totalPayments = sumDuesPaid(schedule.lines)
   const remainingBalance = Math.max(0, Number(schedule.totalPayable) - totalPayments)
-  const hasUnpaidLine = schedule.lines.some(
-    (line) => !['PAID', 'CANCELLED'].includes(line.arInvoice.status)
-  )
+  const hasUnpaidLine = schedule.lines.some(isDueOpen)
 
   function goToCollections() {
     const params = new URLSearchParams({
@@ -993,7 +1108,7 @@ function InstallmentScheduleDetailModal({
             )}
             <div className="border-t border-gray-200 pt-2">
               <Row label="Total price" value={formatPeso(schedule.totalPayable)} bold />
-              <Row label="Total payments made" value={formatPeso(totalPayments)} />
+              <Row label="Installment payments made" value={formatPeso(totalPayments)} />
               <Row label="Remaining balance" value={formatPeso(remainingBalance)} bold />
             </div>
           </div>
@@ -1008,9 +1123,15 @@ function InstallmentScheduleDetailModal({
             )}
             <ul className="divide-y divide-gray-100">
               {schedule.lines.map((line) => {
-                const paid = Number(line.arInvoice.amountPaid)
-                const total = Number(line.arInvoice.totalAmount)
-                const isPartial = line.arInvoice.status === 'PARTIAL' && paid > 0 && paid < total
+                // All four of these used to come off line.arInvoice — the
+                // contract, shared by every due — so each row showed the
+                // same date (the invoice's, which tracks the earliest
+                // unpaid due), the same "Partially Paid" badge, and the
+                // ENTIRE contract as its amount. They live on the line.
+                const paid = duePaid(line)
+                const total = Number(line.amount)
+                const status = dueStatus(line)
+                const isPartial = status === 'PARTIAL'
                 const rowContent = (
                   <>
                     <span className="text-gray-700">
@@ -1019,16 +1140,16 @@ function InstallmentScheduleDetailModal({
                       </span>
                       {' · '}
                       Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
-                      {new Date(line.arInvoice.dueDate).toLocaleDateString()}
+                      {new Date(line.dueDate).toLocaleDateString()}
                       {isPartial && (
                         <span className="block text-[11px] text-amber-600">
-                          {formatPeso(paid)} paid · {formatPeso(total - paid)} remaining
+                          {formatPeso(paid)} paid · {formatPeso(dueOutstanding(line))} remaining
                         </span>
                       )}
                     </span>
                     <span className="flex items-center gap-2">
                       <span className="font-medium text-gray-800">{formatPeso(total)}</span>
-                      <InstallmentStatusBadge status={line.arInvoice.status} />
+                      <InstallmentStatusBadge status={status} />
                     </span>
                   </>
                 )

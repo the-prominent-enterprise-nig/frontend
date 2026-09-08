@@ -1,7 +1,18 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, RefreshCw, X, PackageCheck, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import Link from 'next/link'
+import {
+  Plus,
+  RefreshCw,
+  X,
+  PackageCheck,
+  AlertTriangle,
+  RotateCcw,
+  ChevronDown,
+} from 'lucide-react'
+import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import type { ReturnSummary } from '@/src/schema/inventory/returns'
 import { useReturnsManager } from '../_hooks/useReturnsManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -32,6 +43,124 @@ function formatDate(dateStr?: string) {
   })
 }
 
+function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs uppercase tracking-wide text-zinc-400">{label}</dt>
+      <dd className="mt-0.5 text-sm text-zinc-700">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * Everything the summary row hides — the money, the two accounting documents,
+ * and the fields the table drops at narrow breakpoints. A return has no detail
+ * page of its own (it is a single stock-ledger row, not a document), so this
+ * is where the full record lives.
+ */
+function ReturnDetailRow({ ret }: { ret: ReturnSummary }) {
+  const unitCost = ret.unitCost ?? null
+  const value = unitCost != null ? unitCost * ret.quantity : null
+
+  return (
+    <tr className="bg-zinc-50/60">
+      <td colSpan={10} className="px-4 pb-4 pt-1">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 rounded-lg border border-zinc-200 bg-white p-4 sm:grid-cols-3 lg:grid-cols-4">
+          <DetailField label="Customer">
+            {ret.customer ? (
+              <>
+                {ret.customer.name}
+                {ret.customer.customerCode && (
+                  <span className="ml-1 font-mono text-xs text-zinc-400">
+                    {ret.customer.customerCode}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-zinc-400">Not recorded</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Warehouse">
+            {ret.warehouse?.name ?? '—'}
+            {ret.warehouse?.branch?.name && (
+              <span className="ml-1 text-xs text-zinc-400">({ret.warehouse.branch.name})</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Serial number">
+            {ret.serialNumber ? (
+              <span className="font-mono text-xs">{ret.serialNumber}</span>
+            ) : (
+              <span className="text-zinc-400">Not serial-tracked</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Unit cost">
+            {unitCost != null ? (
+              fmtMoney(unitCost)
+            ) : (
+              <span
+                className="text-zinc-400"
+                title="No cost could be resolved when this was processed"
+              >
+                Not valued
+              </span>
+            )}
+          </DetailField>
+
+          <DetailField label="Value returned">
+            {value != null ? fmtMoney(value) : <span className="text-zinc-400">—</span>}
+          </DetailField>
+
+          <DetailField label="Journal entry">
+            {ret.journalEntryId ? (
+              <Link
+                href={`/accounting/journal-entries/${ret.journalEntryId}`}
+                className="text-prominent-purple-700 hover:underline"
+              >
+                Dr Inventory / Cr COGS
+              </Link>
+            ) : (
+              <span className="text-zinc-400">Not posted</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Credit memo">
+            {ret.creditMemoNumber ? (
+              <Link
+                href="/accounting/credit-memos"
+                className="font-mono text-prominent-purple-700 hover:underline"
+              >
+                {ret.creditMemoNumber}
+              </Link>
+            ) : (
+              <span className="text-zinc-400">None issued</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Reference">
+            {ret.originalSaleId ? (
+              <span className="font-mono text-xs">{ret.originalSaleId}</span>
+            ) : (
+              <span className="text-zinc-400">—</span>
+            )}
+          </DetailField>
+
+          <DetailField label="Processed">{formatDate(ret.occurredAt ?? ret.createdAt)}</DetailField>
+
+          <div className="col-span-2 sm:col-span-3 lg:col-span-4">
+            <dt className="text-xs uppercase tracking-wide text-zinc-400">Notes</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap text-sm text-zinc-700">
+              {ret.notes || <span className="text-zinc-400">—</span>}
+            </dd>
+          </div>
+        </dl>
+      </td>
+    </tr>
+  )
+}
+
 export default function ReturnList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.RETURNS_CREATE)
 
@@ -51,7 +180,6 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     page,
     setPage,
     warehouseOptions,
-    itemOptions,
     serialOptions,
     createReturn,
     isCreating,
@@ -59,6 +187,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
   } = useReturnsManager()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const hasActiveFilters = !!(warehouseFilter || fromDate || toDate)
 
@@ -69,9 +198,12 @@ export default function ReturnList({ session }: { session: SessionUser }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Returns</h1>
+            {/* Says "in" explicitly because the Debit Memos tab next door
+                moves stock the opposite way, and the two labels can't tell
+                them apart on their own. */}
             <p className="mt-1 text-sm text-zinc-500">
-              Process returned items back into inventory. Sellable stock is immediately available;
-              damaged stock goes to on-hand only.
+              Customer stock coming <strong>back in</strong> to inventory. Sellable stock is
+              immediately available; damaged stock goes to on-hand only.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -185,6 +317,9 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden sm:table-cell">
                       Location
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
+                      Customer
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
                       Qty
                     </th>
@@ -194,52 +329,104 @@ export default function ReturnList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Reference
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                      Accounting
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Notes
+                    </th>
+                    <th className="w-10 px-2 py-3">
+                      <span className="sr-only">Details</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {returns.map((ret) => {
                     const cond = ret.condition ? CONDITION_CONFIG[ret.condition] : null
+                    const isExpanded = expandedId === ret.id
                     return (
-                      <tr key={ret.id} className="hover:bg-zinc-50">
-                        <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
-                          {formatDate(ret.occurredAt ?? ret.createdAt)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-zinc-900">{ret.item?.name ?? '—'}</p>
-                          <p className="font-mono text-xs text-zinc-400">{ret.item?.sku}</p>
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
-                          {ret.warehouse?.branch?.name ?? ret.warehouse?.name ?? '—'}
-                        </td>
-                        <td className="px-4 py-3 text-center font-semibold text-zinc-900">
-                          {ret.quantity}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {cond ? (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${cond.className}`}
-                            >
-                              <cond.icon className="h-3 w-3" />
-                              {cond.label}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-zinc-500 hidden md:table-cell">
-                          {ret.originalSaleId ? (
-                            <span className="font-mono">{ret.originalSaleId}</span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-zinc-500 hidden lg:table-cell max-w-xs truncate">
-                          {ret.notes ?? '—'}
-                        </td>
-                      </tr>
+                      <Fragment key={ret.id}>
+                        <tr
+                          onClick={() => setExpandedId(isExpanded ? null : ret.id)}
+                          className={`cursor-pointer hover:bg-zinc-50 ${isExpanded ? 'bg-zinc-50' : ''}`}
+                        >
+                          <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                            {formatDate(ret.occurredAt ?? ret.createdAt)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-zinc-900">{ret.item?.name ?? '—'}</p>
+                            <p className="font-mono text-xs text-zinc-400">{ret.item?.sku}</p>
+                          </td>
+                          <td className="px-4 py-3 text-zinc-600 hidden sm:table-cell">
+                            {ret.warehouse?.branch?.name ?? ret.warehouse?.name ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            {ret.customer ? (
+                              <>
+                                <p className="text-zinc-700">{ret.customer.name}</p>
+                                {ret.customer.customerCode && (
+                                  <p className="font-mono text-xs text-zinc-400">
+                                    {ret.customer.customerCode}
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-xs text-zinc-400">Not recorded</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center font-semibold text-zinc-900">
+                            {ret.quantity}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {cond ? (
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${cond.className}`}
+                              >
+                                <cond.icon className="h-3 w-3" />
+                                {cond.label}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-500 hidden md:table-cell">
+                            {ret.originalSaleId ? (
+                              <span className="font-mono">{ret.originalSaleId}</span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs hidden md:table-cell">
+                            {ret.creditMemoNumber ? (
+                              <Link
+                                href="/accounting/credit-memos"
+                                // The row itself toggles the detail panel, so the
+                                // link must not do both on its way out.
+                                onClick={(e) => e.stopPropagation()}
+                                className="font-mono text-prominent-purple-700 hover:underline"
+                                title="Credit memo issued against the original invoice"
+                              >
+                                {ret.creditMemoNumber}
+                              </Link>
+                            ) : ret.journalEntryId ? (
+                              <span className="text-zinc-500" title="Dr Inventory / Cr COGS posted">
+                                Stock only
+                              </span>
+                            ) : (
+                              <span className="text-zinc-400">Not posted</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-500 hidden lg:table-cell max-w-xs truncate">
+                            {ret.notes ?? '—'}
+                          </td>
+                          <td className="px-2 py-3 text-zinc-400">
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            />
+                          </td>
+                        </tr>
+                        {isExpanded && <ReturnDetailRow ret={ret} />}
+                      </Fragment>
                     )
                   })}
                 </tbody>
@@ -285,7 +472,6 @@ export default function ReturnList({ session }: { session: SessionUser }) {
         onClose={() => setIsCreateOpen(false)}
         onSubmit={createReturn}
         isSubmitting={isCreating}
-        itemOptions={itemOptions}
         warehouseOptions={warehouseOptions}
         serialOptions={serialOptions}
       />

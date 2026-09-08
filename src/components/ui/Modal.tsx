@@ -3,6 +3,13 @@
 import { X } from 'lucide-react'
 import { ReactNode, useEffect } from 'react'
 
+/**
+ * The app's modal shell and the confirm dialog built on it. Promoted out of
+ * accounting/_shared once Inventory needed the confirm too — the same move
+ * TabNav made. POS still carries three private ConfirmModal copies that
+ * predate this; they should fold in here when they are next touched.
+ */
+
 interface ModalProps {
   open: boolean
   title: string
@@ -72,7 +79,9 @@ export function Modal({
 interface ConfirmDialogProps {
   open: boolean
   title: string
-  message: string
+  /** A ReactNode, not a string, so a confirmation that has to spell out
+   * several consequences can break them into paragraphs. */
+  message: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   loading?: boolean
@@ -123,7 +132,7 @@ export function ConfirmDialog({
         </div>
       }
     >
-      <p className="text-sm text-gray-600">{message}</p>
+      <div className="space-y-2 text-sm text-gray-600">{message}</div>
     </Modal>
   )
 }
