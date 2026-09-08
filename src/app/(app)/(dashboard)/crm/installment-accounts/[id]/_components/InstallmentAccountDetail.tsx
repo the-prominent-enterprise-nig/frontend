@@ -605,8 +605,12 @@ export default function InstallmentAccountDetail({
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Billing history</h2>
         {account.billingHistory.length > 0 ? (
           <ul className="divide-y divide-gray-100" data-testid="billing-history">
+            {/* Keyed on the due, not the invoice: Scenario 47 gave a whole
+                installment sale one ARInvoice, so arInvoiceId now repeats
+                across every row of this list. lineNumber is unique within one
+                account's history. */}
             {account.billingHistory.map((bill) => (
-              <li key={bill.arInvoiceId} className="py-1.5 text-[13px]">
+              <li key={bill.lineNumber} className="py-1.5 text-[13px]">
                 <Link
                   href={`/accounting/ar-invoices/${bill.arInvoiceId}`}
                   className="-mx-1 flex items-center justify-between gap-2 rounded-lg px-1 hover:bg-gray-50"
