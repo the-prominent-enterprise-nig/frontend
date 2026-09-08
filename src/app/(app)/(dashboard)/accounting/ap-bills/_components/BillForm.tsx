@@ -124,9 +124,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     // supplier's withholding rate; pre-filled here so editing an existing
     // bill shows (and can override) what was actually computed.
     withholdingAmount: initial?.withholdingAmount != null ? String(initial.withholdingAmount) : '',
-    sourceOfPayment: initial?.sourceOfPayment ?? '',
-    referenceNumber: initial?.referenceNumber ?? '',
-    serialNumber: initial?.serialNumber ?? '',
   })
   // Scenario 46 — the invoice's own lines. An AP bill IS the SI, so when lines
   // are present they ARE the invoice and the subtotal/tax/total are computed
@@ -148,6 +145,11 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A repeated SI is a question, not a mistake: one supplier invoice can cover
+  // several POs, each received into its own bill. The server refuses once and
+  // says what the number clashes with; this holds that message until the person
+  // decides, and Save again re-sends with the confirmation.
+  const [duplicateSi, setDuplicateSi] = useState<string | null>(null)
   // Scenario 43 — a bill that's left DRAFT (already received/posted to the
   // GL) locks everything except how it's paid. See ap-bills.service.ts's
   // update() for the matching backend guard.
@@ -196,25 +198,10 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isLocked) {
-      // Scenario 43 — only these three fields are still writable once a
-      // bill has left DRAFT; sending anything else trips the backend's
-      // matching guard, so the payload is deliberately minimal here.
-      setSaving(true)
-      setError(null)
-      const res = await APBills.update(initial!.id, {
-        sourceOfPayment: form.sourceOfPayment || undefined,
-        referenceNumber: form.referenceNumber || undefined,
-        serialNumber: form.serialNumber || undefined,
-      })
-      setSaving(false)
-      if (!res.success) {
-        setError(res.message || res.error || 'Save failed')
-        return
-      }
-      onSaved()
-      return
-    }
+    // A received bill has nothing left to write. Source of Payment / Reference
+    // Number / Cheque No. were the last three writable fields, and they moved to
+    // the voucher, so this view is now a read-only summary and offers no Save.
+    if (isLocked) return
     if (!form.supplierId) {
       setError('Supplier is required')
       return
@@ -235,9 +222,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
       // Omit entirely when blank so the backend auto-calculates from the
       // supplier's withholding rate instead of overriding it with 0.
       withholdingAmount: form.withholdingAmount === '' ? undefined : Number(form.withholdingAmount),
-      sourceOfPayment: form.sourceOfPayment || undefined,
-      referenceNumber: form.referenceNumber || undefined,
-      serialNumber: form.serialNumber || undefined,
       // Scenario 46 — when the invoice is itemised, the lines ARE the invoice
       // and the backend recomputes subtotal/tax/total from them, ignoring the
       // figures above. Omitted entirely when the table is empty, so a
@@ -256,9 +240,17 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           }))
         : undefined,
     }
-    const res = initial ? await APBills.update(initial.id, payload) : await APBills.create(payload)
+    const body = { ...payload, confirmDuplicateBillNumber: duplicateSi !== null }
+    const res = initial ? await APBills.update(initial.id, body) : await APBills.create(body)
     setSaving(false)
     if (!res.success) {
+      if (res.errorCode === 'duplicate_supplier_invoice_number') {
+        // Not an error yet — the same SI across several POs is normal. Show what
+        // it clashes with and let them look before deciding.
+        setDuplicateSi(res.message || 'This supplier already has a bill under that SI.')
+        setError(null)
+        return
+      }
       setError(res.message || res.error || 'Save failed')
       return
     }
@@ -276,7 +268,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
       </Link>
 
       <h1 className="text-2xl font-semibold text-prominent-purple-900">
-        {initial ? 'Edit Bill' : 'New Bill'}
+        {!initial ? 'New Bill' : isLocked ? 'Bill Details' : 'Edit Bill'}
       </h1>
       <p className="mt-1 text-sm text-gray-500">
         Record a supplier bill. Receiving posts a journal entry to the GL.
@@ -289,8 +281,9 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         {isLocked ? (
           <div className="space-y-3">
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              This bill has already been received and posted to the GL — only how it&apos;s paid can
-              still be changed below.
+              This bill has been received and posted to the GL, so its figures are fixed. How it
+              gets paid is decided on its voucher — use Create voucher or Record Payment from the
+              invoice.
             </div>
             <InfoRow label="Supplier" value={initial?.supplier?.name ?? '—'} />
             {initial?.purchaseOrder && (
@@ -403,7 +396,13 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               <input
                 required={!initial}
                 value={form.billNumber}
-                onChange={(e) => setForm({ ...form, billNumber: e.target.value })}
+                onChange={(e) => {
+                  // Changing the number withdraws the question — otherwise the
+                  // next Save would carry a confirmation for a number nobody
+                  // was asked about.
+                  setDuplicateSi(null)
+                  setForm({ ...form, billNumber: e.target.value })
+                }}
                 placeholder="The Supplier Invoice (SI) number printed on the supplier's own invoice"
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
               />
@@ -632,44 +631,18 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
             </Field>
           </>
         )}
-        {initial && (
-          <>
-            <div className="pt-1 border-t text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              How this bill will be paid
-            </div>
-            <Field label="Source of Payment">
-              <select
-                value={form.sourceOfPayment}
-                onChange={(e) => setForm({ ...form, sourceOfPayment: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              >
-                <option value="">— Select —</option>
-                <option value="cash">Cash</option>
-                <option value="check">Check</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="gcash">GCash</option>
-                <option value="card">Card</option>
-                <option value="other">Other</option>
-              </select>
-            </Field>
-            <Field label="Reference Number">
-              <input
-                value={form.referenceNumber}
-                onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-              />
-            </Field>
-            {form.sourceOfPayment === 'check' && (
-              <Field label="Serial Number (Cheque No.)">
-                <input
-                  value={form.serialNumber}
-                  onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
-                  placeholder="e.g. 0001234"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                />
-              </Field>
-            )}
-          </>
+        {/* "How this bill will be paid" — Source of Payment, Reference Number
+            and Cheque No. — used to sit here. They predate the voucher model
+            and now duplicate it: how a bill is paid is decided when a voucher
+            is raised or a payment recorded, per payment method, and a voucher
+            can be part cheque and part transfer. One method stamped on the
+            invoice cannot describe that, and nothing downstream reads it except
+            as a last-resort default. Removed rather than left to disagree with
+            the voucher. */}
+        {duplicateSi && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+            {duplicateSi} Press <span className="font-semibold">Save anyway</span> to keep it.
+          </div>
         )}
         {error && (
           <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
@@ -683,14 +656,16 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
           >
             Cancel
           </Link>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {saving ? 'Saving...' : 'Save'}
-          </button>
+          {!isLocked && (
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? 'Saving...' : duplicateSi ? 'Save anyway' : 'Save'}
+            </button>
+          )}
         </div>
       </form>
     </div>

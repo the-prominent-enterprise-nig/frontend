@@ -68,14 +68,15 @@
   /* Radius */
   --radius: 0.625rem;
 
-  /* Typography */
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-:root {
-  --font-geist-sans: 'Geist';
-  --font-geist-mono: 'Geist Mono';
+  /* Typography — Poppins everywhere. `--font-poppins` is supplied by
+     next/font on <html> (see app/layout.tsx); the rest of the stack is the
+     fallback used while the webfont loads or if it fails. `font-mono` is
+     mapped to Poppins too, deliberately: the mono utility is used across the
+     app only to set reference codes/numbers apart, never for code, and
+     Poppins' figures are tabular so columns still line up. */
+  --font-sans:
+    var(--font-poppins), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: var(--font-sans);
 }
 
 .dark {

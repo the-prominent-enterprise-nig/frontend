@@ -163,7 +163,7 @@ export default function ReceivingReportsList() {
                   className="flex items-center gap-1.5 rounded-lg bg-prominent-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-orange-700"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  Print / Download
+                  Print
                 </button>
                 <button
                   onClick={() => setPreview(null)}

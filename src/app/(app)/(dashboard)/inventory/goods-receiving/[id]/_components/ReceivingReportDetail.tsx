@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Download, Loader2, Pencil, X } from 'lucide-react'
+import { ArrowLeft, Loader2, Pencil, X, Printer } from 'lucide-react'
 import ReceivingReportSheet, {
   type ReceivingReportDocument,
 } from '../../../../accounting/receiving-reports/_components/ReceivingReportSheet'
@@ -11,14 +11,19 @@ import { getReceivingDocument } from '../../_actions/get-receiving-document'
 import { getReceivingReport } from '../../_actions/get-receiving-report'
 import { updateReceivingReport } from '../../_actions/update-receiving-report'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
+import { discountChainLabel } from '@/src/libs/format/discount-chain'
 
 interface EditLine {
   id: string
   batchNumber: string
   notes: string
   srp: string
-  discountValue: string
-  discountType: 'percentage' | 'amount'
+  // The whole chain, not just the first link. The Receive modal lets a
+  // receipt carry several discounts in order (SRP · 3% · ₱500), and this form
+  // used to read discounts[0] and save an array of one — so opening an RR and
+  // saving it silently dropped every discount after the first, quietly
+  // changing the unit cost the stock was costed at.
+  discounts: { value: string; type: 'percentage' | 'amount' }[]
   taxCode: string
   taxAmount: string
 }
@@ -29,6 +34,10 @@ interface EditState {
   vatAmount: string
   withheldAmount: string
   lines: EditLine[]
+}
+
+function fmtPHP(n: number): string {
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 }
 
 /** MM/DD/YYYY, the format used across these screens. */
@@ -44,7 +53,10 @@ function fmtDate(v?: string | null): string {
 
 export default function ReceivingReportDetail({
   id,
-  backHref = '/inventory/goods-receiving',
+  // There is no /inventory/goods-receiving page — the list lives inside the
+  // Operations hub's receiving tab, under its own Receiving Reports sub-tab.
+  // Linking to the folder path 404s.
+  backHref = '/inventory/operations?tab=receiving&subtab=reports',
   backLabel = 'Back to Goods Receiving',
 }: {
   id: string
@@ -96,8 +108,10 @@ export default function ReceivingReportDetail({
         batchNumber: l.batchNumber ?? '',
         notes: l.notes ?? '',
         srp: l.srp != null ? String(l.srp) : '',
-        discountValue: l.discounts?.[0] ? String(l.discounts[0].value) : '',
-        discountType: (l.discounts?.[0]?.type ?? 'percentage') as 'percentage' | 'amount',
+        discounts: (l.discounts ?? []).map((d) => ({
+          value: String(d.value),
+          type: (d.type ?? 'percentage') as 'percentage' | 'amount',
+        })),
         taxCode: l.taxCode ?? '',
         taxAmount: l.taxAmount != null ? String(l.taxAmount) : '',
       })),
@@ -119,8 +133,10 @@ export default function ReceivingReportDetail({
         batchNumber: l.batchNumber || undefined,
         notes: l.notes || undefined,
         srp: l.srp === '' ? undefined : Number(l.srp),
-        discounts: l.discountValue
-          ? [{ type: l.discountType, value: Number(l.discountValue) }]
+        discounts: l.discounts.some((d) => d.value !== '')
+          ? l.discounts
+              .filter((d) => d.value !== '')
+              .map((d) => ({ type: d.type, value: Number(d.value) }))
           : undefined,
         taxCode: l.taxCode || undefined,
         taxAmount: l.taxAmount === '' ? undefined : Number(l.taxAmount),
@@ -195,7 +211,7 @@ export default function ReceivingReportDetail({
             onClick={() => printReceivingReportDocument(doc)}
             className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
           >
-            <Download className="h-4 w-4" /> Print / Download
+            <Printer className="h-4 w-4" /> Print
           </button>
         </div>
       </div>
@@ -332,33 +348,79 @@ export default function ReceivingReportDetail({
                         className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5"
                       />
                     </label>
-                    <label className="flex flex-col gap-1">
+                    {/* A chain, in the order it applies — the same shape the
+                        Receive modal captures, so a receipt taken off a PO with
+                        "3% then ₱500" can be corrected here without losing the
+                        second step. */}
+                    <div className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                        Discount
+                        Discounts <span className="normal-case tracking-normal">(off SRP)</span>
                       </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={l.discountValue}
-                          onChange={(e) => setLine(idx, { discountValue: e.target.value })}
-                          className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-right"
-                        />
-                        <select
-                          value={l.discountType}
-                          onChange={(e) =>
+                      <div className="flex flex-col gap-1">
+                        {l.discounts.map((d, di) => (
+                          <div key={di} className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              aria-label={`Discount ${di + 1} value`}
+                              value={d.value}
+                              onChange={(e) =>
+                                setLine(idx, {
+                                  discounts: l.discounts.map((x, i) =>
+                                    i === di ? { ...x, value: e.target.value } : x
+                                  ),
+                                })
+                              }
+                              className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-right"
+                            />
+                            <select
+                              aria-label={`Discount ${di + 1} type`}
+                              value={d.type}
+                              onChange={(e) =>
+                                setLine(idx, {
+                                  discounts: l.discounts.map((x, i) =>
+                                    i === di
+                                      ? { ...x, type: e.target.value as 'percentage' | 'amount' }
+                                      : x
+                                  ),
+                                })
+                              }
+                              className="rounded-lg border border-zinc-200 px-1 py-1.5"
+                            >
+                              <option value="percentage">%</option>
+                              <option value="amount">₱</option>
+                            </select>
+                            <button
+                              type="button"
+                              aria-label={`Remove discount ${di + 1}`}
+                              onClick={() =>
+                                setLine(idx, {
+                                  discounts: l.discounts.filter((_, i) => i !== di),
+                                })
+                              }
+                              className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() =>
                             setLine(idx, {
-                              discountType: e.target.value as 'percentage' | 'amount',
+                              discounts: [
+                                ...l.discounts,
+                                { value: '', type: 'percentage' as const },
+                              ],
                             })
                           }
-                          className="rounded-lg border border-zinc-200 px-1 py-1.5"
+                          className="self-start text-[11px] font-medium text-purple-700 hover:underline"
                         >
-                          <option value="percentage">%</option>
-                          <option value="amount">₱</option>
-                        </select>
+                          + Add discount
+                        </button>
                       </div>
-                    </label>
+                    </div>
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                         Tax
@@ -435,6 +497,65 @@ export default function ReceivingReportDetail({
       <div className="mt-2.5">
         <ReceivingReportSheet doc={doc} />
       </div>
+
+      {/* Pricing as received — the discount chain the receipt itself carries,
+          which is the one that priced the stock. It can differ from the PO's:
+          receiving is where a supplier's actual invoice terms get corrected. */}
+      {!editing && lines.length > 0 && (
+        <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="mb-1 text-[14px] font-semibold text-prominent-purple-900">Pricing</h2>
+          <p className="mb-3 text-[12px] text-gray-500">
+            What was agreed on arrival. The printed report states the unit cost only.
+          </p>
+          {/* Shown even when every cell is blank. Receipts taken before the
+              pricing fields were carried through (a zod schema was silently
+              dropping them on the way to the server) have nothing to display,
+              and those are deliberately left blank rather than backfilled from
+              the PO — the PO states what was ordered, not what arrived. An
+              empty column still says the field exists and where it will
+              appear; a hidden section says the feature isn't there. */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-100 text-[13px]">
+              <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="py-2 pr-4">Item</th>
+                  <th className="py-2 pr-4">SRP &amp; discounts</th>
+                  <th className="py-2 pr-4 text-right">Unit cost</th>
+                  <th className="py-2 pr-4">Tax code</th>
+                  <th className="py-2 text-right">Tax amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lines.map((l) => {
+                  const chain = discountChainLabel(l, fmtPHP)
+                  return (
+                    <tr key={l.id}>
+                      <td className="py-2 pr-4 text-gray-900">
+                        {l.item?.name ?? l.itemId}
+                        {l.item?.sku && (
+                          <span className="ml-1 font-mono text-[11px] text-gray-400">
+                            {l.item.sku}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-600">
+                        {chain || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums">
+                        {l.unitCost != null ? fmtPHP(Number(l.unitCost)) : '—'}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-600">{l.taxCode || '—'}</td>
+                      <td className="py-2 text-right tabular-nums">
+                        {l.taxAmount != null ? fmtPHP(Number(l.taxAmount)) : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* The receiving check itself: what was ordered against what turned up,
           and the condition it turned up in. None of this appears on the printed

@@ -34,6 +34,11 @@ export interface CollectionReceiptSheetProps {
    * several dues has several, an invoice has the single receivable. */
   rows: { accountLine: string; amount: number }[]
   total: number
+  /** What this paper actually is. The layout is the client's own AR document
+   * layout and is shared, but the heading is not: an invoice is a demand for
+   * money and a receipt is proof money arrived, and printing one as the other
+   * produces a receipt for cash nobody collected. */
+  title?: string
 }
 
 export default function CollectionReceiptSheet({
@@ -44,13 +49,12 @@ export default function CollectionReceiptSheet({
   description,
   rows,
   total,
+  title = 'Collection Receipt',
 }: CollectionReceiptSheetProps) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">
-          Collection Receipt
-        </h1>
+        <h1 className="text-2xl font-bold uppercase text-prominent-purple-900">{title}</h1>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/nig-logo.png"
@@ -126,6 +130,12 @@ export interface CollectionReceiptDocument {
     amount: number
     description?: string | null
     invoiceNumber?: string
+    /** How the money came in (Cash, GCash, bank…). */
+    method?: string | null
+    /** What this collection was for — "Downpayment" or "Installment #N". */
+    appliedTo?: string | null
+    /** The invoice it credits, by the reference the customer holds. */
+    appliedToReference?: string | null
     customer: { name: string; address: string | null; taxId: string | null }
     lines?: { accountLine: string; amount: number }[]
   }
@@ -140,7 +150,17 @@ export function CollectionReceiptDocumentSheet({ doc }: { doc: CollectionReceipt
       ? r.lines
       : [
           {
-            accountLine: `Accounts Receivable — ${r.customer?.name ?? '—'} — ${r.invoiceNumber ?? '—'}`,
+            // What the money was for, and which invoice it credits. This used
+            // to read "Accounts Receivable — <customer> — <invoice#>", which
+            // is the journal entry behind the receipt rather than anything
+            // the customer can recognise.
+            accountLine: [
+              r.appliedTo || 'Payment',
+              r.method ? `· ${r.method}` : null,
+              `· Applied to ${r.appliedToReference || r.invoiceNumber || '—'}`,
+            ]
+              .filter(Boolean)
+              .join(' '),
             amount: r.amount,
           },
         ]
@@ -150,7 +170,7 @@ export function CollectionReceiptDocumentSheet({ doc }: { doc: CollectionReceipt
       enterprise={doc.enterprise}
       date={r.paymentDate}
       reference={r.reference || doc.documentNumber}
-      description={r.description}
+      description={r.appliedTo || r.description}
       rows={rows}
       total={r.amount}
     />
