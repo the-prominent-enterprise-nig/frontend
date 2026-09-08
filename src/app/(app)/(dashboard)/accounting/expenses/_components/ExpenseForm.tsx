@@ -728,6 +728,9 @@ function ExpenseFormFields({
     }
   }
 
+  // Lets the sticky header's Save submit a form it sits outside of.
+  const formRef = useRef<HTMLFormElement>(null)
+
   const validate = (): string | null => {
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
       return 'Pick the date this payment is expected to clear.'
@@ -854,9 +857,13 @@ function ExpenseFormFields({
       {/* The header sticks, and carries its own Save. A payroll entry runs to
           one line per division — the client's own disbursement sheet has 58 —
           so the actions at the foot of the form sat several screens below the
-          field being edited, and saving meant scrolling the whole list. The
-          button is bound by `form=` rather than nesting: the heading block
-          sits outside the <form> it submits. */}
+          field being edited, and saving meant scrolling the whole list.
+
+          The heading block sits outside the <form> it submits, so Save calls
+          requestSubmit() on a ref rather than relying on the `form=`
+          attribute — requestSubmit fires onSubmit and runs native validation
+          exactly as an in-form button would, with no dependency on how the
+          renderer treats that prop. */}
       <div className="sticky top-0 z-20 -mx-6 -mt-5 mb-4 border-b border-zinc-200 bg-zinc-50/95 px-6 pb-3 pt-5 backdrop-blur lg:-mx-10 lg:px-10">
         <Link
           href="/accounting/expenses"
@@ -883,8 +890,8 @@ function ExpenseFormFields({
               Cancel
             </Link>
             <button
-              type="submit"
-              form={FORM_ID}
+              type="button"
+              onClick={() => formRef.current?.requestSubmit()}
               disabled={saving}
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
@@ -893,9 +900,22 @@ function ExpenseFormFields({
             </button>
           </div>
         </div>
+
+        {/* Beside the button that produced it. Validation refuses the save
+            without moving the page, so a message at the foot of the form was
+            off-screen for anything longer than a viewport — the save read as
+            simply not working. */}
+        {error && (
+          <div
+            role="alert"
+            className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700"
+          >
+            {error}
+          </div>
+        )}
       </div>
 
-      <form id={FORM_ID} onSubmit={submit} className="mt-4 space-y-2">
+      <form ref={formRef} id={FORM_ID} onSubmit={submit} className="mt-4 space-y-2">
         <div
           className={`grid gap-3 ${form.clearedType === 'LATER_DATE' ? 'grid-cols-3 max-w-2xl' : 'grid-cols-2 max-w-md'}`}
         >
@@ -1553,11 +1573,6 @@ function ExpenseFormFields({
             Total: <span className="font-semibold">{fmtMoney(total)}</span>
           </div>
         </div>
-        {error && (
-          <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-            {error}
-          </div>
-        )}
       </form>
     </div>
   )
