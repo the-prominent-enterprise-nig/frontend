@@ -6,46 +6,26 @@ import Link from 'next/link'
 import { BellPlus, GitMerge, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import type { Customer } from '@/src/schema/crm/types'
+import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import type { Customer, CustomerAccountType } from '@/src/schema/crm/types'
 
-const SOURCE_LABEL: Record<string, string> = {
-  pos_walkin: 'POS Walk-in',
-  sales: 'Sales',
-  crm_lead: 'CRM Lead',
-  online: 'Online',
+const ACCOUNT_TYPE_LABEL: Record<CustomerAccountType, string> = {
+  cash: 'Cash',
+  charge: 'Charge',
 }
 
-const SOURCE_COLORS: Record<string, string> = {
-  pos_walkin: 'bg-amber-50 text-amber-700 ring-amber-200',
-  sales: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  crm_lead: 'bg-prominent-orange-50 text-prominent-orange-700 ring-prominent-orange-200',
-  online: 'bg-sky-50 text-sky-700 ring-sky-200',
+const ACCOUNT_TYPE_COLORS: Record<CustomerAccountType, string> = {
+  cash: 'bg-sky-50 text-sky-700 ring-sky-200',
+  charge: 'bg-prominent-purple-50 text-prominent-purple-700 ring-prominent-purple-200',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  inactive: 'bg-gray-100 text-gray-600 ring-gray-200',
-  blocked: 'bg-red-50 text-red-700 ring-red-200',
-}
-
-function SourceChip({ source }: { source: string }) {
-  const tone = SOURCE_COLORS[source] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
+function AccountTypeChip({ accountType }: { accountType?: CustomerAccountType }) {
+  if (!accountType) return <span className="text-gray-400">—</span>
   return (
     <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}
+      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${ACCOUNT_TYPE_COLORS[accountType]}`}
     >
-      {SOURCE_LABEL[source] ?? source}
-    </span>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const tone = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}
-    >
-      {status}
+      {ACCOUNT_TYPE_LABEL[accountType]}
     </span>
   )
 }
@@ -78,9 +58,13 @@ export default function CustomersList({
   const router = useRouter()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [sourceFilter, setSourceFilter] = useState('')
+  // Status and source filters were removed at the client's request — the
+  // API still accepts both (the CRM dashboard summaries use them), they're
+  // just not how anyone narrows this list.
+  const [branchFilter, setBranchFilter] = useState('')
+  const [accountTypeFilter, setAccountTypeFilter] = useState('')
   const [groupIdFilter, setGroupIdFilter] = useState('')
+  const [branches, setBranches] = useState<BranchLite[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reminderForCustomerId, setReminderForCustomerId] = useState<string | null>(null)
@@ -91,8 +75,8 @@ export default function CustomersList({
       setError(null)
       const res = await customersApi.list({
         search: search || undefined,
-        status: statusFilter || undefined,
-        sourceChannel: sourceFilter || undefined,
+        branchId: branchFilter || undefined,
+        accountType: (accountTypeFilter || undefined) as CustomerAccountType | undefined,
         groupId: groupIdFilter || undefined,
         limit: 50,
       })
@@ -101,7 +85,11 @@ export default function CustomersList({
       setLoading(false)
     }, 250)
     return () => clearTimeout(t)
-  }, [search, statusFilter, sourceFilter, groupIdFilter])
+  }, [search, branchFilter, accountTypeFilter, groupIdFilter])
+
+  useEffect(() => {
+    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+  }, [])
 
   return (
     <div className="px-6 py-8 lg:px-10">
@@ -145,25 +133,27 @@ export default function CustomersList({
           />
         </div>
         <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          value={branchFilter}
+          onChange={(e) => setBranchFilter(e.target.value)}
+          aria-label="Filter by branch"
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
         >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="blocked">Blocked</option>
+          <option value="">All branches</option>
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
         </select>
         <select
-          value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}
+          value={accountTypeFilter}
+          onChange={(e) => setAccountTypeFilter(e.target.value)}
+          aria-label="Filter by cash or charge"
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
         >
-          <option value="">All sources</option>
-          <option value="pos_walkin">POS Walk-in</option>
-          <option value="sales">Sales</option>
-          <option value="crm_lead">CRM Lead</option>
-          <option value="online">Online</option>
+          <option value="">Cash &amp; charge</option>
+          <option value="cash">Cash</option>
+          <option value="charge">Charge</option>
         </select>
         <input
           value={groupIdFilter}
@@ -180,8 +170,8 @@ export default function CustomersList({
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email / Phone</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Branch</th>
+              <th className="px-4 py-3">Type</th>
               {canScheduleReminder && <th className="px-4 py-3"></th>}
             </tr>
           </thead>
@@ -252,11 +242,11 @@ export default function CustomersList({
                     </div>
                     <div className="text-[12px] text-gray-500">{c.phone ?? '—'}</div>
                   </td>
-                  <td className="px-4 py-3">
-                    <SourceChip source={c.sourceChannel} />
+                  <td className="px-4 py-3 text-[13px] text-gray-700">
+                    {c.branch?.name ?? <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={c.status} />
+                    <AccountTypeChip accountType={c.accountType} />
                   </td>
                   {canScheduleReminder && (
                     <td className="px-4 py-3">

@@ -9,6 +9,13 @@ export type CustomerSourceChannel = z.infer<typeof CustomerSourceChannelEnum>
 export const CustomerStatusEnum = z.enum(['active', 'inactive', 'blocked'])
 export type CustomerStatus = z.infer<typeof CustomerStatusEnum>
 
+// How a customer buys. Stored on the customer rather than derived from
+// whether they hold an installment account: a cash customer who takes one
+// installment shouldn't silently change category, and the client needs to
+// be able to correct it by hand.
+export const CustomerAccountTypeEnum = z.enum(['cash', 'charge'])
+export type CustomerAccountType = z.infer<typeof CustomerAccountTypeEnum>
+
 export const CustomerTypeEnum = z.enum(['individual', 'business', 'employee'])
 export type CustomerType = z.infer<typeof CustomerTypeEnum>
 
@@ -160,6 +167,9 @@ export interface Customer {
   paymentTerms?: string | null
   creditLimit?: number | string | null
   groupId?: string | null
+  branchId?: string | null
+  branch?: { id: string; name: string } | null
+  accountType?: CustomerAccountType
   sourceChannel: CustomerSourceChannel
   status: CustomerStatus
   notes?: string | null

@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { CustomerSourceChannelEnum, CustomerStatusEnum, CustomerTypeEnum } from './types'
+import {
+  CustomerAccountTypeEnum,
+  CustomerSourceChannelEnum,
+  CustomerStatusEnum,
+  CustomerTypeEnum,
+} from './types'
 
 /** Selectable payment-terms options. COD and "Net N" values are parsed by
  * the backend's credit-eligibility check (assertCreditEligibility /
@@ -85,6 +90,8 @@ export const createCustomerSchema = z.object({
   paymentTerms: z.string().max(50).optional().or(z.literal('')),
   creditLimit: z.coerce.number().min(0).optional(),
   groupId: z.string().max(50).optional().or(z.literal('')),
+  branchId: z.string().optional().or(z.literal('')),
+  accountType: CustomerAccountTypeEnum.optional(),
   sourceChannel: CustomerSourceChannelEnum.optional(),
   status: CustomerStatusEnum.optional(),
   notes: z.string().max(1000).optional().or(z.literal('')),

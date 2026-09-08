@@ -25,6 +25,7 @@ import type {
   DuplicatePair,
   CollectionsCalendarResponse,
   CustomerSourceChannel,
+  CustomerAccountType,
   InteractionType,
   InstallmentLedger,
   CustomerLedger,
@@ -124,9 +125,14 @@ export const leadsApi = {
 
 export type CustomerFilters = {
   search?: string
+  // status/sourceChannel are still served — the CRM list dropped both
+  // filters at the client's request, but the dashboard summaries and other
+  // callers still narrow by them.
   status?: string
   sourceChannel?: string
   groupId?: string
+  branchId?: string
+  accountType?: CustomerAccountType
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>
