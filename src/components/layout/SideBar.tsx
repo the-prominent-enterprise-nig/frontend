@@ -542,12 +542,14 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: House,
         requiredPermission: CRM_PERMISSIONS.LEADS_READ,
       },
-      {
-        label: 'Leads',
-        href: '/crm/leads',
-        icon: UsersRound,
-        requiredPermission: CRM_PERMISSIONS.LEADS_READ,
-      },
+      // Leads is hidden from the sidebar for now — the routes under /crm/leads
+      // still work, they're just not linked here.
+      // {
+      //   label: 'Leads',
+      //   href: '/crm/leads',
+      //   icon: UsersRound,
+      //   requiredPermission: CRM_PERMISSIONS.LEADS_READ,
+      // },
       {
         label: 'Collectors',
         href: '/crm/collectors',
