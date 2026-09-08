@@ -236,13 +236,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Coins,
         requiredPermission: ACCOUNTING_PERMISSIONS.EXPENSE_READ,
       },
+      // Special Accounts is hidden from the nav for now. The route and its
+      // page are untouched — /accounting/special-accounts still loads, it is
+      // just not linked. The `section` marker it carried moves down with it,
+      // so the group heading still falls in the same place.
+      // {
+      //   label: 'Special Accounts',
+      //   href: '/accounting/special-accounts',
+      //   icon: Wallet,
+      // },
       {
         section: 'Accounting',
-        label: 'Special Accounts',
-        href: '/accounting/special-accounts',
-        icon: Wallet,
-      },
-      {
         label: 'Unapplied Collections',
         href: '/accounting/unapplied-collections',
         icon: Wallet,
