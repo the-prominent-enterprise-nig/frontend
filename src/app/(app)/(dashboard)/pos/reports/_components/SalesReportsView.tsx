@@ -9,6 +9,7 @@ import { getBrands } from '@/src/app/(app)/(dashboard)/inventory/brands/_actions
 import type { ItemClassification } from '@/src/schema/inventory/classification'
 import ExportButton from '@/src/components/common/ExportButton'
 import ReportDateRange from '@/src/components/common/ReportDateRange'
+import TablePagination from '@/src/components/common/TablePagination'
 import { SUMMARY_KEY_HEADERS } from '@/src/schema/pos/reports'
 import { useSalesReports, type SalesReportTab } from '../_hooks/useSalesReports'
 
@@ -150,14 +151,14 @@ export default function SalesReportsView(): React.JSX.Element {
                 </td>
               </tr>
             )}
-            {!report.isLoading && !report.data?.summary.length && (
+            {!report.isLoading && report.totalRows === 0 && (
               <tr>
                 <td colSpan={keyHeaders.length + 6} className="px-4 py-8 text-center text-gray-500">
                   No sales in this date range.
                 </td>
               </tr>
             )}
-            {report.data?.summary.map((row) => (
+            {report.pageRows.map((row) => (
               <tr key={row.keys.join('|')} className="hover:bg-gray-50">
                 {row.keys.map((k, i) => (
                   <td key={i} className="px-4 py-3 text-gray-900">
@@ -178,10 +179,23 @@ export default function SalesReportsView(): React.JSX.Element {
         </table>
       </div>
 
+      {report.totalRows > 0 && (
+        <TablePagination
+          page={report.page}
+          pageCount={report.pageCount}
+          onPageChange={report.setPage}
+          pageStart={report.pageStart}
+          pageSize={report.pageRows.length}
+          totalItems={report.totalRows}
+          noun="group"
+        />
+      )}
+
       {report.data && (
         <p className="mt-3 text-xs text-gray-500">
-          {report.data.meta.rowCount} detail row(s) behind this summary — the Excel export includes
-          every one, with model number and serial per line.
+          {report.data.meta.rowCount} detail row(s) behind this summary. The totals above and the
+          Excel export cover the whole result, not just this page — paging only affects what is
+          displayed.
           {report.data.meta.deliveryFees > 0 &&
             ` Delivery fees of ${money(report.data.meta.deliveryFees)} are charged per transaction and are not part of the per-item figures above.`}
         </p>

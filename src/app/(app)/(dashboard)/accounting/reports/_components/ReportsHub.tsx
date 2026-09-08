@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import {
+  Reports,
+  fmtMoney,
+  fmtDate,
+  type ExpensesByBranchResponse,
+} from '@/src/libs/data/AccountingV2Data'
 import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
 import {
   getBranches,
   type BranchDetail,
 } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
+import ExportButton from '@/src/components/common/ExportButton'
 import GlReconciliationView from './GlReconciliationView'
 import AgingReportView from '@/src/app/(app)/(dashboard)/crm/installment-accounts/aging-report/_components/AgingReportView'
 
@@ -21,6 +27,7 @@ type Tab =
   | 'grni'
   | 'customer-statement'
   | 'cost-center'
+  | 'expenses'
   | 'bi'
   | 'reconciliation'
 
@@ -34,6 +41,7 @@ const VALID_TABS: Tab[] = [
   'grni',
   'customer-statement',
   'cost-center',
+  'expenses',
   'bi',
   'reconciliation',
 ]
@@ -89,6 +97,12 @@ export default function ReportsHub() {
       }
       res = await Reports.customerStatement(customerId)
     } else if (tab === 'cost-center') res = await Reports.costCenter(startDate, endDate)
+    else if (tab === 'expenses')
+      res = await Reports.expensesByBranch({
+        startDate,
+        endDate,
+        branchId: branchId || undefined,
+      })
     else if (tab === 'bi') res = await Reports.biSummary()
     setData(res?.data ?? null)
     setLoading(false)
@@ -107,14 +121,17 @@ export default function ReportsHub() {
 
   // Branch list is only needed for the P&L branch scope picker
   useEffect(() => {
-    if (tab !== 'pnl' || branches.length) return
+    if ((tab !== 'pnl' && tab !== 'expenses') || branches.length) return
     getBranches().then((r) => setBranches(r.success && r.data ? r.data : []))
   }, [tab, branches.length])
 
-  const needsDateRange = ['pnl', 'cash-flow', 'cost-center'].includes(tab)
+  const needsDateRange = ['pnl', 'cash-flow', 'cost-center', 'expenses'].includes(tab)
   const needsAsOf = ['trial-balance', 'balance-sheet', 'ap-aging'].includes(tab)
   const needsCustomer = tab === 'customer-statement'
-  const needsBranch = tab === 'pnl'
+  // Branch picker is shared; the P&L-only 'View' select below keys off
+  // needsPnlView instead so it doesn't follow the picker onto this tab.
+  const needsBranch = tab === 'pnl' || tab === 'expenses'
+  const needsPnlView = tab === 'pnl'
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -135,6 +152,7 @@ export default function ReportsHub() {
             ['grni', 'GRNI'],
             ['customer-statement', 'Customer Statement'],
             ['cost-center', 'Cost Center'],
+            ['expenses', 'Expenses'],
             ['bi', 'BI Summary'],
             ['reconciliation', 'GL Reconciliation'],
           ] as [Tab, string][]
@@ -203,7 +221,7 @@ export default function ReportsHub() {
             </select>
           </div>
         )}
-        {needsBranch && (
+        {needsPnlView && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">View</label>
             <select
@@ -277,6 +295,13 @@ export default function ReportsHub() {
           <GrniView data={data} />
         ) : tab === 'cost-center' ? (
           <CostCenterView data={data} />
+        ) : tab === 'expenses' ? (
+          <ExpensesByBranchView
+            data={data}
+            startDate={startDate}
+            endDate={endDate}
+            branchId={branchId}
+          />
         ) : tab === 'bi' ? (
           <BIView data={data} />
         ) : null}
@@ -699,6 +724,82 @@ function BIView({ data }: { data: any }) {
           <div className="text-2xl font-bold text-gray-900">{fmtMoney(val as number)}</div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** Scenario 47 — Expenses per branch. Grouped branch x expense category, with
+ * the .xlsx export taking the same filters the table was run with. */
+function ExpensesByBranchView({
+  data,
+  startDate,
+  endDate,
+  branchId,
+}: {
+  // Typed, unlike the sibling views in this file — CLAUDE.md's no-`any` rule,
+  // and the shape is already declared alongside the Reports.expensesByBranch
+  // call that produces it.
+  data: ExpensesByBranchResponse | null
+  startDate: string
+  endDate: string
+  branchId: string
+}) {
+  const summary = data?.summary ?? []
+  const totals = data?.meta?.totals
+  const unassigned = data?.meta?.unassignedTotal ?? 0
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="text-sm text-gray-500">
+          {data?.meta?.rowCount ?? 0} expense line(s) across {summary.length} branch/category
+          group(s).
+        </div>
+        <ExportButton
+          endpoint="/reports/expenses-by-branch/export"
+          params={{ startDate, endDate, branchId: branchId || undefined }}
+          disabled={summary.length === 0}
+        />
+      </div>
+
+      {/* Pre-Scenario-47 expenses have no branch on record. Called out rather
+          than left to look like a hole in the branch totals. */}
+      {unassigned > 0 && (
+        <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-800">
+          {fmtMoney(unassigned)} of expenses have no branch on record and are grouped under
+          &ldquo;Unassigned&rdquo; — these predate branch tracking on expenses.
+        </div>
+      )}
+
+      <Table headers={['Branch', 'Expense Category', 'Entries', 'Amount', 'Tax', 'Total']}>
+        {summary.map((row, i) => (
+          <tr key={i} className="hover:bg-gray-50">
+            <td className="px-3 py-2">{row.branchName}</td>
+            <td className="px-3 py-2">{row.categoryAccount}</td>
+            <td className="px-3 py-2">{row.entryCount}</td>
+            <td className="px-3 py-2">{fmtMoney(row.amount)}</td>
+            <td className="px-3 py-2">{fmtMoney(row.taxAmount)}</td>
+            <td className="px-3 py-2 font-semibold">{fmtMoney(row.total)}</td>
+          </tr>
+        ))}
+        {summary.length === 0 && (
+          <tr>
+            <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+              No recorded expenses in this date range.
+            </td>
+          </tr>
+        )}
+        {totals && summary.length > 0 && (
+          <tr className="bg-gray-50 font-semibold">
+            <td className="px-3 py-2" colSpan={3}>
+              TOTAL
+            </td>
+            <td className="px-3 py-2">{fmtMoney(totals.amount)}</td>
+            <td className="px-3 py-2">{fmtMoney(totals.taxAmount)}</td>
+            <td className="px-3 py-2">{fmtMoney(totals.total)}</td>
+          </tr>
+        )}
+      </Table>
     </div>
   )
 }

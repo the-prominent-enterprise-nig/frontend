@@ -75,15 +75,18 @@ Sequenced so each part ships and can be tested on its own. Parts 2–4 all depen
 
 - **Schema**: `BusinessExpense.branchId String?` + `branch Branch?` relation + `@@index([branchId])`; `Branch.businessExpenses` back-relation. Existing rows stay null → reported as **"Unassigned"**, same convention as `costCenter`'s.
 - **Service**: default `branchId` from the creating user's branch in `ExpensesService.create()`; allow an explicit override only for users with multi-branch scope. Pass it into the `posting.post({ ... })` call at `expenses.service.ts:921` so the GL entry is branch-tagged too — this is what makes the report tie back to the P&L's existing branch filter.
-- **Form**: branch field on `ExpenseForm.tsx`, read-only/prefilled for single-branch users.
+- **Form**: deliberately unchanged. A Branch field was built and then removed (developer decision 2026-09-08) — the server already knows the recording user's branch, so asking for it on the form would only be a second place to get it wrong. Consequence, accepted: an expense recorded by a **Business Owner** (who has no branch of their own) has no branch to stamp and reports as **"Unassigned"**. The `branchId` field stays on the DTO, so attribution is still possible via the API without re-adding UI.
 - **Report**: `GET /reports/expenses-by-branch?startDate&endDate&branchId` → summary of branch × expense category account, plus detail rows (expense#, date, payee, category, description, amount, status). `costCenter` rides along as a column, not as the grouping key.
-- **Frontend**: new `expenses-by-branch` tab on the existing `ReportsHub`.
+- **Frontend**: new **Expenses** tab on the existing `ReportsHub`, deep-linkable at `?tab=expenses` (labelled just "Expenses" per developer decision 2026-09-08 — the branch grouping is what the report _does_, not what the tab is called). The backend endpoint and export filename stay `expenses-by-branch` / `expenses-per-branch.xlsx`, which describe the data itself.
 
 ### Part 4 — Aging of accounts per branch
 
+**Re-verified 2026-09-08 at the start of this part — the plan below was written against a stale reading; two of its three items were already built.** `agingReport()` (`backend/src/crm/installment-account/installment-account.service.ts:875`) **already** pulls AR invoices alongside installment accounts (`invoiceRows`), and **already** dedups them exactly as decided — `installmentAccount: null, installmentScheduleLine: null` excludes any invoice already represented by an account. It also already groups Branch → Collector with subtotals at both levels plus a grand total, and already forces the caller's own branch. What actually remains:
+
 - Extend the existing `agingReport()` rather than writing a new one — it already matches the client's real sheet.
-- Add AR invoices alongside installment accounts, as a `source: 'installment' | 'invoice'` column, so one report covers both kinds of receivable per the decision above. AR invoices join branch directly via `ARInvoice.branchId`.
-- Add an explicit bucket matrix — Current / 1‑30 / 31‑60 / 61‑90 / 90+ — per branch, which the current output lacks.
+- ~~Add AR invoices alongside installment accounts~~ — **already done**; add only a `source: 'installment' | 'invoice'` column so the two kinds are distinguishable in the output.
+- ~~Dedup rule~~ — **already implemented** as "installment account wins".
+- Add an explicit bucket matrix — Current / 1‑30 / 31‑60 / 61‑90 / 90+ — per branch, which the current output lacks. The code carries `over: null` with a comment explicitly deferring exactly this ("no penalty/days-overdue rule exists to compute this from yet; deferred rather than guessed").
 - Add the `/export` sibling; the Summary sheet is the branch × bucket matrix, Detail is per account/invoice. The existing **Print** action stays as-is.
 - **Frontend**: extend `AgingReportView.tsx` in place (it is already the `ar-aging` tab of `ReportsHub`, so both entry points get it for free).
 
@@ -92,6 +95,38 @@ Sequenced so each part ships and can be tested on its own. Parts 2–4 all depen
 - Audit-log every export via the existing `audit-log` module: who, which report, which parameters.
 - Playwright e2e per part, following the `implement-scenario` convention.
 - `pnpm generate:types` after each backend part to refresh `src/libs/generated/`.
+
+## AR aging coverage — what the report does and doesn't age
+
+Confirmed against the code 2026-09-08 (the service doc comment at `installment-account.service.ts:860` states the intent; the UI subtitle contradicted it and has been corrected).
+
+**In scope**: active `InstallmentAccount`s (`status: active`), plus every standalone `ARInvoice` in `SENT`/`PARTIAL`/`OVERDUE` with no linked installment account or schedule line. A plain charge invoice with no financing _is_ aged. The new `source` column distinguishes the two.
+
+**Correctly out**: `DRAFT` (never issued), `PAID`, `CANCELLED` invoices; `closed`/`early_closed` accounts. AP/payables, excluded by decision.
+
+**Two exclusions that are policy choices, not oversights — flag to the business:**
+
+1. **`written_off` installment accounts are excluded.** Standard practice (written off = off the AR ledger), but nobody has written that decision down. If NIG still pursues written-off balances, they are invisible in this report.
+2. **TPF (third-party-financed) receivables are aged nowhere.** Money a financier owes NIG rides on `PosTransaction.tpfProviderId` / `tpfApprovedAmount`, settled via `TpfSettlementApplication` — it is neither an `ARInvoice` nor an `InstallmentAccount`, so it falls through both row sources. Whether a financier belongs in a customer-aging report is a business call, but the exposure is currently unreported anywhere.
+
+## AR aging report does not scale — measured 2026-09-08
+
+Not introduced by Scenario 47 (the no-pagination design predates it), but measured while adding the bucket matrix, so recorded here rather than lost. Test DB loaded with **5,015 outstanding receivables across 39 branches**:
+
+| Metric                                                        | Result                  |
+| ------------------------------------------------------------- | ----------------------- |
+| Backend query (`GET /crm/installment-accounts/reports/aging`) | 507 ms — fine           |
+| JSON payload                                                  | **3.15 MB**             |
+| Browser time to settle                                        | **1.63 s**              |
+| `<tr>` elements rendered                                      | **5,055**               |
+| Total DOM nodes                                               | **77,477**              |
+| `.xlsx` export                                                | 519 ms / 0.38 MB — fine |
+
+**The backend is not the problem; the payload and the DOM are.** `agingReport()` has no pagination — it returns every row nested branch → collector → rows, and `AgingReportView` renders all of it eagerly. The fetch also re-runs on _every_ filter change (there is no Run button), so each As-of tweak repays the full cost. Scaling is roughly linear: ~20k receivables ≈ 12 MB and ~300k DOM nodes, which is a multi-second freeze per interaction; ~50k is likely an unresponsive tab.
+
+**Proposed fix — summary-first, detail on demand.** Render only the branch × bucket matrix by default (39 rows regardless of scale — and it is what management actually reads), then load one branch's rows on expand. Needs a `summaryOnly` server param so the API stops shipping rows nobody renders; makes the payload flat rather than linear. Cheaper fallbacks if that is too much: virtualise the detail tables, or gate the fetch behind an explicit Run button. The export needs no change — xlsx compresses well and Excel is the right home for bulk detail.
+
+**Deferred by developer decision 2026-09-08** — not urgent while AR is a single row, but it will bite well before "thousands". To be scheduled as its own part/scenario.
 
 ## Open questions
 
@@ -109,3 +144,27 @@ Sequenced so each part ships and can be tested on its own. Parts 2–4 all depen
 - **Scheduled/emailed report delivery** — the ask is on-demand extraction only.
 - **AP aging by branch** — explicitly excluded by decision #2, and `APBill` has no `branchId` anyway.
 - **A new top-level Reports hub** — explicitly excluded by decision #4.
+
+## Implementation Log — 2026-09-08
+
+**For this scenario, I have done:**
+
+- **Part 1 — Excel export foundation.** Added `exceljs`; `backend/src/common/export/xlsx.util.ts` (`buildReportWorkbook()`, `NUM_FMT`, bold+frozen headers, autofilter, optional bold TOTAL rows, sheet-name sanitising, `exportFilename()`, a 100k-row `ExportTooLargeError` cap) and `send-xlsx.util.ts` (the shared `@Res()` responder, mirroring `files.controller.ts:89`; over-cap becomes a 400 with an actionable message, not a 500). Frontend: `downloadXlsx.ts`, `<ExportButton>`, `<ReportDateRange>` (Today/This Week/MTD/QTD/YTD/Last Month, Monday week start, local-date ISO). Every workbook ships Summary / Detail / **Parameters** — the last appended by the builder itself, so no report can forget it. 12/12 unit tests, each round-tripping a real `.xlsx` buffer back through exceljs rather than asserting on the spec object.
+- **Part 2 — Sales per Branch & Sales per Brand** (plan Part 2). Added the missing `PosTransactionLine.item` relation + index (migration `20260908042045`). New `backend/src/pos/reports/`: one `salesAnalytics()` with `groupBy: 'branch' | 'brand'`, four endpoints (two JSON + two `/export` sharing the identical DTO and service call). Gross/discount/net/VAT/cost/margin each their own column; refunds their own column, never netted; both `modelNumber` and serial per line. New `/pos/reports` page, two tabs, sidebar entry. 17/17 backend e2e, 5/5 Playwright.
+- **Part 3 — Expenses per branch** (plan Part 3). `BusinessExpense.branchId` (migration `20260908050105`), stamped server-side from the recording user's session; branch-scoped users can't override, Business Owner may name one. New `expenses-by-branch.service.ts` grouped branch × expense category, RECORDED-only by default. New **Expenses** tab on `ReportsHub` (`?tab=expenses`). 13/13 backend e2e, 4/4 Playwright.
+- **Part 4 — Aging buckets & export** (plan Part 4, reduced — see the re-verification note in that section). Added `AGING_BUCKETS`/`daysOverdue()`/`agingBucketOf()`, a `source` column, per-bucket subtotals at collector/branch/grand-total level, the branch × bucket matrix in `AgingReportView`, and `/crm/installment-accounts/reports/aging/export`. Existing **Print** untouched. 10/10 backend e2e, 4/4 Playwright.
+- **Part 5 — Audit logging & cross-cutting** (plan Part 5). Extended `AuditLogOptions` with `resolveMetadata`, and added `@AuditReportExport(slug)` — applied to all four `/export` routes — recording who pulled which report with which filters. Regenerated `src/libs/generated/types/generated.ts`. 5/5 backend e2e.
+
+Totals: **12 unit + 45 backend e2e + 14 Playwright = 71 tests**, both repos `type-check` and lint clean.
+
+**Worth flagging:**
+
+- **Two real bugs found outside this scenario's scope, both fixed.** (1) `ExpensesService.record()` called `posting.post()` without `branchId`, so every expense journal entry posted branch-null and a **branch-filtered P&L silently excluded every expense** — now threaded through, with an e2e pinning it. (2) The aging export endpoint was first written as `/installment-accounts/...` when the controller prefix is `crm/installment-accounts`; caught by e2e, would have shipped a dead Export button.
+- **A permission trap.** Cashier's grant is `modulePermIdsExcept('pos', ...)`, so the new `pos:reports:read` would have been granted to Cashier automatically. Added to its exclusion list — these reports expose unit cost and margin. Verified in-DB: Business Owner ✅, Branch Manager ✅ (via `pos:*:*`), Cashier ✗.
+- **The plan doc was stale on Part 4** and has been corrected in place: `agingReport()` already pulled AR invoices and already deduped them ("installment account wins"), so two of that part's three items were already built. Caught by re-verifying before writing code rather than after.
+- **Prisma bundled unrelated pre-existing drift into both migrations** (dropping/re-adding `landed_costs_goodsReceiptId_fkey`, dropping two indexes). Both migrations were stripped to only their own change. **That drift still exists and is unowned** — worth someone investigating separately.
+- **`sales:reports:read` is a dead frontend constant.** Declared in `sales-permissions.ts:25`, referenced nowhere else, and the backend seed has no `sales` module at all. Left as-is; `pos:reports:read` was seeded instead.
+- **Three findings deferred, documented above rather than dropped**: the AR aging report does not scale (measured: 3.15 MB payload / 77k DOM nodes / 1.63 s at 5k rows), `asOf` is only half-implemented (balances are current; only the aging arithmetic honours the date, so back-dated reports are wrong), and TPF receivables are aged nowhere.
+- **The expense form's Branch field was built and then removed** at the developer's request — the server already knows the recording user's branch. Consequence accepted: Business-Owner-recorded expenses report as "Unassigned".
+- **Manual verification is incomplete.** Parts 1-2 were handed over with click-through steps; Parts 3-5 have not been manually confirmed — the developer was waiting on an unrelated feature merge to test the expense flow. All four reports are covered by automated e2e, but no part of Parts 3-5 has been seen working in a browser by a human.
+- **Test infrastructure notes.** `.env.test` did not exist and was created (gitignored), along with the `the-prominent-enterprise-test` database. `npm run test:e2e` and Playwright's `webServer` both run `prisma migrate reset`, which the AI-agent guard blocks without explicit user consent — specs were run via `DOTENV_CONFIG_PATH=.env.test npx jest ...` against an already-seeded DB, and the isolated backend started by hand on :3011. `backend/scripts/s47-e2e-fixture.ts` (`--sales`/`--expenses`/`--receivables`, `--clean`) seeds data the download assertions need; without it they self-skip with an annotation rather than passing quietly. It was also run against the **dev** DB (receivables + sale only, at the developer's request) — 15 invoices across 3 branches, removable with `--clean`.

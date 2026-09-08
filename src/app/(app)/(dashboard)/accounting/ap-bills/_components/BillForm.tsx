@@ -170,7 +170,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
     APBillMatching.purchaseOrders(form.supplierId).then((r) =>
       setPurchaseOrders(r.data?.data ?? [])
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.supplierId])
 
   useEffect(() => {

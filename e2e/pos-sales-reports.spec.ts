@@ -37,10 +37,12 @@ test.describe('POS — Sales Reports (Scenario 47)', () => {
     )
     await expect(page.getByRole('tab', { name: 'Sales per Brand' })).toBeVisible()
 
-    // Branch-first grouping — the client's own ordering for this report.
+    // Branch-first grouping — the client's own ordering for this report,
+    // including model of unit, which they asked for by name.
     await expect(page.getByRole('columnheader', { name: 'Branch' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: 'Brand' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: 'Category' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Model No.' })).toBeVisible()
   })
 
   test('switching to Sales per Brand re-orders the grouping columns', async ({ page }) => {
@@ -55,11 +57,55 @@ test.describe('POS — Sales Reports (Scenario 47)', () => {
       'true'
     )
 
-    // Brand becomes the first grouping column, branch the last.
+    // Brand becomes the first grouping column, branch the last, with model
+    // between them — the client's second ordering, verbatim.
     const headers = page.getByRole('columnheader')
     await expect(headers.nth(0)).toHaveText('Brand')
     await expect(headers.nth(1)).toHaveText('Category')
-    await expect(headers.nth(2)).toHaveText('Branch')
+    await expect(headers.nth(2)).toHaveText('Model No.')
+    await expect(headers.nth(3)).toHaveText('Branch')
+  })
+
+  test('paginates the summary table at 10 rows', async ({ page }) => {
+    await gotoReady(page, '/pos/reports')
+    await expect(page.getByRole('heading', { name: 'Sales Reports' })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByText('Loading…')).toHaveCount(0, { timeout: 20_000 })
+
+    const showing = page.getByText(/Showing \d+–\d+ of \d+ group/)
+    if (!(await showing.isVisible())) {
+      test.info().annotations.push({
+        type: 'skipped-assertion',
+        description: 'No sales in range — pagination not rendered.',
+      })
+      return
+    }
+
+    const total = Number((await showing.textContent())!.match(/of (\d+) group/)![1])
+    const pager = page.getByRole('navigation', { name: 'Table pagination' })
+    // Body rows only — the header row lives in <thead>.
+    const bodyRows = page.locator('tbody tr')
+
+    if (total <= 10) {
+      // Fewer than a page: the count line shows, the controls correctly don't.
+      await expect(pager).toHaveCount(0)
+      await expect(bodyRows).toHaveCount(total)
+      return
+    }
+
+    await expect(bodyRows).toHaveCount(10)
+    await expect(page.getByText(/Showing 1–10 of/)).toBeVisible()
+    await expect(pager.getByRole('button', { name: 'Previous' })).toBeDisabled()
+
+    await pager.getByRole('button', { name: 'Next' }).click()
+    await expect(page.getByText(/Showing 11–/)).toBeVisible()
+    await expect(pager.getByRole('button', { name: 'Previous' })).toBeEnabled()
+
+    // Changing what's reported must send you back to page 1 — page 2 of the
+    // old result set means nothing against the new one.
+    await page.getByRole('tab', { name: 'Sales per Brand' }).click()
+    await expect(page.getByText(/Showing 1–/)).toBeVisible()
   })
 
   test('date-range presets update the from/to inputs', async ({ page }) => {

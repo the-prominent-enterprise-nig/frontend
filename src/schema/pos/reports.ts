@@ -59,8 +59,11 @@ export type SalesDetailRow = z.infer<typeof SalesDetailRowSchema>
 export type SalesSummaryRow = z.infer<typeof SalesSummaryRowSchema>
 export type SalesReportResponse = z.infer<typeof SalesReportResponseSchema>
 
-/** Summary key columns follow the grouping order, matching the backend. */
+/** Summary key columns follow the grouping order, matching the backend.
+ * Model of unit is the innermost level for the branch report and sits between
+ * category and branch for the brand report — exactly the two orderings the
+ * client listed. */
 export const SUMMARY_KEY_HEADERS: Record<'branch' | 'brand', string[]> = {
-  branch: ['Branch', 'Brand', 'Category'],
-  brand: ['Brand', 'Category', 'Branch'],
+  branch: ['Branch', 'Brand', 'Category', 'Model No.'],
+  brand: ['Brand', 'Category', 'Model No.', 'Branch'],
 }
