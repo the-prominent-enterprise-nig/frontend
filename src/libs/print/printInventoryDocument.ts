@@ -1437,7 +1437,15 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const p = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
-  const effectiveExpenseAccount = p.effectiveExpenseAccount as { name?: string } | null
+  // Two backends feed this one template and name their fields differently:
+  // the per-payment voucher sends `amount` + `effectiveExpenseAccount`, while
+  // the disbursement voucher sends `totalAmount` + `account`. Reading only the
+  // first pair left both blank on a disbursement — the account printed as "—"
+  // and the total fell back to 0, so the only figure that survived was the
+  // withholding, making a 11,718.00 voucher print as 104.63.
+  const effectiveExpenseAccount = (p.effectiveExpenseAccount ?? p.account) as {
+    name?: string
+  } | null
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -1448,12 +1456,47 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   // The reference document's "Total" is what this one payment settled, not
   // the whole bill (a bill can be paid across several payments) — matches
   // how the Payment history list already sums amount + withholdingAmount.
-  const amount = Number(p.amount ?? 0) + Number(p.withholdingAmount ?? 0)
+  // `totalAmount` on a disbursement is the cash actually disbursed, already
+  // net of withholding — so the same "what this payment settled" figure needs
+  // the withholding added back either way.
+  const amount = Number(p.amount ?? p.totalAmount ?? 0) + Number(p.withholdingAmount ?? 0)
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
     : p.reference
       ? esc(p.reference)
       : '—'
+
+  // How the disbursement was funded. A cheque can be split across methods, so
+  // the backend sends one row per source; the per-payment voucher carries no
+  // `sources`, so its single method/reference stands in as one row.
+  const prettyMethod = (m: unknown) =>
+    String(m ?? '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase()) || '—'
+  const rawSources = Array.isArray(p.sources)
+    ? (p.sources as Record<string, unknown>[])
+    : p.method
+      ? [{ method: p.method, reference: p.chequeNumber ?? p.reference, amount: p.amount }]
+      : []
+  const sourceRows = rawSources
+    .map((src) => {
+      const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
+      const bankLabel = bank?.name
+        ? bank.accountNumber
+          ? `${bank.name} — ${bank.accountNumber}`
+          : bank.name
+        : null
+      const note = src.description
+        ? ` <span style="color:#666">(${esc(src.description)})</span>`
+        : ''
+      return `<tr>
+          <td>${esc(prettyMethod(src.method))}${note}</td>
+          <td>${bankLabel ? esc(bankLabel) : '—'}</td>
+          <td>${src.reference ? esc(src.reference) : '—'}</td>
+          <td class="right">${fmt(Number(src.amount ?? 0))}</td>
+        </tr>`
+    })
+    .join('')
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>
     body { font-family: Arial, sans-serif; padding: 32px; color: #111; font-size: 13px; }
@@ -1473,6 +1516,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
+    .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1520,6 +1564,18 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
       </tbody>
     </table>
+
+    ${
+      sourceRows
+        ? `<p class="section-label">Source of Funds</p>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th class="right">Amount</th></tr>
+      </thead>
+      <tbody>${sourceRows}</tbody>
+    </table>`
+        : ''
+    }
 
     <div class="signatures">
       <div class="sig-block">
