@@ -1476,8 +1476,32 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const rawSources = Array.isArray(p.sources)
     ? (p.sources as Record<string, unknown>[])
     : p.method
-      ? [{ method: p.method, reference: p.chequeNumber ?? p.reference, amount: p.amount }]
+      ? [
+          {
+            method: p.method,
+            reference: p.chequeNumber ?? p.reference,
+            // A per-payment voucher has no per-source description; its own
+            // stands in so the column isn't empty on that shape.
+            description: p.description,
+          },
+        ]
       : []
+  // SI and description sit per-invoice on a disbursement (one cheque can
+  // settle several bills) and top-level on a per-payment voucher, which has
+  // no `invoices` at all — so the latter stands in as a single row.
+  const rawInvoices = Array.isArray(p.invoices)
+    ? (p.invoices as Record<string, unknown>[])
+    : [{ billNumber: p.billNumber, description: p.description, amount }]
+  const invoiceRows = rawInvoices
+    .map(
+      (inv) => `<tr>
+          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
+          <td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>
+          <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
+        </tr>`
+    )
+    .join('')
+
   const sourceRows = rawSources
     .map((src) => {
       const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
@@ -1486,14 +1510,11 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
           ? `${bank.name} — ${bank.accountNumber}`
           : bank.name
         : null
-      const note = src.description
-        ? ` <span style="color:#666">(${esc(src.description)})</span>`
-        : ''
       return `<tr>
-          <td>${esc(prettyMethod(src.method))}${note}</td>
+          <td>${esc(prettyMethod(src.method))}</td>
           <td>${bankLabel ? esc(bankLabel) : '—'}</td>
           <td>${src.reference ? esc(src.reference) : '—'}</td>
-          <td class="right">${fmt(Number(src.amount ?? 0))}</td>
+          <td>${src.description ? esc(src.description) : '—'}</td>
         </tr>`
     })
     .join('')
@@ -1554,14 +1575,11 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
 
     <table>
       <thead>
-        <tr><th>Account</th><th class="right">Total</th></tr>
+        <tr><th>Account</th><th>SI</th><th class="right">Total</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
-          <td class="right">${fmt(amount)}</td>
-        </tr>
-        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
+        ${invoiceRows}
+        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
       </tbody>
     </table>
 
@@ -1570,7 +1588,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         ? `<p class="section-label">Source of Funds</p>
     <table>
       <thead>
-        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th class="right">Amount</th></tr>
+        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th>Description</th></tr>
       </thead>
       <tbody>${sourceRows}</tbody>
     </table>`
