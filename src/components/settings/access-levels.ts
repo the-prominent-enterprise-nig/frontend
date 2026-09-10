@@ -286,7 +286,8 @@ export function getAccessLevelForRole(
 }
 
 /**
- * What one preset grants inside a single module. Split out of
+ * What one preset grants for a set of permissions — a whole module, or just
+ * one resource of it (applyResourceLevel passes a single resource). Split out of
  * getSelectedPermissionIdsForLevel so getAccessLevelForPermissions can
  * recognise its own output and report the preset back by name.
  */
@@ -314,4 +315,74 @@ export function getSelectedPermissionIdsForLevel(
 
 export function formatPermission(permission: Permission): string {
   return permission.description || permissionKey(permission)
+}
+
+/** One resource inside a module, with the level the current selection puts it at. */
+export type ResourceRow = {
+  resource: string
+  /** Every permission that exists for this resource. */
+  permissions: Permission[]
+  /** The subset currently granted. */
+  selectedPermissions: Permission[]
+  level: Exclude<AccessLevel, 'mixed'>
+  /** Wildcard-expanded count, for the "n of m" caption. */
+  effectiveCount: number
+}
+
+/**
+ * The per-resource breakdown of a module, already levelled.
+ *
+ * getResourceLevel has always computed these — it is how "Mixed" is detected —
+ * but the result was collapsed into a single badge and thrown away. Surfacing
+ * the rows is what lets the editor offer a control per resource, so a role can
+ * be given read on one resource of a module without read on the other 29.
+ */
+export function getResourceRows(
+  modulePermissions: Permission[],
+  selectedIds: Set<string>
+): ResourceRow[] {
+  return Array.from(groupByResource(modulePermissions).entries())
+    .map(([resource, permissions]) => {
+      const selectedPermissions = permissions.filter((permission) => selectedIds.has(permission.id))
+      return {
+        resource,
+        permissions,
+        selectedPermissions,
+        level: getResourceLevel(selectedPermissions, permissions),
+        effectiveCount: countEffectivePermissions(permissions, selectedPermissions),
+      }
+    })
+    .sort((a, b) => {
+      // The module-wide wildcard row ('*') is not a real resource — park it last.
+      if ((a.resource === '*') !== (b.resource === '*')) return a.resource === '*' ? 1 : -1
+      return formatResourceLabel(a.resource).localeCompare(formatResourceLabel(b.resource))
+    })
+}
+
+/**
+ * Resource slugs arrive in two shapes from seed.ts — kebab (`ap-bills`) and
+ * camel (`journalEntry`) — so both are normalised before title-casing.
+ */
+export function formatResourceLabel(resource: string): string {
+  if (resource === '*') return 'All capabilities (wildcard)'
+  return resource
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+/**
+ * Swap one resource to `level`, leaving the rest of the selection untouched.
+ * Returns a new Set so callers can hand it straight to setState.
+ */
+export function applyResourceLevel(
+  selected: Set<string>,
+  resourcePermissions: Permission[],
+  level: Exclude<AccessLevel, 'mixed'>
+): Set<string> {
+  const next = new Set(selected)
+  for (const permission of resourcePermissions) next.delete(permission.id)
+  for (const permission of getPermissionsForLevel(resourcePermissions, level))
+    next.add(permission.id)
+  return next
 }
