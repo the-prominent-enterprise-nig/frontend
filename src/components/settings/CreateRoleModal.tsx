@@ -12,6 +12,7 @@ import {
   getAccessLevelForPermissions,
   getModulePermissions,
   getSelectedPermissionIdsForLevel,
+  isPresetExcluded,
   type AccessLevel,
 } from './access-levels'
 
@@ -55,11 +56,10 @@ export default function CreateRoleModal({
         selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
         level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
       }
-    }).sort((a, b) => {
-      if (a.level !== 'none' && b.level === 'none') return -1
-      if (a.level === 'none' && b.level !== 'none') return 1
-      return a.moduleConfig.label.localeCompare(b.moduleConfig.label)
-    })
+      // Fixed alphabetical order. A new role opens with nothing selected, so
+      // sorting granted modules first only ever took effect *after* the user
+      // started clicking — which made rows jump around mid-edit for no gain.
+    }).sort((a, b) => a.moduleConfig.label.localeCompare(b.moduleConfig.label))
   }, [availablePermissions, selected])
 
   const advancedGroups = useMemo(() => {
@@ -361,6 +361,12 @@ export default function CreateRoleModal({
                                       <p className="mt-0.5 font-mono text-xs text-zinc-400">
                                         {permissionKey}
                                       </p>
+                                      {isPresetExcluded(permission) && (
+                                        <p className="mt-1 text-xs font-medium text-orange-700">
+                                          Sensitive — never granted by the module buttons above.
+                                          Tick it here to grant it.
+                                        </p>
+                                      )}
                                     </div>
                                   </label>
                                 )

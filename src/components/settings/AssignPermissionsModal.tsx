@@ -15,6 +15,7 @@ import {
   getAccessLevelForPermissions,
   getModulePermissions,
   getSelectedPermissionIdsForLevel,
+  isPresetExcluded,
   type AccessLevel,
 } from './access-levels'
 
@@ -47,6 +48,31 @@ export default function AssignPermissionsModal({
     }
   }, [role, isOpen])
 
+  // Row order is decided once, from what the role held when the modal was
+  // opened, and then held still. Sorting live off `selected` meant a row
+  // jumped to the top the instant you granted it anything — and dropped back
+  // down when you set No Access — so the control you just clicked slid out
+  // from under the cursor. Ordering still puts already-granted modules first,
+  // it just no longer re-shuffles while you work. Reopening the modal picks up
+  // the newly saved state.
+  const moduleOrder = useMemo(() => {
+    const initialIds = new Set(
+      role.permissions.map((rolePermission) => rolePermission.permission.id)
+    )
+    return ACCESS_MODULES.map((moduleConfig) => ({
+      key: moduleConfig.key,
+      label: moduleConfig.label,
+      granted: getModulePermissions(availablePermissions, moduleConfig).some((permission) =>
+        initialIds.has(permission.id)
+      ),
+    }))
+      .sort((a, b) => {
+        if (a.granted !== b.granted) return a.granted ? -1 : 1
+        return a.label.localeCompare(b.label)
+      })
+      .map((entry) => entry.key)
+  }, [role, availablePermissions])
+
   const moduleRows = useMemo(() => {
     return ACCESS_MODULES.map((moduleConfig) => {
       const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
@@ -60,12 +86,10 @@ export default function AssignPermissionsModal({
         selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
         level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
       }
-    }).sort((a, b) => {
-      if (a.level !== 'none' && b.level === 'none') return -1
-      if (a.level === 'none' && b.level !== 'none') return 1
-      return a.moduleConfig.label.localeCompare(b.moduleConfig.label)
-    })
-  }, [availablePermissions, selected])
+    }).sort(
+      (a, b) => moduleOrder.indexOf(a.moduleConfig.key) - moduleOrder.indexOf(b.moduleConfig.key)
+    )
+  }, [availablePermissions, selected, moduleOrder])
 
   const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -337,6 +361,12 @@ export default function AssignPermissionsModal({
                                     <p className="mt-0.5 font-mono text-xs text-zinc-400">
                                       {permissionKey}
                                     </p>
+                                    {isPresetExcluded(permission) && (
+                                      <p className="mt-1 text-xs font-medium text-orange-700">
+                                        Sensitive — never granted by the module buttons above. Tick
+                                        it here to grant it.
+                                      </p>
+                                    )}
                                   </div>
                                 </label>
                               )
