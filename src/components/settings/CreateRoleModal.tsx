@@ -3,17 +3,12 @@
 import { ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { type Permission } from '@/src/schema/settings/list'
+import ModuleAccessList from './ModuleAccessList'
 import {
-  ACCESS_LEVEL_LABELS,
   ACCESS_MODULES,
-  SETTABLE_ACCESS_LEVELS,
-  countEffectivePermissions,
   formatPermission,
-  getAccessLevelForPermissions,
   getModulePermissions,
-  getSelectedPermissionIdsForLevel,
   isPresetExcluded,
-  type AccessLevel,
 } from './access-levels'
 
 export type CreateRoleFormData = {
@@ -42,25 +37,6 @@ export default function CreateRoleModal({
   const [search, setSearch] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
-
-  const moduleRows = useMemo(() => {
-    return ACCESS_MODULES.map((moduleConfig) => {
-      const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-      const selectedModulePermissions = modulePermissions.filter((permission) =>
-        selected.has(permission.id)
-      )
-
-      return {
-        moduleConfig,
-        permissionCount: modulePermissions.length,
-        selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
-        level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
-      }
-      // Fixed alphabetical order. A new role opens with nothing selected, so
-      // sorting granted modules first only ever took effect *after* the user
-      // started clicking — which made rows jump around mid-edit for no gain.
-    }).sort((a, b) => a.moduleConfig.label.localeCompare(b.moduleConfig.label))
-  }, [availablePermissions, selected])
 
   const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -111,27 +87,6 @@ export default function CreateRoleModal({
   const handleClose = () => {
     resetState()
     onClose()
-  }
-
-  function handleAccessLevelChange(moduleKey: string, level: Exclude<AccessLevel, 'mixed'>) {
-    const moduleConfig = ACCESS_MODULES.find((item) => item.key === moduleKey)
-    if (!moduleConfig) return
-
-    const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-    const nextModulePermissionIds = new Set(
-      getSelectedPermissionIdsForLevel(availablePermissions, moduleConfig, level)
-    )
-
-    setSelected((prev) => {
-      const next = new Set(prev)
-      for (const permission of modulePermissions) {
-        next.delete(permission.id)
-      }
-      for (const permissionId of nextModulePermissionIds) {
-        next.add(permissionId)
-      }
-      return next
-    })
   }
 
   function handleToggleAdvancedPermission(id: string) {
@@ -215,53 +170,11 @@ export default function CreateRoleModal({
               see modules in the top menu when their role has at least View Only access.
             </p>
 
-            <div className="mt-3 space-y-3">
-              {moduleRows.map(({ moduleConfig, level, permissionCount, selectedCount }) => (
-                <div
-                  key={moduleConfig.key}
-                  className={`rounded-xl border p-4 ${
-                    level === 'none'
-                      ? 'border-zinc-200 bg-white'
-                      : level === 'mixed'
-                        ? 'border-orange-300 bg-orange-50/60'
-                        : 'border-prominent-purple-200 bg-prominent-purple-50/50'
-                  }`}
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="min-w-52">
-                      <h4 className="text-sm font-semibold text-zinc-900">{moduleConfig.label}</h4>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {selectedCount} of {permissionCount} capabilities enabled
-                      </p>
-                      {level === 'mixed' && (
-                        <p className="mt-1 text-xs font-medium text-orange-700">
-                          Different resources in this module currently have different access levels.
-                          Pick a level below to make it uniform, or use Advanced permissions to
-                          review what&apos;s actually granted.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-4">
-                      {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
-                        <button
-                          key={accessLevel}
-                          type="button"
-                          onClick={() => handleAccessLevelChange(moduleConfig.key, accessLevel)}
-                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                            level === accessLevel
-                              ? 'border-prominent-purple-500 bg-prominent-purple-700 text-white shadow-sm'
-                              : 'border-zinc-200 bg-white text-zinc-700 hover:border-prominent-purple-200 hover:bg-prominent-purple-50'
-                          }`}
-                        >
-                          {ACCESS_LEVEL_LABELS[accessLevel]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ModuleAccessList
+              availablePermissions={availablePermissions}
+              selected={selected}
+              onChange={setSelected}
+            />
 
             <div className="mt-5 rounded-xl border border-zinc-200 bg-white">
               <button
