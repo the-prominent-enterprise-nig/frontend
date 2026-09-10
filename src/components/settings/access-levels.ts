@@ -69,14 +69,74 @@ const EDIT_ACTIONS = new Set([
   'log',
   'request',
   'generate',
+  // Requesting a reservation cancellation is an operational step, not the
+  // destructive `cancel-approve` that follows it. Named explicitly because it
+  // used to qualify only by accident, through the substring match below.
+  'cancel-request',
 ])
 
 function permissionKey(permission: Permission): string {
   return `${permission.module}:${permission.resource}:${permission.action}`
 }
 
+/**
+ * Permissions the View Only and Manage / Edit presets never hand out, even when
+ * the action name qualifies. They stay fully grantable — an admin just has to
+ * tick them deliberately under Advanced permissions instead of picking them up
+ * as an invisible side effect of a module-wide button.
+ *
+ * Two groups:
+ *   - Enterprise-wide financial infrastructure and sensitive cost data. seed.ts
+ *     already withholds this cluster from Branch Manager by hand ("deliberately
+ *     excluded, not an oversight"); the presets were handing it to anyone set to
+ *     Manage / Edit on Accounting regardless.
+ *   - RBAC self-administration. `admin:roles:create` plus `admin:roles:update`
+ *     let a role mint a new role and grant it anything, so Manage / Edit on
+ *     Admin was a one-hop path to full access. Granting user administration
+ *     must not imply granting permission administration.
+ *
+ * Full Access still includes all of these: that button says what it does.
+ */
+export const PRESET_EXCLUDED_PERMISSIONS = new Set([
+  'accounting:fiscal:create',
+  'accounting:fiscal:update',
+  'accounting:fiscal:close',
+  'accounting:fiscal:reopen',
+  'accounting:fiscal:delete',
+  'accounting:generalLedger:create',
+  'accounting:generalLedger:update',
+  'accounting:generalLedger:delete',
+  'accounting:account:create',
+  'accounting:account:update',
+  'accounting:account:delete',
+  'accounting:bir_export:generate',
+  'inventory:receive:cost-view',
+  'admin:roles:create',
+  'admin:roles:update',
+  'admin:roles:delete',
+  'admin:roles:manage',
+  'admin:permissions:create',
+  'admin:permissions:update',
+  'admin:permissions:delete',
+  'admin:permissions:manage',
+])
+
+export function isPresetExcluded(permission: Permission): boolean {
+  return PRESET_EXCLUDED_PERMISSIONS.has(permissionKey(permission))
+}
+
+/**
+ * Exact membership only. This used to substring-match as well, which quietly
+ * mis-tiered any action whose name happened to contain a shorter one:
+ * `cost-view` counted as a read, leaking `inventory:receive:cost-view`
+ * ("restricted to Business Owner/Accountant" per seed.ts) into every View Only
+ * grant, and `reopen` counted as an edit, leaking `accounting:fiscal:reopen`
+ * into every Manage / Edit grant. Action names are a closed set defined in
+ * seed.ts — anything genuinely operational belongs in the sets above by name,
+ * not by an accident of spelling.
+ */
 function actionMatches(action: string, actions: Set<string>): boolean {
-  return actions.has(action) || Array.from(actions).some((item) => action.includes(item))
+  return actions.has(action)
 }
 
 export function getModulePermissions(
@@ -158,6 +218,21 @@ export function getAccessLevelForPermissions(
 ): AccessLevel {
   if (selectedPermissions.length === 0) return 'none'
 
+  // A grant that is exactly what a preset produces IS that preset. Without
+  // this, withholding sensitive permissions from View Only / Manage / Edit (see
+  // PRESET_EXCLUDED_PERMISSIONS) leaves the withheld resources sitting at a
+  // different level from the rest of their module — so clicking "Manage / Edit"
+  // would immediately render as "Mixed Access". True under the resource
+  // heuristic below, but useless as feedback on a button just pressed.
+  const selectedIds = new Set(selectedPermissions.map((permission) => permission.id))
+  for (const level of SETTABLE_ACCESS_LEVELS) {
+    const presetIds = getPermissionsForLevel(availableModulePermissions, level).map(
+      (permission) => permission.id
+    )
+    if (presetIds.length !== selectedIds.size) continue
+    if (presetIds.every((id) => selectedIds.has(id))) return level
+  }
+
   const availableByResource = groupByResource(availableModulePermissions)
   const selectedByResource = groupByResource(selectedPermissions)
 
@@ -210,19 +285,31 @@ export function getAccessLevelForRole(
   )
 }
 
+/**
+ * What one preset grants inside a single module. Split out of
+ * getSelectedPermissionIdsForLevel so getAccessLevelForPermissions can
+ * recognise its own output and report the preset back by name.
+ */
+export function getPermissionsForLevel(
+  modulePermissions: Permission[],
+  level: Exclude<AccessLevel, 'mixed'>
+): Permission[] {
+  if (level === 'none') return []
+  if (level === 'full') return modulePermissions
+
+  const predicate = level === 'view' ? isReadPermission : isManagePermission
+  return modulePermissions.filter(
+    (permission) => predicate(permission) && !isPresetExcluded(permission)
+  )
+}
+
 export function getSelectedPermissionIdsForLevel(
   availablePermissions: Permission[],
   moduleConfig: AccessModule,
   level: Exclude<AccessLevel, 'mixed'>
 ): string[] {
   const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-
-  if (level === 'none') return []
-  if (level === 'view')
-    return modulePermissions.filter(isReadPermission).map((permission) => permission.id)
-  if (level === 'manage')
-    return modulePermissions.filter(isManagePermission).map((permission) => permission.id)
-  return modulePermissions.map((permission) => permission.id)
+  return getPermissionsForLevel(modulePermissions, level).map((permission) => permission.id)
 }
 
 export function formatPermission(permission: Permission): string {
