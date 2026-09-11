@@ -251,7 +251,11 @@ export default function RolesSection({
                                     className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50"
                                   >
                                     <ShieldCheck className="h-4 w-4 text-prominent-purple-600" />
-                                    Assign
+                                    {/* Not "Assign" — that reads as assigning the role to a
+                                        user, which is what AssignRoleModal actually does over
+                                        on the Users screen. This opens the permission editor,
+                                        whose own title is "Manage Role Access". */}
+                                    Manage Access
                                   </button>
                                 )}
                                 {!isFounderRole && (

@@ -5,17 +5,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { type Permission, type Role } from '@/src/schema/settings/list'
 import { assignPermissions } from '@/src/app/(app)/(dashboard)/settings/_actions'
+import ModuleAccessList from './ModuleAccessList'
 import { showToast } from '@/src/components/ui/toast'
 import {
-  ACCESS_LEVEL_LABELS,
   ACCESS_MODULES,
-  SETTABLE_ACCESS_LEVELS,
-  countEffectivePermissions,
   formatPermission,
-  getAccessLevelForPermissions,
   getModulePermissions,
-  getSelectedPermissionIdsForLevel,
-  type AccessLevel,
+  isPresetExcluded,
 } from './access-levels'
 
 type AssignPermissionsModalProps = {
@@ -47,25 +43,30 @@ export default function AssignPermissionsModal({
     }
   }, [role, isOpen])
 
-  const moduleRows = useMemo(() => {
-    return ACCESS_MODULES.map((moduleConfig) => {
-      const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-      const selectedModulePermissions = modulePermissions.filter((permission) =>
-        selected.has(permission.id)
-      )
-
-      return {
-        moduleConfig,
-        permissionCount: modulePermissions.length,
-        selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
-        level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
-      }
-    }).sort((a, b) => {
-      if (a.level !== 'none' && b.level === 'none') return -1
-      if (a.level === 'none' && b.level !== 'none') return 1
-      return a.moduleConfig.label.localeCompare(b.moduleConfig.label)
-    })
-  }, [availablePermissions, selected])
+  // Row order is decided once, from what the role held when the modal was
+  // opened, and then held still. Sorting live off `selected` meant a row
+  // jumped to the top the instant you granted it anything — and dropped back
+  // down when you set No Access — so the control you just clicked slid out
+  // from under the cursor. Ordering still puts already-granted modules first,
+  // it just no longer re-shuffles while you work. Reopening the modal picks up
+  // the newly saved state.
+  const moduleOrder = useMemo(() => {
+    const initialIds = new Set(
+      role.permissions.map((rolePermission) => rolePermission.permission.id)
+    )
+    return ACCESS_MODULES.map((moduleConfig) => ({
+      key: moduleConfig.key,
+      label: moduleConfig.label,
+      granted: getModulePermissions(availablePermissions, moduleConfig).some((permission) =>
+        initialIds.has(permission.id)
+      ),
+    }))
+      .sort((a, b) => {
+        if (a.granted !== b.granted) return a.granted ? -1 : 1
+        return a.label.localeCompare(b.label)
+      })
+      .map((entry) => entry.key)
+  }, [role, availablePermissions])
 
   const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -85,27 +86,6 @@ export default function AssignPermissionsModal({
   const selectedAdvancedCount = useMemo(() => {
     return availablePermissions.filter((permission) => selected.has(permission.id)).length
   }, [availablePermissions, selected])
-
-  function handleAccessLevelChange(moduleKey: string, level: Exclude<AccessLevel, 'mixed'>) {
-    const moduleConfig = ACCESS_MODULES.find((item) => item.key === moduleKey)
-    if (!moduleConfig) return
-
-    const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-    const nextModulePermissionIds = new Set(
-      getSelectedPermissionIdsForLevel(availablePermissions, moduleConfig, level)
-    )
-
-    setSelected((prev) => {
-      const next = new Set(prev)
-      for (const permission of modulePermissions) {
-        next.delete(permission.id)
-      }
-      for (const permissionId of nextModulePermissionIds) {
-        next.add(permissionId)
-      }
-      return next
-    })
-  }
 
   function handleToggleAdvancedPermission(id: string) {
     setSelected((prev) => {
@@ -191,53 +171,12 @@ export default function AssignPermissionsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="space-y-3">
-            {moduleRows.map(({ moduleConfig, level, permissionCount, selectedCount }) => (
-              <div
-                key={moduleConfig.key}
-                className={`rounded-xl border p-4 ${
-                  level === 'none'
-                    ? 'border-zinc-200 bg-white'
-                    : level === 'mixed'
-                      ? 'border-orange-300 bg-orange-50/60'
-                      : 'border-prominent-purple-200 bg-prominent-purple-50/50'
-                }`}
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-52">
-                    <h3 className="text-sm font-semibold text-zinc-900">{moduleConfig.label}</h3>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {selectedCount} of {permissionCount} capabilities enabled
-                    </p>
-                    {level === 'mixed' && (
-                      <p className="mt-1 text-xs font-medium text-orange-700">
-                        Different resources in this module currently have different access levels.
-                        Pick a level below to make it uniform, or use Advanced permissions to review
-                        what&apos;s actually granted.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-4">
-                    {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
-                      <button
-                        key={accessLevel}
-                        type="button"
-                        onClick={() => handleAccessLevelChange(moduleConfig.key, accessLevel)}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                          level === accessLevel
-                            ? 'border-prominent-purple-500 bg-prominent-purple-700 text-white shadow-sm'
-                            : 'border-zinc-200 bg-white text-zinc-700 hover:border-prominent-purple-200 hover:bg-prominent-purple-50'
-                        }`}
-                      >
-                        {ACCESS_LEVEL_LABELS[accessLevel]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <ModuleAccessList
+            availablePermissions={availablePermissions}
+            selected={selected}
+            onChange={setSelected}
+            moduleOrder={moduleOrder}
+          />
 
           <div className="mt-5 rounded-xl border border-zinc-200 bg-white">
             <button
@@ -337,6 +276,12 @@ export default function AssignPermissionsModal({
                                     <p className="mt-0.5 font-mono text-xs text-zinc-400">
                                       {permissionKey}
                                     </p>
+                                    {isPresetExcluded(permission) && (
+                                      <p className="mt-1 text-xs font-medium text-orange-700">
+                                        Sensitive — never granted by the module buttons above. Tick
+                                        it here to grant it.
+                                      </p>
+                                    )}
                                   </div>
                                 </label>
                               )
