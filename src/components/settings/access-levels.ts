@@ -327,6 +327,8 @@ export type ResourceRow = {
   level: Exclude<AccessLevel, 'mixed'>
   /** Wildcard-expanded count, for the "n of m" caption. */
   effectiveCount: number
+  /** Which of the four level buttons actually do anything here. */
+  availability: LevelAvailability[]
 }
 
 /**
@@ -350,6 +352,7 @@ export function getResourceRows(
         selectedPermissions,
         level: getResourceLevel(selectedPermissions, permissions),
         effectiveCount: countEffectivePermissions(permissions, selectedPermissions),
+        availability: getResourceLevelAvailability(permissions),
       }
     })
     .sort((a, b) => {
@@ -372,17 +375,115 @@ export function formatResourceLabel(resource: string): string {
 }
 
 /**
- * Swap one resource to `level`, leaving the rest of the selection untouched.
+ * Swap one resource to `level`, leaving the rest of the module untouched.
  * Returns a new Set so callers can hand it straight to setState.
+ *
+ * Modules carry a `module:*:*` row that the backend's matchesPermission expands
+ * to everything in that module. Holding it makes a per-resource setting a lie:
+ * set the module to Full Access (which includes the wildcard) and then knock
+ * one resource down to None, and the row reads None while the wildcard quietly
+ * keeps granting all of it. Verified against the real matcher — customers
+ * showed None while read/create/update/delete/merge were all still allowed.
+ *
+ * So narrowing any resource while the wildcard is held has to dissolve it: drop
+ * the wildcard row and grant the module’s resources explicitly instead. Same
+ * access, minus the shortcut that cannot express an exception. Setting a
+ * resource to Full is the one case that leaves it alone, since nothing is being
+ * taken away.
  */
 export function applyResourceLevel(
   selected: Set<string>,
+  modulePermissions: Permission[],
   resourcePermissions: Permission[],
   level: Exclude<AccessLevel, 'mixed'>
 ): Set<string> {
   const next = new Set(selected)
+
+  const targetsWildcardRow = resourcePermissions.some((permission) => permission.resource === '*')
+  const heldWildcards = modulePermissions.filter(
+    (permission) => permission.resource === '*' && next.has(permission.id)
+  )
+
+  if (heldWildcards.length > 0 && !targetsWildcardRow && level !== 'full') {
+    for (const wildcard of heldWildcards) next.delete(wildcard.id)
+    // The wildcard covered every resource in the module, so everything it was
+    // standing in for has to be granted for real before the exception is cut.
+    for (const permission of modulePermissions) {
+      if (permission.resource !== '*') next.add(permission.id)
+    }
+  }
+
   for (const permission of resourcePermissions) next.delete(permission.id)
   for (const permission of getPermissionsForLevel(resourcePermissions, level))
     next.add(permission.id)
   return next
+}
+
+/** Whether one level button does anything for a given resource, and why not. */
+export type LevelAvailability = {
+  level: Exclude<AccessLevel, 'mixed'>
+  enabled: boolean
+  /** Present only when disabled — shown as the button tooltip. */
+  reason?: string
+}
+
+/**
+ * A level is a dead button when it grants exactly what the level below it
+ * already grants, so clicking it changes nothing and the control appears
+ * broken — the button will not even light up, because the row reads its level
+ * back from the permissions that actually landed.
+ *
+ * This is the common case, not an edge one: 69 of 120 resource rows in a
+ * seeded database have at least one. Four levels assume every resource has
+ * read, write and destructive actions, and most do not — inventory:reports is
+ * read-only, so Manage and Full mean nothing there; pos:sessions has no
+ * destructive action, so Full means nothing.
+ *
+ * Two distinct reasons, which want different wording: the resource genuinely
+ * has no actions at that tier, or it has them but PRESET_EXCLUDED_PERMISSIONS
+ * withholds them (accounting:fiscal, admin:roles). The second is recoverable —
+ * Full Access or Advanced permissions still grant them — so the message says
+ * so rather than implying the capability does not exist.
+ */
+export function getResourceLevelAvailability(
+  resourcePermissions: Permission[]
+): LevelAvailability[] {
+  const idsFor = (level: Exclude<AccessLevel, 'mixed'>) =>
+    getPermissionsForLevel(resourcePermissions, level)
+      .map((permission) => permission.id)
+      .sort()
+      .join('|')
+
+  const candidatesFor = (level: Exclude<AccessLevel, 'mixed'>) => {
+    if (level === 'full') return resourcePermissions
+    if (level === 'manage') return resourcePermissions.filter(isManagePermission)
+    if (level === 'view') return resourcePermissions.filter(isReadPermission)
+    return []
+  }
+
+  return SETTABLE_ACCESS_LEVELS.map((level, index) => {
+    if (index === 0) return { level, enabled: true }
+
+    const previous = SETTABLE_ACCESS_LEVELS[index - 1]
+    if (idsFor(level) !== idsFor(previous)) return { level, enabled: true }
+
+    const withheld = candidatesFor(level).filter(isPresetExcluded)
+    if (withheld.length > 0) {
+      const actions = Array.from(new Set(withheld.map((permission) => permission.action)))
+      return {
+        level,
+        enabled: false,
+        reason:
+          `Same as ${ACCESS_LEVEL_LABELS[previous]} here — ` +
+          `${actions.join(', ')} are sensitive and never granted by these buttons. ` +
+          'Use Full Access, or tick them under Advanced permissions.',
+      }
+    }
+
+    return {
+      level,
+      enabled: false,
+      reason: `Same as ${ACCESS_LEVEL_LABELS[previous]} — this resource has no further actions.`,
+    }
+  })
 }

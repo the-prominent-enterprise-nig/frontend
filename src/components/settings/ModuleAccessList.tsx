@@ -95,10 +95,11 @@ export default function ModuleAccessList({
   }
 
   function handleResourceLevelChange(
+    modulePermissions: Permission[],
     resourcePermissions: Permission[],
     level: Exclude<AccessLevel, 'mixed'>
   ) {
-    onChange(applyResourceLevel(selected, resourcePermissions, level))
+    onChange(applyResourceLevel(selected, modulePermissions, resourcePermissions, level))
   }
 
   function toggleExpanded(moduleKey: string) {
@@ -134,8 +135,8 @@ export default function ModuleAccessList({
                     : 'border-prominent-purple-200 bg-prominent-purple-50/50'
               }`}
             >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-52">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0 lg:flex-1">
                   <button
                     type="button"
                     onClick={() => toggleExpanded(moduleConfig.key)}
@@ -143,30 +144,24 @@ export default function ModuleAccessList({
                     className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 hover:text-prominent-purple-700"
                   >
                     {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-zinc-400" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 text-zinc-400" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
                     )}
                     {moduleConfig.label}
                   </button>
                   <p className="mt-1 pl-5 text-xs text-zinc-500">
                     {selectedCount} of {permissionCount} capabilities enabled
                   </p>
-                  {level === 'mixed' && (
-                    <p className="mt-1 pl-5 text-xs font-medium text-orange-700">
-                      Resources in this module are at different levels. Expand to see which, or pick
-                      a level to make the whole module uniform.
-                    </p>
-                  )}
                 </div>
 
-                <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-4">
+                <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
                   {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
                     <button
                       key={accessLevel}
                       type="button"
                       onClick={() => handleModuleLevelChange(moduleConfig.key, accessLevel)}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                      className={`whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition sm:text-sm ${
                         level === accessLevel
                           ? 'border-prominent-purple-500 bg-prominent-purple-700 text-white shadow-sm'
                           : 'border-zinc-200 bg-white text-zinc-700 hover:border-prominent-purple-200 hover:bg-prominent-purple-50'
@@ -177,6 +172,12 @@ export default function ModuleAccessList({
                   ))}
                 </div>
               </div>
+
+              {level === 'mixed' && (
+                <p className="mt-2 text-xs font-medium text-orange-700">
+                  Resources are at different levels — expand to see which.
+                </p>
+              )}
 
               {isExpanded && (
                 <div className="mt-4 border-t border-zinc-200/70 pt-3">
@@ -213,18 +214,25 @@ export default function ModuleAccessList({
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-1">
-                          {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
+                          {row.availability.map(({ level: accessLevel, enabled, reason }) => (
                             <button
                               key={accessLevel}
                               type="button"
-                              title={ACCESS_LEVEL_LABELS[accessLevel]}
+                              disabled={!enabled}
+                              title={reason ?? ACCESS_LEVEL_LABELS[accessLevel]}
                               onClick={() =>
-                                handleResourceLevelChange(row.permissions, accessLevel)
+                                handleResourceLevelChange(
+                                  modulePermissions,
+                                  row.permissions,
+                                  accessLevel
+                                )
                               }
                               className={`rounded-md border px-2 py-1 text-[11px] font-medium transition ${
                                 row.level === accessLevel
                                   ? 'border-prominent-purple-500 bg-prominent-purple-700 text-white'
-                                  : 'border-zinc-200 bg-white text-zinc-600 hover:border-prominent-purple-200 hover:bg-prominent-purple-50'
+                                  : !enabled
+                                    ? 'cursor-not-allowed border-dashed border-zinc-200 bg-zinc-50 text-zinc-300'
+                                    : 'border-zinc-200 bg-white text-zinc-600 hover:border-prominent-purple-200 hover:bg-prominent-purple-50'
                               }`}
                             >
                               {SHORT_LEVEL_LABELS[accessLevel]}
