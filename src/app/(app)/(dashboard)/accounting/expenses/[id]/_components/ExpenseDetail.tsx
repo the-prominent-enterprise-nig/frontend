@@ -7,6 +7,7 @@ import { ArrowLeft, Ban, CheckCircle, Loader2, Pencil, Printer, Trash2 } from 'l
 import { Expenses, fmtMoney, type ExpenseDocument } from '@/src/libs/data/AccountingV2Data'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
+import ExpenseAttachmentsPanel from '../../_components/ExpenseAttachmentsPanel'
 
 // Mirrors ExpensesList's own STATUS_STYLES — kept local rather than imported
 // so this page doesn't pull in that list's client tree just for a 3-entry map.
@@ -233,7 +234,7 @@ export default function ExpenseDetail({ id }: { id: string }) {
                 {itemMode && <th className="py-2 pr-4">SI</th>}
                 {itemMode && <th className="py-2 pr-4 text-right">Qty</th>}
                 {itemMode && <th className="py-2 pr-4 text-right">Unit price</th>}
-                {showTax && <th className="py-2 pr-4 text-right">Tax</th>}
+                {showTax && <th className="py-2 pr-4 text-right">VAT incl.</th>}
                 <th className="py-2 text-right">Total</th>
               </tr>
             </thead>
@@ -278,12 +279,13 @@ export default function ExpenseDetail({ id }: { id: string }) {
           </table>
         </div>
         <div className="mt-3 flex justify-end gap-6 text-[13px]">
-          <span className="text-gray-500">
-            Subtotal <span className="tabular-nums text-gray-800">{fmtMoney(e.subtotal)}</span>
-          </span>
+          {/* No Subtotal line: amounts are VAT-inclusive, so it was always
+              the same figure as the Total beside it. The VAT is reported as
+              the share of that total which posts to Input VAT. */}
           {showTax && (
             <span className="text-gray-500">
-              Tax <span className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</span>
+              incl. Input VAT{' '}
+              <span className="tabular-nums text-gray-800">{fmtMoney(e.taxAmount)}</span>
             </span>
           )}
           <span className="font-semibold text-prominent-purple-900">
@@ -326,6 +328,13 @@ export default function ExpenseDetail({ id }: { id: string }) {
           </p>
         )}
       </section>
+
+      {/* A receipt often only turns up after the expense is recorded, so
+          attaching stays open on a posted entry — same rule the debit memo's
+          waybill panel uses, where only a VOID record is frozen. */}
+      <div className="mt-4">
+        <ExpenseAttachmentsPanel expenseId={id} readOnly={e.status === 'VOID'} />
+      </div>
     </div>
   )
 }
