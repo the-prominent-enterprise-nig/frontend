@@ -26,6 +26,7 @@ import {
   printAPPaymentVoucherDocument,
 } from '@/src/libs/print/printInventoryDocument'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
+import ReceiptChangesNotice from '../../_components/ReceiptChangesNotice'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 
 const STATUS_BADGE: Record<string, string> = {
@@ -305,6 +306,10 @@ export default function APBillDetail({ id }: { id: string }) {
           — part of the balance on one, part on another — so a single line
           could only ever name one of them, and the amounts are the point:
           what is committed, and what is still free to voucher. */}
+      {/* Silent unless the receiving report behind this invoice was corrected
+          after the invoice was raised. */}
+      <ReceiptChangesNotice billId={id} onApplied={reload} />
+
       {vouchers.length > 0 && (
         <section className="mt-2.5 rounded-lg border border-gray-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 px-5 py-2.5">

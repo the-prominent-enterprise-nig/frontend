@@ -1169,6 +1169,32 @@ export interface APDisbursement {
   }[]
 }
 
+export interface APBillReceiptChange {
+  field: string
+  from: number
+  to: number
+}
+export interface APBillReceiptLine {
+  receiptCode: string
+  item: string | null
+  quantity: number
+  unitCost: number
+  srp: number | null
+  discountedCost: number | null
+  taxCode: string | null
+  taxAmount: number
+}
+export interface APBillReceiptChanges {
+  edited: boolean
+  editedAt: string | null
+  syncedAt: string | null
+  receipts: { id: string; code: string; contentEditedAt: string | null }[]
+  /** Only the figures that move the payable. Empty when the correction touched
+   * prices alone — an RR edit never restates unitCost, so the subtotal is
+   * frozen at receipt and a price fix can leave the total untouched. */
+  changes: APBillReceiptChange[]
+  lines: APBillReceiptLine[]
+}
 export const APBills = {
   list: (params?: {
     search?: string
@@ -1188,6 +1214,14 @@ export const APBills = {
     ),
   get: (id: string) => api.get<APBill>(`/ap-bills/${id}`),
   getDocument: (id: string) => api.get<APBillDocument>(`/ap-bills/${id}/document`),
+  /** Corrections made to this invoice's receiving report since the invoice
+   * last agreed with it. A receipt stays editable after the goods land, and
+   * nothing used to tell AP. */
+  receiptChanges: (id: string) => api.get<APBillReceiptChanges>(`/ap-bills/${id}/receipt-changes`),
+  applyReceiptChanges: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/receipt-changes/apply`, {}),
+  supersedeFromReceipt: (id: string) =>
+    api.post<APBill>(`/ap-bills/${id}/receipt-changes/supersede`, {}),
   create: (body: any) => api.post<APBill>('/ap-bills', body),
   update: (id: string, body: any) => api.patch<APBill>(`/ap-bills/${id}`, body),
   receive: (id: string) => api.post<APBill>(`/ap-bills/${id}/receive`, {}),
