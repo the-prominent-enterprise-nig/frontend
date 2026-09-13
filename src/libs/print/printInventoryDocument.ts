@@ -1492,17 +1492,48 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const rawInvoices = Array.isArray(p.invoices)
     ? (p.invoices as Record<string, unknown>[])
     : [{ billNumber: p.billNumber, description: p.description, amount }]
+  // The SI now prints in the header block beside the voucher number, the way
+  // the Purchase Invoice does it. It comes back as a table column only when
+  // one cheque settled several invoices — there the header can say which
+  // numbers were paid, but not how much each one got.
+  const siNumbers = Array.from(new Set(rawInvoices.map((inv) => inv.billNumber).filter(Boolean)))
+  const showInvoiceSi = rawInvoices.length > 1
+  // The voucher's OWN description — what the payment form labels Description
+  // and stores as notes. The per-invoice column carries each bill's text,
+  // which is not the same thing and is usually empty; it earns its place only
+  // when one cheque settled several bills and they differ.
+  const voucherDescription = p.notes ? String(p.notes) : null
+  const showInvoiceDescription = rawInvoices.length > 1
   const invoiceRows = rawInvoices
     .map(
       (inv) => `<tr>
           <td>${effectiveExpenseAccount?.name ? esc(effectiveExpenseAccount.name) : '—'}</td>
-          <td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>
+          ${showInvoiceSi ? `<td>${inv.billNumber ? esc(inv.billNumber) : '—'}</td>` : ''}
+          ${showInvoiceDescription ? `<td>${inv.description ? esc(inv.description) : '—'}</td>` : ''}
           <td class="right">${fmt(Number(inv.amount ?? 0))}</td>
         </tr>`
     )
     .join('')
 
-  const sourceRows = rawSources
+  // The rows carry the cash each invoice got; withholding is settled but never
+  // disbursed. Printing them as one figure made a voucher whose rows summed to
+  // 35,678.57 announce a 36,000.00 total with nothing to explain the gap — so
+  // they now reconcile top to bottom, the way the invoice's own block does.
+  const withholding = Number(p.withholdingAmount ?? 0)
+  const netPaid = amount - withholding
+
+  // A four-column table for what is, in practice, one funding source spent
+  // most of its width on dashes — a Reference repeating the header's own, and
+  // a Description nobody fills. Printed as labelled rows instead, and a row
+  // with no value simply isn't printed.
+  //
+  // Still a loop: the backend can split a cheque across methods. That split is
+  // the only case where a source knows something the header can't already say
+  // — its own reference, and its own share of the total — so both rows appear
+  // only then. On the single-source voucher these actually are, the cheque
+  // number belongs in the header block and is printed there once.
+  const isSplitFunding = rawSources.length > 1
+  const sourceBlocks = rawSources
     .map((src) => {
       const bank = src.bankAccount as { name?: string; accountNumber?: string } | null
       const bankLabel = bank?.name
@@ -1510,12 +1541,17 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
           ? `${bank.name} — ${bank.accountNumber}`
           : bank.name
         : null
-      return `<tr>
-          <td>${esc(prettyMethod(src.method))}</td>
-          <td>${bankLabel ? esc(bankLabel) : '—'}</td>
-          <td>${src.reference ? esc(src.reference) : '—'}</td>
-          <td>${src.description ? esc(src.description) : '—'}</td>
-        </tr>`
+      const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
+      if (bankLabel) rows.push(['Bank Account', bankLabel])
+      if (isSplitFunding && src.reference) rows.push(['Reference', String(src.reference)])
+      if (src.description) rows.push(['Description', String(src.description)])
+      if (isSplitFunding) rows.push(['Amount', fmt(Number(src.amount ?? 0))])
+      return `<div class="fund">${rows
+        .map(
+          ([label, value]) =>
+            `<div class="fund-row"><span class="fund-label">${esc(label)}</span><span class="fund-value">${esc(value)}</span></div>`
+        )
+        .join('')}</div>`
     })
     .join('')
 
@@ -1529,15 +1565,30 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
+    .info .meta { text-align: right; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
-    .description { font-weight: 700; text-transform: uppercase; margin: 0 0 16px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
-    tr.total-row td { font-weight: 700; }
+    .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .total-wrap table { width: auto; border: none; }
+    .total-wrap td { padding: 5px 10px; border: none; border-bottom: 1px solid #eee; }
+    .total-wrap td.label { text-align: right; }
+    .total-wrap td.value { text-align: right; min-width: 140px; }
+    .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
     .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
+    .pay-summary { display: flex; align-items: flex-start; gap: 40px; margin-top: 12px; }
+    .pay-summary .fund-col { flex: 1; }
+    .pay-summary .section-label { margin-top: 0; }
+    .pay-summary .total-wrap { margin-top: 0; }
+    .fund + .fund { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+    .doc-note { display: flex; gap: 16px; margin: 0 0 12px; }
+    .doc-note-label { width: 130px; flex-shrink: 0; font-weight: 700; }
+    .fund-row { display: flex; gap: 16px; padding: 2px 0; }
+    .fund-label { width: 130px; flex-shrink: 0; font-weight: 700; }
+    .fund-value { color: #222; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1556,6 +1607,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(p.payee) || '—'}</p>
+        ${p.payeeAddress ? `<p class="party-address">${esc(p.payeeAddress)}</p>` : ''}
       </div>
       <div class="meta">
         <p class="meta-label">Date</p>
@@ -1564,6 +1616,9 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
+        <p class="meta-label">SI #</p>
+        <p class="meta-value">${siNumbers.length ? siNumbers.map(esc).join(', ') : 'Pending SI #'}</p>
+        ${p.payeeTin ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(p.payeeTin)}</p>` : ''}
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -1571,29 +1626,39 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
       </div>
     </div>
 
-    ${p.description ? `<p class="description">${esc(p.description)}</p>` : ''}
-
-    <table>
-      <thead>
-        <tr><th>Account</th><th>SI</th><th class="right">Total</th></tr>
-      </thead>
-      <tbody>
-        ${invoiceRows}
-        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
-      </tbody>
-    </table>
-
     ${
-      sourceRows
-        ? `<p class="section-label">Source of Funds</p>
-    <table>
-      <thead>
-        <tr><th>Method</th><th>Bank Account</th><th>Reference</th><th>Description</th></tr>
-      </thead>
-      <tbody>${sourceRows}</tbody>
-    </table>`
+      voucherDescription
+        ? `<p class="doc-note"><span class="doc-note-label">Description</span><span>${esc(voucherDescription)}</span></p>`
         : ''
     }
+
+    <table>
+      <thead>
+        <tr><th>Account</th>${showInvoiceSi ? '<th>SI #</th>' : ''}${showInvoiceDescription ? '<th>Description</th>' : ''}<th class="right">Total</th></tr>
+      </thead>
+      <tbody>${invoiceRows}</tbody>
+    </table>
+
+    <!-- How it was funded and what it came to are the same beat of the
+         document, so they share a row: stacking them left the middle of the
+         page empty and pushed the signatures down a band of whitespace. -->
+    <div class="pay-summary">
+      <div class="fund-col">
+        ${
+          sourceBlocks
+            ? `<p class="section-label">Source of Funds</p>
+        ${sourceBlocks}`
+            : ''
+        }
+      </div>
+      <div class="total-wrap">
+        <table>
+          <tr><td class="label">Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
+          ${withholding > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
+          <tr class="strong"><td class="label">Total</td><td class="value">${fmt(amount)}</td></tr>
+        </table>
+      </div>
+    </div>
 
     <div class="signatures">
       <div class="sig-block">
