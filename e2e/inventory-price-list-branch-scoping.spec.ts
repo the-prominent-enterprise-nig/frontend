@@ -5,7 +5,8 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
-  pickFromCustomSelect,
+  pickPriceUseType,
+  submitPriceListForm,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List — '
@@ -24,10 +25,14 @@ test.describe('Inventory — Price List Branch Scoping', () => {
       page.getByRole('heading', { name: 'New Price List' })
     )
 
-    await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
-    await pickFromCustomSelect(page, 'Select price use type…', 'SSC')
-    await page.getByLabel('Bago').check()
-    await page.getByRole('button', { name: 'Create Price List' }).click()
+    await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
+    await pickPriceUseType(page, 'SSC')
+    await submitPriceListForm(page, 'Create Price List', async () => {
+      // Branch pickers only appear once the scope is switched off
+      // company-wide — an empty branch list is what "all branches" means.
+      await page.getByRole('button', { name: 'Specific branches' }).click()
+      await page.getByLabel('Bago').check()
+    })
     await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
       timeout: 10_000,
     })
@@ -44,8 +49,9 @@ test.describe('Inventory — Price List Branch Scoping', () => {
       page.getByRole('button', { name: 'Edit' }),
       page.getByRole('heading', { name: 'Edit Price List' })
     )
-    await page.getByLabel('Binalbagan').check()
-    await page.getByRole('button', { name: 'Save Changes' }).click()
+    await submitPriceListForm(page, 'Save Changes', async () => {
+      await page.getByLabel('Binalbagan').check()
+    })
     await expect(page.getByRole('heading', { name: 'Edit Price List' })).not.toBeVisible({
       timeout: 10_000,
     })

@@ -14,16 +14,11 @@
 
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 
-/** The border treatment shared by every control in these screens' toolbars —
- * search boxes, type-ahead pickers, sort selects — so the whole row reads as
- * one set of inputs. Passed to SearchableSelect's `chrome` prop. */
-export const CONTROL_CHROME = {
-  idle: 'border-[#d3d3db]',
-  focused: 'border-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]',
-}
-
-export const PLEX = 'font-[family-name:var(--font-plex-sans)]'
-export const MONO = 'font-[family-name:var(--font-plex-mono)]'
+// Re-exported so existing procurement call sites keep importing from here;
+// price lists share the same language, so the definitions moved to
+// libs/design/plex.ts. CONTROL_CHROME is passed to SearchableSelect's
+// `chrome` prop.
+export { CONTROL_CHROME, PLEX, MONO } from '@/src/libs/design/plex'
 
 export type PoStatus = PurchaseOrderSummary['status']
 

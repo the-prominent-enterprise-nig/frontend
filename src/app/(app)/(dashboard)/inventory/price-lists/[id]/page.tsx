@@ -23,7 +23,7 @@ export default async function PriceListDetailPage({ params }: { params: Promise<
   const { id } = await params
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-[#fbfbfc]">
       <PriceListDetailPageView priceListId={id} session={session} />
     </div>
   )

@@ -5,8 +5,9 @@ import {
   fillStable,
   findPriceListIdByName,
   sweepE2EPriceLists,
-  openCustomSelect,
-  pickFromCustomSelect,
+  pickPriceUseType,
+  submitPriceListForm,
+  openAddItemsPanel,
 } from './utils'
 
 const NAME_PREFIX = 'E2E Price List Versioning — '
@@ -21,12 +22,12 @@ async function createPendingPriceList(page: Page, name: string) {
     page.getByRole('button', { name: 'New Price List' }),
     page.getByRole('heading', { name: 'New Price List' })
   )
-  await fillStable(page.getByPlaceholder('e.g. Retail Standard 2026'), name)
+  await fillStable(page.getByPlaceholder('e.g. Credit Card — Reference Price 2026'), name)
   // 'ZI', not the seeded 'WIP'/'CR-BR' — the seeded/ambient data already has
   // real active WIP/CR-BR lists pricing common items like TV Stand, which
   // Part 4's date-overlap check would (correctly) reject a second one of.
-  await pickFromCustomSelect(page, 'Select price use type…', 'ZI')
-  await page.getByRole('button', { name: 'Create Price List' }).click()
+  await pickPriceUseType(page, 'ZI')
+  await submitPriceListForm(page, 'Create Price List')
   await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible({
     timeout: 10_000,
   })
@@ -44,7 +45,7 @@ async function addItemToList(
   // would re-click a link that's no longer there once the first click
   // already navigated away, and just hang out the rest of its budget.
   await row.getByRole('link', { name: 'Manage Items' }).click()
-  await expect(page.getByLabel('Search items to add')).toBeVisible({ timeout: 10_000 })
+  await openAddItemsPanel(page)
 
   await fillStable(page.getByLabel('Search items to add'), 'TV Stand')
   const result = page.getByRole('button', { name: /TV Stand/ })
@@ -78,7 +79,11 @@ async function addItemToList(
   })
 
   const itemRow = page.locator('tbody tr').filter({ hasText: 'TV Stand' })
-  await expect(itemRow).toContainText(opts.price, { timeout: 10_000 })
+  // Inline-editable table: the saved price is an input value, not row text.
+  await expect(itemRow.getByLabel(/^Price for .* in this list$/)).toHaveValue(
+    new RegExp(`^${opts.price}(\\.0+)?$`),
+    { timeout: 10_000 }
+  )
 
   await page.getByRole('link', { name: 'Back to Price Lists' }).click()
   await expect(page.getByRole('heading', { name: 'Price Lists' })).toBeVisible({
@@ -128,65 +133,51 @@ test.describe('Inventory — Price List Floor Price & Price Use Type Selector', 
     await request.delete(`/api/inventory/price-lists/${id}`)
   })
 
-  // Covers the custom-rendered Price Use Type dropdown (src/components/ui/
-  // Select.tsx) that replaced the native <select> — its own open/close,
-  // selected-value display, and the "Add new price use type…" trailing
-  // action, which used to be just another <option> and is now a distinct
-  // row with its own click handler that has to open a *different* modal
+  // Covers the Price Use Type picker — a grid of cards, one per type, with
+  // a trailing "New use type" tile that has to open a *different* modal
   // without disturbing whatever was already picked.
-  test('Price Use Type selector shows the picked value and its "Add new" action opens the nested modal', async ({
+  test('Price Use Type picker marks the picked card and its "New use type" tile opens the nested modal', async ({
     page,
   }) => {
     await gotoReady(page, '/inventory/price-lists')
     await clickStable(
-      page.getByRole('button', { name: 'New Price List' }),
-      page.getByRole('heading', { name: 'New Price List' })
+      page.getByRole('button', { name: 'New price list' }),
+      page.getByRole('heading', { name: 'New price list' })
     )
 
-    // The combobox's accessible name IS its current label — "Select price
-    // use type…" before picking anything, "ZI" after — so it has to be
-    // re-queried by whatever name is current at each step, not held as one
-    // locator across the whole test.
-    const placeholderTrigger = page.getByRole('combobox', { name: 'Select price use type…' })
-    await openCustomSelect(placeholderTrigger)
-
-    // Every seeded Price Use Type is offered, plus the trailing action, and
-    // nothing starts pre-selected.
+    // Every seeded Price Use Type gets a card, and nothing starts picked.
     for (const label of ['CR-BR', 'PROMO', 'SSC', 'WIP', 'ZI']) {
-      const option = page.getByRole('option', { name: label, exact: true })
-      await expect(option).toBeVisible()
-      await expect(option).toHaveAttribute('aria-selected', 'false')
+      const card = page.getByRole('radio', { name: label, exact: true })
+      await expect(card).toBeVisible()
+      await expect(card).toHaveAttribute('aria-checked', 'false')
     }
-    await expect(page.getByRole('button', { name: 'Add new price use type…' })).toBeVisible()
 
-    await page.getByRole('option', { name: 'ZI', exact: true }).click()
+    await pickPriceUseType(page, 'ZI')
 
-    // The trigger now reads the picked label instead of the placeholder.
-    const ziTrigger = page.getByRole('combobox', { name: 'ZI', exact: true })
-    await expect(ziTrigger).toBeVisible()
-    await expect(ziTrigger).toHaveAttribute('aria-expanded', 'false')
-
-    // Reopening shows the same option now marked selected, not just picked.
-    await openCustomSelect(ziTrigger)
-    await expect(page.getByRole('option', { name: 'ZI', exact: true })).toHaveAttribute(
-      'aria-selected',
-      'true'
+    // Picking one card unpicks the rest — the grid is a radio group, not a
+    // set of independent toggles.
+    await expect(page.getByRole('radio', { name: 'PROMO', exact: true })).toHaveAttribute(
+      'aria-checked',
+      'false'
     )
 
     await clickStable(
-      page.getByRole('button', { name: 'Add new price use type…' }),
+      page.getByRole('button', { name: 'New use type', exact: true }),
       page.getByRole('heading', { name: 'New Price Use Type' })
     )
-    // Both modals render a "Cancel" button while nested — the New Price Use
-    // Type modal renders after (and visually on top of) New Price List's own,
-    // so it's the last one in DOM order.
+    // Both surfaces render a "Cancel" button while nested — the New Price
+    // Use Type modal renders after (and visually on top of) the price list
+    // drawer, so it's the last one in DOM order.
     await page.getByRole('button', { name: 'Cancel' }).last().click()
     await expect(page.getByRole('heading', { name: 'New Price Use Type' })).not.toBeVisible()
 
     // Cancelling the nested modal must not have cleared the outer selection.
-    await expect(ziTrigger).toBeVisible()
+    await expect(page.getByRole('radio', { name: 'ZI', exact: true })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
 
     await page.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByRole('heading', { name: 'New Price List' })).not.toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New price list' })).not.toBeVisible()
   })
 })

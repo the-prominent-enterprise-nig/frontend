@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, sweepE2EPriceLists, sweepE2EPriceUseTypes } from './utils'
+import {
+  gotoReady,
+  fillStable,
+  sweepE2EPriceLists,
+  sweepE2EPriceUseTypes,
+  openAddItemsPanel,
+} from './utils'
 
 // Scenario 34 Part 3 — the old "Manage Items" modal (unpaginated, single-item
 // add) is now a dedicated page: paginated/searchable items table with
@@ -62,6 +68,7 @@ test.describe('Inventory — Price List item management page', () => {
     expect(secondItem).toBeTruthy()
 
     // ─── Multi-select add with apply-to-all ──────────────────────────────
+    await openAddItemsPanel(page)
     await fillStable(page.getByLabel('Search items to add'), 'Universal Remote')
     const firstResult = page.getByRole('button', { name: new RegExp(ITEM_NAME) })
     // The search dropdown's fetch is debounced 300ms — toBeVisible()'s own
@@ -89,9 +96,16 @@ test.describe('Inventory — Price List item management page', () => {
     await expect(page.getByLabel('Search items to add')).toHaveValue('', { timeout: 10_000 })
     const remoteRow = page.locator('tbody tr').filter({ hasText: ITEM_NAME })
     await expect(remoteRow).toBeVisible({ timeout: 10_000 })
-    await expect(remoteRow).toContainText('99')
+    // The items table is inline-editable now, so the applied price lives in
+    // an input's value rather than in the row's text.
+    await expect(remoteRow.getByLabel(`Price for ${ITEM_NAME} in this list`)).toHaveValue(
+      /^99(\.0+)?$/,
+      { timeout: 10_000 }
+    )
 
     // ─── Search filters the items table ──────────────────────────────────
+    // One search box at a time: switch back off the Add-items side first.
+    await page.getByRole('button', { name: 'Filter this list' }).click()
     await fillStable(page.getByPlaceholder('Search items by name or SKU…'), 'Nonexistent Zzz Item')
     await expect(page.getByText(/No items match/)).toBeVisible({ timeout: 10_000 })
     await fillStable(page.getByPlaceholder('Search items by name or SKU…'), ITEM_NAME)
@@ -144,6 +158,7 @@ test.describe('Inventory — Price List item management page', () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
 
     await expect(page.getByText(/items are read-only/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('button', { name: 'Add items' })).toHaveCount(0)
     await expect(page.getByLabel('Search items to add')).not.toBeVisible()
     await expect(page.getByRole('checkbox').first()).not.toBeVisible()
   })
@@ -156,6 +171,7 @@ test.describe('Inventory — Price List item management page', () => {
 
     await expect(page.getByText(/currently active/)).toBeVisible({ timeout: 10_000 })
 
+    await openAddItemsPanel(page)
     await fillStable(page.getByLabel('Search items to add'), ITEM_NAME)
     await page
       .getByRole('button', { name: new RegExp(ITEM_NAME) })

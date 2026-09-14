@@ -347,6 +347,54 @@ export async function sweepE2EStockTransfers(
  * findServiceDraftIdByTitle's docstring for why that rules out intercepting
  * the request itself.
  */
+/**
+ * Picks a price use type on the price list form. The picker is a grid of
+ * cards (one per type) rather than a dropdown, and each card's accessible
+ * name is deliberately just the type's code so a description can't make one
+ * card match another's search.
+ */
+export async function pickPriceUseType(page: Page, code: string): Promise<void> {
+  const card = page.getByRole('radio', { name: code, exact: true })
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  await card.click()
+  await expect(card).toHaveAttribute('aria-checked', 'true', { timeout: 10_000 })
+}
+
+/**
+ * Fills in whatever the price list form needs beyond name and use type, then
+ * submits it. The form is one scrolling page — branch scoping, dates,
+ * priority and supersedes all live below the identity fields — so `onExtras`
+ * runs against the same open form before the submit click.
+ *
+ * `submitLabel` is 'Create Price List' when creating and 'Save Changes' when
+ * editing.
+ */
+export async function submitPriceListForm(
+  page: Page,
+  submitLabel: 'Create Price List' | 'Save Changes',
+  onExtras?: () => Promise<void>
+): Promise<void> {
+  await expect(page.getByRole('heading', { name: 'Where it applies' })).toBeVisible({
+    timeout: 10_000,
+  })
+  if (onExtras) await onExtras()
+  const submit = page.getByRole('button', { name: submitLabel })
+  await expect(submit).toBeVisible({ timeout: 10_000 })
+  await submit.click()
+}
+
+/**
+ * The price list detail page shows one search box at a time — filtering the
+ * items already priced, or searching the catalog to add more. Switches to
+ * the Add-items side; safe to call when it is already showing.
+ */
+export async function openAddItemsPanel(page: Page): Promise<void> {
+  const search = page.getByLabel('Search items to add')
+  if (await search.isVisible().catch(() => false)) return
+  await page.getByRole('button', { name: 'Add items' }).click()
+  await expect(search).toBeVisible({ timeout: 10_000 })
+}
+
 export async function findPriceListIdByName(
   request: APIRequestContext,
   name: string
