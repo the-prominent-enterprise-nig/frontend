@@ -110,15 +110,43 @@ const OTHER_CATEGORY_OPTIONS = [
   { value: PAYROLL_CATEGORY, label: 'Payroll' },
 ]
 
-/** VAT a line attracts, derived from its code rather than typed. The server
- * computes the same figure from the same code and ignores any amount sent
- * with it, so a hand-typed VAT could only ever disagree with what actually
- * posts. A deduction (negative amount) is not a purchase and never carries
- * input VAT. */
+/** Legacy and API-side spellings of the tax codes, mapped onto the values
+ * this dropdown offers so a reopened record shows the treatment it was
+ * saved with rather than an empty Select. */
+const TAX_CODE_ALIASES: Record<string, string> = {
+  INPUT_VAT: TAXABLE_CODE,
+  NON_TAXABLE: 'NON_VAT',
+}
+function taxCodeFor(stored?: string | null): string {
+  if (!stored) return ''
+  return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+/** What the typed Amount is worth net of VAT — the figure sent to the API
+ * as the line amount, and what posts to the expense account.
+ *
+ * An Input VAT line is quoted VAT-inclusive: the supplier's invoice total is
+ * what the clerk has in front of them and what actually leaves the bank, so
+ * that is what the Amount box takes. The 12% inside it is split back out
+ * here rather than added on top. Every other tax code carries no VAT, so the
+ * typed figure already is the net. A deduction (negative amount) is not a
+ * purchase and never carries input VAT. */
+function netFor(line: { taxCode: string; amount: string }): number {
+  const amount = Number(line.amount) || 0
+  if (line.taxCode !== TAXABLE_CODE || amount < 0) return amount
+  return round2(amount / (1 + VAT_RATE_PERCENT / 100))
+}
+
+/** Input VAT contained in the typed Amount. Computed as 12% of the net
+ * rather than as (typed − net) so it matches the figure the server derives
+ * from the net it is sent — rounding each half of the split independently
+ * is what the server does, and the two must not disagree. */
 function vatFor(line: { taxCode: string; amount: string }): number {
   const amount = Number(line.amount) || 0
   if (line.taxCode !== TAXABLE_CODE || amount < 0) return 0
-  return Math.round(amount * (VAT_RATE_PERCENT / 100) * 100) / 100
+  return round2(netFor(line) * (VAT_RATE_PERCENT / 100))
 }
 
 interface LineState {
@@ -399,8 +427,11 @@ function ExpenseFormFields({
           collectFromId: (l as any).customerId ?? '',
           collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
-          amount: String(l.amount ?? ''),
-          taxCode: l.taxCode ?? '',
+          // Stored net of VAT; the Amount box holds the VAT-inclusive
+          // figure, so put the tax back before showing it. A non-taxable
+          // line has no tax to add and reopens unchanged.
+          amount: String(round2((l.amount ?? 0) + (l.taxAmount ?? 0))),
+          taxCode: taxCodeFor(l.taxCode),
           itemId: l.itemId ?? '',
           itemLabel: '',
           qty: l.qty ? String(l.qty) : '',
@@ -569,8 +600,10 @@ function ExpenseFormFields({
     (m) => m.key === 'EXPENSE_SUPPLIER_INVENTORY'
   )?.accountId
 
-  const subtotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+  const subtotal = lines.reduce((sum, l) => sum + netFor(l), 0)
   const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
+  // Equals what was typed into the Amount boxes — on an Input VAT line the
+  // VAT is taken out of that figure, not added to it.
   const total = subtotal + vatTotal
 
   // Item mode computes Amount from Qty * Unit Price. Applied to every line
@@ -808,7 +841,9 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
-        amount: Number(l.amount),
+        // The API takes the net amount and derives the 12% itself; the
+        // Amount box is VAT-inclusive, so hand it the net.
+        amount: netFor(l),
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
       }
@@ -1247,7 +1282,7 @@ function ExpenseFormFields({
             </div>
             <div className="divide-y divide-zinc-100">
               {lines.map((line, i) => {
-                const lineTotal = (Number(line.amount) || 0) + vatFor(line)
+                const lineTotal = netFor(line) + vatFor(line)
                 return (
                   <div
                     key={i}
@@ -1385,6 +1420,11 @@ function ExpenseFormFields({
                       step="0.01"
                       min={isOtherMode ? undefined : '0.01'}
                       aria-label="Amount"
+                      title={
+                        line.taxCode === TAXABLE_CODE
+                          ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
+                          : undefined
+                      }
                       readOnly={isItemMode && !!line.itemId}
                       value={line.amount}
                       onChange={(e) => setLine(i, { amount: e.target.value })}
@@ -1406,7 +1446,7 @@ function ExpenseFormFields({
                       aria-label="Tax amount"
                       title={
                         line.taxCode === TAXABLE_CODE
-                          ? `${VAT_RATE_PERCENT}% of the line amount, computed on save`
+                          ? `The ${VAT_RATE_PERCENT}% Input VAT already inside the amount, split out on save`
                           : 'No VAT on this tax code'
                       }
                       className={`min-w-0 truncate px-2.5 py-1.5 text-[13px] ${
@@ -1562,10 +1602,11 @@ function ExpenseFormFields({
           {vatTotal > 0 && (
             <>
               <div>
-                Subtotal: <span className="font-medium">{fmtMoney(subtotal)}</span>
+                Subtotal (net of VAT): <span className="font-medium">{fmtMoney(subtotal)}</span>
               </div>
               <div>
-                VAT ({VAT_RATE_PERCENT}%): <span className="font-medium">{fmtMoney(vatTotal)}</span>
+                Input VAT ({VAT_RATE_PERCENT}%, included):{' '}
+                <span className="font-medium">{fmtMoney(vatTotal)}</span>
               </div>
             </>
           )}
