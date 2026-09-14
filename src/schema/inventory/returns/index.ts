@@ -24,6 +24,13 @@ export const CreateReturnFormSchema = z.object({
   // here (see UdsService#createFromReturn), matching how a standalone
   // receiving report's own PO number field works — a reference, not a link.
   intakeReceivingReportNumber: z.string().max(50).optional(),
+  // Scenario 50 — the customer's proof of purchase, so a repair can be traced
+  // back to the sale it came from. Free text for the same reason the RR number
+  // above is: the unit may have been sold on paper, before this system, or by
+  // a branch whose records never became an ArInvoice row, and a hard link
+  // would make the common case unrecordable. Distinct from `arInvoiceId`,
+  // which a custodial repair intake deliberately leaves unset.
+  intakeSalesInvoiceNumber: z.string().max(50).optional(),
 })
 
 export type CreateReturnFormValues = z.infer<typeof CreateReturnFormSchema>

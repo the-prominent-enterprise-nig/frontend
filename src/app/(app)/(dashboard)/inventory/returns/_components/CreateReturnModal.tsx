@@ -54,6 +54,12 @@ export default function CreateReturnModal({
       repairDecision: undefined,
       arInvoiceId: '',
       customerId: '',
+      // Both intake document numbers default to '' rather than being left out:
+      // a Controller-driven input with an undefined value mounts uncontrolled
+      // and switches to controlled on the first keystroke, which React warns
+      // about. The RR field had this from the start; fixed here alongside.
+      intakeReceivingReportNumber: '',
+      intakeSalesInvoiceNumber: '',
     },
   })
 
@@ -160,6 +166,7 @@ export default function CreateReturnModal({
       // built from, not just the credit-memo counterparty.
       customerId: data.customerId || undefined,
       intakeReceivingReportNumber: data.intakeReceivingReportNumber || undefined,
+      intakeSalesInvoiceNumber: data.intakeSalesInvoiceNumber || undefined,
     })
     if (result.success) onClose()
   }
@@ -575,6 +582,35 @@ export default function CreateReturnModal({
                       {...field}
                       type="text"
                       placeholder="e.g. RR-20260910-0001"
+                      maxLength={50}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                    />
+                  )}
+                />
+              </div>
+            )}
+
+            {/* Scenario 50 — the customer's proof of purchase, recorded so a
+                repair can be traced back to the sale it came from. Free text,
+                exactly like the RR number above: the unit may have been sold
+                on paper, before this system, or by a branch whose records
+                never became an ArInvoice row. Optional on purpose — a
+                customer who cannot produce the SI should still be able to
+                leave the unit for repair. */}
+            {isCustodialRepairIntake && (
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Customer&apos;s SI # (proof of purchase){' '}
+                  <span className="text-xs font-normal text-zinc-400">(optional)</span>
+                </label>
+                <Controller
+                  name="intakeSalesInvoiceNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      type="text"
+                      placeholder="e.g. SI-20260101-0042"
                       maxLength={50}
                       className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     />
