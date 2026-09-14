@@ -20,6 +20,7 @@ import RegisterSerialsModal from './RegisterSerialsModal'
 import ImportSerializedInventoryModal from './ImportSerializedInventoryModal'
 import ConsignToBranchModal from './ConsignToBranchModal'
 import ChangeSerialStatusModal from './ChangeSerialStatusModal'
+import CaravanItemTable from './CaravanItemTable'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
@@ -156,6 +157,13 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     caravanBranchId,
     setCaravanBranchId,
     caravanReady,
+    caravanGrouping,
+    setCaravanGrouping,
+    caravanGroups,
+    expandedGroupKey,
+    toggleExpandedGroup,
+    expandedSerials,
+    isLoadingExpandedSerials,
     selectedIds,
     toggleSelected,
     toggleSelectAll,
@@ -165,7 +173,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
     isConsigning,
     updateStatus,
     isUpdatingStatus,
-  } = useSerialNumbers(!!session.branchId)
+  } = useSerialNumbers()
 
   const brandOptions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -176,6 +184,10 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
       a.name.localeCompare(b.name)
     )
   }, [itemOptions])
+
+  // The Caravan tab's "By Item" rollup — group rows, not serial rows, so the
+  // serial-level bulk actions and the serial table both stand down for it.
+  const groupedCaravan = caravanView && caravanGrouping === 'item'
 
   const hasFilters = statusFilter || warehouseFilter || search || brandFilter
   const showSelection = canManageCaravan
@@ -287,6 +299,29 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </button>
         </div>
 
+        {/* Scenario 08 (Caravan) — "By Serial" vs "By Item". Serials lead, in
+            both order and default: this is the Serial Number Tracking page,
+            and the unit-level actions live on that list. The item rollup is
+            the summary you switch to. */}
+        {caravanView && (
+          <div className="flex w-fit gap-1 rounded-lg border border-[#e4e4e9] bg-white p-1">
+            {(['serial', 'item'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setCaravanGrouping(mode)}
+                className={`rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium ${
+                  caravanGrouping === mode
+                    ? 'bg-[#f1ebfb] text-[#3f1490]'
+                    : 'text-[#5b5b6b] hover:text-[#17171c]'
+                }`}
+              >
+                {mode === 'item' ? 'By Item' : 'By Serial'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
           <div
@@ -317,8 +352,9 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                 className="w-[190px]"
                 value={caravanBranchId ?? ''}
                 onChange={(v) => setCaravanBranchId(v || undefined)}
-                placeholder="Select a branch…"
+                placeholder="All branches"
                 chrome={CONTROL_CHROME}
+                clearable
                 options={branchOptions.map((b) => ({ value: b.id, label: b.name }))}
               />
             )
@@ -358,14 +394,6 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           )}
         </div>
 
-        {caravanView && !caravanReady && (
-          <div className="rounded-[9px] border border-[#c7d9f5] bg-[#eaf0fb] px-[14px] py-[10px]">
-            <p className="text-[12.5px] text-[#1f4b99]">
-              Select a branch above to see what&apos;s consigned to it.
-            </p>
-          </div>
-        )}
-
         {showSelection && !caravanView && selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
             <span className="text-[12.5px] font-medium text-[#3f1490]">
@@ -382,7 +410,7 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
           </div>
         )}
 
-        {showSelection && caravanView && selectedIds.size > 0 && (
+        {showSelection && caravanView && !groupedCaravan && selectedIds.size > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
             <span className="text-[12.5px] font-medium text-[#3f1490]">
               {selectedIds.size} selected
@@ -435,12 +463,23 @@ export default function SerialNumberList({ session }: { session: SessionUser }) 
                     </div>
                   ))}
                 </div>
+              ) : groupedCaravan ? (
+                <CaravanItemTable
+                  groups={caravanGroups}
+                  isBranchScoped={!!(caravanBranchId || session.branchId)}
+                  expandedGroupKey={expandedGroupKey}
+                  onToggleGroup={toggleExpandedGroup}
+                  expandedSerials={expandedSerials}
+                  isLoadingExpandedSerials={isLoadingExpandedSerials}
+                />
               ) : serials.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
                   <Hash className="h-[30px] w-[30px] text-[#c9c9d3]" />
                   {caravanView ? (
                     <div className="mt-1 text-[14px] font-semibold">
-                      Nothing currently consigned to this branch
+                      {caravanBranchId || session.branchId
+                        ? 'Nothing currently consigned to this branch'
+                        : 'Nothing currently out on caravan'}
                     </div>
                   ) : hasFilters ? (
                     <>

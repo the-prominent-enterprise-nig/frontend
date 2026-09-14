@@ -243,6 +243,65 @@ export const SerialNumberListResponseSchema = z
     limit: meta.limit,
   }))
 
+// Scenario 08 (Caravan) — the "By Item" rollup of the same rows the Caravan
+// serial list returns. One row is one item at one destination for one event:
+// the same item out at a venue and hosted in for someone else's event are two
+// separate things to count, and the tab shows both halves at once.
+export const CaravanItemGroupSchema = z.object({
+  key: z.string(),
+  item: SerialItemSchema.nullable(),
+  quantity: z.number(),
+  // Per-status unit counts within the group, keyed by SerialStatus. Left as a
+  // loose record so a status added backend-side surfaces instead of failing
+  // the parse and blanking the whole tab.
+  statusCounts: z.record(z.string(), z.number()).default({}),
+  consignedToBranch: SerialBranchSchema.nullable(),
+  consignedToVenue: z.string().nullable(),
+  caravanEventName: z.string().nullable(),
+  caravanEventStartDate: z.string().nullable(),
+  caravanEventEndDate: z.string().nullable(),
+})
+export type CaravanItemGroup = z.infer<typeof CaravanItemGroupSchema>
+
+// Rebuilds a serial's rollup key exactly as consignedSummary composes it
+// backend-side, so an expanded group can pick its own units out of an
+// item-filtered serial fetch — the list endpoint can filter by item but has no
+// venue/event filter to narrow to one group on its own.
+export function caravanGroupKey(serial: {
+  item?: { id: string } | null
+  consignedToBranch?: { id: string } | null
+  consignedToVenue?: string | null
+  caravanEventName?: string | null
+  caravanEventStartDate?: string | null
+  caravanEventEndDate?: string | null
+}): string {
+  return [
+    serial.item?.id ?? '',
+    serial.consignedToBranch?.id ?? '',
+    serial.consignedToVenue ?? '',
+    serial.caravanEventName ?? '',
+    serial.caravanEventStartDate ?? '',
+    serial.caravanEventEndDate ?? '',
+  ].join('|')
+}
+
+export const CaravanItemGroupListResponseSchema = z
+  .object({
+    data: z.array(CaravanItemGroupSchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
+export type CaravanItemGroupListResponse = z.infer<typeof CaravanItemGroupListResponseSchema>
+
 export type SerialNumberSummary = z.infer<typeof SerialNumberSummarySchema>
 export type SerialNumberListResponse = z.infer<typeof SerialNumberListResponseSchema>
 
