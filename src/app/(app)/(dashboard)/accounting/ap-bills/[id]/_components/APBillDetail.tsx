@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -68,6 +68,16 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function APBillDetail({ id }: { id: string }) {
+  // Where "back" goes depends on where the reader came from: opening an
+  // invoice from a purchase order's row action and then being dropped in the
+  // AP Invoices list loses the PO they were working on. Callers say so with
+  // ?from=; anything else keeps the list as the destination.
+  const cameFrom = useSearchParams().get('from')
+  const back =
+    cameFrom === 'purchase-orders'
+      ? { href: '/inventory/purchase-orders', label: 'Back to Purchase Orders' }
+      : { href: '/accounting/ap-bills', label: 'Back to AP Invoices' }
+
   const router = useRouter()
   const [doc, setDoc] = useState<APBillDocument | null>(null)
   // Scenario 46 — the list's per-row action icons moved here. Acting on a bill
@@ -105,10 +115,10 @@ export default function APBillDetail({ id }: { id: string }) {
     return (
       <div className="px-4 py-6 sm:px-6 lg:px-8">
         <Link
-          href="/accounting/ap-bills"
+          href={back.href}
           className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
+          <ArrowLeft className="h-4 w-4" /> {back.label}
         </Link>
         <p className="text-red-600">{error ?? 'Not found'}</p>
       </div>
@@ -245,10 +255,10 @@ export default function APBillDetail({ id }: { id: string }) {
     <div className="px-4 py-4 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
-          href="/accounting/ap-bills"
+          href={back.href}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to AP Invoices
+          <ArrowLeft className="h-4 w-4" /> {back.label}
         </Link>
         {/* Scenario 46 — the list's per-row action icons live here now. One
             filled button for the action this bill's state actually calls for,
