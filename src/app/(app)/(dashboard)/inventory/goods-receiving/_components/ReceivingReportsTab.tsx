@@ -23,7 +23,7 @@ import type {
   ReceiveStockFormValues,
   ReceivingReport,
 } from '@/src/schema/inventory/goods-receiving'
-import { receivingReportPoCode } from '@/src/libs/format/receiving-report'
+import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ function CopyCodeButton({ code }: { code: string }) {
 
 function PoLink({ report }: { report: ReceivingReport }) {
   const router = useRouter()
-  const code = receivingReportPoCode(report)
+  const code = receivingReportPoNumber(report)
   const poId = receivingReportPoId(report)
   if (!code) return null
   if (!poId) {
@@ -329,7 +329,7 @@ export default function ReceivingReportsTab({
         r.code,
         fmtDate(r.receivedAt),
         r.supplier?.name ?? '',
-        receivingReportPoCode(r) ?? '',
+        receivingReportPoNumber(r) ?? '',
         r.warehouse?.branch?.name ?? r.warehouse?.name ?? '',
         r.lines.length,
         reportUnits(r),
