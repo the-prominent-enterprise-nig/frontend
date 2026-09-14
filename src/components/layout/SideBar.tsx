@@ -898,6 +898,18 @@ const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: 
 // never offer a link that redirects on arrival, nor hide one that would work.
 const ADMIN_TIER = ['admin:roles:manage', 'admin:permissions:manage']
 
+// Confirmed intended, not an oversight (#168 review, 2026-09-14): both of these
+// are in access-levels.ts's PRESET_EXCLUDED_PERMISSIONS, so the Admin module's
+// "Manage / Edit" button never grants either — that IS the fix from #168 (a role
+// built via that button could otherwise mint a new role and grant it *:*). One
+// consequence: a role assembled purely from module-level presets, with Admin set
+// to Manage / Edit, sees Users below and nothing else here — Branches,
+// Departments, Business Policies and Payment Methods all require full isAdmin
+// and stay reachable only via Full Access on Admin, or by picking
+// admin:roles:manage / admin:permissions:manage individually under Advanced
+// permissions. Sharper module-level access needs the per-resource tier (#169)
+// or a narrower page guard on those four routes — neither is this file's job.
+
 // Every settings entry, for every role. Visibility comes from the permissions
 // declared on each item (applied by filterItem below), not from a role name.
 //
