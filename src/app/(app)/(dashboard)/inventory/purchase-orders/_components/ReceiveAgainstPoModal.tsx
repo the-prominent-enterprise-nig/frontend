@@ -1,344 +1,164 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
-import { useForm, Controller, useFieldArray } from 'react-hook-form'
+import { useEffect, useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { useQuery } from '@tanstack/react-query'
-import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
-import {
-  X,
-  Loader2,
-  PackageCheck,
-  ScanBarcode,
-  ChevronUp,
-  Plus,
-  ChevronDown,
-  Pencil,
-} from 'lucide-react'
+import { PackageCheck, X } from 'lucide-react'
+import { showToast } from '@/src/components/ui/toast'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { locationLabel } from '@/src/libs/format/locationLabel'
+import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { showToast } from '@/src/components/ui/toast'
-import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
-import { locationLabel } from '@/src/libs/format/locationLabel'
+import { MONO, PLEX } from './procurementTokens'
+import { DeliveryDetailsPanel, DR_FIELD_ID } from './receive-po/DeliveryDetailsPanel'
+import { ReceiptTotalsPanel } from './receive-po/ReceiptTotalsPanel'
+import { ReceiveActionBar } from './receive-po/ReceiveActionBar'
+import { ReceiveChecksCard } from './receive-po/ReceiveChecksCard'
+import { ReceiveLineRow } from './receive-po/ReceiveLineRow'
+import { itemTitle } from './receive-po/itemTitle'
+import {
+  capQuantity,
+  collectBlockers,
+  collectWarnings,
+  isDuplicateSerial,
+  lineIssues,
+  remainingOf,
+  type Blocker,
+  type IssueFix,
+  type IssueLine,
+} from './receive-po/receiveIssues'
+import {
+  ReceivePoFormSchema,
+  type LineDrawer,
+  type ReceivePoFormValues,
+} from './receive-po/receiveSchema'
+import { fmtPeso, receiptTotals } from './receive-po/receiveTotals'
+import { LINE_GRID, PANEL } from './receive-po/receiveTokens'
 
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
-  onSuccess: () => void
+  /** Fired once the receipt has posted, so the list behind can refresh. The
+   * screen closes itself immediately after — there is no posted-receipt step
+   * to read, the toast is the confirmation. */
+  onPosted: () => void
   /** Unit cost is sensitive pricing data — hidden from Branch Manager/Stock
    * Controller, restricted to Business Owner/Accountant (Scenario 05
    * followup). Server-side enforcement in receiveStock() is the real guard. */
   canViewCost: boolean
 }
 
-// ─── Form schema ──────────────────────────────────────────────────────────────
-
-const ReceivePoLineSchema = z
-  .object({
-    purchaseOrderLineId: z.string(),
-    itemId: z.string(),
-    quantityReceived: z.number().positive('Must be greater than 0'),
-    unitCost: z.number().min(0).optional(),
-    // Scenario 46 — the supplier's pricing as stated, carried through from the
-    // PO line. Receiving used to keep only the resulting unitCost, so the DR
-    // could not show WHY a cost was what it was and an AP bill had nothing to
-    // match its own discounts against.
-    srp: z.number().min(0).optional(),
-    discounts: z.array(z.any()).optional(),
-    // Scenario 46 — per-line tax. VAT used to be collected once at the header,
-    // which meant an AP bill carrying tax per line had nothing on the receipt
-    // to match against line by line.
-    taxCode: z.string().optional(),
-    taxAmount: z.number().min(0).optional(),
-    batchNumber: z.string().optional(),
-    qualityHold: z.boolean(),
-    notes: z.string().optional(),
-    // Not sent to the server — carried on the line purely so the refine()
-    // below can enforce "every selected serial-tracked line needs a serial
-    // per unit" without reaching into component state.
-    selected: z.boolean(),
-    isSerialTracked: z.boolean().optional(),
-    // Serial-tracked items reject receiving unless serialNumbers is set
-    // (stock.service.ts) — one supplier-provided serial per unit, typed in
-    // by whoever is physically receiving the delivery.
-    // Deliberately no per-element .min() here: element rules run on every
-    // line, so an empty box on an *unticked* line failed validation and
-    // blocked Confirm Receipt even though that line isn't being received.
-    // Requiring a serial is the selection-aware job of superRefine below.
-    serialNumbers: z.array(z.string()).optional(),
-  })
-  .superRefine((line, ctx) => {
-    if (!line.selected) return
-
-    if (line.isSerialTracked) {
-      const serials = line.serialNumbers ?? []
-      if (serials.length !== line.quantityReceived) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'A serial number is required for every unit',
-          path: ['serialNumbers'],
-        })
-        return
-      }
-      // Flag the specific blank units so a partly-filled multi-unit line
-      // shows which box is missing, not just the first.
-      serials.forEach((serial, unitIdx) => {
-        if (serial.trim().length === 0) {
-          ctx.addIssue({
-            code: 'custom',
-            message: 'Required',
-            path: ['serialNumbers', unitIdx],
-          })
-        }
-      })
-      return
-    }
-
-    if (
-      line.serialNumbers &&
-      line.serialNumbers.length > 0 &&
-      line.serialNumbers.length !== line.quantityReceived
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'A serial number is required for every unit',
-        path: ['serialNumbers'],
-      })
-    }
-  })
-
-const ReceivePoFormSchema = z.object({
-  warehouseId: z.string().min(1, 'Destination warehouse is required'),
-  receivedAt: z.string().optional(),
-  notes: z.string().max(1000).optional(),
-  // Document chain: PO -> DR from supplier -> Invoice (SI) from supplier ->
-  // this Receiving Report. Both are the supplier's own paperwork, typed in
-  // by whoever is physically receiving the delivery.
-  // Scenario 46 — the DR is what's required, not the SI. The delivery receipt
-  // is the paper the driver hands over WITH the goods, so it always exists at
-  // receiving time; the supplier's invoice often follows days later, and the
-  // client explicitly wants it editable when it arrives. This was the wrong way
-  // round: the SI was mandatory and the DR optional, which blocked receiving a
-  // delivery whose invoice hadn't turned up yet.
-  deliveryReceiptNumber: z
-    .string()
-    .min(1, "Delivery receipt number is required — it's on the paper that came with the goods"),
-  supplierInvoiceNumber: z.string().optional(),
-  lines: z.array(ReceivePoLineSchema).min(1),
-})
-
-type ReceivePoFormValues = z.infer<typeof ReceivePoFormSchema>
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const fieldClass =
-  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
-// Derived figures are shown, not typed — flat and un-focusable so they don't
-// read as an empty box waiting for input.
-const readonlyFieldClass =
-  'block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-right text-sm font-medium tabular-nums text-zinc-700'
-// Mirrors FLAT_VAT_RATE_PERCENT and the 1% withholding rate the server
-// applies (tax.constants.ts / StockService.receiveStock) — preview only.
-const INPUT_VAT_RATE = 0.12
-const WITHHOLDING_RATE = 0.01
-const round2 = (n: number) => Math.round(n * 100) / 100
-const fmtPeso = (n: number) =>
-  n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-
-const cellInputClass =
-  'w-full rounded border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-/** Scenario 46 — how the warehouse identifies a unit on a delivery:
- * BRAND · GROUP · MODEL. Falls back through whatever is present, and finally to
- * the catalogue name, so a part with no brand or model still reads as
- * something rather than going blank. */
-type TitleItem = {
-  name?: string
-  modelNumber?: string | null
-  brand?: { name: string } | null
-  primaryCategory?: { name: string; parentCategory?: { name: string } | null } | null
+const STATUS_LABEL: Record<PurchaseOrderSummary['status'], string> = {
+  draft: 'Draft',
+  approved: 'Approved',
+  sent: 'Sent',
+  partially_received: 'Partial',
+  fully_received: 'Received',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
 }
 
-function itemTitle(item?: TitleItem): string {
-  // Group, not subgroup: a leaf category IS the subgroup, so its parent is the
-  // group. Fall back to the category itself only when it has no parent, which
-  // means it is already top-level.
-  const group = item?.primaryCategory?.parentCategory?.name ?? item?.primaryCategory?.name
-  const parts = [item?.brand?.name, group, item?.modelNumber].filter(Boolean)
-  return parts.length ? parts.join(' ') : (item?.name ?? '')
-}
-
-/** One label/value pair in the read-only pricing view. Uses the editor's own
- * label styling so pressing Edit doesn't shift the layout underneath you. */
-function ReadOnlyPricing({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-        {label}
-      </span>
-      <span className="text-zinc-800">{value}</span>
-    </div>
-  )
-}
-
-export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: Props) {
-  // Scenario 27 — goods are always received into one of the 2 real
-  // warehouses now, never a branch's own local stock, so this is
-  // unconditionally the standalone-only list (no branch-scoping/locking —
-  // every receiver picks between the same 2 real warehouses regardless of
-  // their own branch).
+export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Props) {
+  // Scenario 27 — goods are always received into one of the real warehouses
+  // now, never a branch's own local stock, so this is unconditionally the
+  // standalone-only list.
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup', 'standalone'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
     enabled: !!po,
     staleTime: 5 * 60 * 1000,
   })
-
   const warehouses = warehousesQuery.data?.data?.data ?? []
 
-  const defaultLineSelected = (l: PurchaseOrderSummary['lines'][number]) => {
-    const remaining = Math.max(Number(l.quantity) - Number(l.receivedQuantity ?? 0), 0)
-    return remaining > 0
-  }
-
-  const defaultLines = (): ReceivePoFormValues['lines'] =>
-    (po?.lines ?? []).map((l) => {
-      const alreadyReceived = Number(l.receivedQuantity ?? 0)
-      const remaining = Math.max(Number(l.quantity) - alreadyReceived, 0)
-      const toReceive = remaining > 0 ? remaining : Number(l.quantity)
-      return {
-        purchaseOrderLineId: l.id,
-        itemId: l.itemId,
-        quantityReceived: toReceive,
-        unitCost: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : undefined,
-        // Prefilled from what was ordered; editable, because the delivery can
-        // be priced differently from the PO — which is exactly the variance
-        // the 3-way match exists to surface.
-        srp: l.srp != null ? Number(l.srp) : undefined,
-        discounts: (l.discounts as unknown[]) ?? undefined,
-        taxCode: undefined,
-        taxAmount: undefined,
-        batchNumber: '',
-        qualityHold: false,
-        notes: '',
-        selected: defaultLineSelected(l),
-        isSerialTracked: !!l.item?.isSerialTracked,
-        // One blank box per unit, explicitly — not left off the object.
-        // react-hook-form only writes a value into an input on reset when the
-        // reset payload actually carries one for that field; where it finds
-        // nothing it adopts whatever the box already holds instead. This modal
-        // is never unmounted (it renders null between POs) and shouldUnregister
-        // is off, so leaving serialNumbers out meant the serials typed for the
-        // last PO were still sitting in the boxes when the next PO opened, and
-        // reset had nothing to overwrite them with — every other line field
-        // ('' for batchNumber/notes) was already clearing for exactly this
-        // reason. Only serial-tracked lines get the array: handleFormSubmit
-        // forwards serialNumbers whenever it is non-empty, so a plain line
-        // must keep sending undefined.
-        serialNumbers: l.item?.isSerialTracked
-          ? Array.from({ length: Math.max(0, Math.floor(toReceive)) }, () => '')
-          : undefined,
-      }
-    })
-
-  const [selectedLines, setSelectedLines] = useState<boolean[]>([])
-  // Every PO line is fixed/known upfront (no combobox to wait on, unlike
-  // the standalone Goods Receiving form), so serial-tracked lines start
-  // expanded — staff shouldn't have to hunt for a hidden control to enter
-  // the supplier's serials. Keyed by line index since this modal's line
-  // count never changes (no add/remove row).
-  const [expandedSerialRows, setExpandedSerialRows] = useState<Set<number>>(new Set())
-  // Scenario 46 — pricing collapses by default, like serials. Expanded on every
-  // line it filled the modal, so two items barely fit; the collapsed strip
-  // shows the figures that matter and opens only when one needs changing.
-  const [expandedPricingRows, setExpandedPricingRows] = useState<Set<number>>(new Set())
-  // Scenario 46 — a whole item collapses to its own row. Each one spans three
-  // stacked rows once pricing and serials are open, so a delivery of six items
-  // scrolls a long way; collapsing the ones already dealt with keeps the rest
-  // reachable.
-  const [collapsedItems, setCollapsedItems] = useState<Set<number>>(new Set())
-  const toggleItem = (idx: number) =>
-    setCollapsedItems((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
-    })
-  // Expanded shows the agreed figures as plain text; the inputs only appear
-  // once Edit is pressed. A row of open boxes invites a stray keystroke into a
-  // cost that is already correct, and most receipts are confirmed exactly as
-  // the PO priced them.
-  const [editingPricingRows, setEditingPricingRows] = useState<Set<number>>(new Set())
-  const toggleEditPricing = (idx: number) =>
-    setEditingPricingRows((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
-    })
-
-  const togglePricing = (idx: number) =>
-    setExpandedPricingRows((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) next.delete(idx)
-      else next.add(idx)
-      return next
-    })
+  const [submitted, setSubmitted] = useState(false)
+  const [drawers, setDrawers] = useState<Record<number, LineDrawer>>({})
+  const [editingPricing, setEditingPricing] = useState<Record<number, boolean>>({})
 
   const {
     control,
-    register,
     handleSubmit,
     reset,
     setValue,
     watch,
+    trigger,
     formState: { errors, isSubmitting },
   } = useForm<ReceivePoFormValues>({
     resolver: zodResolver(ReceivePoFormSchema),
-    defaultValues: {
-      warehouseId: po?.warehouseId ?? '',
+    defaultValues: { warehouseId: '', deliveryReceiptNumber: '', lines: [] },
+  })
+
+  const watched = watch()
+  // NOT memoised, deliberately. `watch()` shallow-copies the form values, so
+  // `watched.lines` is the same array instance every render while setValue
+  // mutates the objects inside it. Anything derived from it with a useMemo
+  // keyed on that reference computes once and then freezes — which is how the
+  // checks card came to report "2 of 2 serial numbers still missing" for
+  // serials that were typed, visible and about to post fine. Every derivation
+  // below is therefore a plain expression; they are all O(lines) over a
+  // handful of rows.
+  const lines = watched.lines ?? []
+  const poLines = useMemo(() => po?.lines ?? [], [po])
+
+  // ─── Reset when a different PO opens ──────────────────────────────────────
+  useEffect(() => {
+    if (!po) return
+    setSubmitted(false)
+    setEditingPricing({})
+    // Serial-tracked lines start expanded: every PO line is fixed and known
+    // upfront, so staff shouldn't have to hunt for a hidden control to enter
+    // the supplier's serials.
+    setDrawers(
+      Object.fromEntries(
+        po.lines.map((l, i) => [i, l.item?.isSerialTracked ? 'serials' : null] as const)
+      )
+    )
+    reset({
+      warehouseId: po.warehouseId ?? '',
       receivedAt: '',
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
-      lines: defaultLines(),
-    },
-  })
-
-  const { fields } = useFieldArray({ control, name: 'lines' })
-  const watchedLines = watch('lines')
-
-  /** The collapsed pricing strip: what was agreed, in the order it applies —
-   * "SRP ₱3,000 · 3% · ₱500 · Unit cost ₱2,410.00". Reads the whole chain, so
-   * a second discount can't hide behind the first. */
-  const pricingSummary = (idx: number): string => {
-    const l = watchedLines?.[idx]
-    const parts: string[] = []
-    if (l?.srp) parts.push(`SRP ${fmtMoney(Number(l.srp))}`)
-    const chain = (l?.discounts ?? []) as { name?: string; type?: string; value?: number }[]
-    for (const d of chain) {
-      if (d?.value == null || Number.isNaN(Number(d.value))) continue
-      const shown = d.type === 'amount' ? fmtMoney(Number(d.value)) : `${d.value}%`
-      parts.push(d.name ? `${d.name} ${shown}` : shown)
-    }
-    if (l?.unitCost != null) parts.push(`Unit cost ${fmtMoney(Number(l.unitCost))}`)
-    if (l?.taxCode) parts.push(`${l.taxCode} ${fmtMoney(Number(l.taxAmount ?? 0))}`)
-    return parts.length ? parts.join('  ·  ') : 'No pricing set'
-  }
+      lines: po.lines.map((l) => {
+        const remaining = remainingOf(l)
+        return {
+          purchaseOrderLineId: l.id,
+          itemId: l.itemId,
+          quantityReceived: remaining,
+          unitCost: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : undefined,
+          srp: l.srp != null ? Number(l.srp) : undefined,
+          discounts: (l.discounts as unknown[]) ?? undefined,
+          taxCode: undefined,
+          taxAmount: undefined,
+          batchNumber: '',
+          qualityHold: false,
+          notes: '',
+          selected: remaining > 0,
+          isSerialTracked: !!l.item?.isSerialTracked,
+          // One blank box per unit, explicitly — not left off the object.
+          // react-hook-form only writes a value into an input on reset when
+          // the reset payload actually carries one for that field; where it
+          // finds nothing it adopts whatever the box already holds. This
+          // screen is never unmounted (it renders null between POs), so
+          // leaving serialNumbers out meant the serials typed for the last PO
+          // were still sitting in the boxes when the next one opened.
+          serialNumbers: l.item?.isSerialTracked
+            ? Array.from({ length: remaining }, () => '')
+            : undefined,
+        }
+      }),
+    })
+  }, [po, reset])
 
   // Scenario 46 — unit cost follows SRP through the discount chain, the same
   // rule PurchaseOrderFormFields applies to unit price. Without this the two
   // could disagree on the same line: a receipt showing "3000 less 3% less 500"
   // beside a hand-typed cost of something else is worse than no discount at
   // all, because the numbers look reconciled and aren't.
-  //
-  // Only recomputes when an SRP and at least one discount exist, so a line
-  // priced with a flat cost and no chain keeps whatever was entered.
+  const pricingKey = JSON.stringify(lines.map((l) => [l?.srp, l?.discounts]))
   useEffect(() => {
-    ;(watchedLines ?? []).forEach((line, i) => {
+    lines.forEach((line, i) => {
       const srp = Number(line?.srp)
       const chain = (line?.discounts ?? []) as { type?: string; value?: number }[]
       if (!srp || chain.length === 0) return
@@ -353,66 +173,171 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify((watchedLines ?? []).map((l) => [l?.srp, l?.discounts]))])
+  }, [pricingKey])
 
-  // Live preview of what the supplier's invoice should total. Both taxes are
-  // derived from the supplier's own profile rather than typed off the SI (see
-  // the backend's matching pass) — development read them from the form, which
-  // would now disagree with what the server actually posts.
-  const grossSelected = (watchedLines ?? []).reduce(
-    (sum, l, idx) =>
-      selectedLines[idx] === false ? sum : sum + (l?.quantityReceived ?? 0) * (l?.unitCost ?? 0),
-    0
+  // ─── Derived ──────────────────────────────────────────────────────────────
+  const issueLines: IssueLine[] = lines.map((l) => ({
+    selected: l.selected,
+    quantityReceived: l.quantityReceived,
+    isSerialTracked: l.isSerialTracked,
+    serialNumbers: l.serialNumbers,
+    qualityHold: l.qualityHold,
+    notes: l.notes,
+  }))
+
+  const labelFor = useMemo(
+    () => (index: number) => itemTitle(poLines[index]?.item) || (poLines[index]?.itemId ?? 'Line'),
+    [poLines]
   )
-  const chargesInputVat = po?.supplier?.defaultInputVat !== 'none'
-  const effectiveVat = chargesInputVat
-    ? round2(grossSelected - grossSelected / (1 + INPUT_VAT_RATE))
-    : 0
-  const netTotal = round2(grossSelected - effectiveVat)
-  const withholdsTax = po?.supplier?.defaultWithholding === 'pct_1'
-  const withheldAmountValue = withholdsTax ? round2(netTotal * WITHHOLDING_RATE) : 0
-  const invoiceTotal = grossSelected
 
-  useEffect(() => {
-    if (!po) return
-    setSelectedLines(po.lines.map(defaultLineSelected))
-    reset({
-      warehouseId: po.warehouseId ?? '',
-      receivedAt: '',
-      notes: '',
-      deliveryReceiptNumber: '',
-      supplierInvoiceNumber: '',
-      lines: defaultLines(),
-    })
-    setExpandedSerialRows(new Set(po.lines.flatMap((l, i) => (l.item?.isSerialTracked ? [i] : []))))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [po])
+  const totals = receiptTotals(
+    lines.map((l) => ({
+      selected: l.selected,
+      quantityReceived: l.quantityReceived,
+      unitCost: l.unitCost,
+    })),
+    po?.supplier ?? ({} as PurchaseOrderSummary['supplier'])
+  )
+
+  const blockers = collectBlockers(
+    issueLines,
+    poLines,
+    watched.deliveryReceiptNumber ?? '',
+    labelFor
+  )
+
+  const warnings = collectWarnings(issueLines, poLines, labelFor)
 
   if (!po) return null
 
-  const selectedCount = selectedLines.filter(Boolean).length
+  const showErrors = submitted
 
-  function toggleLine(idx: number) {
-    const nextValue = !(selectedLines[idx] ?? true)
-    setSelectedLines((prev: boolean[]) =>
-      prev.map((v: boolean, i: number) => (i === idx ? nextValue : v))
-    )
-    setValue(`lines.${idx}.selected`, nextValue, { shouldValidate: true })
+  // ─── Line mutations ───────────────────────────────────────────────────────
+
+  /** Resizes the serial array alongside the quantity: RHF does not clear a
+   * hidden index's value when the array shrinks, so a lowered qty otherwise
+   * left stale slots that silently failed the length refine. */
+  const setQuantity = (index: number, raw: number) => {
+    const remaining = remainingOf(poLines[index])
+    const { qty, capped } = capQuantity(raw, remaining)
+    const current = lines[index]
+    const serials = (current?.serialNumbers ?? []).slice(0, qty)
+    while (current?.isSerialTracked && serials.length < qty) serials.push('')
+
+    setValue(`lines.${index}.quantityReceived`, qty, { shouldValidate: showErrors })
+    setValue(`lines.${index}.selected`, qty > 0, { shouldValidate: false })
+    if (current?.isSerialTracked) {
+      setValue(`lines.${index}.serialNumbers`, serials, { shouldValidate: showErrors })
+    }
+
+    if (capped) {
+      showToast({
+        title: `Capped at ${remaining}`,
+        description: 'You cannot receive more than the PO remainder.',
+        status: 'warning',
+      })
+    }
   }
 
-  function toggleSerialEntry(idx: number): void {
-    setExpandedSerialRows((prev) => {
-      const next = new Set(prev)
-      if (next.has(idx)) {
-        next.delete(idx)
-      } else {
-        next.add(idx)
+  const toggleSelected = (index: number) => {
+    const remaining = remainingOf(poLines[index])
+    if (remaining <= 0) return
+    if (lines[index]?.selected) {
+      setValue(`lines.${index}.selected`, false, { shouldValidate: false })
+      setValue(`lines.${index}.quantityReceived`, 0, { shouldValidate: false })
+      setValue(`lines.${index}.serialNumbers`, lines[index]?.isSerialTracked ? [] : undefined, {
+        shouldValidate: false,
+      })
+      return
+    }
+    setValue(`lines.${index}.selected`, true, { shouldValidate: false })
+    setQuantity(index, remaining)
+  }
+
+  const setSerial = (index: number, unitIndex: number, value: string) => {
+    const next = (lines[index]?.serialNumbers ?? []).slice()
+    while (next.length <= unitIndex) next.push('')
+    next[unitIndex] = value
+    setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
+  }
+
+  const toggleQualityHold = (index: number) => {
+    const next = !lines[index]?.qualityHold
+    setValue(`lines.${index}.qualityHold`, next, { shouldValidate: false })
+    // Dropping the hold drops its reason with it — a stale explanation on an
+    // un-held line would post as a plain line note saying the opposite.
+    if (!next) setValue(`lines.${index}.notes`, '', { shouldValidate: false })
+  }
+
+  const openDrawer = (index: number, drawer: LineDrawer) =>
+    setDrawers((prev) => ({ ...prev, [index]: drawer }))
+
+  const receiveAllRemaining = () => {
+    poLines.forEach((poLine, i) => {
+      const remaining = remainingOf(poLine)
+      if (remaining > 0) setQuantity(i, remaining)
+    })
+    showToast({ title: 'All remaining quantities filled', status: 'success' })
+  }
+
+  const clearAllQuantities = () => {
+    poLines.forEach((_, i) => {
+      setValue(`lines.${i}.quantityReceived`, 0, { shouldValidate: false })
+      setValue(`lines.${i}.selected`, false, { shouldValidate: false })
+      if (lines[i]?.isSerialTracked) {
+        setValue(`lines.${i}.serialNumbers`, [], { shouldValidate: false })
       }
-      return next
     })
   }
 
-  async function handleFormSubmit(data: ReceivePoFormValues) {
+  /** Takes the receiver to whatever a blocker is complaining about — naming a
+   * problem without moving them to it is most of the way to not reporting it. */
+  const goToFix = (blocker: Blocker) => {
+    setSubmitted(true)
+    if (blocker.fix === 'dr') {
+      document.getElementById(DR_FIELD_ID)?.focus()
+      return
+    }
+    if (blocker.lineIndex == null) return
+    applyLineFix(blocker.lineIndex, blocker.fix)
+  }
+
+  const applyLineFix = (index: number, fix?: IssueFix) => {
+    if (fix === 'serials') openDrawer(index, 'serials')
+    if (fix === 'qty') setQuantity(index, remainingOf(poLines[index]))
+  }
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
+
+  /** Posts straight from the entry screen — there is no review step. The two
+   * gates below are all that stand between this and a stock movement that can
+   * only be undone with a debit memo, so neither may fail silently. */
+  const receiveNow = async () => {
+    setSubmitted(true)
+    if (blockers.length > 0) {
+      showToast({
+        title: `${blockers.length} ${blockers.length === 1 ? 'issue' : 'issues'} must be resolved first`,
+        description: blockers[0].text,
+        status: 'error',
+      })
+      return
+    }
+    // Belt and braces: the checks card is derived from watched values, the
+    // resolver is the thing the post actually has to satisfy — and for missing
+    // serials it is the ONLY thing, since those are kept out of the checks
+    // card. Failing silently here would look like a dead button.
+    if (!(await trigger())) {
+      showToast({
+        title: 'Some lines still need attention',
+        description: 'Check the highlighted quantities and serial numbers.',
+        status: 'error',
+      })
+      return
+    }
+    void handleSubmit(post)()
+  }
+
+  async function post(data: ReceivePoFormValues) {
     if (!po) return
     const result = await receiveStock({
       warehouseId: data.warehouseId,
@@ -423,12 +348,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
       supplierInvoiceNumber: data.supplierInvoiceNumber || undefined,
       supplierId: po.supplier.id,
       // Unit costs are what the supplier charges per unit, i.e. VAT-inclusive,
-      // so the amount below is carved out of them rather than added on top.
-      // Always explicit — including 0 — so the server never falls back to
-      // deriving VAT nobody entered.
+      // so the amount is carved out of them rather than added on top. Always
+      // explicit so the server never falls back to deriving VAT nobody entered.
       vatTreatment: 'inclusive' as const,
       lines: data.lines
-        .filter((_, idx) => selectedLines[idx])
+        .filter((l) => l.selected && l.quantityReceived > 0)
         .map((l) => ({
           purchaseOrderLineId: l.purchaseOrderLineId,
           itemId: l.itemId,
@@ -445,954 +369,256 @@ export function ReceiveAgainstPoModal({ po, onClose, onSuccess, canViewCost }: P
         })),
     })
 
-    if (result.success) {
-      showToast({ title: 'Stock received', description: result.message, status: 'success' })
-      onSuccess()
-    } else {
-      showToast({ title: 'Failed to receive stock', description: result.message, status: 'error' })
+    if (!result.success || !result.data) {
+      showToast({
+        title: 'Failed to receive stock',
+        description: result.message || result.error,
+        status: 'error',
+      })
+      return
     }
+
+    showToast({ title: 'Receipt posted · inventory updated', status: 'success' })
+    onPosted()
+    onClose()
   }
 
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  const destination = locationLabel(po.warehouse)
+  // Blank is a real state here — the field is not defaulted, and an empty
+  // value posts with the server's own timestamp — so the recap says nothing
+  // rather than claiming a date the form does not hold.
+  const dateReceivedEntered = watched.receivedAt
+    ? new Date(watched.receivedAt).toLocaleDateString('en-PH')
+    : ''
+
+  const openLineCount = poLines.filter((l) => remainingOf(l) > 0).length
+
   return (
-    <div className="absolute inset-0 z-50 flex flex-col bg-white">
+    // absolute, not fixed: the working surface fills the content column (the
+    // app shell's `main` is the positioning frame) so the nav sidebar and top
+    // bar stay usable while a delivery is being received. Same shell as
+    // CreatePoModal and PoDetailModal.
+    <div
+      className={`${PLEX} absolute inset-0 z-50 flex flex-col overflow-y-auto bg-[#f2f2f3] text-[#17171c]`}
+    >
       {/* Header */}
-      <div className="flex shrink-0 items-start justify-between border-b border-zinc-200 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-zinc-900">Receive Stock Against PO</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            <span className="font-mono font-medium text-prominent-purple-700">{po.code}</span>
-            {' · '}
-            {po.supplier.name}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <form
-        onSubmit={handleSubmit(handleFormSubmit)}
-        noValidate
-        className="flex flex-col overflow-hidden"
-      >
-        {/* Body */}
-        <div className="flex-1 space-y-3 overflow-y-auto px-6 py-4">
-          {/* Scenario 46 — one three-track grid for the whole header rather
-              than three separate grids stacked. Separate grids each solved
-              their own row, so nothing lined up vertically between them; with a
-              single grid every field edge runs straight down the form. Row 1
-              gives the warehouse two tracks because its value is a long name. */}
-          <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Destination <span className="text-red-500">*</span>
-              </label>
-              {po.warehouseId ? (
-                <>
-                  <div className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-                    {locationLabel(po.warehouse)}
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-zinc-400">
-                    Set when this PO was created — stock always lands where it was ordered for.
-                  </p>
-                </>
-              ) : (
-                <>
-                  {/* Fallback for a PO created before the destination warehouse
-                        became required at PO-creation time — still restricted to
-                        the 2 real warehouses, just editable here instead of locked. */}
-                  <Controller
-                    name="warehouseId"
-                    control={control}
-                    render={({ field }) => (
-                      <select {...field} className={`${fieldClass} bg-white`}>
-                        <option value="">Select warehouse…</option>
-                        {warehouses.map((wh) => (
-                          <option key={wh.id} value={wh.id}>
-                            {wh.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  />
-                  {errors.warehouseId && (
-                    <p className="mt-1 text-xs text-red-600">{errors.warehouseId.message}</p>
-                  )}
-                </>
-              )}
+      {/* pb matches pt: the bottom padding used to come from the progress bar
+          that sat under this block, so removing it left the supplier line
+          against the border. */}
+      <div className="flex shrink-0 flex-col gap-3 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+              Purchase Orders › {po.code} › Receive
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Date Received</label>
-              <Controller
-                name="receivedAt"
-                control={control}
-                render={({ field }) => (
-                  <input {...field} type="datetime-local" className={fieldClass} />
+            <h2 className="text-[21px] font-semibold tracking-[-.02em]">
+              Receive stock against PO
+            </h2>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className={`${MONO} text-[12.5px] font-semibold`}>{po.code}</span>
+              <span className="text-[#d3d3db]">·</span>
+              <span className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-[7px] bg-[#eaf0fb] text-[11px] font-semibold text-[#1f4b99]">
+                  {po.supplier.name.charAt(0).toUpperCase()}
+                </span>
+                <span className="text-[12.5px] font-medium">{po.supplier.name}</span>
+                {po.supplier.taxId && (
+                  <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                    TIN {po.supplier.taxId}
+                  </span>
                 )}
-              />
-            </div>
-
-            {/* Supplier's own paperwork — PO -> DR -> Invoice (SI) -> this
-                Receiving Report. The Receiving Report Reference input is gone:
-                stock.service.ts generates the code whenever one isn't supplied,
-                and nobody was overriding it. */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Delivery Receipt No.
-                <span className="text-red-500"> *</span>
-                <span className="ml-1 text-xs font-normal text-zinc-400">supplier's DR</span>
-              </label>
-              <Controller
-                name="deliveryReceiptNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. DR-00123"
-                    className={fieldClass}
-                  />
-                )}
-              />
-              {errors.deliveryReceiptNumber && (
-                <p className="mt-1 text-xs text-red-600">{errors.deliveryReceiptNumber.message}</p>
-              )}
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Supplier Invoice No.
-                {/* Kept to one line: this label sits in a three-track row, and
-                    a wrapping hint pushed its input a line below the DR and
-                    Notes fields beside it. The full explanation moved to the
-                    tooltip. */}
+              </span>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-[11.5px] font-medium ${
+                  po.status === 'fully_received'
+                    ? 'bg-[#e7f5ef] text-[#0b6644]'
+                    : 'bg-[#fdf3e7] text-[#8a4b06]'
+                }`}
+              >
                 <span
-                  title="The supplier's invoice often arrives days after the goods — leave this blank and fill it in later."
-                  className="ml-1 text-xs font-normal text-zinc-400"
-                >
-                  supplier&rsquo;s SI — optional
-                </span>
-              </label>
-              <Controller
-                name="supplierInvoiceNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    value={field.value ?? ''}
-                    type="text"
-                    placeholder="e.g. SI-00456"
-                    className={fieldClass}
-                  />
-                )}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Notes</label>
-              <Controller
-                name="notes"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="Delivery notes…"
-                    className={fieldClass}
-                  />
-                )}
-              />
-            </div>
-
-            {/* Tax off the supplier's invoice. Two different taxes moving in
-                opposite directions: VAT is charged BY the supplier and grows
-                what the invoice totals; withholding is held back FROM them and
-                remitted to the BIR, shrinking only what's paid out.
-
-                Both are DERIVED from the supplier's own profile, never typed.
-                The server recomputes them the same way when it posts
-                (StockService.receiveStock / APBillsService.computeWithholding)
-                and ignores anything sent from here, so an editable box could
-                only ever disagree with what actually lands. Shown read-only
-                rather than dropped: whoever is checking the 2307 against the
-                paperwork still needs to see the figure. */}
-            {canViewCost && (
-              <>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Input VAT
-                    <span className="ml-1 text-xs font-normal text-zinc-400">
-                      {chargesInputVat ? '₱, 12% of the invoice' : 'supplier not VAT-registered'}
-                    </span>
-                  </label>
-                  <output className={readonlyFieldClass}>
-                    {chargesInputVat ? fmtPeso(effectiveVat) : '—'}
-                  </output>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Withholding tax
-                    <span className="ml-1 text-xs font-normal text-zinc-400">
-                      {withholdsTax ? '₱, 1% — BIR 2307' : 'none for this supplier'}
-                    </span>
-                  </label>
-                  <output className={readonlyFieldClass}>
-                    {withholdsTax ? fmtPeso(withheldAmountValue) : '—'}
-                  </output>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* What the two numbers above actually add up to, so it can be
-              ticked against the supplier's invoice before confirming. */}
-          {canViewCost && grossSelected > 0 && (
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
-              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-zinc-500">Stock value</dt>
-                  <dd className="font-medium tabular-nums text-zinc-800">{fmtPeso(netTotal)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-zinc-500">
-                    Input VAT
-                    <span className="ml-1 text-xs text-zinc-400">
-                      {chargesInputVat ? '(12%)' : '(non-VAT supplier)'}
-                    </span>
-                  </dt>
-                  <dd className="font-medium tabular-nums text-zinc-800">
-                    {fmtPeso(effectiveVat)}
-                  </dd>
-                </div>
-                {withheldAmountValue > 0 && (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-zinc-500">
-                      Withholding
-                      <span className="ml-1 text-xs text-zinc-400">(1%, BIR 2307)</span>
-                    </dt>
-                    <dd className="font-medium tabular-nums text-zinc-800">
-                      -{fmtPeso(withheldAmountValue)}
-                    </dd>
-                  </div>
-                )}
-                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
-                  <dt className="font-medium text-zinc-700">Invoice total</dt>
-                  <dd className="font-semibold tabular-nums text-zinc-900">
-                    {fmtPeso(invoiceTotal)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-t border-zinc-200 pt-1">
-                  <dt className="font-medium text-zinc-700">
-                    Payable to supplier
-                    {withheldAmountValue ? ' (net of withholding)' : ''}
-                  </dt>
-                  <dd className="font-semibold tabular-nums text-zinc-900">
-                    {fmtPeso(invoiceTotal - withheldAmountValue)}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          )}
-
-          {/* Lines table — set well clear of the totals box above it. The
-              header fields and the goods being received are two different
-              jobs, and running them together made the totals read like part
-              of the table. */}
-          <div className="pt-6">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-medium text-zinc-700">
-                Line Items
-                <span className="ml-1.5 text-xs font-normal text-zinc-400">
-                  — check the lines being delivered
-                </span>
-              </p>
-              <span className="text-xs text-zinc-400">
-                {selectedCount} of {fields.length} selected
+                  className={`inline-block h-[5px] w-[5px] rounded-full ${
+                    po.status === 'fully_received' ? 'bg-[#0f7b52]' : 'bg-[#d18b1d]'
+                  }`}
+                />
+                {STATUS_LABEL[po.status]}
               </span>
             </div>
+          </div>
 
-            {fields.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-zinc-200 py-10 text-center">
-                <PackageCheck className="mb-2 h-8 w-8 text-zinc-300" />
-                <p className="text-sm text-zinc-400">No line items on this PO</p>
+          <Tooltip label="Close" side="bottom" align="end">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+            >
+              <X className="h-4.5 w-4.5" />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col gap-3.5 px-3.5 py-4 lg:px-5">
+        <>
+          <div
+            className={`grid items-stretch gap-3.5 ${
+              canViewCost ? 'lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]' : 'grid-cols-1'
+            }`}
+          >
+            <DeliveryDetailsPanel
+              control={control}
+              errors={errors}
+              po={po}
+              warehouses={warehouses}
+              showErrors={showErrors}
+              deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
+              recap={[
+                destination,
+                dateReceivedEntered,
+                (watched.deliveryReceiptNumber ?? '').trim() || 'No DR yet',
+                (watched.supplierInvoiceNumber ?? '').trim(),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            />
+            {canViewCost && <ReceiptTotalsPanel totals={totals} />}
+          </div>
+
+          {/* Ungated on purpose, unlike the inline field errors: this card
+                is the "what is stopping me" panel, and holding its contents
+                back until the receiver has already tried to post makes it
+                answer the question too late to be worth asking. Painting an
+                untouched input red is a different matter — that stays gated. */}
+          <ReceiveChecksCard blockers={blockers} warnings={warnings} onFix={goToFix} />
+
+          {/* Line items */}
+          <div className={PANEL}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[13.5px] font-semibold">Line items</span>
+                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                  {totals.lines} of {openLineCount} open lines · {totals.units} units
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={receiveAllRemaining}
+                  className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-2.5 py-1.5 text-[12.5px] text-[#3f1490] hover:bg-[#e8ddfa]"
+                >
+                  Receive all remaining
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllQuantities}
+                  className="rounded-[7px] border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                >
+                  Clear quantities
+                </button>
+              </div>
+            </div>
+
+            {poLines.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <PackageCheck className="mb-2 h-8 w-8 text-[#d3d3db]" />
+                <p className="text-[13px] text-[#a3a3b2]">No line items on this PO</p>
               </div>
             ) : (
-              /* Boxless — the modal already frames this, so an inner border
-                 just eats width the wide line table needs. */
-              <div>
-                <table className="w-full text-sm">
-                  <thead className="border-b border-zinc-100 bg-zinc-50">
-                    <tr>
-                      <th className="w-10 px-3 py-2.5" />
-                      <th className="w-[260px] px-4 py-2.5 text-left text-xs font-medium text-zinc-500">
-                        Item
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                        Ordered
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                        Received to Date
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                        Remaining
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[90px]">
-                        Qty to Receive <span className="text-red-400">*</span>
-                      </th>
-                      <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 w-[110px]">
-                        Batch No.
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-[60px]">
-                        QC Hold
-                      </th>
-                      <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500">
-                        Serials <span className="text-red-400">*</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-50">
-                    {fields.map((field, idx) => {
-                      const poLine = po.lines[idx]
-                      const alreadyReceived = Number(poLine?.receivedQuantity ?? 0)
-                      const ordered = Number(poLine?.quantity ?? 0)
-                      const remaining = Math.max(ordered - alreadyReceived, 0)
-
-                      const isSelected = selectedLines[idx] ?? true
-                      const isSerialTracked = !!poLine?.item?.isSerialTracked
-
-                      return (
-                        <Fragment key={field.id}>
-                          {/* Whitespace, not a rule, opens every item after the
-                              first. Each item spans up to three stacked rows,
-                              so they need to read as separate blocks — but a
-                              divider plus the old grey banding made every one
-                              look boxed. A gap does the same job silently. */}
-                          {idx > 0 && (
-                            <tr aria-hidden="true">
-                              <td colSpan={9} className="h-6" />
-                            </tr>
-                          )}
-                          <tr className={`transition-colors ${isSelected ? '' : 'opacity-50'}`}>
-                            {/* Select checkbox */}
-                            <td className="px-3 py-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleLine(idx)}
-                                className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500 cursor-pointer"
-                              />
-                            </td>
-
-                            {/* Item */}
-                            <td className="px-4 py-3">
-                              <button
-                                type="button"
-                                onClick={() => toggleItem(idx)}
-                                aria-expanded={!collapsedItems.has(idx)}
-                                className="flex items-start gap-1.5 text-left"
-                              >
-                                {collapsedItems.has(idx) ? (
-                                  <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                                ) : (
-                                  <ChevronUp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                                )}
-                                <span className="text-[12px] font-medium leading-snug text-zinc-800">
-                                  {itemTitle(poLine?.item) || poLine?.itemId}
-                                </span>
-                              </button>
-                              {poLine?.item?.sku && (
-                                <p className="font-mono text-[11px] text-zinc-400">
-                                  {poLine.item.sku}
-                                </p>
-                              )}
-                              {isSerialTracked && (
-                                <span
-                                  title="Each unit needs its own supplier-provided serial number — enter them in the Serials column."
-                                  className="mt-1 inline-block rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
-                                >
-                                  Serial-tracked
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Ordered */}
-                            <td className="px-3 py-3 text-center text-zinc-500">{ordered}</td>
-
-                            {/* Already received */}
-                            <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  alreadyReceived > 0
-                                    ? 'font-medium text-zinc-800'
-                                    : 'text-zinc-300'
-                                }
-                              >
-                                {alreadyReceived > 0 ? alreadyReceived : '—'}
-                              </span>
-                            </td>
-
-                            {/* Remaining */}
-                            <td className="px-3 py-3 text-center">
-                              <span
-                                className={
-                                  remaining === 0
-                                    ? 'text-green-600 font-medium'
-                                    : 'text-amber-600 font-medium'
-                                }
-                              >
-                                {remaining === 0 ? '✓' : remaining}
-                              </span>
-                            </td>
-
-                            {/* Qty to receive */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.quantityReceived`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    value={isNaN(f.value) ? '' : f.value}
-                                    onChange={(e) => {
-                                      const next = e.target.valueAsNumber
-                                      f.onChange(next)
-                                      // Serial boxes below are rendered per-unit and registered
-                                      // individually — react-hook-form doesn't clear a hidden
-                                      // index's value when the array shrinks, so a lowered qty
-                                      // (partial receipt) left stale empty slots that silently
-                                      // failed the serials-length refine and blocked submit.
-                                      const nextCount = Number.isFinite(next)
-                                        ? Math.max(0, Math.floor(next))
-                                        : 0
-                                      setValue(
-                                        `lines.${idx}.serialNumbers`,
-                                        (watchedLines?.[idx]?.serialNumbers ?? []).slice(
-                                          0,
-                                          nextCount
-                                        ),
-                                        { shouldValidate: true }
-                                      )
-                                    }}
-                                    onBlur={f.onBlur}
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    className={`${cellInputClass} text-center ${
-                                      errors.lines?.[idx]?.quantityReceived
-                                        ? 'border-red-400 ring-1 ring-red-400'
-                                        : ''
-                                    }`}
-                                  />
-                                )}
-                              />
-                            </td>
-
-                            {/* Scenario 46 — SRP, the discount chain, unit
-                                cost and tax moved out of this row into a
-                                pricing block underneath it. Four extra columns
-                                squeezed into a 12-column table left every input
-                                too narrow to read; the block mirrors the PO
-                                form's own line card, which already presents the
-                                same fields with room to breathe. */}
-
-                            {/* Batch */}
-                            <td className="px-3 py-3">
-                              <Controller
-                                name={`lines.${idx}.batchNumber`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    {...f}
-                                    value={f.value ?? ''}
-                                    type="text"
-                                    placeholder="Optional"
-                                    className={cellInputClass}
-                                  />
-                                )}
-                              />
-                            </td>
-
-                            {/* QC Hold */}
-                            <td className="px-3 py-3 text-center">
-                              <Controller
-                                name={`lines.${idx}.qualityHold`}
-                                control={control}
-                                render={({ field: f }) => (
-                                  <input
-                                    type="checkbox"
-                                    checked={f.value}
-                                    onChange={f.onChange}
-                                    className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-500 cursor-pointer"
-                                  />
-                                )}
-                              />
-                            </td>
-
-                            {/* Serials */}
-                            <td className="px-3 py-3">
-                              {isSerialTracked ? (
-                                <div className="flex justify-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleSerialEntry(idx)}
-                                    className="flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-prominent-purple-700 hover:underline"
-                                  >
-                                    {expandedSerialRows.has(idx) ? (
-                                      <ChevronUp className="h-3 w-3" />
-                                    ) : (
-                                      <ScanBarcode className="h-3 w-3" />
-                                    )}
-                                    {(watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length ??
-                                      0) > 0
-                                      ? `${watchedLines?.[idx]?.serialNumbers?.filter(Boolean).length}/${watchedLines?.[idx]?.quantityReceived || 0} entered`
-                                      : 'Enter serials'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="block text-center text-xs text-zinc-300">—</span>
-                              )}
-                            </td>
-                          </tr>
-
-                          {/* Pricing block — the PO form's own line-card
-                              layout: SRP, the discount chain applied off it,
-                              the unit cost it produces, and the line's tax.
-                              Sits under its row rather than inside it so each
-                              input has room, and so the chain can hold more
-                              than one discount. */}
-                          {canViewCost && !collapsedItems.has(idx) && (
-                            <tr>
-                              <td />
-                              <td colSpan={8} className="px-4 pb-2 pt-0">
-                                <button
-                                  type="button"
-                                  onClick={() => togglePricing(idx)}
-                                  aria-expanded={expandedPricingRows.has(idx)}
-                                  className="flex w-full items-center gap-2 border-t border-zinc-200 pt-2 text-left"
-                                >
-                                  {expandedPricingRows.has(idx) ? (
-                                    <ChevronUp className="h-3 w-3 shrink-0 text-prominent-purple-700" />
-                                  ) : (
-                                    <ChevronDown className="h-3 w-3 shrink-0 text-prominent-purple-700" />
-                                  )}
-                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                    Pricing
-                                  </span>
-                                  {!expandedPricingRows.has(idx) && (
-                                    <span className="truncate text-[12px] text-zinc-600">
-                                      {pricingSummary(idx)}
-                                    </span>
-                                  )}
-                                  <span className="ml-auto shrink-0 text-[12px] text-zinc-500">
-                                    Line total{' '}
-                                    <span className="font-semibold text-zinc-800">
-                                      {fmtMoney(
-                                        (watchedLines?.[idx]?.quantityReceived ?? 0) *
-                                          (watchedLines?.[idx]?.unitCost ?? 0)
-                                      )}
-                                    </span>
-                                  </span>
-                                </button>
-                              </td>
-                            </tr>
-                          )}
-
-                          {canViewCost &&
-                            !collapsedItems.has(idx) &&
-                            expandedPricingRows.has(idx) &&
-                            !editingPricingRows.has(idx) && (
-                              <tr>
-                                <td />
-                                <td colSpan={8} className="px-4 pb-3 pt-0">
-                                  <div className="flex flex-wrap items-center gap-x-8 gap-y-2 pt-1 text-[12px]">
-                                    <ReadOnlyPricing
-                                      label="SRP"
-                                      value={
-                                        watchedLines?.[idx]?.srp
-                                          ? fmtMoney(Number(watchedLines[idx].srp))
-                                          : '—'
-                                      }
-                                    />
-                                    <ReadOnlyPricing
-                                      label="Discounts (off SRP)"
-                                      value={
-                                        (
-                                          (watchedLines?.[idx]?.discounts ?? []) as {
-                                            name?: string
-                                            type?: string
-                                            value?: number
-                                          }[]
-                                        )
-                                          .filter((d) => d?.value != null)
-                                          .map(
-                                            (d) =>
-                                              `${d.name ? `${d.name} ` : ''}${
-                                                d.type === 'amount'
-                                                  ? fmtMoney(Number(d.value))
-                                                  : `${d.value}%`
-                                              }`
-                                          )
-                                          .join('  ·  ') || '—'
-                                      }
-                                    />
-                                    <ReadOnlyPricing
-                                      label="Unit Cost"
-                                      value={
-                                        watchedLines?.[idx]?.unitCost != null
-                                          ? fmtMoney(Number(watchedLines[idx].unitCost))
-                                          : '—'
-                                      }
-                                    />
-                                    <ReadOnlyPricing
-                                      label="Tax"
-                                      value={
-                                        watchedLines?.[idx]?.taxCode
-                                          ? `${watchedLines[idx].taxCode} ${fmtMoney(
-                                              Number(watchedLines[idx].taxAmount ?? 0)
-                                            )}`
-                                          : '—'
-                                      }
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleEditPricing(idx)}
-                                      className="ml-auto flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[12px] font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                                    >
-                                      <Pencil className="h-3 w-3" /> Edit
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-
-                          {canViewCost &&
-                            !collapsedItems.has(idx) &&
-                            expandedPricingRows.has(idx) &&
-                            editingPricingRows.has(idx) && (
-                              <tr>
-                                <td />
-                                <td colSpan={8} className="px-4 pb-3 pt-0">
-                                  <div className="flex flex-wrap items-start gap-x-6 gap-y-3 pt-1">
-                                    <label className="flex flex-col gap-1">
-                                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                        SRP
-                                      </span>
-                                      <Controller
-                                        name={`lines.${idx}.srp`}
-                                        control={control}
-                                        render={({ field: f }) => (
-                                          <input
-                                            value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                            onChange={(e) => {
-                                              const next = e.target.valueAsNumber
-                                              f.onChange(Number.isNaN(next) ? undefined : next)
-                                            }}
-                                            onBlur={f.onBlur}
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            placeholder="0.00"
-                                            className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                          />
-                                        )}
-                                      />
-                                    </label>
-
-                                    <Controller
-                                      name={`lines.${idx}.discounts`}
-                                      control={control}
-                                      render={({ field: f }) => {
-                                        const chain = (
-                                          (f.value ?? []) as {
-                                            name?: string
-                                            type: 'percentage' | 'amount'
-                                            value: number
-                                          }[]
-                                        ).slice()
-                                        const setChain = (next: typeof chain) =>
-                                          f.onChange(next.length ? next : undefined)
-                                        return (
-                                          <div className="flex flex-col gap-1">
-                                            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                              Discounts{' '}
-                                              <span className="normal-case tracking-normal">
-                                                (off SRP)
-                                              </span>
-                                            </span>
-                                            {chain.map((d, di) => (
-                                              <div key={di} className="flex items-center gap-1">
-                                                <input
-                                                  type="text"
-                                                  placeholder="Discount name"
-                                                  maxLength={100}
-                                                  aria-label="Discount name"
-                                                  value={d.name ?? ''}
-                                                  onChange={(e) => {
-                                                    const next = chain.slice()
-                                                    next[di] = { ...d, name: e.target.value }
-                                                    setChain(next)
-                                                  }}
-                                                  className="w-40 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                                />
-                                                <select
-                                                  aria-label="Discount type"
-                                                  value={d.type}
-                                                  onChange={(e) => {
-                                                    const next = chain.slice()
-                                                    next[di] = {
-                                                      ...d,
-                                                      type: e.target.value as
-                                                        | 'percentage'
-                                                        | 'amount',
-                                                    }
-                                                    setChain(next)
-                                                  }}
-                                                  className="w-16 rounded-lg border border-zinc-200 px-1 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                                >
-                                                  <option value="percentage">%</option>
-                                                  <option value="amount">₱</option>
-                                                </select>
-                                                <input
-                                                  type="number"
-                                                  min={0}
-                                                  step={0.01}
-                                                  aria-label="Discount value"
-                                                  placeholder={
-                                                    d.type === 'amount' ? 'Amount' : 'Percent'
-                                                  }
-                                                  value={Number.isFinite(d.value) ? d.value : ''}
-                                                  onChange={(e) => {
-                                                    const v = e.target.valueAsNumber
-                                                    const next = chain.slice()
-                                                    next[di] = {
-                                                      ...d,
-                                                      value: Number.isNaN(v) ? 0 : v,
-                                                    }
-                                                    setChain(next)
-                                                  }}
-                                                  className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                                />
-                                                <button
-                                                  type="button"
-                                                  aria-label="Remove discount"
-                                                  onClick={() =>
-                                                    setChain(chain.filter((_, n) => n !== di))
-                                                  }
-                                                  className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-200 hover:text-red-600"
-                                                >
-                                                  <X className="h-3.5 w-3.5" />
-                                                </button>
-                                              </div>
-                                            ))}
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setChain([
-                                                  ...chain,
-                                                  { name: undefined, type: 'percentage', value: 0 },
-                                                ])
-                                              }
-                                              className="flex items-center gap-1 text-sm font-medium text-prominent-purple-700 hover:underline"
-                                            >
-                                              <Plus className="h-3 w-3" /> Add
-                                            </button>
-                                          </div>
-                                        )
-                                      }}
-                                    />
-
-                                    <label className="flex flex-col gap-1">
-                                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                        Unit Cost
-                                      </span>
-                                      <Controller
-                                        name={`lines.${idx}.unitCost`}
-                                        control={control}
-                                        render={({ field: f }) => (
-                                          <input
-                                            value={f.value == null || isNaN(f.value) ? '' : f.value}
-                                            onChange={(e) => {
-                                              const next = e.target.valueAsNumber
-                                              f.onChange(Number.isNaN(next) ? undefined : next)
-                                            }}
-                                            onBlur={f.onBlur}
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                          />
-                                        )}
-                                      />
-                                      <span className="text-[11px] text-zinc-400">
-                                        auto from SRP &minus; discounts
-                                      </span>
-                                    </label>
-
-                                    <label className="flex flex-col gap-1">
-                                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                                        Tax
-                                      </span>
-                                      <div className="flex items-center gap-1">
-                                        <Controller
-                                          name={`lines.${idx}.taxCode`}
-                                          control={control}
-                                          render={({ field: f }) => (
-                                            <select
-                                              {...f}
-                                              value={f.value ?? ''}
-                                              aria-label="Tax code"
-                                              className="rounded-lg border border-zinc-200 px-1 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                            >
-                                              <option value="">—</option>
-                                              <option value="VAT">VAT</option>
-                                              <option value="NON_VAT">Non-VAT</option>
-                                              <option value="EXEMPT">Exempt</option>
-                                            </select>
-                                          )}
-                                        />
-                                        <Controller
-                                          name={`lines.${idx}.taxAmount`}
-                                          control={control}
-                                          render={({ field: f }) => (
-                                            <input
-                                              value={
-                                                f.value == null || isNaN(f.value) ? '' : f.value
-                                              }
-                                              onChange={(e) => {
-                                                const next = e.target.valueAsNumber
-                                                f.onChange(Number.isNaN(next) ? undefined : next)
-                                              }}
-                                              onBlur={f.onBlur}
-                                              type="number"
-                                              min="0"
-                                              step="0.01"
-                                              placeholder="0.00"
-                                              aria-label="Tax amount"
-                                              className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                                            />
-                                          )}
-                                        />
-                                      </div>
-                                    </label>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleEditPricing(idx)}
-                                      className="ml-auto self-end rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[12px] font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-                                    >
-                                      Done
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-
-                          {isSerialTracked &&
-                            !collapsedItems.has(idx) &&
-                            expandedSerialRows.has(idx) && (
-                              <tr>
-                                {/* Ruled off from the pricing block above it, the
-                                  same way pricing is ruled off from the row —
-                                  otherwise the two sub-sections run together
-                                  into one grey slab. */}
-                                <td colSpan={9} className="border-t border-zinc-200 px-4 py-3">
-                                  <p className="mb-2 text-xs font-medium text-zinc-600">
-                                    Enter the serial number for each unit —{' '}
-                                    {Math.max(
-                                      0,
-                                      Math.floor(Number(watchedLines?.[idx]?.quantityReceived) || 0)
-                                    )}{' '}
-                                    unit(s) to receive
-                                  </p>
-                                  <div className="space-y-2">
-                                    {Array.from({
-                                      length: Math.max(
-                                        0,
-                                        Math.floor(
-                                          Number(watchedLines?.[idx]?.quantityReceived) || 0
-                                        )
-                                      ),
-                                    }).map((_, unitIdx) => {
-                                      const unitError =
-                                        errors.lines?.[idx]?.serialNumbers?.[unitIdx]?.message ??
-                                        (unitIdx === 0
-                                          ? errors.lines?.[idx]?.serialNumbers?.message
-                                          : undefined)
-                                      return (
-                                        <div key={unitIdx} className="flex items-center gap-2">
-                                          <span className="w-16 shrink-0 text-xs text-zinc-500">
-                                            Unit {unitIdx + 1} of{' '}
-                                            {Math.max(
-                                              0,
-                                              Math.floor(
-                                                Number(watchedLines?.[idx]?.quantityReceived) || 0
-                                              )
-                                            )}
-                                          </span>
-                                          <input
-                                            {...register(
-                                              `lines.${idx}.serialNumbers.${unitIdx}` as `lines.${number}.serialNumbers.${number}`
-                                            )}
-                                            type="text"
-                                            // Every PO renders this box under
-                                            // the same field name, so the
-                                            // browser's own saved-value
-                                            // autofill offers the last serial
-                                            // submitted as a suggestion for
-                                            // the next delivery's box. A
-                                            // serial is unique per unit and
-                                            // never repeats — there is nothing
-                                            // useful to suggest.
-                                            autoComplete="off"
-                                            placeholder={`SN-00${unitIdx + 1}`}
-                                            className={`${cellInputClass} font-mono text-xs ${
-                                              unitError ? 'border-red-400 ring-1 ring-red-400' : ''
-                                            }`}
-                                          />
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                  {errors.lines?.[idx]?.serialNumbers?.message && (
-                                    <p className="mt-1 text-xs text-red-600">
-                                      {errors.lines[idx]?.serialNumbers?.message}
-                                    </p>
-                                  )}
-                                </td>
-                              </tr>
-                            )}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <LineTableHead />
+                {poLines.map((poLine, index) => {
+                  const line = lines[index]
+                  if (!line) return null
+                  return (
+                    <ReceiveLineRow
+                      key={poLine.id}
+                      control={control}
+                      lineIndex={index}
+                      line={line}
+                      title={labelFor(index)}
+                      sku={poLine.item?.sku}
+                      ordered={Number(poLine.quantity)}
+                      receivedToDate={Number(poLine.receivedQuantity ?? 0)}
+                      remaining={remainingOf(poLine)}
+                      canViewCost={canViewCost}
+                      showErrors={showErrors}
+                      issues={lineIssues(issueLines[index], poLine, issueLines, index).filter(
+                        (i) => showErrors || i.kind === 'warn'
+                      )}
+                      drawer={drawers[index] ?? null}
+                      editingPricing={!!editingPricing[index]}
+                      isDuplicateSerial={(unit) => isDuplicateSerial(issueLines, index, unit)}
+                      onToggleSelected={() => toggleSelected(index)}
+                      onQtyChange={(raw) => setQuantity(index, raw)}
+                      onFillMax={() => setQuantity(index, remainingOf(poLine))}
+                      onOpenDrawer={(drawer) => openDrawer(index, drawer)}
+                      onToggleEditPricing={() =>
+                        setEditingPricing((prev) => ({ ...prev, [index]: !prev[index] }))
+                      }
+                      onToggleQc={() => toggleQualityHold(index)}
+                      onQcReasonChange={(value) =>
+                        setValue(`lines.${index}.notes`, value, { shouldValidate: false })
+                      }
+                      onSerialChange={(unit, value) => setSerial(index, unit, value)}
+                      onClearSerials={() =>
+                        setValue(
+                          `lines.${index}.serialNumbers`,
+                          Array.from({ length: line.quantityReceived }, () => ''),
+                          { shouldValidate: showErrors }
+                        )
+                      }
+                      onFixIssue={(fix) => applyLineFix(index, fix)}
+                    />
+                  )
+                })}
+              </>
             )}
-          </div>
-        </div>
 
-        {/* Footer */}
-        <div className="flex shrink-0 items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting || selectedCount === 0}
-            className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-5 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60 transition-colors"
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Confirm Receipt
-          </button>
-        </div>
-      </form>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
+              <span className="text-[11.5px] text-[#8b8b9b]">
+                Quantities are capped at the PO remainder. Short deliveries stay open for the next
+                receipt.
+              </span>
+              <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
+                {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
+              </span>
+            </div>
+          </div>
+        </>
+      </div>
+
+      <ReceiveActionBar
+        blockerCount={blockers.length}
+        showBlockers={showErrors}
+        totals={totals}
+        deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
+        isSubmitting={isSubmitting}
+        onCancel={onClose}
+        onPrimary={receiveNow}
+      />
+    </div>
+  )
+}
+
+function LineTableHead() {
+  return (
+    <div
+      className={`${MONO} ${LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+    >
+      <span />
+      <span>Item / SKU</span>
+      <span className="text-center">Ordered</span>
+      {/* Its column is sized to hold this heading on one line — shrinking that
+          track wraps it, which reads as two separate column labels. */}
+      <span className="whitespace-nowrap text-center">Received to date</span>
+      <span className="pr-3 text-center">Remaining</span>
+      <span className="text-center">Qty to receive</span>
+      <span>Tracking</span>
+      <span className="text-center">QC</span>
+      <span className="text-right">Line total</span>
     </div>
   )
 }
