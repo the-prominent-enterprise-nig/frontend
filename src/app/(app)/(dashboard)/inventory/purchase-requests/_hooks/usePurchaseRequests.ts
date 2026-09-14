@@ -22,10 +22,11 @@ export function usePurchaseRequests() {
   const [page, setPage] = useState(1)
   const [limit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const [search, setSearch] = useState('')
 
   const queryParams = useMemo(
-    () => ({ page, limit, status: statusFilter }),
-    [page, limit, statusFilter]
+    () => ({ page, limit, status: statusFilter, search: search || undefined }),
+    [page, limit, statusFilter, search]
   )
 
   const listQuery = useQuery({
@@ -156,6 +157,12 @@ export function usePurchaseRequests() {
     statusFilter,
     setStatusFilter: (v: string | undefined) => {
       setStatusFilter(v)
+      setPage(1)
+    },
+
+    search,
+    setSearch: (v: string) => {
+      setSearch(v)
       setPage(1)
     },
 
