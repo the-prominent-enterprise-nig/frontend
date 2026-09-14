@@ -3021,16 +3021,30 @@ export interface MissingCogsSale {
   transactionId: string
   transactionNumber: string
   occurredAt: string
+  /** `zero_cost` — the item has no costed stock to average, so the cost came
+   *  back as ₱0 and there was nothing to post. `no_cost_resolved` — the cost
+   *  could not be worked out at all (no warehouse resolved for the branch, or
+   *  no cost layers). The first is far more common. */
+  reason: 'zero_cost' | 'no_cost_resolved'
+}
+
+/** The item behind the gap. A sale cannot be repaired after the fact; the
+ *  item can, and one uncosted item is usually behind many sales. */
+export interface MissingCogsItem {
+  itemId: string
+  name: string
+  sku: string
+  salesAffected: number
 }
 
 export interface MissingCogsReport {
   count: number
   sample: MissingCogsSale[]
+  items: MissingCogsItem[]
 }
 
-// Scenario-01 COGS-visibility gap closure (Part 2): surfaces completed
-// sales whose lines never got a COGS/Inventory posting (computeCogs()
-// failed at sale time) instead of that failure staying silent.
+// Surfaces completed sales whose lines never got a COGS/Inventory posting —
+// the goods left the building and the ledger was never told.
 export async function getMissingCogsReport(
   branchId?: string
 ): Promise<ApiResponse<MissingCogsReport>> {

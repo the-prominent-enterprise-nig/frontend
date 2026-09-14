@@ -59,7 +59,10 @@ export interface Transaction {
   journalEntryId?: string | null
   accountId: string
   account?: Account
-  item?: string | null
+  /** The item this ledger line is for, when it is for one. Present on the
+   *  per-item revenue/COGS/inventory lines a sale raises; absent on cash,
+   *  receivable, VAT and withholding lines, which are not for an item. */
+  item?: { id: string; name: string; sku: string } | null
   quantity?: number | null
   unitPrice?: number | null
   debit: number

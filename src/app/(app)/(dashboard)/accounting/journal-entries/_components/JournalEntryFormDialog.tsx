@@ -59,7 +59,9 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
     if (initial?.transactions?.length) {
       return initial.transactions.map((t) => ({
         accountId: t.accountId,
-        item: (t as any).item ?? '',
+        // Now a relation, not a free-text string — read its name so editing an
+        // auto-posted entry doesn't drop "[object Object]" into the box.
+        item: (t as any).item?.name ?? '',
         description: t.description ?? '',
         quantity: (t as any).quantity != null ? String((t as any).quantity) : '',
         unitPrice: (t as any).unitPrice != null ? String((t as any).unitPrice) : '',
