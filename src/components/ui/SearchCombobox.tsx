@@ -5,6 +5,11 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X, Loader2 } from 'lucide-react'
 
+/** Matches the old max-h-56; the dropdown now shrinks below this when the
+ * chosen side has less room. */
+const DROPDOWN_MAX_HEIGHT = 224
+const MIN_DROPDOWN_HEIGHT = 120
+
 export type SearchComboboxOption = {
   id: string
   primary: string
@@ -74,9 +79,13 @@ export function SearchCombobox({
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
-    null
-  )
+  const [position, setPosition] = useState<{
+    top?: number
+    bottom?: number
+    left: number
+    width: number
+    maxHeight: number
+  } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -106,7 +115,24 @@ export function SearchCombobox({
   const updatePosition = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect) return
-    setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    // Flip above the trigger when there isn't room below — a combobox near
+    // the foot of the page (e.g. the catalog search at the bottom of the PO
+    // line-items card) otherwise opens into the space off-screen, and the
+    // results can't be seen at all. Also cap the height to whatever space
+    // the chosen side actually has, so it never runs past the viewport.
+    const spaceBelow = window.innerHeight - rect.bottom - 12
+    const spaceAbove = rect.top - 12
+    const flip = spaceBelow < DROPDOWN_MAX_HEIGHT && spaceAbove > spaceBelow
+    setPosition({
+      top: flip ? undefined : rect.bottom + 4,
+      bottom: flip ? window.innerHeight - rect.top + 4 : undefined,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: Math.max(
+        MIN_DROPDOWN_HEIGHT,
+        Math.min(DROPDOWN_MAX_HEIGHT, flip ? spaceAbove : spaceBelow)
+      ),
+    })
   }, [])
 
   // Portal the dropdown to <body> and track the trigger's position — this is
@@ -224,8 +250,14 @@ export function SearchCombobox({
         createPortal(
           <div
             ref={dropdownRef}
-            style={{ top: position.top, left: position.left, width: position.width }}
-            className="fixed z-100 max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+            style={{
+              top: position.top,
+              bottom: position.bottom,
+              left: position.left,
+              width: position.width,
+              maxHeight: position.maxHeight,
+            }}
+            className="fixed z-100 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
           >
             {isLoading ? (
               <div className="flex items-center justify-center py-4">
