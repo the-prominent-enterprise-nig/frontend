@@ -1,13 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw, Search } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, RefreshCw, Search } from 'lucide-react'
 import {
   Expenses,
   fmtMoney,
   fmtDate,
   type SpecialAccountRegister,
+  type SpecialAccountRow,
 } from '@/src/libs/data/AccountingV2Data'
+import NewSpecialAccountModal from './NewSpecialAccountModal'
+
+/** Where a row's ledger lives. The pair (control account, name) is the
+ * identity — a row that predates the register has no id to route by, and
+ * those are the ones with the most history behind them. */
+function ledgerHref(r: SpecialAccountRow) {
+  return `/accounting/special-accounts/ledger?accountId=${encodeURIComponent(
+    r.controlAccount.id
+  )}&name=${encodeURIComponent(r.name)}`
+}
 
 /**
  * The Special Accounts register — who a balance is carried against, under
@@ -25,6 +37,8 @@ export default function SpecialAccountsList() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [justCreated, setJustCreated] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,12 +66,20 @@ export default function SpecialAccountsList() {
             control account carrying each one.
           </p>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={load}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-purple-700 hover:bg-purple-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+          <button
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-2 rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
+          >
+            <Plus className="h-4 w-4" /> New Special Account
+          </button>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -81,6 +103,13 @@ export default function SpecialAccountsList() {
       {error && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {justCreated && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {justCreated} is open. It carries nothing until an expense line names it under the same
+          control account.
         </div>
       )}
 
@@ -108,14 +137,26 @@ export default function SpecialAccountsList() {
                 <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
                   {search
                     ? 'Nobody matches that name.'
-                    : 'No special accounts yet — mark an expense line Yes under Special Account.'}
+                    : 'No special accounts yet — open one above, or name someone on an expense line under a control account.'}
                 </td>
               </tr>
             )}
             {!loading &&
               rows.map((r) => (
                 <tr key={`${r.controlAccount.id}-${r.name}`} className="hover:bg-gray-50">
-                  <td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td>
+                  {/* The name is the way into the ledger — what was credited
+                      and debited under it — which is the question this
+                      register otherwise only answers as one net figure. */}
+                  <td className="px-4 py-2.5 font-medium">
+                    <Link
+                      href={ledgerHref(r)}
+                      className="text-purple-700 hover:text-purple-900 hover:underline"
+                    >
+                      {r.name}
+                    </Link>
+                    {r.employee && <span className="ml-2 text-[11px] text-gray-400">Employee</span>}
+                    {r.customer && <span className="ml-2 text-[11px] text-gray-400">Customer</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-gray-600">
                     <span className="font-mono text-[12px] text-gray-400">
                       {r.controlAccount.number}
@@ -140,6 +181,21 @@ export default function SpecialAccountsList() {
           </tbody>
         </table>
       </div>
+
+      {creating && (
+        <NewSpecialAccountModal
+          onClose={() => setCreating(false)}
+          onCreated={(name) => {
+            setCreating(false)
+            setJustCreated(name)
+            // Clearing the search makes sure the new row is not filtered out
+            // of the very list it was opened from; when it is already blank,
+            // load() still has to run to fetch it.
+            if (search) setSearch('')
+            else load()
+          }}
+        />
+      )}
     </div>
   )
 }

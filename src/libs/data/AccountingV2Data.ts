@@ -1630,8 +1630,17 @@ export interface ExpenseDocument {
 }
 /** One row of the Special Accounts register. */
 export interface SpecialAccountRow {
+  /** Null for a balance that exists only in the expense lines — nobody
+   * opened it, it appeared when the first entry named it. Still a real
+   * balance with a real ledger; it just has no record to edit. */
+  id: string | null
   name: string
   controlAccount: { id: string; number: string; name: string }
+  /** Who the name is, when the account was opened against someone on file. */
+  employee: { id: string; name: string } | null
+  customer: { id: string; name: string } | null
+  notes: string | null
+  active: boolean
   /** What is still carried against this person under that account. */
   balance: number
   entries: number
@@ -1640,6 +1649,43 @@ export interface SpecialAccountRow {
 export interface SpecialAccountRegister {
   rows: SpecialAccountRow[]
   totals: { people: number; balance: number }
+}
+
+/** One movement on a named balance. Debit is money out to them, credit is
+ * money recovered — shown as two positive columns rather than one signed
+ * figure, which is how a subsidiary ledger reads. */
+export interface SpecialAccountLedgerEntry {
+  expenseId: string
+  date: string | null
+  reference: string
+  description: string | null
+  debit: number
+  credit: number
+  /** Running balance after this entry, oldest first. */
+  balance: number
+  divisionName: string | null
+  status: string
+}
+export interface SpecialAccountLedger {
+  account: {
+    id: string | null
+    name: string
+    controlAccount: { id: string; number: string; name: string }
+    employee: { id: string; name: string } | null
+    customer: { id: string; name: string } | null
+    notes: string | null
+    active: boolean
+  }
+  entries: SpecialAccountLedgerEntry[]
+  totals: { debit: number; credit: number; balance: number }
+}
+
+export interface CreateSpecialAccountBody {
+  name: string
+  controlAccountId: string
+  employeeId?: string
+  customerId?: string
+  notes?: string
 }
 
 export const Expenses = {
@@ -1666,6 +1712,15 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** Open a named balance under a control account, before anything has been
+   * posted to it. */
+  createSpecialAccount: (body: CreateSpecialAccountBody) =>
+    api.post<SpecialAccountRow>('/expenses/special-accounts', body),
+  /** One account's ledger — every debit and credit posted under that name.
+   * Identified by (control account, name), not by id: the balances that
+   * predate the register have no id of their own. */
+  specialAccountLedger: (params: { accountId: string; name: string }) =>
+    api.get<SpecialAccountLedger>('/expenses/special-accounts/ledger', params),
   getSpecialAccountBalance: (params: {
     specialAccountType: LiquidatableType
     employeeId?: string
