@@ -9,6 +9,14 @@ export type Panel = {
   // Falls back to 'stock' when omitted so pre-existing call sites keep
   // their current (operational) tab set until updated.
   context?: 'catalog' | 'stock'
+  // Scenario 50 — the location filter that was active on the list this
+  // drawer was opened from, as branch:/warehouse: tokens (see
+  // libs/inventory/location-tokens). The drawer scopes its Stock and Serials
+  // tabs to the same places: opening an item from a list filtered to Ajuy
+  // and Alimodian and then being shown every other branch's stock is the
+  // filter leak the client reported. Empty/omitted means no filter was
+  // active, so the drawer shows every location.
+  locations?: string[]
 }
 
 interface UIShellStore {

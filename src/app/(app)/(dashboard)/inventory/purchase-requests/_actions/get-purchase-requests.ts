@@ -8,6 +8,7 @@ type Params = {
   limit?: number
   status?: string
   branchId?: string
+  search?: string
 }
 
 export async function getPurchaseRequests(params: Params = {}) {
@@ -16,6 +17,7 @@ export async function getPurchaseRequests(params: Params = {}) {
     limit: params.limit,
     status: params.status,
     branchId: params.branchId,
+    search: params.search,
   }
 
   return api.get<PurchaseRequestListResponse>('/procurement/purchase-requests', query)

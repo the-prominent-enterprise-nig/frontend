@@ -10,7 +10,7 @@ import { gotoReady } from './utils'
 // design — see the plan doc), so this covers structure/gating, not rendered
 // consigned rows; see the scenario doc's manual test steps for that.
 test.describe('Inventory — Caravan view', () => {
-  test('tab switch reveals a branch picker for an unrestricted caller and gates the list until one is picked', async ({
+  test("tab switch shows every branch's consignments, with the branch picker as a filter", async ({
     page,
   }) => {
     await gotoReady(page, '/inventory/serial-numbers')
@@ -22,43 +22,33 @@ test.describe('Inventory — Caravan view', () => {
 
     await caravanTab.click()
 
-    // Business Owner has no own branch — the view must gate on an explicit
-    // pick rather than silently querying with no branch at all.
+    // The tab used to gate on an explicit branch pick and render nothing
+    // until one was made. It now opens on every consignment in the company —
+    // the picker only narrows it — so the old prompt must be gone and the
+    // list must render straight away for a caller with no own branch.
     await expect(
       page.getByText("Select a branch above to see what's consigned to it.")
-    ).toBeVisible({ timeout: 10_000 })
+    ).toHaveCount(0)
 
-    // Regression: the query is disabled until a branch is picked, but
-    // `keepPreviousData` still holds whatever the All Serials tab's own
-    // query last returned — without gating the table on this too, that
-    // stale, unrelated list rendered right alongside this prompt, and no
-    // filter could ever change it since the query itself wasn't running.
-    await expect(page.locator('table')).toHaveCount(0)
-
-    const branchPicker = page.getByPlaceholder('Select a branch…')
+    const branchPicker = page.getByPlaceholder('All branches')
     await expect(branchPicker).toBeVisible()
 
+    const emptyState = page.getByText(/Nothing currently (out on caravan|consigned)/)
+    const table = page.locator('table')
+    await expect(emptyState.or(table)).toBeVisible({ timeout: 15_000 })
+
+    // Picking a branch narrows rather than unlocks — still a list, never the
+    // old prompt.
     await branchPicker.click()
-    const firstOption = page
-      .locator('[role="option"], li, button')
-      .filter({ hasText: /HQ|Office|Branch/ })
+    const firstOption = page.getByTestId('searchable-select-option')
     await expect(firstOption.first()).toBeVisible({ timeout: 10_000 })
     await firstOption.first().click()
-
-    // Once a branch is picked, the gating prompt clears — either the table
-    // or the "nothing consigned" empty state renders, never the prompt.
-    await expect(
-      page.getByText("Select a branch above to see what's consigned to it.")
-    ).toHaveCount(0, { timeout: 10_000 })
-
-    const emptyState = page.getByText('Nothing currently consigned to this branch')
-    const table = page.locator('table')
-    await expect(emptyState.or(table)).toBeVisible({ timeout: 10_000 })
+    await expect(emptyState.or(table)).toBeVisible({ timeout: 15_000 })
 
     // Switching back to All Serials restores the normal warehouse filter and
     // drops the branch picker entirely.
     await allSerialsTab.click()
-    await expect(branchPicker).toHaveCount(0)
+    await expect(page.getByPlaceholder('All branches')).toHaveCount(0)
   })
 
   // Regression for the bug above: once a branch IS picked and the Caravan

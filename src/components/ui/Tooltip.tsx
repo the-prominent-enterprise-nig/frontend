@@ -12,9 +12,14 @@ export default function Tooltip({
   children,
   side = 'top',
   align = 'center',
+  className = '',
 }: {
   label: string
   children: ReactNode
+  /** Extra classes for the wrapper — it is `inline-flex` and so shrinks to
+   * its child; pass `w-full` when the trigger needs to fill its container
+   * (a button stretched across a grid column, say). */
+  className?: string
   side?: 'top' | 'bottom'
   /** Where the bubble sits horizontally relative to the trigger. 'center' is
    * right for most things; use 'start'/'end' when the trigger sits against the
@@ -28,7 +33,7 @@ export default function Tooltip({
     side === 'top' ? `bottom-full mb-1.5 ${alignClass}` : `top-full mt-1.5 ${alignClass}`
 
   return (
-    <span className="group/tooltip relative inline-flex">
+    <span className={`group/tooltip relative inline-flex ${className}`}>
       {children}
       <span
         role="tooltip"

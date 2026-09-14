@@ -4,6 +4,7 @@ import {
   clickStable,
   findStockTransferIdByReason,
   gotoReady,
+  pickComboboxOption,
   sweepE2EStockTransfers,
 } from './utils'
 
@@ -41,20 +42,41 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
   await gotoReady(page, '/inventory/transfers')
   await clickStable(
     page.getByRole('button', { name: 'New Transfer' }),
-    page.getByRole('heading', { name: 'New Stock Transfer Request' })
+    page.getByRole('heading', { name: 'New Stock Transfer' })
   )
 
-  const modalForm = page.locator('form')
-  await modalForm.locator('select').nth(0).selectOption({ index: 1 })
-  await modalForm.locator('select').nth(1).selectOption({ index: 1 })
+  // From/To are SearchableSelect comboboxes, not native <select> elements.
+  // The destination list already excludes whatever the source is set to, so
+  // index 0 of each is a valid distinct pair.
+  await pickComboboxOption(page, 'Search source branch…')
+  await pickComboboxOption(page, 'Search destination branch…')
 
-  // TN-FAN-001 (Electric Stand Fan) — a real seeded, non-serial-tracked
-  // catalog item (unlike the Part 1 spec's Refrigerator), so no "Specific
-  // serial number" section appears and this stays a plain bulk request.
-  const itemInput = page.getByPlaceholder('Search item')
-  await itemInput.click()
-  await itemInput.fill('TN-FAN-001')
-  const option = page.getByRole('button', { name: /TN-FAN-001/ }).first()
+  // Resolve a real non-serial-tracked item rather than naming an SKU — this
+  // spec used to hardcode TN-FAN-001, which is no longer in the seed.
+  // Non-serial keeps this a plain bulk request, with no serial picker to fill.
+  const itemsRes = await page.request.get('/api/inventory/items', {
+    params: { limit: '100', lifecycle: 'active' },
+  })
+  const bulkItem = (
+    ((await itemsRes.json()).data ?? []) as {
+      sku: string
+      isSerialTracked: boolean
+      isService?: boolean
+    }[]
+  ).find((i) => !i.isSerialTracked && !i.isService)
+  if (!bulkItem) throw new Error('no non-serial-tracked active item found in the catalog')
+
+  // Items are added from the Items card's own "Add item" search. SearchCombobox
+  // renders a BUTTON when closed and only swaps in the search <input> once
+  // opened, so open it first, then type.
+  await page
+    .getByRole('button', { name: /Add item/ })
+    .first()
+    .click()
+  const itemInput = page.locator('input[placeholder*="Add item"]')
+  await expect(itemInput).toBeVisible({ timeout: 10_000 })
+  await itemInput.fill(bulkItem.sku)
+  const option = page.getByRole('button', { name: new RegExp(bulkItem.sku) }).first()
   await expect(option).toBeVisible({ timeout: 10_000 })
   await option.click()
 
@@ -62,7 +84,7 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
 
   await expect(async () => {
     await page.getByRole('button', { name: 'Submit Request' }).click()
-    await expect(page.getByRole('heading', { name: 'New Stock Transfer Request' })).toHaveCount(0, {
+    await expect(page.getByRole('heading', { name: 'New Stock Transfer' })).toHaveCount(0, {
       timeout: 3_000,
     })
   }).toPass({ timeout: 15_000 })

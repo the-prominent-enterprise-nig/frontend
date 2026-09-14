@@ -10,7 +10,21 @@ import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: string }>> {
+/** What the caller gets back from a successful post.
+ *
+ * The backend returns the whole GoodsReceipt (header columns, `lines[]` with
+ * their `discrepancy` block, `journalEntryId`, and the auto-generated
+ * `RR-YYYYMMDD-NNNN` code). This used to be typed as `{ id }` alone, which
+ * threw `code` away — so a screen that had just posted a receipt could only
+ * say "done", never name the document it created. Narrow rather than exact:
+ * only the fields a caller reads are promised, and the rest ride along. */
+export type ReceivedStockResult = {
+  id: string
+  /** The receiving report number, e.g. `RR-20260910-0007`. */
+  code?: string | null
+}
+
+export async function receiveStock(input: unknown): Promise<ApiResponse<ReceivedStockResult>> {
   const session = await getSessionOrNull()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -66,7 +80,7 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
     })),
   }
 
-  const result = await api.post<{ id: string }>('/inventory/stock/receive', backendPayload)
+  const result = await api.post<ReceivedStockResult>('/inventory/stock/receive', backendPayload)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -80,6 +94,7 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
   }
 
   revalidatePath('/inventory/goods-receiving')
+  revalidatePath('/inventory/stock')
   revalidatePath('/inventory/purchase-orders')
 
   return {

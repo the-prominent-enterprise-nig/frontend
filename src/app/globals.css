@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 /* @import 'tw-animate-css'; */
-@import 'tailwindcss';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -125,6 +124,25 @@
 
   html {
     @apply font-sans;
+  }
+
+  /* Tailwind v4 dropped Preflight's `cursor: pointer` on buttons, so every
+     control in the app was showing the default arrow. Restore it globally
+     for anything clickable, and keep `not-allowed` for disabled controls so
+     the affordance still reads correctly. */
+  button:not(:disabled),
+  summary,
+  label[for],
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='option'],
+  [role='menuitem'] {
+    @apply cursor-pointer;
+  }
+
+  button:disabled,
+  [role='button'][aria-disabled='true'] {
+    @apply cursor-not-allowed;
   }
 }
 

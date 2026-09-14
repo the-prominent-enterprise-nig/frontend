@@ -14,8 +14,18 @@ export async function createTransfer(input: unknown): Promise<ApiResponse<{ id: 
     }
   }
 
+  // Scenario 50 — a blank Expected Arrival reaches here as parsed.data's
+  // own '' default (Zod's .optional() lets an empty string through, it only
+  // rejects undefined), and the backend's @IsOptional() + @IsDateString()
+  // pair rejects that empty string outright — @IsOptional() only excuses
+  // undefined/null, not ''. Strip it here rather than in the schema: a
+  // schema-level .transform() breaks zodResolver's type alignment with
+  // useForm<CreateTransferFormValues>() (the transform makes the field's
+  // inferred type mandatory-but-possibly-undefined instead of omittable,
+  // which the resolver's generic can't reconcile without extra ceremony).
   const result = await api.post<{ id: string }>('/inventory/transfers', {
     ...parsed.data,
+    expectedArrival: parsed.data.expectedArrival || undefined,
   })
 
   if (!result.success) {

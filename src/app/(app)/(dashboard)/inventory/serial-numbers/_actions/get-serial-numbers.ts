@@ -11,7 +11,13 @@ type Params = {
   limit?: number
   itemId?: string
   categoryId?: string
+  brandId?: string
   warehouseId?: string
+  // Scenario 50 — multi-location scoping, so the Item 360 Serials tab can
+  // honour a several-branch filter. Singular `warehouseId` stays for callers
+  // that mean exactly one.
+  branchIds?: string[]
+  warehouseIds?: string[]
   status?: string
   search?: string
   // Scenario 08 (Caravan) Part 2 — "Caravan" view. Any value here
@@ -35,7 +41,10 @@ export async function getSerialNumbers(
     limit: params.limit,
     itemId: params.itemId,
     categoryId: params.categoryId,
+    brandId: params.brandId,
     warehouseId: params.warehouseId,
+    branchIds: params.branchIds?.length ? params.branchIds.join(',') : undefined,
+    warehouseIds: params.warehouseIds?.length ? params.warehouseIds.join(',') : undefined,
     status: params.status,
     search: params.search,
     consignedToBranchId: params.consignedToBranchId,

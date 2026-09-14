@@ -12,6 +12,7 @@ type Params = {
   search?: string
   dateFrom?: string
   dateTo?: string
+  sortDir?: 'asc' | 'desc'
 }
 
 export async function getPurchaseOrders(params: Params = {}) {
@@ -24,6 +25,7 @@ export async function getPurchaseOrders(params: Params = {}) {
     search: params.search,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    sortDir: params.sortDir,
   }
 
   return api.get<PurchaseOrderListResponse>('/procurement/purchase-orders', query)

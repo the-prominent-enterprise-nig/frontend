@@ -2,6 +2,11 @@
 
 import { X, RefreshCw, Activity } from 'lucide-react'
 import { useItemLedger } from '../hooks/useItemLedger'
+import type { ItemLedgerEntry } from '@/src/schema/inventory/items/ledger'
+import {
+  PLEX,
+  MONO,
+} from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
 
 const TX_LABELS: Record<string, string> = {
   receipt: 'Receipt',
@@ -15,14 +20,14 @@ const TX_LABELS: Record<string, string> = {
 }
 
 const TX_COLORS: Record<string, string> = {
-  receipt: 'bg-green-100 text-green-700',
-  sale: 'bg-blue-100 text-blue-700',
-  transfer_out: 'bg-amber-100 text-amber-700',
-  transfer_in: 'bg-teal-100 text-teal-700',
-  adjustment: 'bg-purple-100 text-purple-700',
-  return: 'bg-orange-100 text-orange-700',
-  write_off: 'bg-red-100 text-red-700',
-  field_edit: 'bg-zinc-100 text-zinc-600',
+  receipt: 'bg-[#e7f5ef] text-[#0b6644]',
+  sale: 'bg-[#eaf0fb] text-[#1f4b99]',
+  transfer_out: 'bg-[#fdf3e7] text-[#8a4b06]',
+  transfer_in: 'bg-[#e3f4f2] text-[#0f7566]',
+  adjustment: 'bg-[#f1ebfb] text-[#3f1490]',
+  return: 'bg-[#fdf0e5] text-[#b25e09]',
+  write_off: 'bg-[#fdeceb] text-[#b42318]',
+  field_edit: 'bg-[#f1f1f4] text-[#5b5b6b]',
 }
 
 function humanizeField(field: string): string {
@@ -44,11 +49,26 @@ const TRANSACTION_TYPES = [
   { value: 'write_off', label: 'Write-off' },
 ]
 
-type Props = {
-  itemId: string
+const LEDGER_GRID = 'grid grid-cols-[100px_170px_110px_minmax(0,1fr)_70px] gap-x-3 items-center'
+
+/** Only a receipt ('goods_receipt', an "RR-" code) has a real single-record
+ * detail page in the app today — stock_transfer/stock_adjustment/etc.
+ * resolve to a human-readable code too, but there's no [id] route for them
+ * to land on, so those stay plain text rather than link to a page that
+ * doesn't exist. */
+function sourceHref(entry: ItemLedgerEntry): string | null {
+  if (entry.referenceType === 'goods_receipt' && entry.referenceId) {
+    return `/inventory/stock/reports/${entry.referenceId}`
+  }
+  return null
 }
 
-export default function MovementsTab({ itemId }: Props) {
+type Props = {
+  itemId: string
+  locations?: string[]
+}
+
+export default function MovementsTab({ itemId, locations }: Props) {
   const {
     currentBalances,
     entries,
@@ -65,62 +85,64 @@ export default function MovementsTab({ itemId }: Props) {
     setStartDate,
     endDate,
     setEndDate,
-    warehouseOptions,
     resetFilters,
-  } = useItemLedger(itemId)
+  } = useItemLedger(itemId, locations)
 
   const hasFilters = !!warehouseId || !!transactionType || !!startDate || !!endDate
   const totalPages = meta?.lastPage ?? 1
   const total = meta?.total ?? 0
 
   return (
-    <div className="flex flex-col gap-4 p-5">
+    <div className={`${PLEX} flex flex-col gap-4 p-5`}>
       {/* Current stock summary */}
       {currentBalances.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+          <p
+            className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+          >
             Current Stock
           </p>
           <div className="flex flex-wrap gap-2">
-            {currentBalances.map((b, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs"
-              >
-                <span className="font-medium text-zinc-700">
-                  {b.warehouse?.branch?.name ?? b.warehouse?.name ?? b.warehouse?.code ?? 'Unknown'}
-                </span>
-                <span className="text-zinc-400">·</span>
-                <span className="font-semibold text-zinc-900">{b.availableQty}</span>
-                <span className="text-zinc-400">avail</span>
-                {b.reservedQty > 0 && (
-                  <span className="text-zinc-400">· {b.reservedQty} reserved</span>
-                )}
-              </div>
-            ))}
+            {currentBalances.map((b, i) => {
+              const isActive = !!b.warehouse?.id && warehouseId === b.warehouse.id
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  data-testid="movements-location-pill"
+                  onClick={() => setWarehouseId(isActive ? undefined : b.warehouse?.id)}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] transition-colors ${
+                    isActive
+                      ? 'border-[#5b21b6] bg-[#f1ebfb]'
+                      : 'border-[#e4e4e9] bg-[#fbfbfc] hover:border-[#d3d3db]'
+                  }`}
+                >
+                  <span className={`font-medium ${isActive ? 'text-[#3f1490]' : 'text-[#3d3d4a]'}`}>
+                    {b.warehouse?.branch?.name ??
+                      b.warehouse?.name ??
+                      b.warehouse?.code ??
+                      'Unknown'}
+                  </span>
+                  <span className="text-[#a3a3b2]">·</span>
+                  <span className={`${MONO} font-semibold text-[#17171c]`}>{b.availableQty}</span>
+                  <span className="text-[#a3a3b2]">avail</span>
+                  {b.reservedQty > 0 && (
+                    <span className="text-[#a3a3b2]">· {b.reservedQty} reserved</span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters — location is filtered by clicking a Current Stock pill
+          above, not a dropdown here. */}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={warehouseId ?? ''}
-          onChange={(e) => setWarehouseId(e.target.value || undefined)}
-          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
-        >
-          <option value="">All Locations</option>
-          {warehouseOptions.map((w) => (
-            <option key={w.value} value={w.value}>
-              {w.label}
-            </option>
-          ))}
-        </select>
-
         <select
           value={transactionType ?? ''}
           onChange={(e) => setTransactionType(e.target.value || undefined)}
-          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
+          className="rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
         >
           {TRANSACTION_TYPES.map((t) => (
             <option key={t.value} value={t.value}>
@@ -137,9 +159,9 @@ export default function MovementsTab({ itemId }: Props) {
           type="date"
           value={startDate ?? ''}
           onChange={(e) => setStartDate(e.target.value || undefined)}
-          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
+          className="rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
         />
-        <span className="text-xs text-zinc-400">to</span>
+        <span className="text-[12px] text-[#8b8b9b]">to</span>
         <label htmlFor="movements-end-date" className="sr-only">
           To date
         </label>
@@ -148,14 +170,14 @@ export default function MovementsTab({ itemId }: Props) {
           type="date"
           value={endDate ?? ''}
           onChange={(e) => setEndDate(e.target.value || undefined)}
-          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-prominent-purple-500"
+          className="rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
         />
 
         {hasFilters && (
           <button
             type="button"
             onClick={resetFilters}
-            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100"
+            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-[#5b21b6] hover:bg-[#f1ebfb]"
           >
             <X className="h-3 w-3" />
             Clear
@@ -163,141 +185,141 @@ export default function MovementsTab({ itemId }: Props) {
         )}
 
         {isFetching && !isLoading && (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#a3a3b2]" />
         )}
       </div>
 
       {/* Ledger entries */}
       <div
-        className={`overflow-hidden rounded-xl border border-zinc-200 bg-white transition-opacity ${isFetching ? 'opacity-60' : ''}`}
+        className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white transition-opacity ${isFetching ? 'opacity-60' : ''}`}
       >
         {isLoading ? (
-          <div className="divide-y divide-zinc-100">
+          <div className="divide-y divide-[#f4f4f6]">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-4 py-3">
-                <div className="h-5 w-20 animate-pulse rounded-full bg-zinc-200" />
-                <div className="h-4 w-28 animate-pulse rounded bg-zinc-200" />
-                <div className="ml-auto h-4 w-12 animate-pulse rounded bg-zinc-200" />
+              <div key={i} className={`${LEDGER_GRID} px-4 py-3`}>
+                <div className="h-4 w-16 animate-pulse rounded bg-[#eeeef1]" />
+                <div className="h-4 w-24 animate-pulse rounded bg-[#eeeef1]" />
+                <div className="h-5 w-16 animate-pulse rounded-[5px] bg-[#eeeef1]" />
+                <div className="h-4 w-28 animate-pulse rounded bg-[#eeeef1]" />
+                <div className="ml-auto h-4 w-8 animate-pulse rounded bg-[#eeeef1]" />
               </div>
             ))}
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Activity className="mb-3 h-8 w-8 text-zinc-300" />
-            <p className="text-sm font-medium text-zinc-500">No movements found</p>
-            <p className="mt-1 text-xs text-zinc-400">Try adjusting the filters above.</p>
+            <Activity className="mb-3 h-8 w-8 text-[#c9c9d3]" />
+            <p className="text-[13px] font-medium text-[#5b5b6b]">No movements found</p>
+            <p className="mt-1 text-[12px] text-[#8b8b9b]">Try adjusting the filters above.</p>
           </div>
         ) : (
-          <div className="divide-y divide-zinc-100">
-            {entries.map((entry) => {
-              const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-zinc-100 text-zinc-600'
-              const label = TX_LABELS[entry.transactionType] ?? entry.transactionType
-              const isFieldEdit = entry.transactionType === 'field_edit'
-              const hasIn = entry.quantityIn > 0
-              const hasOut = entry.quantityOut > 0
+          <div role="table" aria-label="Stock movements">
+            <div
+              role="row"
+              className={`${LEDGER_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] tracking-[.08em] text-[#8b8b9b] uppercase`}
+            >
+              <span role="columnheader">Date</span>
+              <span role="columnheader">Reference</span>
+              <span role="columnheader">Type</span>
+              <span role="columnheader">Location</span>
+              <span role="columnheader" className="text-right">
+                Qty
+              </span>
+            </div>
 
-              return (
-                <div key={entry.id} className="px-4 py-3 hover:bg-zinc-50">
-                  {/* Row 1: type + qty + balance */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
+            <div className="divide-y divide-[#f4f4f6]">
+              {entries.map((entry) => {
+                const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-[#f1f1f4] text-[#5b5b6b]'
+                const label = TX_LABELS[entry.transactionType] ?? entry.transactionType
+                const isFieldEdit = entry.transactionType === 'field_edit'
+                const hasIn = entry.quantityIn > 0
+                const hasOut = entry.quantityOut > 0
+                const location = entry.warehouse
+                  ? (entry.warehouse.branch?.name ??
+                    [entry.warehouse.code, entry.warehouse.name].filter(Boolean).join(' · '))
+                  : null
+
+                return (
+                  <div
+                    key={entry.id}
+                    role="row"
+                    className={`${LEDGER_GRID} px-4 py-3 hover:bg-[#fcfcfd]`}
+                  >
+                    <span role="cell" className="text-[12px] text-[#5b5b6b]">
+                      {new Date(entry.occurredAt).toLocaleDateString('en-PH', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+
+                    <span role="cell" className="min-w-0 truncate">
+                      {entry.referenceCode ? (
+                        sourceHref(entry) ? (
+                          <a
+                            href={sourceHref(entry)!}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`${MONO} text-[11.5px] text-[#1f4b99] underline decoration-transparent underline-offset-2 hover:decoration-current`}
+                          >
+                            {entry.referenceCode}
+                          </a>
+                        ) : (
+                          <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
+                            {entry.referenceCode}
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[#a3a3b2]">—</span>
+                      )}
+                    </span>
+
+                    <span role="cell">
                       <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${colorClass}`}
+                        className={`inline-flex shrink-0 rounded-[5px] px-2 py-0.5 text-[11px] font-semibold ${colorClass}`}
                       >
                         {label}
                       </span>
-                      {entry.referenceCode && (
-                        <span className="truncate font-mono text-[11px] text-zinc-400">
-                          {entry.referenceCode}
-                        </span>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className="text-sm font-semibold tabular-nums">
-                        {isFieldEdit ? (
-                          <span className="text-zinc-400">—</span>
-                        ) : (
-                          <>
-                            {hasIn && <span className="text-green-700">+{entry.quantityIn}</span>}
-                            {hasIn && hasOut && ' '}
-                            {hasOut && <span className="text-red-600">−{entry.quantityOut}</span>}
-                            {!hasIn && !hasOut && <span className="text-zinc-500">0</span>}
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  </div>
+                    </span>
 
-                  {/* Row 2: warehouse/edit detail + date + running balance */}
-                  <div className="mt-1 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <span role="cell" className="min-w-0 truncate text-[12px] text-[#3d3d4a]">
                       {isFieldEdit ? (
                         <>
-                          <span className="text-[11px] text-zinc-500">
-                            {humanizeField(entry.field ?? '')}:{' '}
-                            <span className="line-through text-zinc-400">
-                              {entry.oldValue ?? '—'}
-                            </span>{' '}
-                            <span className="text-zinc-300">→</span>{' '}
-                            <span className="font-medium text-zinc-600">
-                              {entry.newValue ?? '—'}
-                            </span>
-                          </span>
-                          {entry.changedBy && (
-                            <span className="truncate text-[11px] italic text-zinc-400">
-                              by {entry.changedBy}
-                            </span>
-                          )}
+                          {humanizeField(entry.field ?? '')}:{' '}
+                          <span className="text-[#a3a3b2] line-through">
+                            {entry.oldValue ?? '—'}
+                          </span>{' '}
+                          <span className="text-[#c9c9d3]">→</span>{' '}
+                          <span className="font-medium">{entry.newValue ?? '—'}</span>
                         </>
                       ) : (
-                        <>
-                          {entry.warehouse && (
-                            <span className="text-[11px] text-zinc-500">
-                              {entry.warehouse.branch ? (
-                                entry.warehouse.branch.name
-                              ) : (
-                                <>
-                                  {entry.warehouse.code}
-                                  {entry.warehouse.name && (
-                                    <span className="text-zinc-400"> · {entry.warehouse.name}</span>
-                                  )}
-                                </>
-                              )}
-                            </span>
-                          )}
-                          {entry.notes && (
-                            <span className="truncate text-[11px] italic text-zinc-400">
-                              {entry.notes}
-                            </span>
-                          )}
-                        </>
+                        (location ?? '—')
                       )}
-                    </div>
-                    <div className="shrink-0 text-right text-[11px] text-zinc-400">
-                      <span>
-                        {new Date(entry.occurredAt).toLocaleDateString('en-PH', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </span>
-                      {!isFieldEdit && (
-                        <span className="ml-2 font-medium text-zinc-600">
-                          Bal: {entry.runningBalance}
-                        </span>
+                      {!isFieldEdit && entry.notes && (
+                        <span className="ml-1.5 text-[#a3a3b2] italic">{entry.notes}</span>
                       )}
-                    </div>
+                    </span>
+
+                    <span role="cell" className={`${MONO} text-right text-[13px] font-bold`}>
+                      {isFieldEdit ? (
+                        <span className="text-[#a3a3b2]">—</span>
+                      ) : hasIn ? (
+                        <span className="text-[#0b6644]">+{entry.quantityIn}</span>
+                      ) : hasOut ? (
+                        <span className="text-[#b42318]">−{entry.quantityOut}</span>
+                      ) : (
+                        <span className="text-[#5b5b6b]">0</span>
+                      )}
+                    </span>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-zinc-500">
+        <div className="flex items-center justify-between text-[12px] text-[#8b8b9b]">
           <span>
             {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
           </span>
@@ -306,18 +328,18 @@ export default function MovementsTab({ itemId }: Props) {
               type="button"
               onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page <= 1}
-              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+              className="rounded-lg px-2.5 py-1 hover:bg-[#f1f1f4] disabled:opacity-40"
             >
               Prev
             </button>
-            <span className="px-2 font-medium text-zinc-700">
+            <span className="px-2 font-medium text-[#3d3d4a]">
               {page} / {totalPages}
             </span>
             <button
               type="button"
               onClick={() => setPage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages}
-              className="rounded-lg px-2.5 py-1 hover:bg-zinc-100 disabled:opacity-40"
+              className="rounded-lg px-2.5 py-1 hover:bg-[#f1f1f4] disabled:opacity-40"
             >
               Next
             </button>

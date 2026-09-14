@@ -214,6 +214,7 @@ export const UdsSchema = z.object({
   customerId: z.string().optional().nullable(),
   customer: z.object({ id: z.string(), name: z.string() }).optional().nullable(),
   intakeReceivingReportNumber: z.string().optional().nullable(),
+  intakeSalesInvoiceNumber: z.string().optional().nullable(),
   releaseDeliveryReceiptNumber: z.string().optional().nullable(),
   releasedAt: z.string().optional().nullable(),
   repairDebitJournalEntryId: z.string().optional().nullable(),

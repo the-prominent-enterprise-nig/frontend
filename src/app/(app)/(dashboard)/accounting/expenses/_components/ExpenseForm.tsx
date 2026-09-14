@@ -112,6 +112,18 @@ const OTHER_CATEGORY_OPTIONS = [
   { value: PAYROLL_CATEGORY, label: 'Payroll' },
 ]
 
+/** Legacy and API-side spellings of the tax codes, mapped onto the values
+ * this dropdown offers so a reopened record shows the treatment it was
+ * saved with rather than an empty Select. */
+const TAX_CODE_ALIASES: Record<string, string> = {
+  INPUT_VAT: TAXABLE_CODE,
+  NON_TAXABLE: 'NON_VAT',
+}
+function taxCodeFor(stored?: string | null): string {
+  if (!stored) return ''
+  return TAX_CODE_ALIASES[stored.toUpperCase()] ?? stored
+}
+
 /** VAT a line attracts, derived from its code rather than typed. The server
  * computes the same figure from the same code and ignores any amount sent
  * with it, so a hand-typed VAT could only ever disagree with what actually
@@ -408,8 +420,12 @@ function ExpenseFormFields({
           collectFromId: (l as any).customerId ?? '',
           collectFromLabel: (l as any).customer?.name ?? '',
           description: l.description ?? '',
+          // Stored gross — the tax sits inside it — so it reopens as typed.
           amount: String(l.amount ?? ''),
-          taxCode: l.taxCode ?? '',
+          // ...but through the alias map, so a record saved under the older
+          // INPUT_VAT/NON_TAXABLE spellings reopens on its real treatment
+          // rather than an empty Select.
+          taxCode: taxCodeFor(l.taxCode),
           itemId: l.itemId ?? '',
           itemLabel: '',
           qty: l.qty ? String(l.qty) : '',
@@ -824,6 +840,9 @@ function ExpenseFormFields({
     }
     payload.lines = lines.map((l) => {
       const line: Record<string, unknown> = {
+        // Sent gross. The Amount box is VAT-inclusive and the server
+        // splits the 12/112 out of it (computeExpenseTaxAmount), so
+        // pre-netting here would net the figure twice.
         amount: Number(l.amount),
         description: l.description || undefined,
         taxCode: l.taxCode || undefined,
@@ -1367,6 +1386,11 @@ function ExpenseFormFields({
                       step="0.01"
                       min={isOtherMode ? undefined : '0.01'}
                       aria-label="Amount"
+                      title={
+                        line.taxCode === TAXABLE_CODE
+                          ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
+                          : undefined
+                      }
                       readOnly={isItemMode && !!line.itemId}
                       value={line.amount}
                       onChange={(e) => setLine(i, { amount: e.target.value })}

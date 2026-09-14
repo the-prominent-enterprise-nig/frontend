@@ -12,24 +12,28 @@ export const TransferStatusSchema = z.enum([
   'cancelled',
 ])
 
-// No serialNumberId here — the requester never picks the specific unit, they
-// only know they need one (or more, one line each) of a serial-tracked item.
-// The physical serial is chosen later by whoever's dispatching, at dispatch
-// time (see DispatchTransferFormSchema's serialAssignments below).
-export const CreateTransferLineSchema = z
-  .object({
-    itemId: z.string().min(1, 'Item is required'),
-    quantity: z.number().positive('Quantity must be greater than 0'),
-    // Form-only — never sent to the server. Lets the create form know at
-    // submit time which lines to split into N quantity-1 lines (the backend
-    // still enforces exactly 1 unit per serial-tracked line; see
-    // CreateTransferModal's handleFormSubmit).
-    isSerialTracked: z.boolean().optional(),
-  })
-  .refine((line) => !line.isSerialTracked || Number.isInteger(line.quantity), {
-    message: 'Serial-tracked items must be a whole number of units',
-    path: ['quantity'],
-  })
+// The requester never names a specific unit — they can't see what's
+// physically on the shelf at the source. The serial is chosen at dispatch by
+// whoever's holding the stock (see TransferDetailModal's dispatch form and
+// the backend's assignDispatchSerials). A serial-tracked line still carries
+// an ordinary quantity here; the backend's per-line invariant
+// (validateSerialLineQuantities: exactly 1 unit per serial-tracked line) is
+// satisfied by splitting that line into N single-unit lines at submit (see
+// CreateTransferModal's handleFormSubmit), rather than making the requester
+// add the same item N times themselves.
+export const CreateTransferLineSchema = z.object({
+  itemId: z.string().min(1, 'Item is required'),
+  quantity: z.number().positive('Quantity must be greater than 0'),
+  // Form-only — never sent to the server. Tells handleFormSubmit which
+  // lines to split, and drives the row's own serial-tracked note.
+  isSerialTracked: z.boolean().optional(),
+  // Form-only display context, captured from the search result that added
+  // this line — the row renders the item as plain text (it's only ever
+  // added through the card's own "Add item" search), so it needs the name
+  // and SKU without a second lookup per row.
+  itemLabel: z.string().optional(),
+  itemSku: z.string().optional(),
+})
 
 export const CreateTransferFormSchema = z
   .object({
@@ -38,6 +42,11 @@ export const CreateTransferFormSchema = z
     transferDate: z.string().min(1, 'Transfer date is required'),
     expectedArrival: z.string().optional(),
     reason: z.string().max(500).optional(),
+    // Scenario 50 — additive to the existing Stock Request flow, not a
+    // replacement. Enforced server-side against inventory:transfers:direct;
+    // the checkbox is hidden from anyone who lacks it (see CreateTransferModal),
+    // so a submit without the permission is a defensive-only path.
+    skipDestinationApproval: z.boolean().optional(),
     lines: z.array(CreateTransferLineSchema).min(1, 'At least one item line is required'),
   })
   .refine((d) => d.fromWarehouseId !== d.toWarehouseId, {
@@ -70,7 +79,10 @@ export const DispatchSerialAssignmentSchema = z.object({
 })
 
 export const DispatchTransferFormSchema = z.object({
-  expectedArrival: z.string().min(1, 'Expected arrival date is required'),
+  // Scenario 50 — optional, matching the request side. A dispatcher often
+  // doesn't know the arrival date, and requiring it blocked the dispatch
+  // over a field nothing downstream reads.
+  expectedArrival: z.string().optional(),
   notes: z.string().max(500).optional(),
   serialAssignments: z.array(DispatchSerialAssignmentSchema).optional(),
   driverName: z.string().min(1, "Driver's name is required").max(150),
@@ -191,8 +203,14 @@ const TransferLineSchema = z.object({
       isSerialTracked: z.boolean().optional(),
     })
     .optional(),
-  quantity: z.number(),
-  receivedQuantity: z.number().nullable().optional(),
+  // Prisma Decimal columns serialize as STRINGS over JSON, not numbers.
+  // Declaring these as z.number() made every row fail validation, which
+  // failed the whole list parse and sent get-transfers.ts down its raw-cast
+  // fallback — the real reason the pipeline tiles, status pills and
+  // pagination all read zero. Coerce so both shapes parse; every consumer
+  // already wraps these in Number().
+  quantity: z.coerce.number(),
+  receivedQuantity: z.coerce.number().nullable().optional(),
   serialNumberId: z.string().nullable().optional(),
   serialNumber: z
     .object({
@@ -279,12 +297,30 @@ export const TransferSummarySchema = z.object({
     .optional(),
 })
 
-export const TransferListResponseSchema = z.object({
-  data: z.array(TransferSummarySchema),
-  total: z.number(),
-  page: z.number(),
-  limit: z.number(),
-})
+// The backend nests pagination under `meta` (`{ data, meta: { total, page,
+// limit, lastPage } }`), not at the top level — same shape as the stock
+// balance and serial number endpoints. This schema used to declare the flat
+// shape, so safeParse failed on every response and get-transfers.ts fell
+// through to its raw `as TransferListResponse` cast: `total` was then
+// undefined, which zeroed every pipeline tile and status pill on the Stock
+// Transfers page and left pagination permanently hidden (totalPages became
+// ceil(0 / limit) === 0). Parsing the real shape and transforming it back to
+// a flat one fixes the counts without touching a single consumer.
+export const TransferListResponseSchema = z
+  .object({
+    data: z.array(TransferSummarySchema),
+    meta: z.object({
+      total: z.number(),
+      page: z.number(),
+      limit: z.number(),
+    }),
+  })
+  .transform(({ data, meta }) => ({
+    data,
+    total: meta.total,
+    page: meta.page,
+    limit: meta.limit,
+  }))
 
 export type TransferSummary = z.infer<typeof TransferSummarySchema>
 export type TransferListResponse = z.infer<typeof TransferListResponseSchema>

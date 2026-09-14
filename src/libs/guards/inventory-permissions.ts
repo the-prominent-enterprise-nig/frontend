@@ -43,6 +43,9 @@ export const INVENTORY_PERMISSIONS = {
   TRANSFERS_HQ_REJECT: 'inventory:transfers:hq-reject',
   TRANSFERS_MANAGER_APPROVE: 'inventory:transfers:manager-approve',
   TRANSFERS_MANAGER_REJECT: 'inventory:transfers:manager-reject',
+  // Scenario 50 — raise a transfer that skips the destination branch's
+  // manager-approval step. Branch Manager + Business Owner only.
+  TRANSFERS_DIRECT: 'inventory:transfers:direct',
 
   // ── Bundles ────────────────────────────────────────────────────────────────
   BUNDLES_READ: 'inventory:bundles:read',
@@ -216,6 +219,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
     "Approve a Stock-Controller-originated transfer request on behalf of the requester's own branch",
   'inventory:transfers:manager-reject':
     "Reject a Stock-Controller-originated transfer request on behalf of the requester's own branch",
+  'inventory:transfers:direct':
+    "Raise a stock transfer that skips the destination branch's manager-approval step",
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',

@@ -36,6 +36,15 @@ type Props = {
    * Server-side enforcement in receiveStock() is the real guard; this just
    * keeps the field out of view for roles who can't set it anyway. */
   canViewCost: boolean
+  /** This form always does the same thing underneath (create a GoodsReceipt
+   * — a receiving report — and post it to the ledger), but reads oddly as
+   * "Receive Stock" when opened from the Receiving Reports list rather than
+   * the stock-balances screen it was written for. Let the caller reframe
+   * the copy instead of forking the form. */
+  title?: string
+  subtitle?: string
+  submitLabel?: string
+  submittingLabel?: string
 }
 
 const fieldClass =
@@ -80,6 +89,10 @@ export default function ReceiveStockModal({
   warehouses,
   items,
   canViewCost,
+  title = 'Receive Stock',
+  subtitle = 'Record incoming stock into inventory.',
+  submitLabel = 'Receive Stock',
+  submittingLabel = 'Receiving…',
 }: Props) {
   const {
     control,
@@ -203,8 +216,8 @@ export default function ReceiveStockModal({
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Receive Stock</h2>
-          <p className="mt-0.5 text-sm text-zinc-500">Record incoming stock into inventory.</p>
+          <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
+          <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>
         </div>
         <button
           type="button"
@@ -799,7 +812,7 @@ export default function ReceiveStockModal({
             className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isSubmitting ? 'Receiving…' : 'Receive Stock'}
+            {isSubmitting ? submittingLabel : submitLabel}
           </button>
         </div>
       </form>

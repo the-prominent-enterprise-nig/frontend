@@ -1,11 +1,19 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getTransfers } from '../_actions/get-transfers'
 import { getTransfer } from '../_actions/get-transfer'
 import { createTransfer } from '../_actions/create-transfer'
+import { consignToBranch } from '../../serial-numbers/_actions/consign-to-branch'
+import type { ConsignToBranchFormValues } from '@/src/schema/inventory/serial-numbers'
 import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
@@ -27,6 +35,22 @@ import type {
   TransferStatus,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
+
+// Every status the pipeline band / filter pills need a live count for. Kept
+// apart from TransferStatusSchema's own ordering (which is display order for
+// the detail-modal stage trail) since this list only exists to drive nine
+// parallel count queries below.
+const ALL_STATUSES: TransferStatus[] = [
+  'pending_manager_approval',
+  'requested',
+  'pending_hq_approval',
+  'draft',
+  'in_transit',
+  'received',
+  'partially_received',
+  'rejected',
+  'cancelled',
+]
 
 export function useTransferManager() {
   const queryClient = useQueryClient()
@@ -57,6 +81,42 @@ export function useTransferManager() {
     placeholderData: keepPreviousData,
     staleTime: 60 * 1000,
   })
+
+  // Pipeline band + status-pill counts. Each fetches limit:1 (only
+  // `pagination.total` is read) so nine parallel calls stay cheap, and they
+  // respect every filter except status itself — so switching the warehouse/
+  // search filters updates every pill's count, not just the active one's.
+  const countQueries = useQueries({
+    queries: ALL_STATUSES.map((status) => ({
+      queryKey: [
+        'inventory-transfers-count',
+        status,
+        fromWarehouseFilter,
+        toWarehouseFilter,
+        search,
+      ],
+      queryFn: () =>
+        getTransfers({
+          page: 1,
+          limit: 1,
+          status,
+          fromWarehouseId: fromWarehouseFilter,
+          toWarehouseId: toWarehouseFilter,
+          search: search || undefined,
+        }),
+      placeholderData: keepPreviousData,
+      staleTime: 60 * 1000,
+    })),
+  })
+  const statusCounts = useMemo(() => {
+    const counts = {} as Record<TransferStatus, number>
+    ALL_STATUSES.forEach((status, i) => {
+      counts[status] = countQueries[i]?.data?.data?.total ?? 0
+    })
+    return counts
+  }, [countQueries])
+  const isLoadingCounts = countQueries.some((q) => q.isLoading)
+  const totalCount = ALL_STATUSES.reduce((sum, s) => sum + (statusCounts[s] ?? 0), 0)
 
   const transferDetailQuery = useQuery({
     queryKey: ['inventory-transfer', selectedTransfer?.id],
@@ -98,9 +158,43 @@ export function useTransferManager() {
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
       } else {
         showToast({
           title: 'Failed to create transfer',
+          description: result.message,
+          status: 'error',
+        })
+      }
+    },
+  })
+
+  // Sending stock out for a caravan starts on this screen too, but it is not
+  // a transfer: ownership never moves, so there is no destination warehouse,
+  // no dispatch and no receipt — just the units being marked as out. It
+  // therefore goes to the consign endpoint rather than createTransfer, and
+  // invalidates the serial lists rather than the transfer ones.
+  const consignMutation = useMutation({
+    mutationFn: ({
+      serialNumberIds,
+      data,
+    }: {
+      serialNumberIds: string[]
+      data: ConsignToBranchFormValues
+    }) => consignToBranch(serialNumberIds, data),
+    onSuccess: (result) => {
+      if (result.success) {
+        showToast({
+          title: 'Units consigned',
+          description: result.message,
+          status: 'success',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-in-stock'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serials-available-count'] })
+      } else {
+        showToast({
+          title: 'Failed to consign these units',
           description: result.message,
           status: 'error',
         })
@@ -114,6 +208,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request approved', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         // No optimistic status set here — approving routes to either
         // 'requested' or 'pending_hq_approval' depending on the HQ-approval
@@ -135,6 +230,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
@@ -155,6 +251,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request approved', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'requested' } : null))
@@ -176,6 +273,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
@@ -196,6 +294,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request accepted', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'draft' } : null))
@@ -217,6 +316,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'rejected' } : null))
@@ -238,6 +338,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Transfer dispatched', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
           setSelectedTransfer((prev) => (prev ? { ...prev, status: 'in_transit' } : null))
@@ -259,6 +360,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Transfer received', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         // Unlike every other transfer action, receive has two possible
         // outcomes (received vs partially_received) — use whatever the
@@ -283,6 +385,7 @@ export function useTransferManager() {
       if (result.success) {
         showToast({ title: 'Transfer cancelled', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         setSelectedTransfer(null)
       } else {
         showToast({
@@ -351,8 +454,16 @@ export function useTransferManager() {
     warehouseOptions,
     branchOptions,
 
+    statusCounts,
+    totalCount,
+    isLoadingCounts,
+
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+
+    consignUnits: (serialNumberIds: string[], data: ConsignToBranchFormValues) =>
+      consignMutation.mutateAsync({ serialNumberIds, data }),
+    isConsigning: consignMutation.isPending,
 
     approveHqTransfer: approveHqMutation.mutateAsync,
     isApprovingHq: approveHqMutation.isPending,
@@ -386,6 +497,9 @@ export function useTransferManager() {
     cancelTransfer: cancelMutation.mutateAsync,
     isCancelling: cancelMutation.isPending,
 
-    refetch: () => queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] }),
+    refetch: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+    },
   }
 }

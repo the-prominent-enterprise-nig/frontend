@@ -167,18 +167,25 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Truck,
         requiredPermission: PROCUREMENT_PERMISSIONS.SUPPLIERS_READ,
       },
-      {
-        label: 'Counting',
-        href: '/inventory/counting',
-        icon: RefreshCcw,
-        requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
-      },
-      {
-        label: 'Finance',
-        href: '/inventory/finance',
-        icon: Coins,
-        requiredPermission: INVENTORY_PERMISSIONS.COSTING_READ,
-      },
+      // Counting is hidden from the nav for now. The route and its page are
+      // untouched — /inventory/counting still loads, it is just not linked.
+      // The entry carries no `section` marker, so commenting it out leaves
+      // every group heading where it was.
+      // {
+      //   label: 'Counting',
+      //   href: '/inventory/counting',
+      //   icon: RefreshCcw,
+      //   requiredPermission: INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
+      // },
+      // Finance is hidden from the nav for now, same as Counting above. The
+      // route and its page are untouched — /inventory/finance still loads, it
+      // is just not linked.
+      // {
+      //   label: 'Finance',
+      //   href: '/inventory/finance',
+      //   icon: Coins,
+      //   requiredPermission: INVENTORY_PERMISSIONS.COSTING_READ,
+      // },
       {
         label: 'Warehouses',
         href: '/inventory/warehouses',

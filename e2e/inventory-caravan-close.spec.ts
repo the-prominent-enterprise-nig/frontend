@@ -34,7 +34,11 @@ test.describe('Inventory — Caravan event close', () => {
     await gotoReady(page, '/inventory/serial-numbers')
     await page.getByRole('button', { name: 'Caravan' }).click()
 
-    const branchPicker = page.getByPlaceholder('Select a branch…')
+    // Return to Origin is a unit-level action. By Serial is the tab's default
+    // view, but assert it explicitly rather than depend on that default.
+    await page.getByRole('button', { name: 'By Serial' }).click()
+
+    const branchPicker = page.getByPlaceholder('All branches')
     if (await branchPicker.isVisible().catch(() => false)) {
       await branchPicker.click()
       await page.getByText(host.name, { exact: true }).click()
