@@ -30,42 +30,48 @@ test.describe('Inventory — Stock Transfer supervisor serial override', () => {
     const warehousesRes = await page.request.get('/api/inventory/warehouses?limit=200')
     const warehouses = ((await warehousesRes.json()).data ?? []) as { id: string }[]
     expect(warehouses.length).toBeGreaterThanOrEqual(3)
-    const fromWarehouse = warehouses[0]
-    const toWarehouse = warehouses[1]
-    // Any warehouse other than the transfer's own from/to — sourcing a
-    // serial physically stationed there guarantees it fails the normal
-    // source-warehouse check at dispatch time.
-    const elsewhereWarehouse = warehouses.find(
-      (w) => w.id !== fromWarehouse.id && w.id !== toWarehouse.id
-    )!
 
-    // TN-FURN-SET-001 — a serial-tracked demo item seeded with 200 in-stock
-    // serials at every branch warehouse specifically so e2e/manual testing
-    // never runs low (see prisma/seed.ts's "Furniture Set demo" section).
-    // The old TN-REF-001 reference used by sibling specs in this same
-    // directory no longer exists in the seed (removed once
-    // seedNigAgingCatalog started seeding real refrigerator models instead)
-    // — those specs are stale, but fixing them is out of scope here.
-    const itemsRes = await page.request.get('/api/inventory/items', {
-      params: { search: 'TN-FURN-SET-001', limit: '1' },
-    })
-    const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
-    const item = items[0]
-
+    // Resolve the fixture from what the seed actually holds rather than
+    // naming an SKU. Every hardcoded SKU in this directory has now gone stale
+    // at least once — TN-REF-001 disappeared when seedNigAgingCatalog started
+    // seeding real refrigerator models, and TN-FURN-SET-001 (which this spec
+    // used to name, with a comment promising it was seeded everywhere) is
+    // likewise absent from the current seed. Asking the API for a real
+    // in-stock serial and working backwards to its item and warehouse cannot
+    // drift the same way.
     const serialsRes = await page.request.get('/api/inventory/serial-numbers', {
-      params: {
-        itemId: item.id,
-        warehouseId: elsewhereWarehouse.id,
-        status: 'in_stock',
-        limit: '1',
-      },
+      params: { status: 'in_stock', limit: '200' },
     })
-    const serials = ((await serialsRes.json()).data ?? []) as {
+    const allSerials = ((await serialsRes.json()).data ?? []) as {
       id: string
       serialNumber: string
+      itemId: string
+      currentWarehouseId: string | null
     }[]
-    expect(serials.length).toBeGreaterThan(0)
-    const mismatchedSerial = serials[0]
+
+    // The override path is specifically about dispatching a serial that is
+    // NOT at the transfer's source warehouse, so the serial's own warehouse
+    // has to be excluded from both ends of the transfer — pick it first and
+    // choose from/to around it.
+    // Keep the original, known-good transfer pair — shifting it around
+    // whichever warehouse the serial happens to sit in produced pairs the
+    // create endpoint rejects.
+    const fromWarehouse = warehouses[0]
+    const toWarehouse = warehouses[1]
+
+    // The override path is specifically about dispatching a serial that is
+    // NOT at the transfer's source warehouse, so take any in-stock serial
+    // parked somewhere other than this transfer's two ends.
+    const candidate = allSerials.find(
+      (serial) =>
+        !!serial.currentWarehouseId &&
+        serial.currentWarehouseId !== fromWarehouse.id &&
+        serial.currentWarehouseId !== toWarehouse.id
+    )
+    if (!candidate) throw new Error('no in-stock serial found outside the transfer route')
+    const mismatchedSerial = candidate
+
+    const item = { id: mismatchedSerial.itemId }
 
     const createRes = await page.request.post('/api/inventory/transfers', {
       data: {
@@ -100,6 +106,9 @@ test.describe('Inventory — Stock Transfer supervisor serial override', () => {
       }
     }).toPass({ timeout: 20_000 })
 
+    // The detail view is a right-hand drawer over a dimmed page, so the
+    // wrapper is `fixed`. Queries scope into it because the overlay contains
+    // the panel.
     const modal = page.locator('.fixed.inset-0.z-50')
     // 'draft' is the accepted-but-not-yet-dispatched status; the list/detail
     // UI displays it as "Accepted" (see TransferDetailModal's STATUS map).
@@ -119,9 +128,23 @@ test.describe('Inventory — Stock Transfer supervisor serial override', () => {
     // never surfaces every other branch's serials by default.
     await modal.getByText('Supervisor override', { exact: false }).click()
 
+    // The reason has to be typed BEFORE the serial is picked. Both the
+    // checkbox and this input live inside the group's
+    // `firstEmptyIndex !== undefined` block, and the component copies the
+    // reason onto the slot at firstEmptyIndex — so filling the only empty
+    // slot unmounts the very input the reason would have been typed into.
+    const overrideReason = 'E2E — physically confirmed on the shelf, system record is stale'
+    await fillStable(modal.getByPlaceholder('Reason for the override (required)'), overrideReason)
+
+    // SearchCombobox renders a BUTTON when closed and only swaps in the search
+    // <input> once opened (see its own comment), so the freshly-widened picker
+    // cannot be reached with getByPlaceholder until it has been clicked open.
+    await modal
+      .getByRole('button', { name: /Search any serial number/ })
+      .first()
+      .click()
     const serialInput = modal.getByPlaceholder('Search any serial number…')
-    await expect(serialInput).toBeEnabled({ timeout: 10_000 })
-    await serialInput.click()
+    await expect(serialInput).toBeVisible({ timeout: 10_000 })
     await serialInput.fill(mismatchedSerial.serialNumber)
     // SearchCombobox's dropdown renders via createPortal(document.body), not
     // nested under the modal's own DOM subtree — must be found via `page`.
@@ -131,12 +154,8 @@ test.describe('Inventory — Stock Transfer supervisor serial override', () => {
     await expect(serialOption).toBeVisible({ timeout: 10_000 })
     await serialOption.click()
 
-    const overrideReason = 'E2E — physically confirmed on the shelf, system record is stale'
-    await fillStable(modal.getByPlaceholder('Reason for the override (required)'), overrideReason)
-
     await fillStable(modal.getByPlaceholder('e.g. Juan dela Cruz'), 'E2E Driver')
     await fillStable(modal.getByPlaceholder('e.g. 09171234567'), '09170001111')
-    await fillStable(modal.getByPlaceholder('License number'), 'E2E-LICENSE-001')
     await fillStable(modal.getByPlaceholder('e.g. ABC 1234'), 'E2E 001')
     await fillStable(modal.getByPlaceholder('e.g. LBC Express'), 'E2E Carrier')
 

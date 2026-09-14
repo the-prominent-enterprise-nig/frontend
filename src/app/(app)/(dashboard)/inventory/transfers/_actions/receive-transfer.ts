@@ -7,7 +7,9 @@ import { ReceiveTransferFormSchema } from '@/src/schema/inventory/transfers'
 export async function receiveTransfer(
   id: string,
   input: unknown
-): Promise<ApiResponse<{ status: string }>> {
+): Promise<
+  ApiResponse<{ status: string; goodsReceiptId: string | null; goodsReceiptCode: string | null }>
+> {
   if (!id) {
     return { success: false, error: 'Invalid transfer ID', message: 'Transfer ID is required' }
   }
@@ -38,7 +40,11 @@ export async function receiveTransfer(
     })),
   }
 
-  const result = await api.patch<{ status: string }>(`/inventory/transfers/${id}/receive`, body)
+  const result = await api.patch<{
+    status: string
+    goodsReceiptId: string | null
+    goodsReceiptCode: string | null
+  }>(`/inventory/transfers/${id}/receive`, body)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -58,5 +64,15 @@ export async function receiveTransfer(
       ? 'Transfer partially received — discrepancy recorded, stock added only for received quantities'
       : 'Transfer received — stock added to destination branch'
 
-  return { success: true, data: { status: result.data?.status ?? 'received' }, message }
+  // Scenario 50 — the RR this call just issued, so the receiver can jump
+  // straight to it without a second lookup.
+  return {
+    success: true,
+    data: {
+      status: result.data?.status ?? 'received',
+      goodsReceiptId: result.data?.goodsReceiptId ?? null,
+      goodsReceiptCode: result.data?.goodsReceiptCode ?? null,
+    },
+    message,
+  }
 }

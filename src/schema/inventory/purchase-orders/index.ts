@@ -33,7 +33,7 @@ export const CreatePoLineSchema = z.object({
 export const CreatePoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
   branchId: z.string().optional(),
-  warehouseId: z.string().min(1, 'Warehouse is required'),
+  warehouseId: z.string().min(1, 'Location is required'),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
@@ -82,7 +82,7 @@ export const ConvertPrToPoLineSchema = z.object({
 
 export const ConvertPrToPoFormSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required'),
-  warehouseId: z.string().min(1, 'Warehouse is required'),
+  warehouseId: z.string().min(1, 'Location is required'),
   expectedDeliveryDate: z.string().optional(),
   deliveryInstructions: z.string().max(1000).optional(),
   paymentTerms: z.string().max(50).optional(),
@@ -151,7 +151,12 @@ const PoLineSchema = z.object({
   quantity: z.coerce.number(),
   unitPrice: z.coerce.number(),
   receivedQuantity: z.coerce.number().optional().nullable(),
-  lineTotal: z.number().optional().nullable(),
+  // Prisma Decimal fields serialize as strings over JSON — coerced like its
+  // siblings above/below. Plain z.number() here silently rejected every
+  // real record (only the un-validated list fetch never noticed): the one
+  // path that actually parses a PO — the ?po=<id> deep link's single-record
+  // fetch — failed on every order that had ever priced a line.
+  lineTotal: z.coerce.number().optional().nullable(),
   notes: z.string().optional().nullable(),
   // Scenario 10 Part 6 — supplier SRP + an ordered chain of discounts off
   // it, and the computed discounted cost / whether unitPrice was manually

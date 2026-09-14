@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import {
@@ -40,12 +40,29 @@ export default function ConsignToBranchModal({
     formState: { errors },
   } = useForm<ConsignToBranchFormValues>({
     resolver: zodResolver(ConsignToBranchFormSchema),
-    defaultValues: { hostBranchId: '', eventName: '', eventStartDate: '', eventEndDate: '' },
+    defaultValues: {
+      destinationKind: 'branch',
+      hostBranchId: '',
+      venue: '',
+      eventName: '',
+      eventStartDate: '',
+      eventEndDate: '',
+    },
   })
+
+  const destinationKind = useWatch({ control, name: 'destinationKind' })
+  const isVenue = destinationKind === 'venue'
 
   useEffect(() => {
     if (!isOpen) {
-      reset({ hostBranchId: '', eventName: '', eventStartDate: '', eventEndDate: '' })
+      reset({
+        destinationKind: 'branch',
+        hostBranchId: '',
+        venue: '',
+        eventName: '',
+        eventStartDate: '',
+        eventEndDate: '',
+      })
     }
   }, [isOpen, reset])
 
@@ -61,10 +78,12 @@ export default function ConsignToBranchModal({
       <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Consign to Branch</h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Consign for a Caravan</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              {selectedCount} serial{selectedCount !== 1 ? 's' : ''} — physically moves to the host
-              branch for a caravan event; ownership stays here.
+              {selectedCount} serial{selectedCount !== 1 ? 's' : ''} —{' '}
+              {isVenue
+                ? 'physically goes out to the venue; it stays on your books and you keep selling it.'
+                : 'physically moves to the host branch for a caravan event; ownership stays here.'}
             </p>
           </div>
           <button
@@ -78,26 +97,92 @@ export default function ConsignToBranchModal({
 
         <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
           <div className="space-y-5 px-6 py-5">
+            {/* Two genuinely different things, not two spellings of one:
+                a host branch takes the stock over and sells it, while a
+                venue is only a place the stock sits — which is why the
+                helper copy and the ownership story change with it. */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Host Branch <span className="text-red-500">*</span>
-              </label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Going to</label>
               <Controller
-                name="hostBranchId"
+                name="destinationKind"
                 control={control}
                 render={({ field }) => (
-                  <SearchableSelect
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    placeholder="Search host branch…"
-                    options={branches.map((b) => ({ value: b.id, label: b.name }))}
-                  />
+                  <div className="mt-1 flex gap-2">
+                    {(
+                      [
+                        { value: 'branch', label: 'One of our branches' },
+                        { value: 'venue', label: 'Somewhere else' },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => field.onChange(opt.value)}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+                          field.value === opt.value
+                            ? 'border-prominent-purple-500 bg-prominent-purple-50 text-prominent-purple-800'
+                            : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 )}
               />
-              {errors.hostBranchId && (
-                <p className="mt-1 text-xs text-red-600">{errors.hostBranchId.message}</p>
-              )}
             </div>
+
+            {isVenue ? (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Venue <span className="text-red-500">*</span>
+                </label>
+                <Controller
+                  name="venue"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. Lemery Town Fair"
+                      className={fieldClass}
+                    />
+                  )}
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  Any place with no branch of ours — a fair, a dealer&apos;s floor, a town. These
+                  units stay on your books and stay sellable here while they&apos;re out.
+                </p>
+                {errors.venue && (
+                  <p className="mt-1 text-xs text-red-600">{errors.venue.message}</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-zinc-700">
+                  Host Branch <span className="text-red-500">*</span>
+                </label>
+                <Controller
+                  name="hostBranchId"
+                  control={control}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      placeholder="Search host branch…"
+                      options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                    />
+                  )}
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  The host sells these units while they&apos;re there; ownership stays with you.
+                </p>
+                {errors.hostBranchId && (
+                  <p className="mt-1 text-xs text-red-600">{errors.hostBranchId.message}</p>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">

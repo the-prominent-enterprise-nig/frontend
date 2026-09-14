@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   useForm,
   useFieldArray,
@@ -27,6 +28,7 @@ import {
   Receipt,
   UserCheck,
   AlertTriangle,
+  ExternalLink,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -45,10 +47,12 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import { getTransferDocument } from '../_actions/get-transfer-document'
 import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
+import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
-import { SerialSearchCombobox } from './SerialSearchCombobox'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
+import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
 import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
@@ -80,28 +84,30 @@ function labelWithOccurrence<T>(
   })
 }
 
+// Same chip palette as TransferList's STATUS_CONFIG — a row and the drawer
+// it opens have to read as one record, and the list is the design reference.
 const STATUS_CONFIG = {
   pending_manager_approval: {
     label: 'Pending',
-    color: 'bg-indigo-100 text-indigo-700',
+    color: 'bg-[#eef0fb] text-[#31409b]',
     icon: UserCheck,
   },
-  requested: { label: 'Requested', color: 'bg-purple-100 text-purple-700', icon: Inbox },
+  requested: { label: 'Requested', color: 'bg-[#f1ebfb] text-[#3f1490]', icon: Inbox },
   pending_hq_approval: {
     label: 'Pending HQ Approval',
-    color: 'bg-amber-100 text-amber-700',
+    color: 'bg-[#fdf3e7] text-[#8a4b06]',
     icon: Hourglass,
   },
-  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600', icon: Ban },
-  draft: { label: 'Accepted', color: 'bg-zinc-100 text-zinc-600', icon: Clock },
-  in_transit: { label: 'In Transit', color: 'bg-blue-100 text-blue-700', icon: Truck },
-  received: { label: 'Received', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+  rejected: { label: 'Rejected', color: 'bg-[#fdeceb] text-[#b42318]', icon: Ban },
+  draft: { label: 'Accepted', color: 'bg-[#eaf0fb] text-[#1f4b99]', icon: Clock },
+  in_transit: { label: 'In Transit', color: 'bg-[#fdf3e7] text-[#8a4b06]', icon: Truck },
+  received: { label: 'Received', color: 'bg-[#e7f5ef] text-[#0b6644]', icon: CheckCircle },
   partially_received: {
     label: 'Partially Received',
-    color: 'bg-amber-100 text-amber-700',
+    color: 'bg-[#fdf3e7] text-[#8a4b06]',
     icon: AlertTriangle,
   },
-  cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-600', icon: XCircle },
+  cancelled: { label: 'Cancelled', color: 'bg-[#fdeceb] text-[#b42318]', icon: XCircle },
 }
 
 // A request can be withdrawn any time before physical movement starts
@@ -218,6 +224,39 @@ function ItemSerialGroup({
     setValue(`serialAssignments.${i}.overrideReason`, '')
   }
 
+  // Scenario 50 — lets a dispatcher assign several serials in one open/close
+  // of the dropdown instead of repeated single picks (SearchableSelect's
+  // multi-select stays open across clicks; see its own `toggle()`). Each
+  // click fires exactly one add or remove, so the diff against the
+  // currently-picked set is always a single id — reusing handleRemove for
+  // the remove half and mirroring handlePick's assignment shape for the add
+  // half. Only wired for the normal in-stock path: the override picker is a
+  // live cross-branch search with no pre-loaded option list to drive a
+  // multi-select from, and stays single-pick.
+  function handleMultiSelectChange(newIds: string[]) {
+    if (newIds.length > pickedSerialIds.length) {
+      const addedId = newIds.find((id) => !pickedSerialIds.includes(id))
+      if (addedId && firstEmptyIndex !== undefined) {
+        const option = serialOptions.find((s) => s.id === addedId)
+        setValue(`serialAssignments.${firstEmptyIndex}.serialNumberId`, addedId, {
+          shouldValidate: true,
+        })
+        setValue(
+          `serialAssignments.${firstEmptyIndex}.serialLabel`,
+          option?.serialNumber ?? addedId
+        )
+        setValue(`serialAssignments.${firstEmptyIndex}.override`, false)
+        setValue(`serialAssignments.${firstEmptyIndex}.overrideReason`, '')
+      }
+    } else {
+      const removedId = pickedSerialIds.find((id) => !newIds.includes(id))
+      if (removedId) {
+        const idx = slotIndices.find((i) => allAssignments[i]?.serialNumberId === removedId)
+        if (idx !== undefined) handleRemove(idx)
+      }
+    }
+  }
+
   const activeError =
     firstEmptyIndex !== undefined ? errors?.[firstEmptyIndex]?.serialNumberId?.message : undefined
 
@@ -269,18 +308,21 @@ function ItemSerialGroup({
                 {canOverride && ' Use supervisor override below to search other branches.'}
               </p>
             ) : (
-              <SerialSearchCombobox
-                key={`normal-${itemId}-${filledIndices.length}`}
-                value=""
-                onChange={() => {}}
-                onSelect={handlePick}
-                options={serialOptions}
-                queryKey={`dispatch-serial-search-${fromWarehouseId}-${itemId}-${filledIndices.length}`}
-                disabled={serialsQuery.isLoading}
-                placeholder={serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'}
-                error={activeError}
+              // Scenario 50 — multi-select: stays open across picks so a
+              // dispatcher can assign several serials in one interaction,
+              // rather than the box closing/remounting after each one.
+              <SearchableSelect
+                multiple
+                value={pickedSerialIds}
+                onChange={handleMultiSelectChange}
+                options={serialOptions.map((s) => ({ value: s.id, label: s.serialNumber }))}
+                loading={serialsQuery.isLoading}
+                loadingLabel="Loading serials…"
+                placeholder="Search serial number…"
+                summaryNoun="serials assigned"
               />
             )}
+            {activeError && <p className="mt-1 text-xs text-red-600">{activeError}</p>}
 
             {/* Scenario 29 SN-01 — if the next serial fails the in-stock/
                 source-warehouse check (stale system record, physically
@@ -516,6 +558,32 @@ function SerialReceiveCorrection({
   )
 }
 
+/** One label/value cell in the drawer's facts strip. Missing values read as
+ * a muted "Not set" rather than an em-dash, so an unfilled field is obviously
+ * unfilled rather than looking like a formatting placeholder. */
+function Fact({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value?: string | null
+  mono?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>{label}</p>
+      <p
+        className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
+          value ? 'text-[#17171c]' : 'text-[#8b8b9b]'
+        }`}
+      >
+        {value || 'Not set'}
+      </p>
+    </div>
+  )
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -739,6 +807,11 @@ export default function TransferDetailModal({
   // otherwise every row just shows a distracting "—".
   const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
   const isReceivedStatus = status === 'received' || status === 'partially_received'
+  const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
+  const receivedUnits = (transfer?.lines ?? []).reduce(
+    (sum, l) => sum + Number(l.receivedQuantity ?? 0),
+    0
+  )
 
   // A serial-tracked item requested with quantity > 1 is stored as several
   // separate quantity-1 lines (CreateTransferModal splits it so the backend's
@@ -787,9 +860,13 @@ export default function TransferDetailModal({
     // and shows one search box per item — so no per-line "(i of N)" label
     // is needed here, the group header's own "X of N assigned" count covers
     // that instead.
+    // A line arriving with a serialNumberId already set (no longer produced
+    // by the create form, but possible for an internally-created transfer)
+    // is only re-verified by the backend, never re-assigned — asking for it
+    // again here would be a pick that assignDispatchSerials then ignores.
     const serialLines = isUdsLinked
       ? []
-      : (transfer.lines ?? []).filter((line) => line.item?.isSerialTracked)
+      : (transfer.lines ?? []).filter((line) => line.item?.isSerialTracked && !line.serialNumberId)
     const serialAssignments = serialLines.map((line) => ({
       lineId: line.id ?? '',
       itemId: line.itemId ?? line.item?.id ?? '',
@@ -953,87 +1030,108 @@ export default function TransferDetailModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
-        {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Transfer Details</h2>
+    // Right-hand drawer over a dimmed page, per the Stock Transfers design:
+    // the list stays visible behind it, which matters because reviewing a
+    // transfer is usually one step in working down the queue rather than a
+    // destination of its own. Keeps the same shell as before — header,
+    // scrolling body, pinned footer — so every internal form, state and
+    // handler below is untouched.
+    <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-[#17171c]/40">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`${PLEX} flex h-full w-full max-w-[min(860px,94vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
+      >
+        {/* Header — the transfer's own reference is the title, the way the
+            design has it; "Transfer Details" stays as the dialog's accessible
+            name (and the anchor e2e opens the drawer on). */}
+        <div className="border-b border-[#e4e4e9] px-6 pb-3 pt-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="sr-only">Transfer Details</h2>
+              <div className="flex items-center gap-2.5">
+                <p className={`${MONO} truncate text-[19px] font-semibold tracking-[-0.02em]`}>
+                  {transfer?.transferNumber ??
+                    (transfer ? `#${transfer.id.slice(0, 8).toUpperCase()}` : '—')}
+                </p>
+                {transfer && (
+                  <StatusBadge
+                    label={statusCfg.label}
+                    colorClassName={statusCfg.color}
+                    icon={<StatusIcon className="h-3.5 w-3.5" />}
+                    size="sm"
+                    className="shrink-0 px-2.5 py-1"
+                  />
+                )}
+              </div>
               {transfer && (
-                <p className="mt-0.5 font-mono text-xs text-zinc-400">
-                  {transfer.transferNumber
-                    ? `${transfer.transferNumber} · #${transfer.id.slice(0, 8).toUpperCase()}`
-                    : `#${transfer.id.slice(0, 8).toUpperCase()}`}
+                <p className="mt-1 truncate text-[12.5px] text-[#5b5b6b]">
+                  Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
+                  {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
                 </p>
               )}
             </div>
-            {transfer && (
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${statusCfg.color}`}
-              >
-                <StatusIcon className="h-3.5 w-3.5" />
-                {statusCfg.label}
-              </span>
-            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#5b5b6b] hover:bg-[#f7f7f8] hover:text-[#17171c]"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {transfer && <TransferStageTrail transfer={transfer} status={status} />}
         </div>
 
         {isLoading || !transfer ? (
-          <div className="flex items-center justify-center py-16">
+          <div className="flex flex-1 items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
           </div>
         ) : (
-          <div className="space-y-5 px-6 py-5">
-            {/* Route */}
-            <div className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                  From
-                </p>
-                <p className="mt-0.5 font-semibold text-zinc-900">
-                  {branchLabel(transfer.fromWarehouse)}
-                </p>
-              </div>
-              <ArrowRight className="h-5 w-5 shrink-0 text-zinc-400" />
-              <div className="flex-1 min-w-0 text-right">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-                  To
-                </p>
-                <p className="mt-0.5 font-semibold text-zinc-900">
-                  {branchLabel(transfer.toWarehouse)}
-                </p>
+          <div className="flex-1 space-y-3.5 overflow-y-auto bg-[#f7f7f8] px-6 pb-[26px] pt-[18px]">
+            {/* Route — the two branches read as the record's subject, so no
+                avatar initials competing with the names themselves. */}
+            <div className="rounded-xl border border-[#e4e4e9] bg-white p-3">
+              <div className="flex items-center gap-3 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                    From
+                  </p>
+                  <p className="mt-1 truncate text-[16px] font-semibold">
+                    {branchLabel(transfer.fromWarehouse)}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                    Source branch · stock deducted on dispatch
+                  </p>
+                </div>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ddd0f7] bg-white text-[#5b21b6]">
+                  <ArrowRight className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 flex-1 text-right">
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                    To
+                  </p>
+                  <p className="mt-1 truncate text-[16px] font-semibold">
+                    {branchLabel(transfer.toWarehouse)}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                    Destination · stock added on receipt
+                  </p>
+                </div>
               </div>
             </div>
 
-            {/* Meta */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-xs font-medium text-zinc-400">Transfer Date</p>
-                <p className="mt-0.5 text-zinc-900">{formatDateOnly(transfer.transferDate)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-zinc-400">Expected Arrival</p>
-                <p className="mt-0.5 text-zinc-900">{formatDateOnly(transfer.expectedArrival)}</p>
-              </div>
-              {transfer.requestedByName && (
-                <div>
-                  <p className="text-xs font-medium text-zinc-400">Requested By</p>
-                  <p className="mt-0.5 text-zinc-900">{transfer.requestedByName}</p>
-                </div>
-              )}
+            {/* Facts */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-[#e4e4e9] bg-white px-4 py-3.5 sm:grid-cols-4">
+              <Fact label="Transfer Ref" value={transfer.transferNumber} mono />
+              <Fact label="Transfer Date" value={formatDateOnly(transfer.transferDate)} />
+              <Fact
+                label="Expected Arrival"
+                value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
+              />
+              <Fact label="Requested By" value={transfer.requestedByName} />
               {transfer.reason && (
-                <div className="col-span-2">
-                  <p className="text-xs font-medium text-zinc-400">Reason</p>
-                  <p className="mt-0.5 text-zinc-900">{transfer.reason}</p>
+                <div className="col-span-2 sm:col-span-4">
+                  <Fact label="Reason" value={transfer.reason} />
                 </div>
               )}
             </div>
@@ -1093,10 +1191,21 @@ export default function TransferDetailModal({
                       : 'Receiving Report Issued'}
                   </p>
                   <div className="mt-1 space-y-0.5">
+                    {/* Scenario 50 — clickable through to the full RR detail
+                        page (and its print action there), rather than a
+                        bare code the receiver has to go look up themselves.
+                        New tab so it doesn't disturb this modal's state. */}
                     {transfer.goodsReceipts.map((grn) => (
-                      <p key={grn.id} className="font-mono text-sm text-green-700">
+                      <Link
+                        key={grn.id}
+                        href={`/inventory/stock/reports/${grn.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 font-mono text-sm font-medium text-green-700 underline decoration-green-300 underline-offset-2 hover:text-green-900 hover:decoration-green-500"
+                      >
                         {grn.code}
-                      </p>
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
                     ))}
                   </div>
                   {extraLinesReceived.length > 0 && (
@@ -1131,7 +1240,7 @@ export default function TransferDetailModal({
               status === 'partially_received') &&
               (transfer.driverName || transfer.vehiclePlate || transfer.carrierName) && (
                 <div>
-                  <p className="mb-2 text-sm font-medium text-zinc-700">Logistics</p>
+                  <p className="mb-2 text-[13.5px] font-semibold">Logistics</p>
                   <div className="grid grid-cols-2 gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
                     {transfer.driverName && <InfoRow label="Driver" value={transfer.driverName} />}
                     {transfer.driverPhone && <InfoRow label="Phone" value={transfer.driverPhone} />}
@@ -1151,38 +1260,55 @@ export default function TransferDetailModal({
             {/* Lines */}
             {transfer.lines && transfer.lines.length > 0 && (
               <div>
-                <p className="mb-2 text-sm font-medium text-zinc-700">Items</p>
-                <div className="overflow-hidden rounded-lg border border-zinc-200">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[13.5px] font-semibold">Items</p>
+                  <span
+                    className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#5b5b6b] ring-1 ring-[#e4e4e9]`}
+                  >
+                    {receivedUnits} of {totalUnits} units received
+                  </span>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-200 bg-zinc-50">
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
+                        <th
+                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                        >
                           Item
                         </th>
                         {hasSerialLine && (
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          <th
+                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          >
                             Serial
                           </th>
                         )}
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        <th
+                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                        >
                           Qty
                         </th>
                         {isReceivedStatus && (
-                          <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                          <th
+                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          >
                             Received
                           </th>
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100">
+                    <tbody className="divide-y divide-[#f1f1f4]">
                       {displayLines.map((line, i) => (
                         <tr key={line.id ?? i}>
-                          <td className="px-3 py-2">
-                            <p className="font-medium text-zinc-900">
+                          <td className="px-3 py-2.5">
+                            <p className="text-[12.5px] font-medium text-[#17171c]">
                               {line.item?.name ?? line.itemId ?? '—'}
                             </p>
                             {line.item?.sku && (
-                              <p className="font-mono text-xs text-zinc-400">{line.item.sku}</p>
+                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#8b8b9b]`}>
+                                {line.item.sku}
+                              </p>
                             )}
                           </td>
                           {hasSerialLine && (
@@ -1245,8 +1371,11 @@ export default function TransferDetailModal({
 
             {/* Ledger timeline */}
             <div>
-              <p className="mb-2 text-sm font-medium text-zinc-700">Movement Log</p>
-              <ol className="space-y-2">
+              <p className="mb-2 text-[13.5px] font-semibold">Movement Log</p>
+              {/* The rail sits at x=12px — the centre of each 24px event dot
+                  — and stops 12px short of the bottom so it ends on the last
+                  dot rather than trailing past it. */}
+              <ol className="relative space-y-3 before:absolute before:bottom-3 before:left-3 before:top-3 before:w-px before:bg-[#e4e4e9] before:content-['']">
                 <LedgerEvent
                   icon={<Inbox className="h-3.5 w-3.5" />}
                   label={
@@ -1364,13 +1493,16 @@ export default function TransferDetailModal({
             {showDispatchForm && (
               <form
                 onSubmit={dispatchForm.handleSubmit(handleDispatchSubmit)}
-                className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
+                className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3"
               >
-                <p className="text-sm font-medium text-zinc-700">Dispatch Transfer</p>
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+                  <Truck className="h-4 w-4" />
+                  Dispatch Transfer
+                </p>
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Expected Arrival <span className="text-red-500">*</span>
+                    Expected Arrival <span className="font-normal text-zinc-400">(optional)</span>
                   </label>
                   <Controller
                     name="expectedArrival"
@@ -1397,7 +1529,7 @@ export default function TransferDetailModal({
 
                 {serialAssignmentFields.length > 0 && (
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                    <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Assign Serial Numbers
                     </p>
                     <p className="mb-2 text-xs text-zinc-500">
@@ -1531,9 +1663,10 @@ export default function TransferDetailModal({
             {showReceiveForm && (
               <form
                 onSubmit={receiveForm.handleSubmit(handleReceiveSubmit)}
-                className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-3"
+                className="rounded-xl border border-green-200 bg-green-50/40 p-4 space-y-3"
               >
-                <p className="text-sm font-medium text-zinc-700">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-green-800">
+                  <CheckCircle className="h-4 w-4" />
                   {status === 'partially_received' ? 'Continue Receiving' : 'Confirm Receipt'}
                 </p>
                 <div>
@@ -1947,13 +2080,18 @@ export default function TransferDetailModal({
           !showRejectForm &&
           !showRejectManagerForm &&
           !confirmCancel && (
-            <div className="flex items-center justify-between border-t border-zinc-200 px-6 py-4">
-              <div>
+            <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+              <div className="min-w-0">
+                <p className="text-[11.5px] text-[#8b8b9b]">
+                  {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} ·{' '}
+                  {(transfer.lines ?? []).length}{' '}
+                  {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
+                </p>
                 {canCancelThis && (
                   <button
                     type="button"
                     onClick={() => setConfirmCancel(true)}
-                    className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    className="mt-0.5 text-[12.5px] font-medium text-[#b42318] hover:underline"
                   >
                     Cancel Transfer
                   </button>
@@ -1973,7 +2111,7 @@ export default function TransferDetailModal({
                       }
                     }}
                     disabled={isPrinting}
-                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-60"
+                    className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8] disabled:opacity-60"
                   >
                     {isPrinting ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1986,7 +2124,7 @@ export default function TransferDetailModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                  className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8]"
                 >
                   Close
                 </button>
@@ -1994,7 +2132,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={openDispatchForm}
-                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
                   >
                     <Truck className="h-4 w-4" />
                     Dispatch
@@ -2004,7 +2142,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
                   >
                     <CheckCircle className="h-4 w-4" />
                     Mark Received
@@ -2014,7 +2152,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
                   >
                     <AlertTriangle className="h-4 w-4" />
                     Receive Remaining
@@ -2024,7 +2162,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={() => setShowRejectManagerForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
                   >
                     <Ban className="h-4 w-4" />
                     Reject
@@ -2035,7 +2173,7 @@ export default function TransferDetailModal({
                     type="button"
                     onClick={handleApproveManager}
                     disabled={isApprovingManager}
-                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
                   >
                     {isApprovingManager ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2049,7 +2187,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={() => setShowRejectHqForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
                   >
                     <Ban className="h-4 w-4" />
                     Reject
@@ -2060,7 +2198,7 @@ export default function TransferDetailModal({
                     type="button"
                     onClick={handleApproveHq}
                     disabled={isApprovingHq}
-                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
                   >
                     {isApprovingHq ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2074,7 +2212,7 @@ export default function TransferDetailModal({
                   <button
                     type="button"
                     onClick={() => setShowRejectForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
                   >
                     <Ban className="h-4 w-4" />
                     Reject
@@ -2085,7 +2223,7 @@ export default function TransferDetailModal({
                     type="button"
                     onClick={handleAccept}
                     disabled={isAccepting}
-                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
                   >
                     {isAccepting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -2099,6 +2237,96 @@ export default function TransferDetailModal({
             </div>
           )}
       </div>
+    </div>
+  )
+}
+
+// Lightweight "how far did it get" strip above the route card — a quick
+// visual echo of the full Movement Log below, not a replacement for it.
+// Rejected/cancelled transfers skip the trail entirely: forcing a stopped
+// request into 4 forward-moving dots would misrepresent what happened, and
+// the actual reason is already surfaced as its own red banner + log entry.
+function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; status: string }) {
+  if (status === 'rejected' || status === 'cancelled') return null
+
+  const totalQty = (transfer.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
+  const receivedQty = (transfer.lines ?? []).reduce(
+    (sum, l) => sum + Number(l.receivedQuantity ?? 0),
+    0
+  )
+  const isReceivedStatus = status === 'received' || status === 'partially_received'
+  const doneAccepted = !!transfer.acceptedByName || status === 'in_transit' || isReceivedStatus
+  const doneDispatched = status === 'in_transit' || isReceivedStatus
+  // A fully-received transfer is finished — the Receive step is DONE, not
+  // still the active one. `partially_received` (or a short receipt booked as
+  // `received`) genuinely is still in progress, so that one stays active.
+  const fullyReceived = status === 'received' && totalQty > 0 && receivedQty >= totalQty
+  const stageOf = fullyReceived
+    ? 4
+    : isReceivedStatus
+      ? 3
+      : doneDispatched
+        ? 2
+        : doneAccepted
+          ? 1
+          : 0
+
+  // Deliberately verb-form labels ("Request", not "Requested") rather than
+  // reusing STATUS_CONFIG's own past-tense labels — those already appear
+  // once as the header's status badge, and e2e specs assert on that badge
+  // via an unscoped `modal.getByText(status, { exact: true })`, which a
+  // second exact-text match here would turn into a Playwright strict-mode
+  // violation.
+  const steps: { label: string; meta: string }[] = [
+    { label: 'Request', meta: formatDateOnly(transfer.transferDate) },
+    {
+      label: 'Accept',
+      meta: doneAccepted ? (transfer.acceptedByName ?? 'Accepted') : 'Awaiting acceptance',
+    },
+    {
+      label: 'Dispatch',
+      meta: doneDispatched ? `${totalQty} units sent` : 'Not dispatched',
+    },
+    {
+      label: 'Receive',
+      meta: receivedQty > 0 ? `${receivedQty} of ${totalQty} units` : 'Not received',
+    },
+  ]
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      {steps.map((step, i) => {
+        const done = i < stageOf
+        const active = i === stageOf
+        return (
+          <div key={step.label} className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-[9px] w-[9px] shrink-0 rounded-full ${
+                  done
+                    ? 'bg-[#0f7b52]'
+                    : active
+                      ? 'bg-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]'
+                      : 'bg-[#d3d3db]'
+                }`}
+              />
+              <div className="leading-tight">
+                <p
+                  className={`text-[11.5px] font-semibold ${
+                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#8b8b9b]'
+                  }`}
+                >
+                  {step.label}
+                </p>
+                <p className="text-[10.5px] text-[#8b8b9b]">{step.meta}</p>
+              </div>
+            </div>
+            {i < steps.length - 1 && (
+              <span className="hidden h-px w-[26px] bg-[#e4e4e9] sm:inline-block" />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -2117,13 +2345,13 @@ function LedgerEvent({
   return (
     <li className="flex items-start gap-3">
       <span
-        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${color}`}
+        className={`relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-4 ring-[#f7f7f8] ${color}`}
       >
         {icon}
       </span>
       <div>
-        <p className="text-sm text-zinc-700">{label}</p>
-        <p className="text-xs text-zinc-400">{formatDate(timestamp)}</p>
+        <p className="text-[12.5px] font-medium text-[#17171c]">{label}</p>
+        <p className="text-[11px] text-[#8b8b9b]">{formatDate(timestamp)}</p>
       </div>
     </li>
   )

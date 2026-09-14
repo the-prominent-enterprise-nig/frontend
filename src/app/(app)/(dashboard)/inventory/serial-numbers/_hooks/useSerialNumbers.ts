@@ -1,9 +1,16 @@
 'use client'
 
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import {
+  useQuery,
+  useQueries,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getSerialNumbers } from '../_actions/get-serial-numbers'
+import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { updateSerialStatus } from '../_actions/update-serial-status'
 import { closeConsignment } from '../_actions/close-consignment'
@@ -12,6 +19,7 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getItems } from '../../items/_actions/get-items'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { getBranches } from '../../purchase-requests/_actions/get-branches'
+import { getCustomers } from '@/src/libs/data/AccountingData'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
@@ -19,14 +27,16 @@ import type {
   SerialStatus,
   ConsignToBranchFormValues,
 } from '@/src/schema/inventory/serial-numbers'
+import { caravanGroupKey } from '@/src/schema/inventory/serial-numbers'
 
-export function useSerialNumbers(isBranchRestricted: boolean) {
+export function useSerialNumbers() {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [statusFilter, setStatusFilter] = useState<SerialStatus | undefined>(undefined)
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined)
+  const [brandFilter, setBrandFilter] = useState<string | undefined>(undefined)
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState<string | undefined>(undefined)
 
@@ -36,6 +46,13 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   // checking a specific branch (see SerialNumberList's branch picker).
   const [caravanView, setCaravanView] = useState(false)
   const [caravanBranchId, setCaravanBranchId] = useState<string | undefined>(undefined)
+
+  // Scenario 08 (Caravan) — "By Item" vs "By Serial" within the Caravan tab.
+  // Serials lead: this is the Serial Number Tracking page, and the unit-level
+  // actions (Return to Origin, Move onward) live on that list. The item
+  // rollup is the summary you switch to, not the way in.
+  const [caravanGrouping, setCaravanGrouping] = useState<'item' | 'serial'>('serial')
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null)
 
   // Scenario 08 (Caravan) Part 4 — event close. Selection only makes sense
   // within the caravan view; cleared whenever the view/branch/page changes
@@ -58,6 +75,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
             limit,
             status: statusFilter,
             categoryId: categoryFilter,
+            brandId: brandFilter,
             warehouseId: warehouseFilter,
             search,
           },
@@ -66,6 +84,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
       limit,
       statusFilter,
       categoryFilter,
+      brandFilter,
       warehouseFilter,
       search,
       caravanView,
@@ -73,19 +92,70 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     ]
   )
 
-  // In caravan view, an unrestricted (Business Owner) caller needs an
-  // explicit branch pick first — there's no "own branch" to default to and
-  // sending the raw 'caravan' sentinel as a literal branch id would just
-  // silently return zero rows instead of prompting for a real pick.
-  const caravanReady = !caravanView || isBranchRestricted || !!caravanBranchId
+  // The Caravan tab opens on every consignment in the company and narrows
+  // from there — the 'caravan' sentinel the queries send when no branch is
+  // picked means "all of them" backend-side, so nothing has to be picked
+  // before the tab shows anything. A branch-restricted caller is still
+  // forced to their own branch server-side, so there is nothing to gate on
+  // here either; kept as a named constant so the callers that still read it
+  // (the table's render guard) stay legible.
+  const caravanReady = true
+
+  // The item rollup is its own paginated list, so the serial list stands down
+  // entirely while "By Item" is showing rather than paging in the background.
+  const groupedCaravan = caravanView && caravanGrouping === 'item'
 
   const serialsQuery = useQuery({
     queryKey: ['inventory-serial-numbers', queryParams],
     queryFn: () => getSerialNumbers(queryParams),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
-    enabled: caravanReady,
+    enabled: caravanReady && !groupedCaravan,
   })
+
+  const caravanGroupParams = useMemo(
+    () => ({
+      page,
+      limit,
+      categoryId: categoryFilter,
+      status: statusFilter,
+      search,
+      consignedToBranchId: caravanBranchId ?? 'caravan',
+    }),
+    [page, limit, categoryFilter, statusFilter, search, caravanBranchId]
+  )
+
+  const caravanGroupsQuery = useQuery({
+    queryKey: ['inventory-caravan-item-groups', caravanGroupParams],
+    queryFn: () => getCaravanItemGroups(caravanGroupParams),
+    placeholderData: keepPreviousData,
+    staleTime: 30 * 1000,
+    enabled: caravanReady && groupedCaravan,
+  })
+
+  // Units behind the one expanded group. The list endpoint can narrow to the
+  // item but has no venue/event filter, so a second group of the same item is
+  // filtered out here by the shared rollup key rather than by re-querying.
+  const expandedGroup = (caravanGroupsQuery.data?.data?.data ?? []).find(
+    (g) => g.key === expandedGroupKey
+  )
+  const expandedSerialsQuery = useQuery({
+    queryKey: ['inventory-caravan-group-serials', expandedGroupKey, caravanGroupParams],
+    queryFn: () =>
+      getSerialNumbers({
+        ...caravanGroupParams,
+        page: 1,
+        // One group is one item at one event — a few dozen units at most in
+        // practice, and there is no drill-down pagination to fall back on.
+        limit: 200,
+        itemId: expandedGroup?.item?.id,
+      }),
+    staleTime: 30 * 1000,
+    enabled: !!expandedGroupKey && !!expandedGroup?.item?.id,
+  })
+  const expandedSerials = (expandedSerialsQuery.data?.data?.data ?? []).filter(
+    (s) => caravanGroupKey(s) === expandedGroupKey
+  )
 
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
@@ -114,12 +184,48 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Only needed for the "Change Status" modal's "sold to" picker (Scenario:
+  // Serial Numbers tab revamp). `getCustomers` returns either a flat array
+  // or `{ items, total, page, limit }` depending on whether the backend
+  // paginated — normalized to a flat array here so callers don't have to
+  // know about that union.
+  const customersQuery = useQuery({
+    queryKey: ['inventory-customers-lookup'],
+    queryFn: () => getCustomers({ limit: 200 }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Metric band on the All Serials tab — counts across every matching
+  // record, not just the current page, so each bucket is its own limit:1
+  // request (only `meta.total` is read from it). "Reserved" reads the
+  // `held` status and "In Transit" reads `pulled_out` — the closest real
+  // statuses to those two labels; the schema has no literal enum value for
+  // either concept.
+  const STATUS_COUNT_BUCKETS = ['in_stock', 'held', 'sold', 'returned', 'pulled_out'] as const
+  const statusCountQueries = useQueries({
+    queries: STATUS_COUNT_BUCKETS.map((status) => ({
+      queryKey: ['inventory-serial-status-count', status],
+      queryFn: () => getSerialNumbers({ status, limit: 1 }),
+      staleTime: 30 * 1000,
+      enabled: !caravanView,
+    })),
+  })
+  const statusCounts = STATUS_COUNT_BUCKETS.reduce(
+    (acc, status, i) => {
+      acc[status] = statusCountQueries[i]?.data?.data?.total ?? 0
+      return acc
+    },
+    {} as Record<(typeof STATUS_COUNT_BUCKETS)[number], number>
+  )
+
   const registerMutation = useMutation({
     mutationFn: (data: RegisterSerialsFormInput) => registerSerialNumbers(data),
     onSuccess: (result) => {
       if (result.success) {
         showToast({ title: 'Serials registered', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -133,6 +239,8 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
       if (result.success) {
         showToast({ title: 'Status updated', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -147,6 +255,8 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
         showToast({ title: 'Consigned', description: result.message, status: 'success' })
         setSelectedIds(new Set())
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -161,6 +271,8 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
         showToast({ title: 'Done', description: result.message, status: 'success' })
         setSelectedIds(new Set())
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
       } else {
         showToast({ title: 'Failed', description: result.message, status: 'error' })
       }
@@ -168,22 +280,27 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
   })
 
   const serials = serialsQuery.data?.data?.data ?? []
+  // Whichever list is on screen owns the pager — "By Item" pages over groups,
+  // not over units, so its own total is the one the footer must count.
+  const activeList = groupedCaravan ? caravanGroupsQuery : serialsQuery
   const pagination = {
-    total: serialsQuery.data?.data?.total ?? 0,
-    page: serialsQuery.data?.data?.page ?? 1,
-    limit: serialsQuery.data?.data?.limit ?? limit,
-    totalPages: Math.ceil((serialsQuery.data?.data?.total ?? 0) / limit),
+    total: activeList.data?.data?.total ?? 0,
+    page: activeList.data?.data?.page ?? 1,
+    limit: activeList.data?.data?.limit ?? limit,
+    totalPages: Math.ceil((activeList.data?.data?.total ?? 0) / limit),
   }
 
   return {
     serials,
     pagination,
-    isLoading: serialsQuery.isLoading,
-    isFetching: serialsQuery.isFetching,
-    error: serialsQuery.error,
+    statusCounts,
+    isLoading: activeList.isLoading,
+    isFetching: activeList.isFetching,
+    error: activeList.error,
 
     statusFilter,
     categoryFilter,
+    brandFilter,
     warehouseFilter,
     search,
     setStatusFilter: (v: SerialStatus | undefined) => {
@@ -192,6 +309,10 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     },
     setCategoryFilter: (v: string | undefined) => {
       setCategoryFilter(v)
+      setPage(1)
+    },
+    setBrandFilter: (v: string | undefined) => {
+      setBrandFilter(v)
       setPage(1)
     },
     setWarehouseFilter: (v: string | undefined) => {
@@ -205,6 +326,7 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     resetFilters: () => {
       setStatusFilter(undefined)
       setCategoryFilter(undefined)
+      setBrandFilter(undefined)
       setWarehouseFilter(undefined)
       setSearch(undefined)
       setPage(1)
@@ -221,21 +343,49 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     itemOptions: itemsQuery.data?.data?.data ?? [],
     categoryOptions: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
-    branchOptions: branchesQuery.data?.data?.data ?? [],
+    // Scenario 50 Gap 6 - a caravan host must be a real branch, not one of
+    // the 2 warehouse-branches (NWHSE/PWHSE, Scenario 27's leftover). /branches
+    // has no server-side type filter, so this stays a plain client-side
+    // exclusion rather than a systemic fix - the same gap exists in several
+    // other pickers across the app and is explicitly out of scope here.
+    branchOptions: (branchesQuery.data?.data?.data ?? []).filter((b) => b.type !== 'warehouse'),
+    customerOptions: (() => {
+      const raw = customersQuery.data?.data
+      if (!raw) return []
+      const list = Array.isArray(raw) ? raw : (raw.items ?? [])
+      return list.map((c) => ({ id: String(c.id), name: c.name }))
+    })(),
 
     caravanView,
     setCaravanView: (v: boolean) => {
       setCaravanView(v)
       setPage(1)
+      setExpandedGroupKey(null)
       setSelectedIds(new Set())
     },
     caravanBranchId,
     setCaravanBranchId: (v: string | undefined) => {
       setCaravanBranchId(v)
       setPage(1)
+      setExpandedGroupKey(null)
       setSelectedIds(new Set())
     },
     caravanReady,
+    caravanGrouping,
+    setCaravanGrouping: (v: 'item' | 'serial') => {
+      setCaravanGrouping(v)
+      setPage(1)
+      setExpandedGroupKey(null)
+      setSelectedIds(new Set())
+    },
+    caravanGroups: caravanGroupsQuery.data?.data?.data ?? [],
+    isLoadingCaravanGroups: caravanGroupsQuery.isLoading,
+    caravanGroupsError: caravanGroupsQuery.error,
+    expandedGroupKey,
+    toggleExpandedGroup: (key: string) =>
+      setExpandedGroupKey((prev) => (prev === key ? null : key)),
+    expandedSerials,
+    isLoadingExpandedSerials: expandedSerialsQuery.isLoading,
 
     selectedIds,
     toggleSelected: (id: string) => {
@@ -267,6 +417,9 @@ export function useSerialNumbers(isBranchRestricted: boolean) {
     updateStatus: updateStatusMutation.mutateAsync,
     isUpdatingStatus: updateStatusMutation.isPending,
 
-    refetch: () => queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] }),
+    refetch: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-caravan-item-groups'] })
+    },
   }
 }

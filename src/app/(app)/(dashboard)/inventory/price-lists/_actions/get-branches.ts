@@ -8,6 +8,9 @@ const BranchSchema = z.object({
   name: z.string(),
   code: z.string().nullable().optional(),
   region: z.enum(['negros', 'panay']).nullable().optional(),
+  // Scenario 27 leftover — NWHSE/PWHSE are warehouse-type bookkeeping rows,
+  // not real branches, and should stay out of ordinary branch pickers.
+  type: z.string().nullable().optional(),
 })
 
 export type Branch = z.infer<typeof BranchSchema>

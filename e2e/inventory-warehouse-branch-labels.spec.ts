@@ -1,42 +1,59 @@
 import { test, expect } from '@playwright/test'
 import { gotoReady } from './utils'
 
-// Scenario 27 (Warehouse Tier Correction) — the Stock page's warehouse
-// filter, and 10 other Inventory pickers/filters like it, rendered the raw
-// Warehouse row (`WH-20 — Ajuy Warehouse`) for what's actually a branch's
-// own local stock, under a placeholder/subtitle that framed the whole page
-// as warehouse-centric ("All Warehouses", "...across all warehouses").
-// Branches and warehouses are different things: only the 2 real warehouses
-// (PANAY, NEGROS) should ever read as "Warehouse" — everything else should
-// show its real branch name, and the page framing itself should use the
-// umbrella term "Location." Fixed by reading the same
-// `wh.branch?.name ?? wh.name` fallback already used elsewhere in the app
-// (Transfers, Reorder Rules, Costing) instead of the warehouse's own
-// internal code/name, and renaming the placeholder/subtitle copy from
-// "Warehouse(s)"/"Branch(es)" to "Location(s)".
-test('Inventory > Stock location filter shows branch names, not raw WH-## codes, and the 2 real warehouses by their own name', async ({
+// Scenario 27 (Warehouse Tier Correction) — the Stock page's location filter,
+// and 10 other Inventory pickers/filters like it, rendered the raw Warehouse
+// row (`WH-20 — Ajuy Warehouse`) for what's actually a branch's own local
+// stock. Branches and warehouses are different things: only the 2 real
+// warehouses (PANAY, NEGROS) should ever read as "Warehouse" — everything
+// else shows its real branch name.
+//
+// Scenario 50 — retargeted at the rebuilt "All Branches" multi-select, and
+// tightened off `.some(...)` onto exact counts. The client reported seeing
+// "2 Panay warehouses"; the old assertions could not have caught that,
+// because `.some()` is just as true of one match as of two. The cause was
+// this picker listing all 43 warehouse rows (the 2 real ones plus 41
+// per-branch shadow warehouses) and labelling each `branch?.name ?? name`,
+// collapsing distinct rows onto one visible label. It now lists real
+// branches plus the 2 standalone warehouses, which cannot collide.
+test('Inventory > Stock branches filter lists each location exactly once, with no raw WH-## codes', async ({
   page,
 }) => {
   await gotoReady(page, '/inventory/stock')
 
-  await expect(page.getByText('across all locations', { exact: false })).toBeVisible()
+  const picker = page.locator('input[placeholder="All Branches"]')
+  await expect(picker).toBeVisible()
+  await picker.click()
 
-  const select = page.locator('select').filter({ hasText: 'All Locations' })
-  await expect(select).toBeVisible()
+  const options = page.getByRole('checkbox')
+  // The branch/warehouse lists load via separate async queries after
+  // navigation — wait for them to actually populate.
+  await expect.poll(async () => options.count(), { timeout: 15_000 }).toBeGreaterThan(1)
 
-  // The warehouse list loads via a separate async query after navigation —
-  // wait for it to actually populate past the static "All Locations" option.
-  await expect(select.locator('option')).not.toHaveCount(1)
+  const optionTexts = (await options.allTextContents()).map((t) => t.trim())
 
-  const optionTexts = await select.locator('option').allTextContents()
+  const countOf = (label: string) => optionTexts.filter((t) => t === label).length
 
-  // A branch-local entry should read as the plain branch name — no raw
-  // WH-## code, no "Warehouse" suffix.
-  expect(optionTexts.some((t) => /^Ajuy$/.test(t.trim()))).toBe(true)
-  expect(optionTexts.some((t) => t.includes('WH-20'))).toBe(false)
-  expect(optionTexts.some((t) => t.trim() === 'Ajuy Warehouse')).toBe(false)
+  // The duplicate the client actually reported: exactly one, not two.
+  expect(countOf('Panay Warehouse')).toBe(1)
+  expect(countOf('Negros Warehouse')).toBe(1)
 
-  // The 2 real warehouses keep reading as warehouses.
-  expect(optionTexts.some((t) => t.trim() === 'Negros Warehouse')).toBe(true)
-  expect(optionTexts.some((t) => t.trim() === 'Panay Warehouse')).toBe(true)
+  // A branch-local entry reads as the plain branch name — no raw WH-## code,
+  // no "Warehouse" suffix, and never twice.
+  expect(countOf('Ajuy')).toBe(1)
+  expect(optionTexts.filter((t) => t.includes('WH-'))).toHaveLength(0)
+  expect(countOf('Ajuy Warehouse')).toBe(0)
+
+  // Nothing at all may appear twice — this is the assertion that fails the
+  // build if the duplicate ever comes back, for any location.
+  //
+  // "E2E "-prefixed rows are excluded because they are other specs' leaked
+  // fixtures, not real locations: inventory-serial-level-counting.spec.ts
+  // creates a standalone warehouse with a unique CODE but a fixed NAME
+  // ('E2E Isolated Serial Count Warehouse') and never deletes it, so the
+  // test DB accumulates one more on every run. That leak is worth fixing in
+  // that spec; it is not what this assertion is about.
+  const realLocations = optionTexts.filter((t) => !t.startsWith('E2E '))
+  const duplicates = realLocations.filter((t, i) => realLocations.indexOf(t) !== i)
+  expect(duplicates).toEqual([])
 })

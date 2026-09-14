@@ -1,24 +1,22 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import { createPortal } from 'react-dom'
+import { useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import {
   Loader2,
-  Plus,
-  Search,
-  FileText,
-  ShoppingBag,
-  ChevronLeft,
-  ChevronRight,
   Send,
   Archive,
-  PackagePlus,
-  Download,
   CheckCircle,
-  Pencil,
+  ChevronDown,
+  Download,
   Eye,
+  FileText,
+  PackagePlus,
+  Pencil,
   Receipt,
+  Search,
+  X,
 } from 'lucide-react'
 import { usePurchaseOrders } from '../_hooks/usePurchaseOrders'
 import { usePurchaseRequests } from '../../purchase-requests/_hooks/usePurchaseRequests'
@@ -28,210 +26,215 @@ import { CreatePoModal } from './CreatePoModal'
 import { PoDetailModal } from './PoDetailModal'
 import { PoReceiptsPanel } from './PoReceiptsPanel'
 import { ReceiveAgainstPoModal } from './ReceiveAgainstPoModal'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import Tooltip from '@/src/components/ui/Tooltip'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { getSuppliers } from '../_actions/get-suppliers'
+import { getBranches } from '../../price-lists/_actions/get-branches'
+import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipts'
 import { printPurchaseOrderDocument } from '@/src/libs/print/printInventoryDocument'
+import { showToast } from '@/src/components/ui/toast'
+import {
+  PLEX,
+  MONO,
+  CONTROL_CHROME,
+  StatusBadge,
+  SupplierAvatar,
+  fmtPeso,
+  fmtDate,
+  receiptTotals,
+  daysLate,
+  type PoStatus,
+} from './procurementTokens'
 
-// ─── Status config ────────────────────────────────────────────────────────────
+// ─── Design tokens ────────────────────────────────────────────────────────────
+// PLEX/MONO and the status-badge/formatting helpers live in procurementTokens
+// — shared with PoDetailModal so the same order reads identically whether
+// it's on the row or open in its detail panel. The page ground is zinc-50
+// rather than this design's own grey, so Purchase Orders and Purchase
+// Requests sit on the same background.
 
-const STATUS_CONFIG: Record<
-  string,
-  { dot: string; bg: string; border: string; text: string; label: string }
-> = {
-  draft: {
-    dot: 'bg-orange-500',
-    bg: 'bg-orange-50',
-    border: 'border-orange-200',
-    text: 'text-orange-700',
-    label: 'Pending',
-  },
-  approved: {
-    dot: 'bg-emerald-500',
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-200',
-    text: 'text-emerald-700',
-    label: 'Approved',
-  },
-  sent: {
-    dot: 'bg-blue-500',
-    bg: 'bg-blue-50',
-    border: 'border-blue-200',
-    text: 'text-blue-700',
-    label: 'Sent',
-  },
-  partially_received: {
-    dot: 'bg-amber-500',
-    bg: 'bg-amber-50',
-    border: 'border-amber-200',
-    text: 'text-amber-700',
-    label: 'Partial',
-  },
-  fully_received: {
-    dot: 'bg-green-500',
-    bg: 'bg-green-50',
-    border: 'border-green-200',
-    text: 'text-green-700',
-    label: 'Received',
-  },
-  closed: {
-    dot: 'bg-zinc-300',
-    bg: 'bg-zinc-100',
-    border: 'border-zinc-200',
-    text: 'text-zinc-500',
-    label: 'Closed',
-  },
-  cancelled: {
-    dot: 'bg-red-400',
-    bg: 'bg-red-50',
-    border: 'border-red-200',
-    text: 'text-red-600',
-    label: 'Cancelled',
-  },
-}
-
-const STATUS_FILTERS = [
+const STATUS_FILTERS: { label: string; value: PoStatus | undefined }[] = [
   { label: 'All', value: undefined },
+  { label: 'Pending', value: 'draft' },
   { label: 'Approved', value: 'approved' },
   { label: 'Sent', value: 'sent' },
   { label: 'Partial', value: 'partially_received' },
   { label: 'Received', value: 'fully_received' },
   { label: 'Closed', value: 'closed' },
   { label: 'Cancelled', value: 'cancelled' },
-] as const
+]
+
+/** The eight-column track the header, rows and skeletons all share. The last
+ * track holds the row's action buttons and is sized for the widest run of
+ * them — a partially-received order with an invoice: Download · Receive ·
+ * Close · Receipts · Invoice, ~208px — so they never wrap to a second line.
+ * The data columns were trimmed to pay for it rather than letting the grid
+ * overflow its card at the 1080px breakpoint. */
+const GRID =
+  'grid grid-cols-[154px_minmax(0,1fr)_98px_106px_114px_132px_78px_216px] gap-x-3 items-center'
+
+const SORT_SELECT_CLASS =
+  'h-[38px] cursor-pointer appearance-none rounded-lg border border-[#d3d3db] bg-white pl-[11px] pr-[30px] text-[12.5px] text-[#3d3d4a] transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] focus:outline-none'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function PoStatusBadge({ status }: { status: PurchaseOrderSummary['status'] }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.draft
+function CopyButton({ code }: { code: string }): React.ReactElement {
+  const copy = async (e: React.MouseEvent): Promise<void> => {
+    e.stopPropagation()
+    await navigator.clipboard?.writeText(code)
+    showToast({ title: `${code} copied`, status: 'success' })
+  }
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${cfg.bg} ${cfg.border} ${cfg.text}`}
+    <button
+      type="button"
+      onClick={copy}
+      title="Copy PO code"
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
     >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="5.5" y="5.5" width="8" height="8" rx="1.6" />
+        <path d="M10.5 3.2A1.7 1.7 0 0 0 8.8 2.5H4.2A1.7 1.7 0 0 0 2.5 4.2v4.6c0 .74.47 1.37 1.13 1.6" />
+      </svg>
+    </button>
   )
 }
 
-function ReceiptProgress({ lines }: { lines: PurchaseOrderSummary['lines'] }) {
-  if (!lines.length) return <span className="text-zinc-300">—</span>
-
-  const totalQty = lines.reduce((s, l) => s + Number(l.quantity), 0)
-  const receivedQty = lines.reduce((s, l) => s + Number(l.receivedQuantity ?? 0), 0)
-  const pct = totalQty > 0 ? Math.min((receivedQty / totalQty) * 100, 100) : 0
-
-  const barColor = pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-400' : 'bg-zinc-200'
-  const textColor = pct >= 100 ? 'text-green-600' : pct > 0 ? 'text-amber-600' : 'text-zinc-400'
-
+function ReceivingCell({ po }: { po: PurchaseOrderSummary }): React.ReactElement {
+  const { received, ordered, pct } = receiptTotals(po.lines)
+  const full = ordered > 0 && received >= ordered
+  const bar =
+    po.status === 'cancelled'
+      ? 'bg-[#d3d3db]'
+      : full
+        ? 'bg-[#0f7b52]'
+        : received > 0
+          ? 'bg-[#d18b1d]'
+          : 'bg-[#e4e4e9]'
+  const pctTone = full ? 'text-[#0b6644]' : received > 0 ? 'text-[#8a4b06]' : 'text-[#5b5b6b]'
   return (
-    <div className="w-36 space-y-1.5">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-zinc-400">
-          {receivedQty.toFixed(0)}
-          <span className="mx-0.5 text-zinc-300">/</span>
-          {totalQty.toFixed(0)}
+    <div className="flex min-w-0 flex-col gap-[5px]">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
+          {received} / {ordered}
         </span>
-        <span className={`font-bold ${textColor}`}>{pct.toFixed(0)}%</span>
+        <span className={`${MONO} text-[11.5px] font-semibold ${pctTone}`}>{pct}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
+      <div className="h-[5px] overflow-hidden rounded-[3px] bg-[#eeeef1]">
+        <div className={`h-full rounded-[3px] ${bar}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )
 }
 
-function SupplierAvatar({ name }: { name: string }) {
-  const initial = name.trim().charAt(0).toUpperCase()
-  const colors = [
-    'bg-prominent-purple-100 text-prominent-purple-700',
-    'bg-blue-100 text-blue-700',
-    'bg-emerald-100 text-emerald-700',
-    'bg-amber-100 text-amber-700',
-    'bg-rose-100 text-rose-700',
-  ]
-  const color = colors[initial.charCodeAt(0) % colors.length]
+type RowActionSpec = {
+  key: string
+  label: string
+  /** Accessible name, when the visible label is a shortened form of it. */
+  ariaLabel?: string
+  icon: React.ReactElement
+  /** Purple reads as "this moves the order along" (receive, receipts, the
+   * invoice); green is settlement — Close, matching the green this screen
+   * already uses for a fully-received order; neutral is for the incidental
+   * ones (download, edit). Orange is deliberately not used: on this screen it
+   * already means late or partially received, so it would read as a warning
+   * rather than as an action. */
+  tone?: 'default' | 'purple' | 'green'
+  /** 'primary' spells the label out as a filled button — one per status, for
+   * the step that status is actually waiting on (Pending → View, Partial →
+   * Receive, Received → Close). Everything else stays an icon. */
+  variant?: 'icon' | 'primary'
+  disabled?: boolean
+  run: () => void
+}
+
+/** Icon-only action button. It carries no visible text, so the label goes
+ * through the shared Tooltip as well as aria-label. */
+function IconBtn({ action }: { action: RowActionSpec }): React.ReactElement {
+  const tone =
+    action.tone === 'purple'
+      ? 'border-[#ddd0f7] text-[#5b21b6] hover:bg-[#f1ebfb] hover:text-[#3f1490]'
+      : action.tone === 'green'
+        ? 'border-[#c3e5d6] text-[#0b6644] hover:bg-[#e7f5ef]'
+        : 'border-[#e4e4e9] text-[#5b5b6b] hover:border-[#d3d3db] hover:bg-[#f6f6f8] hover:text-[#17171c]'
+  return (
+    <Tooltip label={action.label} align="end" className="shrink-0">
+      <button
+        type="button"
+        onClick={action.run}
+        disabled={action.disabled}
+        aria-label={action.label}
+        className={`flex h-[26px] w-[26px] items-center justify-center rounded-[7px] border bg-white transition-colors disabled:opacity-40 ${tone}`}
+      >
+        {action.icon}
+      </button>
+    </Tooltip>
+  )
+}
+
+/** The status's own next step, written out. Filled purple for the ones that
+ * move the order forward, green for Close — it settles an order whose stock
+ * is already fully in. */
+function PrimaryBtn({ action }: { action: RowActionSpec }): React.ReactElement {
+  const tone =
+    action.tone === 'purple'
+      ? 'bg-[#5b21b6] hover:bg-[#4a189b]'
+      : action.tone === 'green'
+        ? 'bg-[#0f7b52] hover:bg-[#0b6644]'
+        : 'bg-[#3d3d4a] hover:bg-[#17171c]'
+  return (
+    <button
+      type="button"
+      onClick={action.run}
+      disabled={action.disabled}
+      aria-label={action.ariaLabel}
+      title={action.ariaLabel}
+      className={`flex h-[26px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] px-[10px] text-[12px] font-medium text-white transition-colors disabled:opacity-40 ${tone}`}
+    >
+      {action.icon}
+      {action.label}
+    </button>
+  )
+}
+
+/** The row's actions, laid out inline on a single line — the action track is
+ * sized for the longest run, so nothing here wraps or shrinks. */
+function RowActions({ actions }: { actions: RowActionSpec[] }): React.ReactElement {
   return (
     <span
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${color}`}
+      className="flex shrink-0 flex-nowrap items-center justify-end gap-1"
+      onClick={(e) => e.stopPropagation()}
+      role="presentation"
     >
-      {initial}
+      {actions.map((a) =>
+        a.variant === 'primary' ? (
+          <PrimaryBtn key={a.key} action={a} />
+        ) : (
+          <IconBtn key={a.key} action={a} />
+        )
+      )}
     </span>
   )
 }
 
-function IconBtn({
-  title,
-  onClick,
-  disabled,
-  children,
-  variant = 'default',
-}: {
-  title: string
-  onClick: () => void
-  disabled?: boolean
-  children: React.ReactNode
-  variant?: 'default' | 'danger' | 'purple'
-}) {
-  const ref = useRef<HTMLButtonElement>(null)
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
-
-  function handleMouseEnter() {
-    if (!ref.current) return
-    const r = ref.current.getBoundingClientRect()
-    setCoords({ top: r.top, left: r.left + r.width / 2 })
-  }
-
-  const variantClass = {
-    default:
-      'border border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-700',
-    danger: 'border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600',
-    purple:
-      'border border-prominent-purple-200 text-prominent-purple-500 hover:bg-prominent-purple-50 hover:text-prominent-purple-700',
-  }[variant]
-
+function SkeletonBar({ wide }: { wide?: boolean }): React.ReactElement {
   return (
-    <>
-      <button
-        ref={ref}
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setCoords(null)}
-        className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${variantClass}`}
-      >
-        {children}
-      </button>
-
-      {coords !== null &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <span
-            className="pointer-events-none fixed z-[9999] -translate-x-1/2 whitespace-nowrap rounded-md bg-zinc-900 px-2 py-1 text-xs font-medium text-white"
-            style={{ top: coords.top - 32, left: coords.left }}
-          >
-            {title}
-            <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-zinc-900" />
-          </span>,
-          document.body
-        )}
-    </>
-  )
-}
-
-function SkeletonRow() {
-  return (
-    <tr className="border-b border-zinc-100">
-      {[140, 180, 90, 90, 100, 70, 120, 70, 100].map((w, i) => (
-        <td key={i} className="px-4 py-4">
-          <div className="h-3.5 animate-pulse rounded-md bg-zinc-100" style={{ width: `${w}px` }} />
-        </td>
-      ))}
-    </tr>
+    <span
+      className={`block animate-pulse rounded-[3px] bg-[#eeeef1] ${
+        wide ? 'h-[18px] w-[70px] rounded-[5px]' : 'h-[10px]'
+      }`}
+    />
   )
 }
 
@@ -269,18 +272,29 @@ export function PurchaseOrderList({
    * field), this just flows through to the backend's own server-side
    * force for a branch-scoped creator. */
   currentUserBranchId?: string | null
-}) {
+}): React.ReactElement {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const {
     items,
     pagination,
     isLoading,
     statusFilter,
     setStatusFilter,
+    sortDir,
+    setSortDir,
     search,
     setSearch,
+    supplierId,
+    setSupplierId,
+    branchId,
+    setBranchId,
+    resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     approvePO,
     isApproving,
     sendPO,
@@ -305,460 +319,744 @@ export function PurchaseOrderList({
   const [receiptsTarget, setReceiptsTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrderSummary | null>(null)
   const [detailsTarget, setDetailsTarget] = useState<PurchaseOrderSummary | null>(null)
+
+  // Deep link from a converted PR's "PO: <code>" reference (?po=<id>).
+  // Fetched on its own rather than looked up in `items`: the linked order
+  // may sit behind whatever status filter/page this screen currently has
+  // applied, or not be loaded yet. Same pattern PurchaseRequestList uses
+  // for its own `?pr=<id>` link.
+  const linkedPoId = searchParams.get('po')
+  const linkedPoQuery = useQuery({
+    queryKey: ['purchase-order', linkedPoId],
+    queryFn: () => getPurchaseOrder(linkedPoId as string),
+    enabled: !!linkedPoId,
+  })
+  const effectiveDetailsTarget = detailsTarget ?? (linkedPoId ? (linkedPoQuery.data ?? null) : null)
+  const closeDetailsTarget = (): void => {
+    setDetailsTarget(null)
+    if (!linkedPoId) return
+    const rest = new URLSearchParams(searchParams.toString())
+    rest.delete('po')
+    const query = rest.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname)
+  }
+
+  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [searchFocus, setSearchFocus] = useState(false)
+  /** Guards the row's own Download button against a second click while its
+   * document is still being fetched. */
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const isActing = isApproving || isSending || isClosing || isCancelling || isUpdating
 
-  const downloadPdf = async (po: PurchaseOrderSummary) => {
+  const suppliersQuery = useQuery({
+    queryKey: ['po-filter-suppliers'],
+    queryFn: () => getSuppliers({ limit: 200 }),
+  })
+  const branchesQuery = useQuery({ queryKey: ['po-filter-branches'], queryFn: () => getBranches() })
+
+  const supplierOptions = useMemo(
+    () =>
+      (suppliersQuery.data?.success ? (suppliersQuery.data.data?.data ?? []) : []).map((s) => ({
+        value: s.id,
+        label: s.name,
+      })),
+    [suppliersQuery.data]
+  )
+  const branchOptions = useMemo(
+    () => (branchesQuery.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+    [branchesQuery.data]
+  )
+
+  // The overdue banner and its toggle are scoped to the rows on screen —
+  // the list endpoint has no "overdue" filter or count, so claiming a
+  // figure for the whole result set would be a guess.
+  const overdueOnPage = useMemo(() => items.filter((po) => daysLate(po) > 0).length, [items])
+  const rows = useMemo(
+    () => (overdueOnly ? items.filter((po) => daysLate(po) > 0) : items),
+    [items, overdueOnly]
+  )
+
+  const activeFilterCount = [
+    search !== '',
+    statusFilter !== undefined,
+    supplierId !== undefined,
+    branchId !== undefined,
+    overdueOnly,
+  ].filter(Boolean).length
+  const filtersActive = activeFilterCount > 0
+
+  const clearAll = (): void => {
+    resetFilters()
+    setOverdueOnly(false)
+  }
+
+  const downloadPdf = async (po: PurchaseOrderSummary): Promise<void> => {
+    // Serial numbers only exist to show once a PO is closed — receiving
+    // is done at that point, so there's a final per-line list, not a
+    // partial/in-progress one worth printing.
     setDownloadingId(po.id)
     try {
-      // Serial numbers only exist to show once a PO is closed — receiving
-      // is done at that point, so there's a final per-line list, not a
-      // partial/in-progress one worth printing.
-      const [docRes, receiptsRes] = await Promise.all([
-        getPurchaseOrderDocument(po.id),
-        po.status === 'closed' ? getPurchaseOrderReceipts(po.id) : Promise.resolve(null),
-      ])
-      if (!docRes.success || !docRes.data) return
-
-      const serialsByLineId: Record<string, string[]> = {}
-      for (const receipt of receiptsRes?.success ? (receiptsRes.data?.data ?? []) : []) {
-        for (const line of receipt.lines) {
-          if (!line.purchaseOrderLineId || !line.serialNumbers?.length) continue
-          serialsByLineId[line.purchaseOrderLineId] = [
-            ...(serialsByLineId[line.purchaseOrderLineId] ?? []),
-            ...line.serialNumbers,
-          ]
-        }
-      }
-
-      printPurchaseOrderDocument(docRes.data, serialsByLineId)
+      await buildAndPrintPdf(po)
     } finally {
       setDownloadingId(null)
     }
   }
 
-  const fmtPHP = (n: number) =>
-    n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+  const buildAndPrintPdf = async (po: PurchaseOrderSummary): Promise<void> => {
+    const [docRes, receiptsRes] = await Promise.all([
+      getPurchaseOrderDocument(po.id),
+      po.status === 'closed' ? getPurchaseOrderReceipts(po.id) : Promise.resolve(null),
+    ])
+    if (!docRes.success || !docRes.data) return
+
+    const serialsByLineId: Record<string, string[]> = {}
+    for (const receipt of receiptsRes?.success ? (receiptsRes.data?.data ?? []) : []) {
+      for (const line of receipt.lines) {
+        if (!line.purchaseOrderLineId || !line.serialNumbers?.length) continue
+        serialsByLineId[line.purchaseOrderLineId] = [
+          ...(serialsByLineId[line.purchaseOrderLineId] ?? []),
+          ...line.serialNumbers,
+        ]
+      }
+    }
+    printPurchaseOrderDocument(docRes.data, serialsByLineId)
+  }
+
+  /** The per-status action set the list carried before the row overflow menu.
+   * Approve and Cancel are deliberately absent: both live in PoDetailModal so
+   * the decision is made against the full order, not a row. */
+  const rowActions = (po: PurchaseOrderSummary): RowActionSpec[] => {
+    // Approved orders must be sent before Receive is offered — the backend
+    // still accepts a receipt posted directly against an approved PO (a
+    // defensive allowance for edge cases, not the intended path), but the
+    // UI only exposes it once the order has actually gone out the door.
+    const receivable: PoStatus[] = ['sent', 'partially_received']
+    const closable: PoStatus[] = ['sent', 'partially_received', 'fully_received']
+    const editable: PoStatus[] = ['draft', 'approved']
+    const receipted: PoStatus[] = ['partially_received', 'fully_received', 'closed']
+    const downloading = downloadingId === po.id
+    const icon = 'h-3.5 w-3.5'
+    return [
+      {
+        key: 'pdf',
+        label: 'Download PDF',
+        icon: downloading ? (
+          <Loader2 className={`${icon} animate-spin`} />
+        ) : (
+          <Download className={icon} />
+        ),
+        disabled: downloading,
+        run: () => void downloadPdf(po),
+      },
+      ...(canEdit && editable.includes(po.status)
+        ? [
+            {
+              key: 'edit',
+              label: 'Edit order',
+              icon: <Pencil className={icon} />,
+              disabled: isActing,
+              run: () => setEditingPo(po),
+            },
+          ]
+        : []),
+      ...(canReceive && receivable.includes(po.status)
+        ? [
+            {
+              key: 'receive',
+              label: po.status === 'partially_received' ? 'Receive' : 'Receive stock',
+              icon: <PackagePlus className={icon} />,
+              tone: 'purple' as const,
+              // Both statuses left in `receivable` (sent, partially_received)
+              // spell the action out — approved was dropped from this array
+              // entirely, so there's no longer an icon-only Receive to fall
+              // back to here.
+              variant: 'primary' as const,
+              run: () => setReceiveTarget(po),
+            },
+          ]
+        : []),
+      ...(canSend && po.status === 'approved'
+        ? [
+            {
+              key: 'send',
+              label: 'Send',
+              // The button reads just "Send" — there's no column width to
+              // spare for the full phrase — but the accessible name and the
+              // hover title stay explicit about what it sends.
+              ariaLabel: 'Send to Supplier',
+              icon: <Send className={icon} />,
+              tone: 'purple' as const,
+              variant: 'primary' as const,
+              disabled: isActing,
+              run: () => setSendTarget(po),
+            },
+          ]
+        : []),
+      ...(canClose && closable.includes(po.status)
+        ? [
+            {
+              key: 'close',
+              label: po.status === 'fully_received' ? 'Close' : 'Close order',
+              icon: isClosing ? (
+                <Loader2 className={`${icon} animate-spin`} />
+              ) : (
+                <Archive className={icon} />
+              ),
+              tone: 'green' as const,
+              variant: po.status === 'fully_received' ? ('primary' as const) : ('icon' as const),
+              disabled: isActing,
+              run: () => setCloseTarget(po),
+            },
+          ]
+        : []),
+      ...(receipted.includes(po.status)
+        ? [
+            {
+              key: 'receipts',
+              label: 'View delivery receipts',
+              icon: <FileText className={icon} />,
+              tone: 'purple' as const,
+              run: () => setReceiptsTarget(po),
+            },
+          ]
+        : []),
+      ...(canViewApBill && po.apBills.length > 0
+        ? [
+            {
+              key: 'bill',
+              label: 'View invoice',
+              icon: <Receipt className={icon} />,
+              tone: 'purple' as const,
+              run: () =>
+                router.push(`/accounting/ap-bills/${po.apBills[0].id}?from=purchase-orders`),
+            },
+          ]
+        : []),
+      // Pending is the one status whose next step is a decision rather than a
+      // task, so it gets the spelled-out way in. Every other row opens the
+      // same drawer by clicking the row, which is why there is no View icon.
+      ...(po.status === 'draft'
+        ? [
+            {
+              key: 'view',
+              label: 'View',
+              icon: <Eye className={icon} />,
+              tone: 'purple' as const,
+              variant: 'primary' as const,
+              run: () => setDetailsTarget(po),
+            },
+          ]
+        : []),
+    ]
+  }
+
+  const showTable = !isLoading && rows.length > 0
+  const isNoResults = !isLoading && rows.length === 0
 
   return (
-    <div className="min-h-screen bg-zinc-50/60 p-6">
-      {/* ── Page header ──────────────────────────────────────────────────────── */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Purchase Orders</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Manage and track purchase orders across your organisation
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className={`${PLEX} min-h-screen bg-zinc-50 text-[#17171c] antialiased`}>
+      <div className="mx-auto flex max-w-[1560px] flex-col gap-[14px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
+        {/* ── Header ───────────────────────────────────────────────────────── */}
+        <div className="flex flex-wrap items-end justify-between gap-5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Purchase Orders</h1>
+            <p className="text-[13px] text-[#5b5b6b]">
+              Manage and track purchase orders across your organisation
+            </p>
+          </div>
           {canCreate && (
             <button
               type="button"
               onClick={() => setShowCreatePo(true)}
-              className="flex items-center gap-2 rounded-xl bg-prominent-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-prominent-purple-700 active:scale-95 transition-all"
+              className="rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
             >
-              <Plus className="h-4 w-4" />
-              New Purchase
+              + New Purchase
             </button>
           )}
         </div>
-      </div>
 
-      <div className="space-y-4">
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <input
-              type="text"
-              placeholder="Search purchase orders, items, supplier"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 w-64 rounded-xl border border-zinc-200 bg-white pl-9 pr-3 text-sm placeholder:text-zinc-400 focus:border-prominent-purple-400 focus:outline-none focus:ring-2 focus:ring-prominent-purple-100"
+        {/* ── Filter bar ───────────────────────────────────────────────────
+            Search, the two type-ahead pickers and sort live in one card so
+            the controls read as a single unit against the page's grey; the
+            status pills sit under a divider in the same card as the coarse
+            first cut at the same result set. */}
+        <div className="flex flex-col gap-3 rounded-xl border border-[#e4e4e9] bg-white p-3">
+          <div className="flex flex-wrap items-center gap-[10px]">
+            <div
+              className={`flex h-[38px] min-w-[240px] flex-[1_1_300px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${
+                searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
+              }`}
+            >
+              <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => setSearchFocus(true)}
+                onBlur={() => setSearchFocus(false)}
+                placeholder="Search PO number, supplier, or PR number…"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+              />
+              {search !== '' && (
+                <Tooltip label="Clear search" side="bottom" align="end">
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    aria-label="Clear search"
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+
+            {/* Type-ahead pickers rather than native <select>s — the supplier
+                list runs long enough that scrolling it is the slow way to a
+                known name, and locations use the same control so the pair
+                behaves identically. */}
+            <SearchableSelect
+              className="w-[200px]"
+              value={supplierId ?? ''}
+              onChange={(v) => setSupplierId(v || undefined)}
+              placeholder="All suppliers"
+              loading={suppliersQuery.isLoading}
+              chrome={CONTROL_CHROME}
+              clearable
+              options={supplierOptions}
             />
+
+            {/* "All locations" filters by destination — the branch whose
+                warehouse the order is headed to (PoFilterDto.branchId maps
+                to warehouse.branchId server-side), not by which branch
+                requested it. Those can differ (a tenant-wide/HQ order still
+                ships to one branch's warehouse), so this intentionally
+                isn't the same as the 'Requested By' field shown in the
+                detail panel. */}
+            <SearchableSelect
+              className="w-[188px]"
+              value={branchId ?? ''}
+              onChange={(v) => setBranchId(v || undefined)}
+              placeholder="All locations"
+              loading={branchesQuery.isLoading}
+              chrome={CONTROL_CHROME}
+              clearable
+              options={branchOptions}
+            />
+
+            <div className="ml-auto flex items-center gap-2">
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                Sort
+              </span>
+              <div className="relative">
+                <select
+                  value={sortDir}
+                  onChange={(e) => setSortDir(e.target.value as 'asc' | 'desc')}
+                  aria-label="Sort order"
+                  className={SORT_SELECT_CLASS}
+                >
+                  <option value="desc">Newest first</option>
+                  <option value="asc">Oldest first</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {STATUS_FILTERS.map((f) => (
+          <div className="flex flex-wrap items-center gap-[7px] border-t border-[#f1f1f4] pt-3">
+            {STATUS_FILTERS.map((f) => {
+              const on = statusFilter === f.value
+              return (
+                <button
+                  key={f.label}
+                  type="button"
+                  onClick={() => setStatusFilter(f.value)}
+                  className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
+                    on
+                      ? 'border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
+                      : 'border-transparent bg-[#f4f4f6] text-[#3d3d4a] hover:bg-[#eeeef1]'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+
+            {filtersActive && (
               <button
-                key={String(f.value)}
                 type="button"
-                onClick={() => setStatusFilter(f.value)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                  statusFilter === f.value
-                    ? 'bg-prominent-purple-600 text-white shadow-sm'
-                    : 'bg-white border border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
-                }`}
+                onClick={clearAll}
+                className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
               >
-                {f.label}
+                <X className="h-3.5 w-3.5" />
+                Clear {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
               </button>
-            ))}
+            )}
           </div>
         </div>
 
-        {/* Table card */}
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 bg-zinc-50">
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Code
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Supplier
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Status
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Exp. Delivery
-                  </th>
-                  <th className="px-4 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Total
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Source
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Progress
-                  </th>
-                  <th className="px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Created
-                  </th>
-                  <th className="px-4 py-3.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-                ) : items.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-24 text-center">
-                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100">
-                        <ShoppingBag className="h-7 w-7 text-zinc-400" />
-                      </div>
-                      <p className="text-sm font-semibold text-zinc-600">
-                        No purchase orders found
-                      </p>
-                      <p className="mt-1 text-xs text-zinc-400">
-                        {search || statusFilter
-                          ? 'Try adjusting your filters'
-                          : 'Create one directly or convert an approved purchase request'}
-                      </p>
-                    </td>
-                  </tr>
-                ) : (
-                  items.map((po) => (
-                    <tr
-                      key={po.id}
-                      onClick={() => setDetailsTarget(po)}
-                      className="group relative cursor-pointer transition-colors hover:bg-prominent-purple-50/30"
-                    >
-                      {/* Code */}
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-prominent-purple-400 opacity-0 transition-opacity group-hover:opacity-100" />
-                          <span className="font-mono text-sm font-bold text-prominent-purple-700">
+        {/* ── Action-required strip ────────────────────────────────────────── */}
+        {!isLoading && overdueOnPage > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-[14px] rounded-[9px] border border-[#f7dfc0] bg-[#fdf3e7] px-[14px] py-[10px]">
+            <span className="flex items-center gap-[9px] text-[12.5px] text-[#8a4b06]">
+              <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#b25e09]" />
+              {overdueOnPage === 1
+                ? '1 order on this page is past its expected delivery date'
+                : `${overdueOnPage} orders on this page are past their expected delivery date`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOverdueOnly((v) => !v)}
+              className={`rounded-[7px] border px-[11px] py-1.5 text-[12.5px] font-medium ${
+                overdueOnly
+                  ? 'border-[#b25e09] bg-[#b25e09] text-white'
+                  : 'border-[#f7dfc0] bg-white text-[#8a4b06]'
+              }`}
+            >
+              {overdueOnly ? 'Show all orders' : 'Show only these'}
+            </button>
+          </div>
+        )}
+
+        {/* ── Table card ───────────────────────────────────────────────────── */}
+        <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
+          {/* Wide: table. The design's layout is a CSS grid rather than a
+              <table>, so the table semantics the markup used to carry are
+              declared explicitly — assistive tech and the e2e specs both
+              rely on them. */}
+          {showTable && (
+            <div role="table" aria-label="Purchase orders" className="hidden min-[1080px]:block">
+              <div
+                role="row"
+                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+              >
+                <span role="columnheader">PO code</span>
+                <span role="columnheader" className="pl-1.5">
+                  Supplier
+                </span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader" className="text-right">
+                  Total
+                </span>
+                <span role="columnheader">Source</span>
+                <span role="columnheader">Receiving</span>
+                <span role="columnheader">Expected</span>
+                <span role="columnheader" className="text-right">
+                  Actions
+                </span>
+              </div>
+
+              {rows.map((po) => {
+                const late = daysLate(po)
+                return (
+                  <div
+                    key={po.id}
+                    onClick={() => setDetailsTarget(po)}
+                    className="cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd]"
+                  >
+                    <div role="row" className={`${GRID} px-4 py-[11px]`}>
+                      <div role="cell" className="flex min-w-0 flex-col gap-0.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span
+                            className={`${MONO} whitespace-nowrap text-[12.5px] font-medium text-[#17171c]`}
+                          >
                             {po.code}
                           </span>
+                          <CopyButton code={po.code} />
                         </div>
-                      </td>
+                        <span className="text-[11px] text-[#8b8b9b]">{fmtDate(po.createdAt)}</span>
+                      </div>
 
-                      {/* Supplier */}
-                      <td className="px-4 py-4 max-w-[180px]">
-                        <div className="flex items-center gap-2.5">
-                          <SupplierAvatar name={po.supplier.name} />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-zinc-800">{po.supplier.name}</p>
-                            {po.supplier.taxId && (
-                              <p className="truncate font-mono text-xs text-zinc-400">
-                                TIN {po.supplier.taxId}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-4">
-                        <PoStatusBadge status={po.status} />
-                      </td>
-
-                      {/* Exp. delivery */}
-                      <td className="px-4 py-4 text-sm">
-                        {po.expectedDeliveryDate ? (
-                          <span className="text-zinc-600">
-                            {new Date(po.expectedDeliveryDate).toLocaleDateString('en-PH', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
+                      <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
+                        <SupplierAvatar name={po.supplier.name} />
+                        <div className="flex min-w-0 flex-col gap-px">
+                          <span className="truncate text-[12.5px] font-medium">
+                            {po.supplier.name}
                           </span>
-                        ) : (
-                          <span className="text-zinc-300">—</span>
+                          {po.supplier.taxId && (
+                            <span className={`${MONO} truncate text-[10.5px] text-[#8b8b9b]`}>
+                              TIN {po.supplier.taxId}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div role="cell" className="flex flex-col items-start gap-[3px]">
+                        <StatusBadge status={po.status} />
+                        {late > 0 && (
+                          <span className="text-[10.5px] text-[#b25e09]">
+                            {late === 1 ? '1 day late' : `${late} days late`}
+                          </span>
                         )}
-                      </td>
+                      </div>
 
-                      {/* Total */}
-                      <td className="px-4 py-4 text-right">
-                        <span className="font-semibold text-zinc-900">
-                          {fmtPHP(Number(po.totalAmount))}
-                        </span>
-                      </td>
+                      <span role="cell" className={`${MONO} text-right text-[13px] font-semibold`}>
+                        {fmtPeso(Number(po.totalAmount))}
+                      </span>
 
-                      {/* Source */}
-                      <td className="px-4 py-4">
+                      <span role="cell" className="flex min-w-0">
                         {po.fromPr ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-prominent-purple-100 bg-prominent-purple-50 px-2 py-0.5 font-mono text-xs font-semibold text-prominent-purple-700">
-                            <FileText className="h-3 w-3" />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(
+                                `/inventory/purchase-orders?tab=requests&pr=${po.fromPr?.id}`
+                              )
+                            }}
+                            title={`Open ${po.fromPr.code}`}
+                            className={`${MONO} min-w-0 truncate text-left text-[11.5px] text-[#5b21b6] underline decoration-transparent underline-offset-2 hover:decoration-current`}
+                          >
                             {po.fromPr.code}
-                          </span>
+                          </button>
                         ) : (
-                          <span className="inline-flex items-center rounded-md border border-zinc-100 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                          <span className={`${MONO} truncate text-[11.5px] text-[#8b8b9b]`}>
                             Direct
                           </span>
                         )}
-                      </td>
+                      </span>
 
-                      {/* Receipt progress */}
-                      <td className="px-4 py-4">
-                        <ReceiptProgress lines={po.lines} />
-                      </td>
+                      <span role="cell" className="min-w-0">
+                        <ReceivingCell po={po} />
+                      </span>
 
-                      {/* Created */}
-                      <td className="px-4 py-4 text-xs text-zinc-400">
-                        {new Date(po.createdAt).toLocaleDateString('en-PH', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
+                      <span
+                        role="cell"
+                        className={`text-[11.5px] ${late > 0 ? 'font-medium text-[#b25e09]' : 'text-[#5b5b6b]'}`}
+                      >
+                        {fmtDate(po.expectedDeliveryDate)}
+                      </span>
 
-                      {/* Actions */}
-                      <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <IconBtn
-                            title="Download PDF"
-                            onClick={() => downloadPdf(po)}
-                            disabled={downloadingId === po.id}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </IconBtn>
-                          {po.status === 'draft' && (
-                            <>
-                              {canEdit && (
-                                <IconBtn
-                                  title="Edit"
-                                  onClick={() => setEditingPo(po)}
-                                  disabled={isActing}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {/* Approve/Cancel moved into PoDetailModal — click
-                                  through to review before deciding. */}
-                              <button
-                                type="button"
-                                onClick={() => setDetailsTarget(po)}
-                                disabled={isActing}
-                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                View
-                              </button>
-                            </>
-                          )}
+                      <span role="cell">
+                        <RowActions actions={rowActions(po)} />
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
 
-                          {po.status === 'approved' && (
-                            <>
-                              {canEdit && (
-                                <IconBtn
-                                  title="Edit"
-                                  onClick={() => setEditingPo(po)}
-                                  disabled={isActing}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {canReceive && (
-                                <IconBtn
-                                  title="Receive stock"
-                                  onClick={() => setReceiveTarget(po)}
-                                  variant="purple"
-                                >
-                                  <PackagePlus className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {canSend && (
-                                <IconBtn
-                                  title="Send to supplier"
-                                  onClick={() => setSendTarget(po)}
-                                  disabled={isActing}
-                                >
-                                  <Send className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {/* Cancel moved into PoDetailModal, same as the
-                                  draft row above. */}
-                              <button
-                                type="button"
-                                onClick={() => setDetailsTarget(po)}
-                                disabled={isActing}
-                                className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800 disabled:opacity-50 transition-colors"
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                View
-                              </button>
-                            </>
-                          )}
-
-                          {po.status === 'sent' && (
-                            <>
-                              {canReceive && (
-                                <IconBtn
-                                  title="Receive stock"
-                                  onClick={() => setReceiveTarget(po)}
-                                  variant="purple"
-                                >
-                                  <PackagePlus className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {/* Scenario 29 PO-16 follow-up — no longer
-                                  editable once sent (the supplier already has
-                                  this document), so Close is the only way out
-                                  besides receiving. */}
-                              {canClose && (
-                                <IconBtn
-                                  title="Close"
-                                  onClick={() => setCloseTarget(po)}
-                                  disabled={isActing}
-                                  variant="default"
-                                >
-                                  {isClosing ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Archive className="h-3.5 w-3.5" />
-                                  )}
-                                </IconBtn>
-                              )}
-                            </>
-                          )}
-
-                          {po.status === 'partially_received' && (
-                            <>
-                              {canReceive && (
-                                <IconBtn
-                                  title="Receive more stock"
-                                  onClick={() => setReceiveTarget(po)}
-                                  variant="purple"
-                                >
-                                  <PackagePlus className="h-3.5 w-3.5" />
-                                </IconBtn>
-                              )}
-                              {canClose && (
-                                <IconBtn
-                                  title="Close"
-                                  onClick={() => setCloseTarget(po)}
-                                  disabled={isActing}
-                                  variant="default"
-                                >
-                                  {isClosing ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Archive className="h-3.5 w-3.5" />
-                                  )}
-                                </IconBtn>
-                              )}
-                            </>
-                          )}
-
-                          {po.status === 'fully_received' && canClose && (
-                            <button
-                              type="button"
-                              onClick={() => setCloseTarget(po)}
-                              disabled={isActing}
-                              className="flex items-center gap-1.5 rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-900 disabled:opacity-50 transition-colors"
-                            >
-                              {isClosing ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Archive className="h-3.5 w-3.5" />
-                              )}
-                              Close
-                            </button>
-                          )}
-
-                          {(po.status === 'partially_received' ||
-                            po.status === 'fully_received' ||
-                            po.status === 'closed') && (
-                            <IconBtn
-                              title="View delivery receipts"
-                              onClick={() => setReceiptsTarget(po)}
-                              variant="purple"
-                            >
-                              <FileText className="h-3.5 w-3.5" />
-                            </IconBtn>
-                          )}
-                          {canViewApBill && po.apBills.length > 0 && (
-                            <IconBtn
-                              title="View Invoice"
-                              onClick={() =>
-                                router.push(`/accounting/ap-bills/${po.apBills[0].id}`)
-                              }
-                              variant="purple"
-                            >
-                              <Receipt className="h-3.5 w-3.5" />
-                            </IconBtn>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {!isLoading && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-zinc-100 px-5 py-3.5">
-              <p className="text-xs text-zinc-400">
-                Showing{' '}
-                <span className="font-medium text-zinc-600">
-                  {(page - 1) * pagination.limit + 1}–
-                  {Math.min(page * pagination.limit, pagination.total)}
-                </span>{' '}
-                of <span className="font-medium text-zinc-600">{pagination.total}</span> orders
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(page - 1)}
-                  disabled={page <= 1}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="px-2 text-xs font-medium text-zinc-600">
-                  {page} / {pagination.totalPages}
+              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
+                <span className="text-[11.5px] text-[#8b8b9b]">
+                  Showing {(page - 1) * pagination.limit + 1}–
+                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} orders
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(page + 1)}
-                  disabled={page >= pagination.totalPages}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-[10px]">
+                  <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
+                  <select
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPage(page - 1)}
+                      disabled={page <= 1}
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPage(page + 1)}
+                      disabled={page >= pagination.totalPages}
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
+
+          {/* Narrow: cards */}
+          {showTable && (
+            <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
+              {rows.map((po) => {
+                const late = daysLate(po)
+                const { received, ordered, pct } = receiptTotals(po.lines)
+                const full = ordered > 0 && received >= ordered
+                return (
+                  <div
+                    key={po.id}
+                    onClick={() => setDetailsTarget(po)}
+                    className={`flex flex-col gap-[10px] rounded-[11px] border bg-white p-3 ${
+                      late > 0 ? 'border-[#f7dfc0]' : 'border-[#e4e4e9]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-[10px]">
+                      <div className="flex min-w-0 flex-col gap-[3px]">
+                        <div className="flex items-center gap-[7px]">
+                          <span className={`${MONO} text-[13px] font-medium`}>{po.code}</span>
+                          <CopyButton code={po.code} />
+                        </div>
+                        <span className="text-[11.5px] text-[#8b8b9b]">
+                          {fmtDate(po.createdAt)}
+                        </span>
+                      </div>
+                      <StatusBadge status={po.status} />
+                    </div>
+
+                    <div className="flex min-w-0 items-center gap-[9px]">
+                      <SupplierAvatar name={po.supplier.name} />
+                      <div className="flex min-w-0 flex-col gap-px">
+                        <span className="truncate text-[13px] font-medium">{po.supplier.name}</span>
+                        {po.supplier.taxId && (
+                          <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                            TIN {po.supplier.taxId}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
+                        {fmtPeso(Number(po.totalAmount))}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-[5px]">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-[11.5px] text-[#8b8b9b]">
+                          Received {received} / {ordered}
+                        </span>
+                        <span
+                          className={`${MONO} text-[11.5px] font-semibold ${
+                            full
+                              ? 'text-[#0b6644]'
+                              : received > 0
+                                ? 'text-[#8a4b06]'
+                                : 'text-[#5b5b6b]'
+                          }`}
+                        >
+                          {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-[3px] bg-[#eeeef1]">
+                        <div
+                          className={`h-full rounded-[3px] ${
+                            full ? 'bg-[#0f7b52]' : received > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-[10px] border-t border-[#f1f1f4] pt-[9px]">
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        {po.fromPr ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(
+                                `/inventory/purchase-orders?tab=requests&pr=${po.fromPr?.id}`
+                              )
+                            }}
+                            className={`${MONO} truncate text-left text-[11.5px] text-[#5b21b6] underline underline-offset-2`}
+                          >
+                            {po.fromPr.code}
+                          </button>
+                        ) : (
+                          <span className={`${MONO} truncate text-[11.5px] text-[#8b8b9b]`}>
+                            Direct
+                          </span>
+                        )}
+                        <span
+                          className={`truncate text-[11.5px] ${late > 0 ? 'font-medium text-[#b25e09]' : 'text-[#5b5b6b]'}`}
+                        >
+                          {po.expectedDeliveryDate
+                            ? `Expected ${fmtDate(po.expectedDeliveryDate)}`
+                            : 'No expected date'}
+                        </span>
+                      </div>
+                      <RowActions actions={rowActions(po)} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Loading */}
+          {isLoading && (
+            <div>
+              <div
+                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1080px]:grid`}
+              >
+                <span>PO code</span>
+                <span>Supplier</span>
+                <span>Status</span>
+                <span className="text-right">Total</span>
+                <span>Source</span>
+                <span>Receiving</span>
+                <span>Expected</span>
+                <span className="text-right">Actions</span>
+              </div>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className={`${GRID} border-t border-[#f4f4f6] px-4 py-[14px]`}>
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar wide />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar />
+                  <SkeletonBar wide />
+                </div>
+              ))}
+              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+                Loading purchase orders…
+              </div>
+            </div>
+          )}
+
+          {/* No results / empty */}
+          {isNoResults &&
+            (filtersActive ? (
+              <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
+                <div className="h-[30px] w-[30px] rounded-lg border border-[#e4e4e9] bg-[#fbfbfc]" />
+                <div className="mt-1 text-[14px] font-semibold">
+                  No purchase orders match your filters
+                </div>
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                  {search
+                    ? `Nothing matches “${search}”. Check the PO or PR number, or search by supplier name instead.`
+                    : 'No orders match the filters you have applied. Clear a filter to see more.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="mt-3 rounded-lg border border-[#d3d3db] bg-white px-[15px] py-[9px] text-[13px] font-medium text-[#17171c] hover:border-[#a3a3b2]"
+                >
+                  Clear search and filters
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
+                <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
+                <div className="mt-1 text-[15px] font-semibold">No purchase orders yet</div>
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                  Purchase orders appear here once you raise one from a purchase request or create
+                  one directly. Approved orders can then be received against.
+                </div>
+                {canCreate && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreatePo(true)}
+                    className="mt-3.5 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
+                  >
+                    + New Purchase
+                  </button>
+                )}
+              </div>
+            ))}
         </div>
       </div>
 
-      {/* ── Modals & panels ──────────────────────────────────────────────────── */}
+      {/* ── Modals & panels ────────────────────────────────────────────────── */}
 
       <CreatePoModal
         open={showCreatePo || editingPo !== null}
@@ -846,31 +1144,75 @@ export function PurchaseOrderList({
       />
 
       <PoDetailModal
-        po={detailsTarget}
-        onClose={() => setDetailsTarget(null)}
+        po={effectiveDetailsTarget}
+        onClose={closeDetailsTarget}
         canApprove={canApprove}
         canCancel={canCancel}
+        canSend={canSend}
+        canReceive={canReceive}
+        canClose={canClose}
+        canEdit={canEdit}
+        canViewApBill={canViewApBill}
+        isDownloading={
+          effectiveDetailsTarget != null && downloadingId === effectiveDetailsTarget.id
+        }
         onApprove={(po) => {
-          setDetailsTarget(null)
+          closeDetailsTarget()
           setApproveTarget(po)
         }}
         onCancel={(po) => {
-          setDetailsTarget(null)
+          closeDetailsTarget()
           setCancelTarget(po)
         }}
+        onSend={(po) => {
+          closeDetailsTarget()
+          setSendTarget(po)
+        }}
+        onReceive={(po) => {
+          closeDetailsTarget()
+          setReceiveTarget(po)
+        }}
+        onCloseOrder={(po) => {
+          closeDetailsTarget()
+          setCloseTarget(po)
+        }}
+        onEdit={(po) => {
+          closeDetailsTarget()
+          setEditingPo(po)
+        }}
+        onViewInvoice={(po) => {
+          if (!po.apBills[0]) return
+          closeDetailsTarget()
+          router.push(`/accounting/ap-bills/${po.apBills[0].id}?from=purchase-orders`)
+        }}
+        onViewReceipts={(po) => {
+          closeDetailsTarget()
+          setReceiptsTarget(po)
+        }}
+        onDownload={(po) => void downloadPdf(po)}
       />
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
 
+      {/* The receive screen stays open after posting to show the receipt it
+          created (its RR number, what was posted, whether the PO is closed),
+          so the list refreshes underneath rather than the screen closing. */}
       <ReceiveAgainstPoModal
         po={receiveTarget}
-        onClose={() => setReceiveTarget(null)}
-        onSuccess={() => {
+        onClose={() => {
           setReceiveTarget(null)
           refetch()
         }}
+        onPosted={() => refetch()}
         canViewCost={canViewCost}
       />
+
+      {isActing && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-3 rounded-[10px] bg-[#17171c] px-4 py-3 text-white shadow-[0_18px_40px_-12px_rgba(20,20,30,.5)]">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <span className="text-[13px]">Working…</span>
+        </div>
+      )}
     </div>
   )
 }

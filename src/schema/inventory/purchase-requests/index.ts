@@ -31,6 +31,10 @@ const PrSupplierSchema = z.object({
 const PrWarehouseSchema = z.object({
   id: z.string(),
   name: z.string(),
+  // Set on a branch's own stock location, null on a standalone warehouse —
+  // same shape PoWarehouseSchema uses, so locationLabel() renders a PR's
+  // destination the exact same way it renders a PO's.
+  branchId: z.string().optional().nullable(),
 })
 
 // Same input-field shape as PoLineSchema (unitPrice/description/srp/

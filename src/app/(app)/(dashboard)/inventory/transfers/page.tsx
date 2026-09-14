@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -22,7 +23,12 @@ export default async function TransfersPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <TransferList session={session} />
+      {/* TransferList reads useSearchParams() for Item 360's "Transfer
+          selected" deep link — required by Next.js so that read doesn't
+          force the rest of this route out of static rendering. */}
+      <Suspense fallback={null}>
+        <TransferList session={session} />
+      </Suspense>
     </div>
   )
 }
