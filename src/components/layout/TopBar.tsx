@@ -37,8 +37,26 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
       : hasPermission(session, mod.requiredPermission)
   )
 
-  const showAdminDropdown =
-    hasPermission(session, 'admin:roles:manage') && session?.primaryRole !== 'Business Owner'
+  // Each entry below is gated on what its own page actually checks, instead of
+  // hiding all three behind admin:roles:manage. That is permission to
+  // administer ROLES and has nothing to do with reaching the Users screen — so
+  // a role granted user administration but not role administration got no
+  // entry point at all, even though /settings/users would have let it in. That
+  // combination never occurred while every admin-ish role carried both; it is
+  // exactly what the Admin "Manage / Edit" preset now produces.
+  //
+  // Mirrors the pages: /settings/users takes isAdmin || admin:users:read,
+  // while /settings/roles and /settings/permissions take isAdmin only.
+  // isAdmin is roles:manage OR permissions:manage (hasPermission already
+  // returns true for Business Owner, matching hasPrivilegedRole).
+  const isAdminUser =
+    hasPermission(session, 'admin:roles:manage') ||
+    hasPermission(session, 'admin:permissions:manage')
+  const canSeeUsers = isAdminUser || hasPermission(session, 'admin:users:read')
+
+  // Business Owner still reaches all of this through the sidebar's My
+  // Workspace block, so the dropdown stays out of their way — unchanged.
+  const showAdminDropdown = canSeeUsers && session?.primaryRole !== 'Business Owner'
   const displayName = session?.firstName || session?.fullName || session?.email || 'User'
   const initials =
     displayName
@@ -113,32 +131,36 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                             <Users className="h-4 w-4 shrink-0" />
                             Users
                           </Link>
-                          <Link
-                            href="/settings/roles"
-                            onClick={() => setProfileOpen(false)}
-                            className={cn(
-                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                              pathname === '/settings/roles'
-                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                                : 'text-zinc-700 hover:bg-zinc-50'
-                            )}
-                          >
-                            <ShieldCheck className="h-4 w-4 shrink-0" />
-                            Roles
-                          </Link>
-                          <Link
-                            href="/settings/permissions"
-                            onClick={() => setProfileOpen(false)}
-                            className={cn(
-                              'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
-                              pathname === '/settings/permissions'
-                                ? 'bg-prominent-orange-50 text-prominent-orange-700'
-                                : 'text-zinc-700 hover:bg-zinc-50'
-                            )}
-                          >
-                            <Key className="h-4 w-4 shrink-0" />
-                            Permissions
-                          </Link>
+                          {isAdminUser && (
+                            <Link
+                              href="/settings/roles"
+                              onClick={() => setProfileOpen(false)}
+                              className={cn(
+                                'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                                pathname === '/settings/roles'
+                                  ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                                  : 'text-zinc-700 hover:bg-zinc-50'
+                              )}
+                            >
+                              <ShieldCheck className="h-4 w-4 shrink-0" />
+                              Roles
+                            </Link>
+                          )}
+                          {isAdminUser && (
+                            <Link
+                              href="/settings/permissions"
+                              onClick={() => setProfileOpen(false)}
+                              className={cn(
+                                'flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors',
+                                pathname === '/settings/permissions'
+                                  ? 'bg-prominent-orange-50 text-prominent-orange-700'
+                                  : 'text-zinc-700 hover:bg-zinc-50'
+                              )}
+                            >
+                              <Key className="h-4 w-4 shrink-0" />
+                              Permissions
+                            </Link>
+                          )}
                         </>
                       )}
                       <div className="border-t border-zinc-100" />
