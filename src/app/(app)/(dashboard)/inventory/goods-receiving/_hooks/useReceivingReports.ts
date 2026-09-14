@@ -5,20 +5,36 @@ import { useState, useMemo } from 'react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getReceivingReports } from '../_actions/get-receiving-reports'
 import { getReceivingReport } from '../_actions/get-receiving-report'
+import { getReceivingReportsSummary } from '../_actions/get-receiving-reports-summary'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 
 export function useReceivingReports() {
   const [page, setPage] = useState(1)
   const limit = 20
 
+  const [search, setSearchState] = useState('')
   const [warehouseId, setWarehouseId] = useState<string | undefined>()
+  const [supplierId, setSupplierId] = useState<string | undefined>()
+  const [status, setStatus] = useState<string | undefined>()
   const [hasDiscrepancy, setHasDiscrepancy] = useState<boolean | undefined>()
   const [startDate, setStartDate] = useState<string | undefined>()
   const [endDate, setEndDate] = useState<string | undefined>()
   const [selectedId, setSelectedId] = useState<string | undefined>()
 
   const params = useMemo(
-    () => ({ page, limit, warehouseId, hasDiscrepancy, startDate, endDate }),
-    [page, limit, warehouseId, hasDiscrepancy, startDate, endDate]
+    () => ({
+      page,
+      limit,
+      warehouseId,
+      supplierId,
+      status,
+      search: search || undefined,
+      hasDiscrepancy,
+      startDate,
+      endDate,
+    }),
+    [page, limit, warehouseId, supplierId, status, search, hasDiscrepancy, startDate, endDate]
   )
 
   const listQuery = useQuery({
@@ -35,12 +51,35 @@ export function useReceivingReports() {
     staleTime: STALE.REALTIME,
   })
 
+  // Header KPI row — a tenant-wide snapshot, not scoped to the filters
+  // above, so it doesn't need to be in `params` or refetch per keystroke.
+  const summaryQuery = useQuery({
+    queryKey: ['inventory-receiving-reports-summary'],
+    queryFn: () => getReceivingReportsSummary(),
+    staleTime: 60 * 1000,
+  })
+
+  const warehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const suppliersQuery = useQuery({
+    queryKey: ['inventory-suppliers-lookup'],
+    queryFn: () => getSuppliers({ limit: 200 }),
+    staleTime: 5 * 60 * 1000,
+  })
+
   const reports = listQuery.data?.data?.data ?? []
   const meta = listQuery.data?.data?.meta
   const totalPages = meta ? meta.lastPage : 1
 
   function resetFilters() {
+    setSearchState('')
     setWarehouseId(undefined)
+    setSupplierId(undefined)
+    setStatus(undefined)
     setHasDiscrepancy(undefined)
     setStartDate(undefined)
     setEndDate(undefined)
@@ -55,13 +94,37 @@ export function useReceivingReports() {
     totalPages,
     isLoading: listQuery.isLoading,
     isFetching: listQuery.isFetching,
+    refetch: listQuery.refetch,
 
+    summary: summaryQuery.data?.data,
+    isLoadingSummary: summaryQuery.isLoading,
+
+    warehouseOptions: warehousesQuery.data?.data?.data ?? [],
+    warehousesLoading: warehousesQuery.isLoading,
+    supplierOptions: suppliersQuery.data?.data?.data ?? [],
+    suppliersLoading: suppliersQuery.isLoading,
+
+    search,
     warehouseId,
+    supplierId,
+    status,
     hasDiscrepancy,
     startDate,
     endDate,
+    setSearch: (v: string) => {
+      setSearchState(v)
+      setPage(1)
+    },
     setWarehouseId: (v: string | undefined) => {
       setWarehouseId(v)
+      setPage(1)
+    },
+    setSupplierId: (v: string | undefined) => {
+      setSupplierId(v)
+      setPage(1)
+    },
+    setStatus: (v: string | undefined) => {
+      setStatus(v)
       setPage(1)
     },
     setHasDiscrepancy: (v: boolean | undefined) => {

@@ -1,5 +1,7 @@
 'use client'
 
+import { receivingReportPoCode } from '@/src/libs/format/receiving-report'
+
 /** Print/document envelope for one goods receipt
  * (GET /reports/receiving-reports/:id/document) — the receipt plus the
  * letterhead's enterprise block and the resolved receiver/branch names.
@@ -22,6 +24,7 @@ export interface ReceivingReportDocument {
     supplier?: { name?: string | null } | null
     warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
     purchaseOrderNumber?: string | null
+    poDate?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
     lines?: {
@@ -30,6 +33,7 @@ export interface ReceivingReportDocument {
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
+      purchaseOrderLine?: { purchaseOrder?: { code?: string | null } | null } | null
       item?: {
         name?: string | null
         modelNumber?: string | null
@@ -111,7 +115,8 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
             label="Ref"
             value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
           />
-          <MetaPair label="Dated" value="—" />
+          <MetaPair label="P.O. No." value={receivingReportPoCode(rr) ?? '—'} />
+          <MetaPair label="Dated" value={docDate(rr.poDate)} />
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">
