@@ -1,5 +1,8 @@
 'use client'
 
+import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
+
 /** Print/document envelope for one goods receipt
  * (GET /reports/receiving-reports/:id/document) — the receipt plus the
  * letterhead's enterprise block and the resolved receiver/branch names.
@@ -22,6 +25,9 @@ export interface ReceivingReportDocument {
     supplier?: { name?: string | null } | null
     warehouse?: { name?: string | null; branch?: { name?: string | null } | null } | null
     purchaseOrderNumber?: string | null
+    poDate?: string | null
+    driverName?: string | null
+    helperName?: string | null
     deliveryReceiptNumber?: string | null
     supplierInvoiceNumber?: string | null
     lines?: {
@@ -30,6 +36,9 @@ export interface ReceivingReportDocument {
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
+      // Present when the receipt came from Receive Against PO — the order
+      // the printed PO No. is resolved from.
+      purchaseOrderLine?: { purchaseOrder?: { code?: string | null } | null } | null
       item?: {
         name?: string | null
         modelNumber?: string | null
@@ -102,16 +111,19 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
       <div className="mt-6 grid gap-7 md:grid-cols-3">
         <div>
           <p className="font-bold text-prominent-purple-900">{rr.supplier?.name ?? '—'}</p>
-          <p className="mt-1 text-gray-700">Driver/Helper: —</p>
+          <p className="mt-1 text-gray-700">
+            Driver/Helper: {receivingReportDriverHelper(rr) ?? '—'}
+          </p>
         </div>
         <div className="text-right">
           <MetaPair label="No." value={doc.documentNumber ?? rr.code} />
           <MetaPair label="Date" value={docDate(rr.receivedAt)} />
+          <MetaPair label="PO No." value={receivingReportPoNumber(rr) ?? '—'} />
+          <MetaPair label="PO Date" value={rr.poDate ? docDate(rr.poDate) : '—'} />
           <MetaPair
-            label="Ref"
+            label="Reference"
             value={rr.deliveryReceiptNumber || rr.supplierInvoiceNumber || '—'}
           />
-          <MetaPair label="Dated" value="—" />
         </div>
         <div className="md:border-l md:border-gray-300 md:pl-7">
           <p className="font-bold text-prominent-purple-900">

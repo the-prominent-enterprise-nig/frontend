@@ -127,8 +127,9 @@ export default function VoucherDocument({
     : p.method
       ? [{ method: p.method, reference: p.chequeNumber ?? p.reference, description: p.description }]
       : []
-  // A split cheque is the only case where a source knows something the header
-  // cannot already say: its own reference, and its own share of the total.
+  // The reference is never printed beside a source: the voucher states it once,
+  // in the header block. A split cheque's share of the total is the one thing
+  // the header cannot already say, so that row appears only then.
   const isSplitFunding = sources.length > 1
 
   return (
@@ -153,7 +154,7 @@ export default function VoucherDocument({
           <MetaPair label="Reference" value={reference} />
           <MetaPair label="VOUCHER #" value={p.voucherNumber || '—'} />
           <MetaPair
-            label="SI #"
+            label="Supplier Invoice"
             value={
               siNumbers.length ? (
                 siNumbers.join(', ')
@@ -162,7 +163,7 @@ export default function VoucherDocument({
                   title="Settled before the supplier's invoice number was recorded"
                   className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
                 >
-                  Pending SI
+                  Pending Supplier Invoice
                 </span>
               )
             }
@@ -184,12 +185,47 @@ export default function VoucherDocument({
         </p>
       )}
 
-      <div className={`overflow-x-auto ${voucherDescription ? 'mt-3' : 'mt-7'}`}>
+      {/* Where the money came from leads, and what it was spent on follows: a
+          reader checks the funding first and the account breakdown answers
+          against it. The two used to sit side by side below the table, which
+          put the answer before the question. */}
+      {sources.length > 0 && (
+        <div className={voucherDescription ? 'mt-5' : 'mt-7'}>
+          <p className="mb-1.5 font-bold text-prominent-purple-900">Source of Funds</p>
+          {sources.map((src, i) => {
+            const bank = src.bankAccount
+            const bankLabel = bank?.name
+              ? bank.accountNumber
+                ? `${bank.name} — ${bank.accountNumber}`
+                : bank.name
+              : null
+            const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
+            if (bankLabel) rows.push(['Bank Account', bankLabel])
+            if (src.description) rows.push(['Description', String(src.description)])
+            if (isSplitFunding) rows.push(['Amount', fmtMoney(Number(src.amount ?? 0))])
+            return (
+              <div key={i} className={i > 0 ? 'mt-2.5 border-t border-gray-100 pt-2.5' : undefined}>
+                {rows.map(([label, value]) => (
+                  <div key={label} className="flex gap-4 py-0.5">
+                    <span className="w-32 shrink-0 font-bold text-prominent-purple-900">
+                      {label}
+                    </span>
+                    <span className="text-gray-700">{value}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <p className="mt-5 mb-1.5 font-bold text-prominent-purple-900">Account Details</p>
+      <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
               <th className={TH}>Account</th>
-              {showInvoiceSi && <th className={`${TH} w-40`}>SI #</th>}
+              {showInvoiceSi && <th className={`${TH} w-40`}>Supplier Invoice</th>}
               {showInvoiceDescription && <th className={TH}>Description</th>}
               <th className={`${TH} w-40 text-right`}>Total</th>
             </tr>
@@ -218,46 +254,8 @@ export default function VoucherDocument({
         </table>
       </div>
 
-      {/* How it was funded and what it came to are the same beat of the
-          document, so they share a row rather than stacking with a band of
-          whitespace between them. */}
-      <div className="mt-3 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex-1">
-          {sources.length > 0 && (
-            <>
-              <p className="mb-1.5 font-bold text-prominent-purple-900">Source of Funds</p>
-              {sources.map((src, i) => {
-                const bank = src.bankAccount
-                const bankLabel = bank?.name
-                  ? bank.accountNumber
-                    ? `${bank.name} — ${bank.accountNumber}`
-                    : bank.name
-                  : null
-                const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
-                if (bankLabel) rows.push(['Bank Account', bankLabel])
-                if (isSplitFunding && src.reference) rows.push(['Reference', String(src.reference)])
-                if (src.description) rows.push(['Description', String(src.description)])
-                if (isSplitFunding) rows.push(['Amount', fmtMoney(Number(src.amount ?? 0))])
-                return (
-                  <div
-                    key={i}
-                    className={i > 0 ? 'mt-2.5 border-t border-gray-100 pt-2.5' : undefined}
-                  >
-                    {rows.map(([label, value]) => (
-                      <div key={label} className="flex gap-4 py-0.5">
-                        <span className="w-32 shrink-0 font-bold text-prominent-purple-900">
-                          {label}
-                        </span>
-                        <span className="text-gray-700">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
-            </>
-          )}
-        </div>
-        <table className="border-collapse self-end text-[13px] sm:self-auto">
+      <div className="mt-3 flex justify-end">
+        <table className="border-collapse text-[13px]">
           <tbody>
             <tr>
               <td className={TOTAL_LABEL}>Amount paid</td>

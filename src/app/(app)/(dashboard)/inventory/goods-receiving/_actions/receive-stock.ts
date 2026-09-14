@@ -38,6 +38,8 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
     code,
     receivedAt,
     modeOfTransfer,
+    driverName,
+    helperName,
     lines,
     ...rest
   } = parsed.data
@@ -51,6 +53,11 @@ export async function receiveStock(input: unknown): Promise<ApiResponse<{ id: st
       ? { purchaseOrderNumber: purchaseOrderNumber.trim() }
       : {}),
     ...(purchaseOrderDate && purchaseOrderDate.trim() ? { poDate: purchaseOrderDate.trim() } : {}),
+    // Omitted rather than sent as '' so an unfilled box stores null and the
+    // printed Driver/Helper line falls back to its blank, not to an empty
+    // string that reads as a recorded answer.
+    ...(driverName && driverName.trim() ? { driverName: driverName.trim() } : {}),
+    ...(helperName && helperName.trim() ? { helperName: helperName.trim() } : {}),
     lines: lines.map(({ itemId, batchNumber, serialNumbers, ...lineRest }) => ({
       ...lineRest,
       itemId,

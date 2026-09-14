@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react'
 import { useReceivingReports } from '../_hooks/useReceivingReports'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
+import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
 
 const fmtMoney = (n: number) =>
   n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
@@ -19,17 +20,6 @@ function lineAmount(line: ReceivingReport['lines'][number]): number | null {
 function reportAmount(report: ReceivingReport): number | null {
   const amounts = report.lines.map(lineAmount).filter((a): a is number => a != null)
   return amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null
-}
-
-// The real linked PO's code (when this receipt came from Receive Against
-// PO) — falls back to the free-text purchaseOrderNumber field for receipts
-// entered through the standalone Receive Stock form with no PO link.
-function reportPoCode(report: ReceivingReport): string | null {
-  for (const line of report.lines) {
-    const code = line.purchaseOrderLine?.purchaseOrder?.code
-    if (code) return code
-  }
-  return null
 }
 
 function DiscrepancyBadge({ report }: { report: ReceivingReport }) {
@@ -192,9 +182,9 @@ export default function ReceivingReportsTab({
                         {report.code}
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
-                        {(reportPoCode(report) ?? report.purchaseOrderNumber) ? (
+                        {receivingReportPoNumber(report) ? (
                           <span className="font-mono text-zinc-600">
-                            {reportPoCode(report) ?? report.purchaseOrderNumber}
+                            {receivingReportPoNumber(report)}
                           </span>
                         ) : (
                           <span className="text-zinc-300">—</span>

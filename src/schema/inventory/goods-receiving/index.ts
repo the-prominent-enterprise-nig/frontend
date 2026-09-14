@@ -79,6 +79,12 @@ export const ReceiveStockFormSchema = z
     // refine below — this used to be the other way round.
     deliveryReceiptNumber: z.string().optional(),
     supplierInvoiceNumber: z.string().optional(),
+    // Who physically brought the delivery — the Receiving Report's
+    // "Driver/Helper" line. Free text, not the Vehicle roster: that roster is
+    // our own fleet, for branch-to-branch transfers, and a supplier's crew
+    // will never be on it.
+    driverName: z.string().max(150).optional(),
+    helperName: z.string().max(150).optional(),
     lines: z.array(ReceiveStockLineSchema).min(1, 'At least one item line is required'),
   })
   .refine((data) => !!data.supplierId || data.lines.some((line) => !!line.purchaseOrderLineId), {
@@ -295,6 +301,8 @@ export const ReceivingReportSchema = z.object({
   receivedByName: z.string().optional().nullable(),
   poDate: z.string().optional().nullable(),
   purchaseOrderNumber: z.string().optional().nullable(),
+  driverName: z.string().optional().nullable(),
+  helperName: z.string().optional().nullable(),
   deliveryReceiptNumber: z.string().optional().nullable(),
   supplierInvoiceNumber: z.string().optional().nullable(),
   journalEntryId: z.string().optional().nullable(),

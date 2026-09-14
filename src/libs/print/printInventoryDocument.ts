@@ -1,4 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
+import { receivingReportPoNumber } from '@/src/libs/format/receiving-po-number'
+import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -91,6 +93,13 @@ export function buildReceivingReportHtml(
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
+  // Either the linked PO's real code or the free-text number typed on a
+  // standalone receipt — same rule, and so the same answer, as the
+  // Receiving Reports list column and the on-screen sheet.
+  const poNumber = receivingReportPoNumber(rr as Parameters<typeof receivingReportPoNumber>[0])
+  const driverHelper = receivingReportDriverHelper(
+    rr as Parameters<typeof receivingReportDriverHelper>[0]
+  )
 
   let totalQty = 0
   let totalAmount = 0
@@ -163,17 +172,19 @@ export function buildReceivingReportHtml(
     <div class="info">
       <div class="party">
         <p class="party-name">${esc(supplier?.name) || '—'}</p>
-        <p class="party-address">Driver/Helper: —</p>
+        <p class="party-address">Driver/Helper: ${esc(driverHelper) || '—'}</p>
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
         <p class="meta-label">Date</p>
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
-        <p class="meta-label">Ref</p>
+        <p class="meta-label">PO No.</p>
+        <p class="meta-value">${esc(poNumber) || '—'}</p>
+        <p class="meta-label">PO Date</p>
+        <p class="meta-value">${rr.poDate ? fmtDate(rr.poDate) : '—'}</p>
+        <p class="meta-label">Reference</p>
         <p class="meta-value">${esc(ref) || '—'}</p>
-        <p class="meta-label">Dated</p>
-        <p class="meta-value">—</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -1527,11 +1538,13 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   // a Description nobody fills. Printed as labelled rows instead, and a row
   // with no value simply isn't printed.
   //
-  // Still a loop: the backend can split a cheque across methods. That split is
-  // the only case where a source knows something the header can't already say
-  // — its own reference, and its own share of the total — so both rows appear
-  // only then. On the single-source voucher these actually are, the cheque
-  // number belongs in the header block and is printed there once.
+  // The reference is never one of those rows: the voucher states it once, in
+  // the header block, and repeating it beside the method invited the reader to
+  // check two printings of the same cheque number against each other.
+  //
+  // Still a loop, because the backend can split a cheque across methods — and
+  // a source's share of the total is the one thing the header cannot already
+  // say, so that row appears only then.
   const isSplitFunding = rawSources.length > 1
   const sourceBlocks = rawSources
     .map((src) => {
@@ -1543,7 +1556,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         : null
       const rows: [string, string][] = [['Method', prettyMethod(src.method)]]
       if (bankLabel) rows.push(['Bank Account', bankLabel])
-      if (isSplitFunding && src.reference) rows.push(['Reference', String(src.reference)])
       if (src.description) rows.push(['Description', String(src.description)])
       if (isSplitFunding) rows.push(['Amount', fmt(Number(src.amount ?? 0))])
       return `<div class="fund">${rows
@@ -1579,10 +1591,6 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     .total-wrap td.value { text-align: right; min-width: 140px; }
     .total-wrap tr.strong td { font-weight: 700; border-top: 1px solid #999; border-bottom: none; }
     .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
-    .pay-summary { display: flex; align-items: flex-start; gap: 40px; margin-top: 12px; }
-    .pay-summary .fund-col { flex: 1; }
-    .pay-summary .section-label { margin-top: 0; }
-    .pay-summary .total-wrap { margin-top: 0; }
     .fund + .fund { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
     .doc-note { display: flex; gap: 16px; margin: 0 0 12px; }
     .doc-note-label { width: 130px; flex-shrink: 0; font-weight: 700; }
@@ -1616,8 +1624,8 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <p class="meta-value">${reference}</p>
         <p class="meta-label">VOUCHER #</p>
         <p class="meta-value">${p.voucherNumber ? esc(p.voucherNumber) : '—'}</p>
-        <p class="meta-label">SI #</p>
-        <p class="meta-value">${siNumbers.length ? siNumbers.map(esc).join(', ') : 'Pending SI #'}</p>
+        <p class="meta-label">Supplier Invoice</p>
+        <p class="meta-value">${siNumbers.length ? siNumbers.map(esc).join(', ') : 'Pending Supplier Invoice'}</p>
         ${p.payeeTin ? `<p class="meta-label">PAYEE'S TIN:</p><p class="meta-value">${esc(p.payeeTin)}</p>` : ''}
       </div>
       <div class="enterprise">
@@ -1632,32 +1640,31 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         : ''
     }
 
+    <!-- Where the money came from leads, and what it was spent on follows:
+         a reader checks the funding first and the account breakdown answers
+         against it. The two used to sit side by side below the table, which
+         put the answer before the question. -->
+    ${
+      sourceBlocks
+        ? `<p class="section-label">Source of Funds</p>
+    ${sourceBlocks}`
+        : ''
+    }
+
+    <p class="section-label">Account Details</p>
     <table>
       <thead>
-        <tr><th>Account</th>${showInvoiceSi ? '<th>SI #</th>' : ''}${showInvoiceDescription ? '<th>Description</th>' : ''}<th class="right">Total</th></tr>
+        <tr><th>Account</th>${showInvoiceSi ? '<th>Supplier Invoice</th>' : ''}${showInvoiceDescription ? '<th>Description</th>' : ''}<th class="right">Total</th></tr>
       </thead>
       <tbody>${invoiceRows}</tbody>
     </table>
 
-    <!-- How it was funded and what it came to are the same beat of the
-         document, so they share a row: stacking them left the middle of the
-         page empty and pushed the signatures down a band of whitespace. -->
-    <div class="pay-summary">
-      <div class="fund-col">
-        ${
-          sourceBlocks
-            ? `<p class="section-label">Source of Funds</p>
-        ${sourceBlocks}`
-            : ''
-        }
-      </div>
-      <div class="total-wrap">
-        <table>
-          <tr><td class="label">Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
-          ${withholding > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
-          <tr class="strong"><td class="label">Total</td><td class="value">${fmt(amount)}</td></tr>
-        </table>
-      </div>
+    <div class="total-wrap">
+      <table>
+        <tr><td class="label">Amount paid</td><td class="value">${fmt(netPaid)}</td></tr>
+        ${withholding > 0 ? `<tr><td class="label">Withholding tax</td><td class="value">${fmt(withholding)}</td></tr>` : ''}
+        <tr class="strong"><td class="label">Total</td><td class="value">${fmt(amount)}</td></tr>
+      </table>
     </div>
 
     <div class="signatures">
