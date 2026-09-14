@@ -110,7 +110,19 @@ export const PRESET_EXCLUDED_PERMISSIONS = new Set([
   'accounting:account:update',
   'accounting:account:delete',
   'accounting:bir_export:generate',
+
+  // inventory:receive:cost-view: redundant with the exact action-name match above
+  // for the one thing this list was built to prevent — actionMatches("cost-view",
+  // ...) is false against every READ_ACTIONS/EDIT_ACTIONS entry, so View Only and
+  // Manage / Edit never select it regardless of whether it's listed here.
+  // Kept anyway because isPresetExcluded also drives the "Sensitive" badge in
+  // Advanced permissions (see AssignPermissionsModal/CreateRoleModal), and that
+  // badge is correct information — this permission genuinely is restricted (see
+  // its own description in seed.ts) — even though the mechanism keeping it out of
+  // the module buttons is "never classified as read or edit" rather than "matched,
+  // then withheld" like every other entry in this list. #168 review (2026-09-14).
   'inventory:receive:cost-view',
+
   'admin:roles:create',
   'admin:roles:update',
   'admin:roles:delete',
