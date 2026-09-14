@@ -29,13 +29,25 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
 // 'inventory' module (they already lived under the Inventory nav section;
 // the RBAC module just hadn't caught up). Their capabilities now report
 // under Inventory's own "N of N" count and Full/Mixed/View badge below.
+// Kept in sync with the modules that actually have Permission rows in the
+// database, not with what the app's nav happens to call things.
+//
+// 'queue' was a phantom entry — no queue:* permission has ever been seeded,
+// in either repo — so it always rendered as an empty '0 of 0' module row.
+//
+// 'workspace' was the opposite problem and the more serious one: it backs 3
+// real permissions (workspace:calendar:read/create, workspace:activity:read —
+// the dashboard's shared calendar and Recent Activity feed) that were never
+// listed here, so they could not be granted or revoked through this screen at
+// all — not under a module button, not under Advanced permissions. Only
+// Business Owner holds them today, and there was no UI path to change that.
 export const ACCESS_MODULES: AccessModule[] = [
   { key: 'accounting', label: 'Accounting', permissionModules: ['accounting'] },
   { key: 'inventory', label: 'Inventory', permissionModules: ['inventory'] },
   { key: 'pos', label: 'Point of Sale', permissionModules: ['pos'] },
   { key: 'crm', label: 'CRM', permissionModules: ['crm'] },
   { key: 'admin', label: 'Admin', permissionModules: ['admin'] },
-  { key: 'queue', label: 'Queue', permissionModules: ['queue'] },
+  { key: 'workspace', label: 'Workspace', permissionModules: ['workspace'] },
   { key: 'sales', label: 'Sales', permissionModules: ['sales'] },
   { key: 'files', label: 'Files', permissionModules: ['files'] },
 ]
