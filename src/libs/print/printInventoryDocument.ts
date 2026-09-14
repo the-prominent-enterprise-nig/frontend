@@ -1,4 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
+import { locationLabel } from '@/src/libs/format/locationLabel'
+import { receivingReportPoCode } from '@/src/libs/format/receiving-report'
 
 export interface PrintDocumentEnvelope {
   documentType: string
@@ -91,6 +93,13 @@ export function buildReceivingReportHtml(
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const ref = (rr.deliveryReceiptNumber ?? rr.supplierInvoiceNumber ?? '') as string
+  // `Ref`/`Dated` is the supplier-document pair (their DR, or the SI when
+  // no DR was given). The PO is a separate reference and gets its own slot
+  // — it was reachable from the record all along but never printed, while
+  // `Dated` sat hardcoded as an em-dash with nothing to fill it. `poDate`
+  // is the only reference date the record actually carries, so it pairs
+  // with the PO number rather than leaving the slot permanently blank.
+  const poCode = receivingReportPoCode(rr as Parameters<typeof receivingReportPoCode>[0])
 
   let totalQty = 0
   let totalAmount = 0
@@ -172,8 +181,10 @@ export function buildReceivingReportHtml(
         <p class="meta-value">${fmtDate(rr.receivedAt)}</p>
         <p class="meta-label">Ref</p>
         <p class="meta-value">${esc(ref) || '—'}</p>
+        <p class="meta-label">P.O. No.</p>
+        <p class="meta-value">${esc(poCode) || '—'}</p>
         <p class="meta-label">Dated</p>
-        <p class="meta-value">—</p>
+        <p class="meta-value">${rr.poDate ? fmtDate(rr.poDate) : '—'}</p>
       </div>
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName)}</p>
@@ -236,6 +247,53 @@ export function printReceivingReportDocument(
 }
 
 /**
+ * Saves the same markup printReceivingReportDocument() opens as a file the
+ * browser downloads directly — for a reader who wants the receipt on disk
+ * (attaching it to an email, archiving it) rather than a print dialog. It's
+ * the identical HTML, so it opens showing the same paper and can still be
+ * printed to PDF from there.
+ */
+export function downloadReceivingReportDocument(
+  data: unknown,
+  filename: string,
+  opts: { showAmounts?: boolean } = {}
+): void {
+  const blob = new Blob([buildReceivingReportHtml(data, opts)], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename.endsWith('.html') ? filename : `${filename}.html`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/** A transfer's From/To party. Every branch owns exactly one shadow
+ * warehouse, so the party people recognise is the BRANCH — "Mabini Branch",
+ * not "Mabini Warehouse (WH-34)". Only the two real standalone warehouses
+ * (PANAY/NEGROS) have no branch behind them, and those print under their own
+ * warehouse name. */
+type TransferParty = {
+  name?: string
+  code?: string
+  address?: string | null
+  branch?: { name?: string; addressLine1?: string | null; city?: string | null } | null
+}
+
+function partyName(wh: TransferParty | undefined): string {
+  if (wh?.branch?.name) {
+    // Branch names are stored bare ("Mabini"), so label them explicitly —
+    // otherwise the document reads as two loose place names.
+    return /branch$/i.test(wh.branch.name) ? wh.branch.name : `${wh.branch.name} Branch`
+  }
+  return wh?.name ?? '—'
+}
+
+function partyAddress(wh: TransferParty | undefined): string {
+  if (wh?.branch) return [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
+  return wh?.address ?? ''
+}
+
+/**
  * Stock Transfer print — same typographic system as buildReceivingReportHtml()
  * and printPurchaseOrderDocument() (title left / logo right, three-column
  * info row, light #ccc-bordered table, signature blocks) so all three
@@ -244,8 +302,8 @@ export function printReceivingReportDocument(
 export function buildStockTransferHtml(data: unknown): string {
   const doc = data as PrintDocumentEnvelope
   const transfer = doc.document as Record<string, unknown>
-  const fromWarehouse = transfer.fromWarehouse as { name?: string; code?: string } | undefined
-  const toWarehouse = transfer.toWarehouse as { name?: string; code?: string } | undefined
+  const fromWarehouse = transfer.fromWarehouse as TransferParty | undefined
+  const toWarehouse = transfer.toWarehouse as TransferParty | undefined
   const enterprise = doc.enterprise
   const lines = Array.isArray(transfer.lines) ? (transfer.lines as Record<string, unknown>[]) : []
 
@@ -294,6 +352,8 @@ export function buildStockTransferHtml(data: unknown): string {
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
+    .party-dir { font-weight: 700; }
+    .party .party-to { margin-top: 12px; }
     .meta-value { margin: 0 0 12px; }
     .logistics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 28px; margin-bottom: 20px; }
     table { width: 100%; border-collapse: collapse; }
@@ -320,10 +380,10 @@ export function buildStockTransferHtml(data: unknown): string {
 
     <div class="info">
       <div class="party">
-        <p class="meta-label">From</p>
-        <p class="party-name">${esc(fromWarehouse?.name)}${fromWarehouse?.code ? ` (${esc(fromWarehouse.code)})` : ''}</p>
-        <p class="meta-label">To</p>
-        <p class="party-name">${esc(toWarehouse?.name)}${toWarehouse?.code ? ` (${esc(toWarehouse.code)})` : ''}</p>
+        <p class="party-name"><span class="party-dir">From</span> ${esc(partyName(fromWarehouse))}</p>
+        <p class="party-address">${esc(partyAddress(fromWarehouse)) || '—'}</p>
+        <p class="party-name party-to"><span class="party-dir">To</span> ${esc(partyName(toWarehouse))}</p>
+        <p class="party-address">${esc(partyAddress(toWarehouse)) || '—'}</p>
       </div>
       <div class="meta">
         <p class="meta-label">No.</p>
@@ -409,6 +469,38 @@ export function printPurchaseOrderDocument(
   const lines = Array.isArray(po.lines) ? (po.lines as Record<string, unknown>[]) : []
   const enterprise = doc.enterprise
 
+  // Where the goods actually go: "Deliver to <location>" with the street
+  // address beneath it.
+  //
+  // This used to print only the free-text `deliveryInstructions` note, so a
+  // PO with nothing typed there told the supplier nothing about the
+  // destination at all.
+  //
+  // The address deliberately prefers the BRANCH over the warehouse:
+  // Warehouse.address is null for every warehouse in the data (which is
+  // also why the server's `shippingAddress`, resolved from it at create
+  // time, is empty too), while the branch carries the real street address.
+  type PrintBranch = { name?: string; addressLine1?: string | null; city?: string | null }
+  const warehouse = po.warehouse as
+    | {
+        name: string
+        address?: string | null
+        branchId?: string | null
+        branch?: PrintBranch | null
+      }
+    | undefined
+  const branch = (warehouse?.branch ?? po.branch) as PrintBranch | undefined
+
+  // The location as staff name it — the branch for a branch-owned
+  // warehouse, its own name for the two standalone ones.
+  const destinationName = warehouse
+    ? locationLabel(warehouse as Parameters<typeof locationLabel>[0], '')
+    : ''
+  const destinationAddress = (warehouse?.address ||
+    [branch?.addressLine1, branch?.city].filter(Boolean).join(', ') ||
+    po.shippingAddress ||
+    '') as string
+
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
   const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
@@ -490,7 +582,10 @@ export function printPurchaseOrderDocument(
     .party-address { margin: 0; color: #333; }
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .meta-value { margin: 0 0 12px; }
-    .delivery-note { font-weight: 700; margin: 0 0 16px; }
+    .delivery { margin: 0 0 16px; }
+    .delivery-label { font-weight: 700; margin: 0 0 2px; }
+    .delivery-address { margin: 0; color: #333; }
+    .delivery-note { margin: 2px 0 0; color: #333; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; }
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
@@ -539,8 +634,12 @@ export function printPurchaseOrderDocument(
     </div>
 
     ${
-      po.deliveryInstructions
-        ? `<p class="delivery-note">Please deliver to ${esc(po.deliveryInstructions)}.</p>`
+      destinationName || destinationAddress || po.deliveryInstructions
+        ? `<div class="delivery">
+      <p class="delivery-label">Deliver to${destinationName ? ` ${esc(destinationName)}` : ''}</p>
+      ${destinationAddress ? `<p class="delivery-address">${esc(destinationAddress)}</p>` : ''}
+      ${po.deliveryInstructions ? `<p class="delivery-note">${esc(po.deliveryInstructions)}</p>` : ''}
+    </div>`
         : ''
     }
 
@@ -1453,13 +1552,41 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  // The reference document's "Total" is what this one payment settled, not
-  // the whole bill (a bill can be paid across several payments) — matches
-  // how the Payment history list already sums amount + withholdingAmount.
-  // `totalAmount` on a disbursement is the cash actually disbursed, already
-  // net of withholding — so the same "what this payment settled" figure needs
-  // the withholding added back either way.
-  const amount = Number(p.amount ?? p.totalAmount ?? 0) + Number(p.withholdingAmount ?? 0)
+  // Two envelopes reach this same paper: a disbursement (one cheque, every
+  // invoice it settled) and a legacy per-bill payment (its own share only).
+  // The disbursement one is the multi-invoice case — without these fields it
+  // printed an em-dash account and a total built from the wrong numbers.
+  const invoices = (p.invoices ?? []) as {
+    billNumber?: string | null
+    description?: string | null
+    amount?: number
+  }[]
+  const account = p.account as { number?: string; name?: string } | null
+  const accountName =
+    [account?.number, account?.name].filter(Boolean).join(' — ') ||
+    effectiveExpenseAccount?.name ||
+    '—'
+
+  // Tax excluded: the total is the money that actually left the bank, and
+  // withholding never does — it is credited against the invoice and remitted
+  // to the BIR. It is disclosed under the table instead of inflating the
+  // figure the payee acknowledges receiving.
+  const withholdingAmount = Number(p.withholdingAmount ?? 0)
+  const amount = invoices.length
+    ? Number(p.totalAmount ?? invoices.reduce((sum, i) => sum + Number(i.amount ?? 0), 0))
+    : Number(p.amount ?? 0)
+
+  // One row per invoice the cheque settled; a legacy per-bill payment has no
+  // invoice list, so it keeps its single account line.
+  const accountRows = invoices.length
+    ? invoices
+        .map(
+          (i) =>
+            `<tr><td>${esc(accountName)}${i.billNumber ? ` — ${esc(i.billNumber)}` : ''}</td><td class="right">${fmt(Number(i.amount ?? 0))}</td></tr>`
+        )
+        .join('')
+    : `<tr><td>${esc(accountName)}</td><td class="right">${fmt(amount)}</td></tr>`
+
   const reference = p.chequeNumber
     ? `CK#${esc(p.chequeNumber)}`
     : p.reference
@@ -1537,7 +1664,7 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
     th { background: #f5f5f5; text-align: left; font-weight: 700; }
     td.right, th.right { text-align: right; }
     tr.total-row td { font-weight: 700; }
-    .section-label { font-weight: 700; margin: 20px 0 6px; font-size: 13px; }
+    .wht-note { margin: 8px 0 0; font-size: 11px; color: #666; }
     .signatures { margin-top: 40px; display: flex; gap: 40px; }
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
@@ -1578,10 +1705,15 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
         <tr><th>Account</th><th>SI</th><th class="right">Total</th></tr>
       </thead>
       <tbody>
-        ${invoiceRows}
-        <tr class="total-row"><td colspan="2">Total</td><td class="right">${fmt(amount)}</td></tr>
+        ${accountRows}
+        <tr class="total-row"><td>Total</td><td class="right">${fmt(amount)}</td></tr>
       </tbody>
     </table>
+    ${
+      withholdingAmount > 0
+        ? `<p class="wht-note">Net of withholding tax of ${fmt(withholdingAmount)}, credited against the invoice${invoices.length > 1 ? 's' : ''} above and remitted to the BIR.</p>`
+        : ''
+    }
 
     ${
       sourceRows
