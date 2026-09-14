@@ -4,12 +4,7 @@ import { ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { type Permission } from '@/src/schema/settings/list'
 import ModuleAccessList from './ModuleAccessList'
-import {
-  ACCESS_MODULES,
-  formatPermission,
-  getModulePermissions,
-  isPresetExcluded,
-} from './access-levels'
+import { formatPermission, getAllPermissionGroups, isPresetExcluded } from './access-levels'
 
 export type CreateRoleFormData = {
   name: string
@@ -38,19 +33,24 @@ export default function CreateRoleModal({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set())
 
+  // All permissions, not just the 4 real modules ACCESS_MODULES now covers
+  // (#171 review) — admin/files/workspace/etc. have no quick-preset button but
+  // stay individually grantable here.
   const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return ACCESS_MODULES.map((moduleConfig) => {
-      const modulePermissions = getModulePermissions(availablePermissions, moduleConfig).filter(
-        (permission) => {
-          if (!query) return true
-          const key = `${permission.module}:${permission.resource}:${permission.action}`
-          return key.includes(query) || formatPermission(permission).toLowerCase().includes(query)
-        }
-      )
-      return { moduleConfig, permissions: modulePermissions }
-    }).filter((group) => group.permissions.length > 0)
+    return getAllPermissionGroups(availablePermissions)
+      .map((moduleConfig) => {
+        const modulePermissions = availablePermissions.filter(
+          (permission) =>
+            permission.module === moduleConfig.key &&
+            (!query ||
+              `${permission.module}:${permission.resource}:${permission.action}`.includes(query) ||
+              formatPermission(permission).toLowerCase().includes(query))
+        )
+        return { moduleConfig, permissions: modulePermissions }
+      })
+      .filter((group) => group.permissions.length > 0)
   }, [availablePermissions, search])
 
   if (!isOpen) return null

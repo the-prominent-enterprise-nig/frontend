@@ -10,6 +10,7 @@ import { showToast } from '@/src/components/ui/toast'
 import {
   ACCESS_MODULES,
   formatPermission,
+  getAllPermissionGroups,
   getModulePermissions,
   isPresetExcluded,
 } from './access-levels'
@@ -71,16 +72,21 @@ export default function AssignPermissionsModal({
   const advancedGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return ACCESS_MODULES.map((moduleConfig) => {
-      const modulePermissions = getModulePermissions(availablePermissions, moduleConfig).filter(
-        (permission) => {
-          if (!query) return true
-          const key = `${permission.module}:${permission.resource}:${permission.action}`
-          return key.includes(query) || formatPermission(permission).toLowerCase().includes(query)
-        }
-      )
-      return { moduleConfig, permissions: modulePermissions }
-    }).filter((group) => group.permissions.length > 0)
+    // All permissions, not just the 4 real modules ACCESS_MODULES now covers
+    // (#171 review) — admin/files/workspace/etc. have no quick-preset button
+    // but stay individually grantable here.
+    return getAllPermissionGroups(availablePermissions)
+      .map((moduleConfig) => {
+        const modulePermissions = availablePermissions.filter(
+          (permission) =>
+            permission.module === moduleConfig.key &&
+            (!query ||
+              `${permission.module}:${permission.resource}:${permission.action}`.includes(query) ||
+              formatPermission(permission).toLowerCase().includes(query))
+        )
+        return { moduleConfig, permissions: modulePermissions }
+      })
+      .filter((group) => group.permissions.length > 0)
   }, [availablePermissions, search])
 
   const selectedAdvancedCount = useMemo(() => {

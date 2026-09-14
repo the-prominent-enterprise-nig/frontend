@@ -1,4 +1,5 @@
 import { type Permission, type Role } from '@/src/schema/settings/list'
+import { MODULES } from '@/src/libs/guards/modules'
 
 export type AccessLevel = 'none' | 'view' | 'manage' | 'full' | 'mixed'
 
@@ -29,38 +30,29 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
 // 'inventory' module (they already lived under the Inventory nav section;
 // the RBAC module just hadn't caught up). Their capabilities now report
 // under Inventory's own "N of N" count and Full/Mixed/View badge below.
-// Kept in sync with the modules that actually have Permission rows in the
-// database, not with what the app's nav happens to call things.
+// #171 review (2026-09-15): this used to be a hand-maintained array that
+// drifted from reality twice over — 'queue' listed with zero permissions
+// ever seeded, 'workspace' holding 3 real permissions but never listed,
+// 'admin'/'files'/'sales' present despite not being real app sections.
+// Reviewer's ask: "keep this list to the real modules only... tie this
+// list to the real module list, so it stops drifting apart again."
 //
-// 'queue' was a phantom entry — no queue:* permission has ever been seeded,
-// in either repo — so it always rendered as an empty '0 of 0' module row.
+// Derived directly from MODULES (src/libs/guards/modules.ts) — the actual
+// sidebar/nav module list — instead of hand-maintained, so it cannot drift
+// from it again: HR and Procurement are commented out there as not yet
+// built, and so are absent here automatically, with no second place to
+// remember to update.
 //
-// 'workspace' was the opposite problem and the more serious one: it backs 3
-// real permissions (workspace:calendar:read/create, workspace:activity:read —
-// the dashboard's shared calendar and Recent Activity feed) that were never
-// listed here, so they could not be granted or revoked through this screen at
-// all — not under a module button, not under Advanced permissions. Only
-// Business Owner holds them today, and there was no UI path to change that.
-//
-// 'sales' removed (#171 review, 2026-09-15): the module that defines it
-// (SALES_PERMISSIONS in src/libs/guards/sales-permissions.ts) lists 24
-// permissions — customers, quotations, orders, deliveries, invoices,
-// returns, reports — but the real catalog only has 4, all sales:orders:*.
-// The other 20 do not exist anywhere. That file is imported by zero
-// components in this repo. 'sales' is commented out of the actual
-// navigable module list (src/libs/guards/modules.ts) and has no route.
-// The 4 real grants are held only by Business Owner, who has everything
-// regardless. Nothing was reachable through this entry; nothing is lost
-// by removing it.
-export const ACCESS_MODULES: AccessModule[] = [
-  { key: 'accounting', label: 'Accounting', permissionModules: ['accounting'] },
-  { key: 'inventory', label: 'Inventory', permissionModules: ['inventory'] },
-  { key: 'pos', label: 'Point of Sale', permissionModules: ['pos'] },
-  { key: 'crm', label: 'CRM', permissionModules: ['crm'] },
-  { key: 'admin', label: 'Admin', permissionModules: ['admin'] },
-  { key: 'workspace', label: 'Workspace', permissionModules: ['workspace'] },
-  { key: 'files', label: 'Files', permissionModules: ['files'] },
-]
+// This intentionally makes admin/files/workspace permissions ungrantable
+// via a quick-preset button — they are not real modules. They remain
+// individually grantable, unchanged from before any of this preset work
+// existed: see getAllPermissionGroups below, which Advanced permissions
+// now uses instead of this list, so nothing becomes unreachable.
+export const ACCESS_MODULES: AccessModule[] = MODULES.map((appModule) => ({
+  key: appModule.key,
+  label: appModule.label,
+  permissionModules: [appModule.key],
+}))
 
 const READ_ACTIONS = new Set([
   'read',
@@ -520,4 +512,47 @@ export function getResourceLevelAvailability(
       reason: `Same as ${ACCESS_LEVEL_LABELS[previous]} — this resource has no further actions.`,
     }
   })
+}
+
+/**
+ * Label for a module key that may or may not be one of the real, navigable
+ * modules in MODULES. Real modules use their own curated label ('pos' ->
+ * "Point of Sale", not "Pos"); anything else — admin, files, workspace, or
+ * whatever the permission catalog grows next — falls back to title-casing
+ * the raw key, same treatment formatResourceLabel gives a resource name.
+ */
+export function formatModuleLabel(moduleKey: string): string {
+  const real = MODULES.find((appModule) => appModule.key === moduleKey)
+  if (real) return real.label
+  return moduleKey
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+/**
+ * Every permission that exists, grouped by its own module field — not
+ * filtered through ACCESS_MODULES. That list is now the four real, curated
+ * modules only (#171 review), so admin/files/workspace permissions have no
+ * quick-preset button — correct, they are not real modules — but they are
+ * still real, grantable permissions. This is what Advanced permissions
+ * renders instead of ACCESS_MODULES, so nothing a role could be granted
+ * before becomes unreachable through the UI. Sourced from the permission
+ * catalog itself, so a module added to the backend later shows up here on
+ * its own — nothing to remember to update in this file either.
+ */
+export function getAllPermissionGroups(permissions: Permission[]): AccessModule[] {
+  const byModule = new Map<string, Permission[]>()
+  for (const permission of permissions) {
+    const group = byModule.get(permission.module) ?? []
+    group.push(permission)
+    byModule.set(permission.module, group)
+  }
+  return Array.from(byModule.keys())
+    .sort((a, b) => formatModuleLabel(a).localeCompare(formatModuleLabel(b)))
+    .map((moduleKey) => ({
+      key: moduleKey,
+      label: formatModuleLabel(moduleKey),
+      permissionModules: [moduleKey],
+    }))
 }
